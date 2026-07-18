@@ -13,6 +13,9 @@
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 import { EventLogger } from './event-logger.js';
+import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
+import { findOrphanedToolUses } from './session-recovery.js';
+import { rowToSession, type SessionRow } from './session-records.js';
 import { canTransition, isTerminal } from './state-machine.js';
 import type {
   Session,
@@ -46,24 +49,6 @@ export interface SessionExecutor {
 }
 
 type Subscriber = (event: SessionEvent) => void;
-
-function isAbortError(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'AbortError' || err.message.toLowerCase().includes('abort'))
-  );
-}
-
-/** Map internal session status → CMA lifecycle event type. */
-const STATUS_TO_EVENT: Partial<Record<SessionStatus, SessionEvent['type']>> = {
-  running: 'session.status_running',
-  paused: 'session.status_idle',
-  requires_action: 'session.status_idle',
-  completed: 'session.status_terminated',
-  // 'failed' is terminal → status_terminated. The detailed session.error event
-  // (with the error message) is appended separately by runTurn's catch block.
-  failed: 'session.status_terminated',
-};
 
 // ============================================================
 // Session Manager
@@ -384,31 +369,12 @@ export class SessionManager {
     for (const { id: sessionId } of running) {
       const events = this.eventLogger.getEvents(sessionId);
 
-      // Build tool_use → resolved sets to find orphans
-      const toolUses = new Map<string, string>(); // id → event type
-      const resolved = new Set<string>();
-      for (const e of events) {
-        if (e.type === 'agent.tool_use' || e.type === 'agent.mcp_tool_use') {
-          const block = e.content?.find((b) => b.type === 'tool_use') as
-            | { type: 'tool_use'; id: string } | undefined;
-          if (block) toolUses.set(block.id, e.type);
-        } else if (e.type === 'agent.tool_result' || e.type === 'agent.mcp_tool_result') {
-          const block = e.content?.find((b) => b.type === 'tool_result') as
-            | { type: 'tool_result'; tool_use_id: string } | undefined;
-          if (block) resolved.add(block.tool_use_id);
-        }
-      }
-
       // Inject placeholder results for orphaned tool_use calls
       const placeholder = '(interrupted by server restart — retry if needed)';
-      for (const [useId, useType] of toolUses) {
-        if (resolved.has(useId)) continue;
-        const resultType = useType === 'agent.mcp_tool_use'
-          ? 'agent.mcp_tool_result'
-          : 'agent.tool_result';
+      for (const toolUse of findOrphanedToolUses(events)) {
         this.eventLogger.append(sessionId, {
-          type: resultType,
-          content: [{ type: 'tool_result', tool_use_id: useId, content: placeholder, is_error: true }],
+          type: toolUse.resultType,
+          content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: placeholder, is_error: true }],
         });
       }
 
@@ -481,7 +447,7 @@ export class SessionManager {
     ).run(newStatus, completedAt, sessionId);
 
     // Broadcast the corresponding CMA lifecycle event
-    const eventType = STATUS_TO_EVENT[newStatus];
+    const eventType = eventTypeForStatus(newStatus);
     if (eventType) {
       const statusEvent = this.eventLogger.append(sessionId, { type: eventType });
       this.broadcast(sessionId, statusEvent);
@@ -560,53 +526,4 @@ export class SessionManager {
       }
     }
   }
-}
-
-// ============================================================
-// Internal Helpers
-// ============================================================
-
-interface SessionRow {
-  id: string;
-  agent_id: string;
-  agent_name: string;
-  agent_version: number | null;
-  agent_definition: string | null;
-  environment_id: string;
-  status: string;
-  title: string | null;
-  context_id: string | null;
-  resources: string;
-  vault_ids: string;
-  metadata: string | null;
-  sandbox_type: string | null;
-  sandbox_state: string | null;
-  usage_tokens_in: number;
-  usage_tokens_out: number;
-  created_at: string;
-  updated_at: string;
-  completed_at: string | null;
-}
-
-function rowToSession(row: SessionRow): Session {
-  return {
-    id: row.id,
-    agentId: row.agent_id,
-    agentName: row.agent_name,
-    agentVersion: row.agent_version ?? undefined,
-    agentDefinition: row.agent_definition ? JSON.parse(row.agent_definition) as AgentDefinition : undefined,
-    environmentId: row.environment_id,
-    status: row.status as SessionStatus,
-    title: row.title ?? undefined,
-    contextId: row.context_id ?? undefined,
-    resources: JSON.parse(row.resources ?? '[]'),
-    vaultIds: JSON.parse(row.vault_ids ?? '[]'),
-    metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-    sandboxType: row.sandbox_type ?? undefined,
-    sandboxState: row.sandbox_state ? JSON.parse(row.sandbox_state) : undefined,
-    usage: { tokensIn: row.usage_tokens_in, tokensOut: row.usage_tokens_out },
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-  };
 }
