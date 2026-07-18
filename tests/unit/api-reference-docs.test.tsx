@@ -34,8 +34,9 @@ describe('API reference docs', () => {
     const mountedRouteFiles: Record<string, string> = {
       'agents.ts': '/v1/agents',
       'api-keys.ts': '/v1/api-keys',
-      'environments.ts': '/v1',
+      'credential-vaults.ts': '/v1',
       'extended.ts': '/v1/x',
+      'environments.ts': '/v1',
       'files.ts': '/v1',
       'resources.ts': '/v1',
       'runtime.ts': '/v1/x',
