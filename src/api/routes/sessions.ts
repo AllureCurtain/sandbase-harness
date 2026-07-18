@@ -20,7 +20,7 @@ import type { AgentDefinition } from '@/types/agent.js';
 import { pageOf, toApiEvent, toApiSession } from '../standard.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
 import { encryptSecret } from '@/core/security/secrets.js';
-import { persistFileResource, toFileResource, type FileRow } from './resources.js';
+import { persistFileResource, toFileResource, type FileRow } from './files.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
   const app = new Hono();
