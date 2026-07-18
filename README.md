@@ -348,6 +348,23 @@ curl -X POST http://127.0.0.1:3000/v1/environments \
   }'
 ```
 
+Run each session in an isolated Docker container instead:
+
+```bash
+curl -X POST http://127.0.0.1:3000/v1/environments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Docker tools",
+    "description": "Runs each session in an isolated Docker container.",
+    "config": {
+      "hosting_type": "docker",
+      "sandbox_provider": "docker",
+      "image": "node:22-slim",
+      "resources": { "memory": "1g", "cpu": 1 }
+    }
+  }'
+```
+
 The response contains the stable `env_...` id to use for sessions. Environment
 names are display labels and do not need to be unique.
 

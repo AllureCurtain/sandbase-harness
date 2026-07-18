@@ -14,7 +14,18 @@ export function normalizeMessageContent(content: unknown): ContentBlock[] | null
   return null;
 }
 
-export function normalizeAgentRef(value: unknown): { id: string; version?: number }
+export function normalizeAgentRef(value: unknown): { id: string; version?: number } | null {
+  if (typeof value === 'string' && value.length > 0) return { id: value };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.type !== undefined && record.type !== 'agent') return null;
+  if (typeof record.id !== 'string' || record.id.length === 0) return null;
+  const version = typeof record.version === 'number' && Number.isInteger(record.version) && record.version > 0
+    ? record.version
+    : undefined;
+  return { id: record.id, version };
+}
+
 
 export function normalizeEnvironmentId(deps: ServerDeps, value: unknown): ValidationResult<string> {
   const id = typeof value === 'string' && value.trim() ? value.trim() : 'env_default';
