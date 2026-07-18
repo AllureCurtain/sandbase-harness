@@ -27,6 +27,17 @@ local SQLite + local filesystem runtime is working.
 | --- | --- | --- |
 | [Deployment Examples](deployment.md) | Operators | systemd, Docker Compose, running the runtime on Kubernetes, the RBAC for Kubernetes session sandboxes, self-hosted workers, and production checks. |
 
+## Release Gate
+
+For a source checkout, the maintainer release gate is:
+
+```bash
+npm run release:check
+```
+
+It runs typecheck, tests, production builds, package dry-run, and CLI smoke
+checks for `managed-agents init` plus `examples/basic` startup.
+
 ## Documentation Rules
 
 - Public docs describe this project only.

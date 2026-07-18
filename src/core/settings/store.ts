@@ -1,5 +1,6 @@
 import type { Database } from '@/core/db/database.js';
 import { relative, resolve, sep } from 'node:path';
+import { resolveEnvVars } from '@/core/config/env-resolver.js';
 import { defaultSettingsAvailability, runtimeSettingsSchema, validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from './schema.js';
 import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
 import type { ModelConfig } from '@/types/model.js';
@@ -285,6 +286,7 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
   `).get() as { config: string } | undefined;
   const envConfig = parseObject(environment?.config);
   const vendor = normalizeVendor(model?.provider);
+  const baseUrl = resolvedOptionalUrl(model?.base_url ?? undefined);
   // Seeding from pre-Settings-V2 workspace data: an absent or unrecognized
   // legacy value means "was never configured", so local is the right seed here.
   // This is the one place a default is correct — runtime resolution must still
@@ -298,7 +300,7 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
     schema_version: 1,
     model: {
       vendor,
-      ...(model?.base_url ? { base_url: model.base_url } : {}),
+      ...(baseUrl ? { base_url: baseUrl } : {}),
       ...(model?.api_key ? { api_key: model.api_key } : {}),
       options: {},
     },
@@ -313,6 +315,13 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
       options: { timeout_seconds: numberValue(envConfig.timeout) ?? 300 },
     },
   };
+}
+
+function resolvedOptionalUrl(value?: string): string | undefined {
+  if (!value) return undefined;
+  const resolvedValue = resolveEnvVars(value, false).trim();
+  if (!resolvedValue || /\$\{[^}]+\}/.test(resolvedValue)) return undefined;
+  return resolvedValue;
 }
 
 function normalizeVendor(provider?: string): RuntimeSettings['model']['vendor'] {
