@@ -38,6 +38,7 @@ describe('API reference docs', () => {
       'extended.ts': '/v1/x',
       'environments.ts': '/v1',
       'files.ts': '/v1',
+      'memory-stores.ts': '/v1',
       'resources.ts': '/v1',
       'runtime.ts': '/v1/x',
       'settings.ts': '/v1/x/settings',
