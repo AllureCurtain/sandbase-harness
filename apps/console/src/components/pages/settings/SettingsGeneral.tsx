@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bot, Box, CheckCircle2, KeyRound, Layers, Play, Terminal } from 'lucide-react';
 import { putJson } from '../../../api';
-import { pathName } from '../../../lib/format';
+import { pathName, workspaceConfigDir } from '../../../lib/format';
 import { KeyValuePanel, SummaryStrip } from '../../Common';
 import { FormField } from '../../FormPrimitives';
 import type { ConsoleData, RuntimeSettings, RuntimeSettingsConfig, ViewId, Workspace } from '../../../types';
@@ -115,6 +115,15 @@ export function SettingsGeneral({ data, setView }: { data: ConsoleData; setView:
         </div>
         <div className="stack">
           <div className="panel subtlePanel">
+            <h2>Project</h2>
+            <p>Workspace config, metadata, logs, and runtime files live under the workspace state directory.</p>
+            <KeyValuePanel rows={[
+              ['Workspace', workspaceLabel],
+              ['Root folder', pathName(data.workspace?.root) || data.workspace?.name],
+              ['Configuration folder', workspaceConfigDir(data.workspace)],
+            ]} />
+          </div>
+          <div className="panel subtlePanel">
             <div className="builderSetupHeader compact">
               <span className="softIcon success"><CheckCircle2 size={18} /></span>
               <div>
@@ -153,7 +162,7 @@ export function SettingsGeneral({ data, setView }: { data: ConsoleData; setView:
 function runtimeDatabasePath(workspace: Workspace | null) {
   return workspace?.databasePath
     ?? workspace?.directories?.database
-    ?? (workspace?.dataDir ? `${workspace.dataDir.replace(/\/$/, '')}/managed-agents.db` : undefined);
+    ?? (workspace?.dataDir ? `${workspace.dataDir.replace(/\/$/, '')}/data.db` : undefined);
 }
 
 function metadataStorageLabel(settings: RuntimeSettings | null, workspace: Workspace | null) {
