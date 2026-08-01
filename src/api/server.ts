@@ -55,7 +55,12 @@ export interface ServerDeps {
     dataDir: string;
     agentsDir: string;
     skillsDir: string;
-    configPath: string;
+    /**
+     * Optional: a workspace need not have a config file. `/v1/x/workspace`
+     * already falls back to the workspace root when it is absent, so the
+     * required declaration overstated the contract.
+     */
+    configPath?: string;
     target: string;
   };
   /** Active local artifact directory resolved from effective runtime settings. */

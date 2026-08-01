@@ -219,13 +219,36 @@ graph TD
     Agent[Agent Definition] --> EnvName[environment name]
     EnvName --> Env[Environment Config]
     Env --> Registry[Sandbox Provider Registry]
-    Registry --> Local[Local Provider]
-    Registry --> Docker[Docker Provider]
-    Registry --> SelfHosted[Self-Hosted Provider]
+    Registry --> Local[Local Provider<br/>child process]
+    Registry --> Docker[Docker Provider<br/>docker CLI]
+    Registry --> Kubernetes[Kubernetes Provider<br/>kubectl CLI]
+    Registry --> SelfHosted[Self-Hosted Provider<br/>work queue]
+    Registry -. unregistered .-> Fail[Provision error<br/>lists registered providers]
 ```
 
 The executor resolves the sandbox provider from the selected environment before
 running a session turn.
+
+The registry is the only authority on which backends exist in a process. A
+backend is registered only when its transport is reachable at startup — no
+Docker daemon means no `docker`, no reachable cluster means no `kubernetes` —
+and an unresolvable request is an error rather than a substitution, so a session
+configured for an isolated backend can never quietly execute on the runtime
+host.
+
+Each provider also declares a capability set the runtime reads before acting:
+
+| Provider | isolatedExecution | hostFilesystem | resourceLimits | streamingExec |
+| --- | --- | --- | --- | --- |
+| local | No | Yes | No | No |
+| docker | Yes | No | Yes | No |
+| kubernetes | Yes | No | Yes | No |
+| self_hosted | Off-host | No | No | No |
+
+`hostFilesystem` gates workspace snapshots, which need a host-readable
+workspace. `resourceLimits` gates whether an Environment's `resources` values
+are enforced. A requested capability the backend lacks is logged against the
+session rather than dropped in silence.
 
 ## Deployment Modes
 

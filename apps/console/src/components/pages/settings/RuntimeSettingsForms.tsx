@@ -368,14 +368,67 @@ export function SandboxSettingsForm({ adapters, config, onChange, errors, resetK
           onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, timeout_seconds: Number(event.target.value) } } })}
         />
       </FormField>
-      {config.sandbox.provider === 'docker' ? (
-        <FormField label="Image" description="Container image used when Docker sandboxing is active." error={errors?.['sandbox.options.image']}>
+      {config.sandbox.provider === 'docker' || config.sandbox.provider === 'kubernetes' ? (
+        <FormField label="Image" description="Container image used for session sandboxes. Needs /bin/sh, find, and tar." error={errors?.['sandbox.options.image']}>
           <input
             value={String(config.sandbox.options.image ?? '')}
             onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, image: event.target.value } } })}
             placeholder="node:22-bookworm"
           />
         </FormField>
+      ) : null}
+      {config.sandbox.provider === 'kubernetes' ? (
+        <>
+          <InfoRow>
+            <span>Transport</span>
+            <code>kubectl exec / kubectl cp</code>
+            <StatusBadge tone="active">one Pod per session</StatusBadge>
+          </InfoRow>
+          <FormField
+            label="Namespace"
+            description="Namespace session Pods are created in. Must be a lowercase RFC 1123 label."
+            error={errors?.['sandbox.options.namespace']}
+          >
+            <input
+              value={String(config.sandbox.options.namespace ?? '')}
+              onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, namespace: event.target.value } } })}
+              placeholder="default"
+            />
+          </FormField>
+          <FormField
+            label="Context"
+            description="kubeconfig context to use. Leave empty to use the current context."
+            error={errors?.['sandbox.options.context']}
+          >
+            <input
+              value={String(config.sandbox.options.context ?? '')}
+              onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, context: event.target.value } } })}
+              placeholder="my-cluster"
+            />
+          </FormField>
+          <FormField
+            label="Kubeconfig path"
+            description="Explicit kubeconfig file. Leave empty to use the default resolution chain or in-cluster credentials."
+            error={errors?.['sandbox.options.kubeconfig']}
+          >
+            <input
+              value={String(config.sandbox.options.kubeconfig ?? '')}
+              onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, kubeconfig: event.target.value } } })}
+              placeholder="~/.kube/config"
+            />
+          </FormField>
+          <FormField
+            label="ServiceAccount"
+            description="Leave empty to run without a mounted API token, so sandboxed commands cannot call the Kubernetes API."
+            error={errors?.['sandbox.options.service_account']}
+          >
+            <input
+              value={String(config.sandbox.options.service_account ?? '')}
+              onChange={(event) => onChange({ ...config, sandbox: { ...config.sandbox, options: { ...config.sandbox.options, service_account: event.target.value } } })}
+              placeholder="(none)"
+            />
+          </FormField>
+        </>
       ) : null}
       {config.sandbox.provider === 'remote' ? (
         <>

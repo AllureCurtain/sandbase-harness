@@ -1,6 +1,7 @@
 import type { Database } from '@/core/db/database.js';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { probeKubernetesCluster, resolveKubernetesNamespace } from '@/sandbox/kubernetes-provider.js';
 import type { RuntimeSettings } from './schema.js';
 import { localArtifactStorageDir, runtimeSettingsSecretStates } from './store.js';
 
@@ -191,6 +192,9 @@ async function testSandbox(dataDir: string | undefined, config: RuntimeSettings,
   if (config.sandbox.provider === 'remote') {
     return testRemoteSandbox(config, fetchImpl);
   }
+  if (config.sandbox.provider === 'kubernetes') {
+    return testKubernetesSandbox(config);
+  }
   if (config.sandbox.provider !== 'local') {
     return [{
       name: 'sandbox_live_health',
@@ -214,6 +218,60 @@ async function testSandbox(dataDir: string | undefined, config: RuntimeSettings,
   } catch (err) {
     checks.push({ name: 'local_data_dir', status: 'failed', message: err instanceof Error ? err.message : 'Local sandbox directory check failed.' });
   }
+  return checks;
+}
+
+/**
+ * Check the Kubernetes backend's two preconditions: a namespace the API server
+ * will accept, and a reachable cluster. Without this the Console's Test action
+ * gave no signal at all for this backend, so the first failure an operator saw
+ * was a session that would not start.
+ */
+async function testKubernetesSandbox(config: RuntimeSettings): Promise<RuntimeSettingsTestCheck[]> {
+  const options = config.sandbox.options;
+  const namespace = typeof options.namespace === 'string' && options.namespace.trim()
+    ? options.namespace.trim()
+    : 'default';
+  const checks: RuntimeSettingsTestCheck[] = [{
+    name: 'timeout',
+    status: Number.isInteger(options.timeout_seconds) && options.timeout_seconds > 0 ? 'ok' : 'failed',
+    message: `Sandbox timeout is ${options.timeout_seconds} seconds.`,
+  }];
+
+  let namespaceOk = true;
+  try {
+    resolveKubernetesNamespace(namespace);
+  } catch (err) {
+    namespaceOk = false;
+    checks.push({
+      name: 'namespace',
+      status: 'failed',
+      message: err instanceof Error ? err.message : `Namespace "${namespace}" is invalid.`,
+    });
+  }
+  if (namespaceOk) {
+    checks.push({ name: 'namespace', status: 'ok', message: `Session Pods will be created in namespace "${namespace}".` });
+  }
+
+  const probe = await probeKubernetesCluster({
+    kubeconfig: typeof options.kubeconfig === 'string' ? options.kubeconfig : undefined,
+    context: typeof options.context === 'string' ? options.context : undefined,
+  });
+  checks.push({
+    name: 'cluster_reachable',
+    status: probe.ok ? 'ok' : 'failed',
+    message: probe.message,
+  });
+
+  const serviceAccount = typeof options.service_account === 'string' ? options.service_account.trim() : '';
+  checks.push({
+    name: 'service_account',
+    status: 'ok',
+    message: serviceAccount
+      ? `Session Pods will run as ServiceAccount "${serviceAccount}" with a mounted API token.`
+      : 'Session Pods will run without a mounted Kubernetes API token.',
+  });
+
   return checks;
 }
 

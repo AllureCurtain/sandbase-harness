@@ -47,8 +47,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:property": "vitest run tests/property",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck",
+    "typecheck": "npm run typecheck:src && npm run typecheck:tests",
+    "typecheck:src": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "format": "node -e \"console.log('No formatter configured yet.')\"",
     "format:check": "node -e \"console.log('No formatter configured yet.')\""
   },

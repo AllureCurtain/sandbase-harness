@@ -24,13 +24,39 @@ project-owned features only.
 
 ## Sandboxes
 
-- Harden local sandbox defaults.
+- Harden local sandbox defaults. The local backend has path confinement and an
+  environment allowlist but no kernel boundary; add OS-level isolation
+  (`sandbox-exec` on macOS, `bubblewrap` on Linux) so `local` can declare
+  `isolatedExecution`.
 - Expand Docker examples and resource-limit coverage.
+- Run the Kubernetes live-cluster suites in CI. They exist and pass against a
+  real cluster, but they skip when no cluster is reachable, so nothing currently
+  enforces them. See CONTRIBUTING.md for how to run them locally.
+- Handle Pod eviction and node pressure mid-session. Provision now fails fast on
+  terminal image and config errors, but a Pod evicted after a session is running
+  surfaces only as command failures.
+- Add network egress controls per Environment for the container backends.
+- Add incremental command output (`streamingExec`) once a consumer exists for
+  it: today tool results reach the model as a single value, so the capability is
+  declared and reported as unsupported rather than implemented.
 - Improve self-hosted worker ergonomics.
 - Add provider packages for additional isolated execution backends.
 
 ## Dashboard
 
+- Bring `apps/console` under type checking and repair what that surfaces.
+  `npm run typecheck` covers `src` and the runtime test suite; the Console is a
+  third program that has never been checked, and it currently reports ~90
+  errors. Some are missing type members, but several are references to names
+  that are never imported (`useEffect`, `formatDateShort`, `putJson`, and
+  several icon components), which throw when the containing component renders.
+- Decide which Console composition root is canonical. `main.tsx` renders
+  `App.tsx`, which imports `components/pages/MemoryStorePages` and
+  `components/modals/*`; `components/ConsoleRoutes.tsx` is a parallel router
+  that nothing renders, and it imports a different lineage
+  (`components/pages/MemoryPages`). The Console tests exercise the lineage that
+  does not ship, so page-level coverage does not protect what users load. This
+  looks like an unfinished module split rather than an intentional split.
 - Add clearer error and reconnect states.
 - Add session delete and stop actions.
 - Add event filtering in the trajectory view.

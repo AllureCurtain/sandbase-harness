@@ -123,11 +123,90 @@ The workspace has one active model vendor, one built-in loop engine, SQLite
 metadata storage, local artifact storage, one context-memory backend, and one
 default sandbox provider. Named Environments can still override the default
 sandbox per session. Planned adapters such as S3, mem0, MemU, Harness, Codex,
-and Claude remain unavailable until their runtime implementations exist; Docker
-or remote sandbox providers appear as available only when registered by the
-current runtime. Remote sandbox maps to the self-hosted worker queue: configure
-the worker API URL and key so external workers can claim and complete queued
-work items; the Settings check calls the remote `/v1/x/health` endpoint.
+and Claude remain unavailable until their runtime implementations exist; Docker,
+Kubernetes, and remote sandbox providers appear as available only when the
+current runtime can reach their transport. Remote sandbox maps to the
+self-hosted worker queue: configure the worker API URL and key so external
+workers can claim and complete queued work items; the Settings check calls the
+remote `/v1/x/health` endpoint.
+
+## Sandbox Backends
+
+A sandbox is where an agent's tool commands actually run. One sandbox is bound
+to one session for that session's lifetime.
+
+Each backend declares what it can do, and the runtime reads those capabilities
+instead of assuming them. Requesting something a backend cannot provide is
+reported in the runtime log rather than silently dropped.
+
+| Backend | Selected as | Isolated from runtime host | Host workspace | Resource limits | Transport |
+| --- | --- | --- | --- | --- | --- |
+| Local process | `local` | No | Yes | No | Child process |
+| Docker | `docker` | Yes | No | Yes | `docker` CLI |
+| Kubernetes | `kubernetes` | Yes | No | Yes | `kubectl` CLI |
+| Self-hosted worker | `remote` in Settings, `self_hosted` in an Environment | Runs off-host | No | No | Work-item queue |
+
+Consequences worth knowing before choosing one:
+
+- **Local is not a security boundary.** File tools are confined to the session
+  workspace and the child process environment is reduced to an allowlist, but a
+  shell command still runs as the same OS user on the same machine as the
+  runtime: it can read outside the workspace and reach the network. Use it for
+  trusted local development, not for running untrusted agent output.
+- **Workspace snapshots need a host workspace.** Only `local` exposes one, so
+  snapshots are unavailable on the other three. Enabling them anyway logs a
+  warning naming the missing capability.
+- **Resource limits are honored only by `docker` and `kubernetes`.** Setting
+  `resources` on `local` or `remote` logs a warning instead of appearing to
+  apply.
+
+A backend is offered only when the runtime can reach its transport: no Docker
+daemon means `docker` is not registered, and no reachable cluster means
+`kubernetes` is not registered. An Environment naming a backend that is not
+registered fails when the session provisions its sandbox, with an error listing
+the backends that are registered. It does not fall back to local execution —
+quietly running unsandboxed after an isolated backend was requested would be a
+worse outcome than a failed session.
+
+Startup logs the registered backends:
+
+```text
+  Sandbox:   local, docker, self_hosted
+```
+
+### Kubernetes Sandboxes
+
+Requires `kubectl` on `PATH` and a reachable cluster. Each session becomes one
+Pod running `sleep infinity`; commands run through `kubectl exec` and files move
+through `kubectl cp`.
+
+Configure it under `Settings > Sandbox`, or per Environment:
+
+```json
+{
+  "sandbox_provider": "kubernetes",
+  "image": "node:22-slim",
+  "kubernetes": {
+    "namespace": "agent-sandboxes",
+    "context": "staging",
+    "service_account": ""
+  }
+}
+```
+
+- The image needs `/bin/sh`, `find`, and `tar` (`tar` is what `kubectl cp`
+  uses). The default `node:22-slim` has all three.
+- `namespace` must be a lowercase RFC 1123 label and defaults to `default`.
+- Leaving `service_account` empty creates the Pod with
+  `automountServiceAccountToken: false`, so sandboxed commands cannot call the
+  Kubernetes API. Only set it when an agent genuinely needs cluster access, and
+  scope that account's RBAC accordingly.
+- Pods are labeled `app.kubernetes.io/managed-by=managed-agents` and
+  `managed-agents/session-id=<session id>`, and are deleted when the session
+  reaches a terminal state.
+
+See [Deployment Examples](deployment.md) for the RBAC the runtime itself needs
+to create these Pods.
 
 YAML model entries and legacy provider rows are bootstrap/import data for a new
 workspace. After Settings V2 is seeded, normal Dashboard edits do not rewrite

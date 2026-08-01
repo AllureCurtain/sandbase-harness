@@ -3,7 +3,7 @@ import { ToolResolver } from '@/core/session/tool-resolver.js';
 import { DelegationService } from '@/core/session/delegation-service.js';
 import { ModelRegistry } from '@/model/registry.js';
 import type { AgentDefinition } from '@/types/agent.js';
-import type { SandboxInstance, SandboxProvider } from '@/types/sandbox.js';
+import type { SandboxInstance } from '@/types/sandbox.js';
 import type { AgentStrategy } from '@/types/strategy.js';
 import type { Session } from '@/types/session.js';
 
@@ -23,20 +23,15 @@ describe('ToolResolver', () => {
       },
       async cleanup() {},
     };
-    const provider: SandboxProvider = {
-      type: 'local',
-      async provision() {
-        return sandbox;
-      },
-    };
     const strategy: AgentStrategy = {
+      name: 'test',
       async *execute() {},
     };
     const delegationService = new DelegationService({
       agents: [],
       modelRegistry: new ModelRegistry(),
       strategy,
-      sandboxProvider: provider,
+      provisionSandbox: async () => sandbox,
       composeSystemPrompt: (agent) => agent.system,
       buildSandboxTools: () => ({}),
     });

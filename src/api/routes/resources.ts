@@ -5,6 +5,7 @@ import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { LocalArtifactStore, type ArtifactStore } from '@/core/storage/artifact-store.js';
+import { SHIPPED_SANDBOX_PROVIDER_TYPES } from '@/types/sandbox.js';
 
 type ResourceKind = 'environment' | 'credential_vault' | 'memory_store';
 export type FileCreateInput = {
@@ -34,6 +35,8 @@ export function resourceRoutes(deps: ServerDeps) {
     const name = stringField(body.value.name);
     if (!name) return invalid(c, 'name is required');
     const config = normalizeEnvironmentConfig(body.value);
+    const providerError = sandboxProviderError(config);
+    if (providerError) return invalid(c, providerError);
     const id = `env_${nanoid(18)}`;
     try {
       deps.db.prepare(
@@ -67,6 +70,8 @@ export function resourceRoutes(deps: ServerDeps) {
 
     const name = stringField(body.value.name) ?? existing.name;
     const config = normalizeEnvironmentConfig(body.value, parseObject(existing.config));
+    const providerError = sandboxProviderError(config);
+    if (providerError) return invalid(c, providerError);
     deps.db.prepare(
       'UPDATE environments SET name = ?, description = ?, config = ?, metadata = ?, updated_at = datetime(\'now\') WHERE id = ?',
     ).run(
@@ -109,7 +114,9 @@ export function resourceRoutes(deps: ServerDeps) {
     const row = deps.db.prepare('SELECT * FROM files WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as FileRow | undefined;
     const store = artifactStore(deps);
     if (!row || !store.exists(row.storage_path)) return notFound(c, 'File not found');
-    return new Response(store.readFile(row.storage_path), {
+    // Uint8Array rather than the Buffer itself: Buffer is not a BodyInit in the
+    // DOM/undici typings even though it works at runtime.
+    return new Response(new Uint8Array(store.readFile(row.storage_path)), {
       headers: {
         'Content-Type': row.media_type || 'application/octet-stream',
         'Content-Disposition': `attachment; filename="${row.name.replace(/"/g, '')}"`,
@@ -365,6 +372,31 @@ function normalizeEnvironmentConfig(
     if (body[key] !== undefined) config[key] = body[key];
   }
   return config;
+}
+
+/**
+ * Reject an Environment naming a sandbox backend that does not exist.
+ *
+ * Configuration normalization deliberately preserves whatever backend name was
+ * written so resolution can fail loudly instead of substituting a weaker
+ * backend. That leaves a gap this closes: a name that is not a backend at all
+ * (a typo, or a `hosting_type` value like `cloud`) would be accepted here and
+ * only surface when the first turn of a session fails.
+ *
+ * Deliberately checks the names this build ships rather than the ones
+ * registered right now. "Docker is not running on this machine" is a different
+ * problem from "docker is not a backend", and an Environment should still be
+ * authorable for a backend whose transport is currently unavailable —
+ * provisioning reports that case with the registered list. Returns an error
+ * message, or undefined when the name is acceptable.
+ */
+function sandboxProviderError(config: Record<string, unknown>): string | undefined {
+  const provider = stringField(config.sandbox_provider);
+  if (!provider) return undefined;
+  if ((SHIPPED_SANDBOX_PROVIDER_TYPES as readonly string[]).includes(provider)) return undefined;
+
+  return `sandbox_provider "${provider}" is not a known sandbox backend `
+    + `(expected one of: ${SHIPPED_SANDBOX_PROVIDER_TYPES.join(', ')})`;
 }
 
 function environmentHostingType(config: Record<string, unknown>): 'cloud' | 'local' | 'self_hosted' {

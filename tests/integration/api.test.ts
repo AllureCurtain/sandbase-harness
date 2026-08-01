@@ -60,7 +60,10 @@ describe('Managed Agents API', () => {
     const sessionManager = new SessionManager(db);
     sessionManager.setExecutor({
       async *execute(session: Session, event: UserEvent): AsyncIterable<SessionEvent> {
-        const text = event.content?.find((block: any) => block.type === 'text')?.text ?? '';
+        // UserEvent is a discriminated union and only some members carry
+        // content, so narrow rather than reaching through the union.
+        const blocks = event.type === 'user.message' ? event.content : undefined;
+        const text = blocks?.find((block) => block.type === 'text')?.text ?? '';
         yield {
           id: 'sevt_fake_agent_message',
           sessionId: session.id,
@@ -1617,7 +1620,7 @@ description: Uploaded from a compressed package.
           description: 'Container template for console sessions.',
           config: {
             hosting_type: 'cloud',
-            sandbox_provider: 'cloud',
+            sandbox_provider: 'kubernetes',
             network: {
               type: 'limited',
               allow_mcp_server_network_access: false,
@@ -1635,7 +1638,9 @@ description: Uploaded from a compressed package.
       expect(body.name).toBe('Cloud runner');
       expect(body.description).toBe('Container template for console sessions.');
       expect(body.hosting_type).toBe('cloud');
-      expect(body.sandbox_provider).toBe('cloud');
+      // hosting_type and sandbox_provider are independent axes: `cloud` is a
+      // hosting descriptor, not an execution backend.
+      expect(body.sandbox_provider).toBe('kubernetes');
       expect(body.network.allowed_hosts).toEqual(['api.github.com']);
       expect(body.packages[0].package).toBe('ruff==0.5.0');
       expect(body.config.hosting_type).toBe('cloud');
@@ -1649,7 +1654,7 @@ description: Uploaded from a compressed package.
         name: 'Standard top level',
         description: 'Uses the same shape as the Console create form.',
         hosting_type: 'cloud',
-        sandbox_provider: 'cloud',
+        sandbox_provider: 'docker',
         network: {
           type: 'limited',
           allow_mcp_server_network_access: false,
@@ -1661,11 +1666,51 @@ description: Uploaded from a compressed package.
 
       expect(res.status).toBe(201);
       expect(body.hosting_type).toBe('cloud');
-      expect(body.sandbox_provider).toBe('cloud');
+      expect(body.sandbox_provider).toBe('docker');
       expect(body.network.allowed_hosts).toEqual(['docs.anthropic.com']);
       expect(body.packages[0].package).toBe('tsx@latest');
       expect(body.config.hosting_type).toBe('cloud');
       expect(body.config.packages[0].manager).toBe('npm');
+    });
+
+    it('rejects a sandbox_provider that is not a known backend', async () => {
+      // Normalization preserves whatever name was written so provisioning can
+      // fail loudly rather than substituting a weaker backend. That makes the
+      // write path the only place a typo can still be caught early.
+      const typo = await postJson('/v1/environments', {
+        name: 'Typo backend',
+        config: { sandbox_provider: 'dokcer' },
+      });
+      expect(typo.res.status).toBe(400);
+      expect(typo.body.error.message).toContain('not a known sandbox backend');
+      expect(typo.body.error.message).toContain('docker');
+
+      const hostingValue = await postJson('/v1/environments', {
+        name: 'Hosting value as backend',
+        config: { sandbox_provider: 'cloud' },
+      });
+      expect(hostingValue.res.status).toBe(400);
+
+      const update = await app.request('/v1/environments/env_default', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { sandbox_provider: 'nope' } }),
+      });
+      expect(update.status).toBe(400);
+    });
+
+    it('accepts a known backend whose transport is unavailable in this runtime', async () => {
+      // This runtime registers only `local`. Authoring an Environment for a
+      // backend that is not currently reachable stays allowed — that is a
+      // deployment condition, not a malformed request — and provisioning is
+      // where the unavailability is reported.
+      const { res, body } = await postJson('/v1/environments', {
+        name: 'Kubernetes elsewhere',
+        config: { sandbox_provider: 'kubernetes' },
+      });
+
+      expect(res.status).toBe(201);
+      expect(body.sandbox_provider).toBe('kubernetes');
     });
 
     it('returns 404 for non-existent environments', async () => {
