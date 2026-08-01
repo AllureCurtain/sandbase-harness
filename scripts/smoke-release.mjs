@@ -29,7 +29,7 @@ async function smokeInit() {
   }
 
   for (const relativePath of [
-    'managed-agents.config.yaml',
+    '.managed-agents/config.yaml',
     'agents/assistant.yaml',
     'skills/example-skill/SKILL.md',
   ]) {
@@ -52,7 +52,7 @@ async function smokeExampleProject() {
     '--data-dir',
     dataDir,
     '--config',
-    'managed-agents.config.yaml',
+    '.managed-agents/config.yaml',
     '--agents-dir',
     'agents',
     '--skills-dir',
