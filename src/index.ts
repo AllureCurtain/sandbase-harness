@@ -65,7 +65,14 @@ async function startServer(opts: StartServerOptions) {
   const agentSkillState = loadRuntimeAgentSkillState({ db, agentsDir, skillsDir });
   const agents = agentSkillState.agents;
   const skills = agentSkillState.skills;
-  const { sandboxProvider, sandboxRegistry, workQueue } = bootstrapRuntimeSandboxes({ db, dataDir });
+  // Observability is created before the sandbox and session layers so both can
+  // report what would otherwise be invisible: a Pod that could not be deleted,
+  // or an Environment asking for a capability its backend does not have.
+  const logStore = new InMemoryLogStore();
+  const logger = createLogger({ logStore });
+  const metrics = new Metrics();
+
+  const { sandboxProvider, sandboxRegistry, workQueue } = bootstrapRuntimeSandboxes({ db, dataDir, logger });
 
   // Settings V2 is seeded after legacy config/import data exists, then becomes
   // the runtime source for settings that have a shipped adapter.
@@ -81,6 +88,7 @@ async function startServer(opts: StartServerOptions) {
 
   const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings);
   const artifactStore = runtimeComposition.artifactStore;
+
   const {
     sessionManager,
     executor,
@@ -97,6 +105,7 @@ async function startServer(opts: StartServerOptions) {
     memory,
     artifactStore,
     defaultMaxSteps: loopEngine.defaultMaxSteps,
+    logger,
   });
   if (reconciled > 0) {
     console.log(`  Recovery:  reconciled ${reconciled} interrupted session(s)`);
@@ -104,10 +113,6 @@ async function startServer(opts: StartServerOptions) {
 
   const runtimeApiAuth = resolveRuntimeApiAuth({ db, configKeys: configBootstrap.apiKeys });
 
-  // Observability
-  const logStore = new InMemoryLogStore();
-  const logger = createLogger({ logStore });
-  const metrics = new Metrics();
   let server: ReturnType<typeof serve> | undefined;
   const stopRuntime = createRuntimeStopper({
     getServer: () => server,

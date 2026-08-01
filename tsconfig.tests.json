@@ -1,0 +1,40 @@
+{
+  // Type-checks the runtime test suite, which the root config deliberately
+  // excludes so build output stays scoped to `src`. Without this, a breaking
+  // change to an internal interface type-checks clean while every test call
+  // site is already wrong: vitest transpiles without checking types, so the
+  // mistake only surfaces if a test happens to fail at runtime.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // The root config pins rootDir to `src` for build output. Nothing is
+    // emitted here and the program spans both src and tests.
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // Tests run under Node but exercise the HTTP app through fetch-style
+    // globals (Request/Response/FormData). Without the DOM lib, `res.json()`
+    // resolves to `unknown` and every assertion on a response body becomes an
+    // error that says nothing about the code under test.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["tests/**/*", "src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    // Tests that import Console components pull `apps/console/src` into the
+    // program, which carries its own pre-existing type errors (including
+    // genuine missing imports in modules `App.tsx` renders). Checking those
+    // needs the Console's own cleanup first; tracked in BACKLOG.md under
+    // Dashboard. Excluded here so the runtime suite can be enforced now rather
+    // than waiting on unrelated work.
+    "tests/unit/console-pages.test.ts",
+    "tests/unit/runtime-settings-forms.test.tsx",
+    "tests/unit/ui-primitives.test.tsx",
+    "tests/unit/api-reference-docs.test.tsx",
+    "tests/unit/docs-api.test.ts",
+    "tests/integration/console-api-e2e.test.ts"
+  ]
+}

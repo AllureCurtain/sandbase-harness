@@ -1,4 +1,5 @@
-import type { RuntimeSettings, SettingsAvailability } from './schema.js';
+import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
+import type { SettingsAvailability } from './schema.js';
 
 export type AdapterStatus = 'available' | 'unavailable' | 'invalid';
 
@@ -23,8 +24,10 @@ export type SettingsAdapterDescriptors = {
 };
 
 export function describeSettingsAdapters(installedSandboxes: string[] = ['local']): SettingsAdapterDescriptors {
-  const knownSandboxIds = new Set(['local', 'docker', 'remote']);
-  const normalizedSandboxIds = installedSandboxes.map((item) => item === 'self_hosted' ? 'remote' : item);
+  const knownSandboxIds = new Set<string>(['local', 'docker', 'kubernetes', 'remote']);
+  // A registered backend Settings V2 has no id for stays visible as `invalid`
+  // rather than being folded into an id that means something else.
+  const normalizedSandboxIds = installedSandboxes.map((item) => sandboxSettingForProvider(item) ?? item);
   const sandboxAvailable = new Set(normalizedSandboxIds);
   const invalidSandboxes = [...new Set(normalizedSandboxIds)]
     .filter((item) => !knownSandboxIds.has(item))
@@ -83,6 +86,22 @@ export function describeSettingsAdapters(installedSandboxes: string[] = ['local'
       descriptor('docker', 'Docker', sandboxAvailable.has('docker'), 'runtime', objectSchema({
         timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
         image: { type: 'string' },
+      })),
+      descriptor('kubernetes', 'Kubernetes', sandboxAvailable.has('kubernetes'), 'runtime', objectSchema({
+        timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
+        image: { type: 'string' },
+        namespace: {
+          type: 'string',
+          default: 'default',
+          // RFC 1123 label, the same constraint the provider enforces. Declared
+          // here so the Console rejects it on save instead of letting the first
+          // session fail at provision time.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$',
+          maxLength: 63,
+        },
+        context: { type: 'string' },
+        kubeconfig: { type: 'string' },
+        service_account: { type: 'string' },
       })),
       descriptor('remote', 'Remote', sandboxAvailable.has('remote'), 'runtime', objectSchema({
         timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
@@ -148,8 +167,4 @@ function objectSchema(properties: Record<string, unknown> = {}): Record<string, 
 
 function availableIds<T extends string>(items: AdapterDescriptor[]): Set<T> {
   return new Set(items.filter((item) => item.status === 'available').map((item) => item.id as T));
-}
-
-export function sandboxSettingForRuntime(value: string): RuntimeSettings['sandbox']['provider'] {
-  return value === 'self_hosted' ? 'remote' : value === 'docker' ? 'docker' : 'local';
 }

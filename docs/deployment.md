@@ -137,6 +137,76 @@ spec:
 For multi-replica deployments, wait until metadata storage supports an external
 database. The current SQLite-backed runtime should run as a single writer.
 
+### Kubernetes Sandboxes
+
+Running the runtime in Kubernetes and running session sandboxes as Pods are
+independent choices. The Deployment above does neither by itself: the sandbox
+backend is selected by `Settings > Sandbox` or by an Environment's
+`sandbox_provider`, and it works the same whether the runtime process sits
+inside the cluster or on a laptop pointed at one.
+
+The `kubernetes` backend shells out to `kubectl`, so the runtime image must
+include it — the `node:22-bookworm-slim` image in the example above does not.
+Add it to a derived image, or keep the sandbox backend on `docker` / `local`.
+
+The runtime needs permission to manage Pods in the target namespace:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: managed-agents
+  namespace: agent-sandboxes
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: managed-agents-sandboxes
+  namespace: agent-sandboxes
+rules:
+  # create/delete for session lifecycle, get/list/watch for readiness waits,
+  # and the exec subresource for running commands and copying files.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: managed-agents-sandboxes
+  namespace: agent-sandboxes
+subjects:
+  - kind: ServiceAccount
+    name: managed-agents
+    namespace: agent-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: managed-agents-sandboxes
+```
+
+Operational notes:
+
+- Bind the Role to a dedicated namespace. `pods/exec` is equivalent to code
+  execution in that namespace, so it should not be granted cluster-wide.
+- Session Pods are created without a mounted API token unless an Environment
+  sets `kubernetes.service_account`. Keep it unset unless an agent needs
+  cluster access.
+- Sandbox Pods carry `app.kubernetes.io/managed-by=managed-agents`. A runtime
+  that is killed mid-session cannot run its own cleanup, so reap leftovers:
+
+```bash
+kubectl delete pods -n agent-sandboxes \
+  -l app.kubernetes.io/managed-by=managed-agents
+```
+
+- Apply a ResourceQuota and a default NetworkPolicy to the namespace. Session
+  Pods honor per-Environment `resources` limits, but nothing constrains total
+  namespace usage or egress by default.
+
 ## Self-hosted Environment Workers
 
 Self-hosted environments let the control runtime keep metadata while another

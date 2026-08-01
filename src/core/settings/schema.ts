@@ -33,7 +33,10 @@ export const runtimeSettingsSchema = z.object({
     options: optionsSchema,
   }).strict(),
   sandbox: z.object({
-    provider: z.enum(['local', 'docker', 'remote']),
+    // `remote` is the persisted spelling of the self-hosted worker backend and
+    // must stay accepted for existing runtime_settings rows. See
+    // sandbox/provider-names for the registry-name translation.
+    provider: z.enum(['local', 'docker', 'kubernetes', 'remote']),
     options: z.object({
       timeout_seconds: z.number().int().min(1).max(86_400).default(300),
     }).catchall(z.unknown()),

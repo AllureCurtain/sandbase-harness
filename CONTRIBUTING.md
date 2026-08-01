@@ -43,7 +43,50 @@ The current required checks are:
 - `npm test`
 - `npm run build`
 
+`npm run typecheck` runs two programs: `typecheck:src` for `src/`, and
+`typecheck:tests` for the runtime test suite. They are separate because the root
+config scopes build output to `src`, and vitest transpiles tests without
+checking their types — so a breaking change to an internal interface would
+otherwise type-check clean while every test call site was already wrong. Tests
+that import Console components are excluded for now; `apps/console` has its own
+unchecked type debt, tracked in BACKLOG.md.
+
 `npm run lint` currently aliases type checking. ESLint and Prettier are not configured yet; do not add lint-only requirements to CI until the matching dependencies and config are committed.
+
+## Sandbox Tests That Need External Transports
+
+Some sandbox suites skip unless their backend is reachable, so a green local run
+does not necessarily mean they ran.
+
+- Docker: `tests/integration/docker-sandbox.test.ts` skips without a running
+  daemon and a locally cached image.
+- Kubernetes: `tests/integration/kubernetes-sandbox*.test.ts` skip unless
+  `kubectl` can reach a cluster. They create and delete Pods in the target
+  namespace, so point them at a throwaway cluster.
+
+Any cluster works. A single-node one is enough:
+
+```bash
+kind create cluster --name ma-sandbox-test
+
+# busybox has the /bin/sh, find, and tar the provider needs.
+KUBECONFIG=~/.kube/config \
+MANAGED_AGENTS_TEST_K8S_NAMESPACE=default \
+MANAGED_AGENTS_TEST_K8S_IMAGE=busybox:stable \
+  npx vitest run tests/integration/kubernetes-sandbox
+
+kind delete cluster --name ma-sandbox-test
+```
+
+If the cluster cannot reach Docker Hub, preload the image into the node's
+container runtime and pass its local tag through
+`MANAGED_AGENTS_TEST_K8S_IMAGE`. Session Pods are labeled
+`app.kubernetes.io/managed-by=managed-agents`, so an interrupted run can be
+reaped with:
+
+```bash
+kubectl delete pods -l app.kubernetes.io/managed-by=managed-agents
+```
 
 ## Code Standards
 

@@ -1,6 +1,7 @@
 import type { Database } from '@/core/db/database.js';
 import { relative, resolve, sep } from 'node:path';
 import { defaultSettingsAvailability, runtimeSettingsSchema, validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from './schema.js';
+import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
 import { decryptSecret, encryptSecret } from '@/core/security/secrets.js';
 import type { ModelConfig } from '@/types/model.js';
 
@@ -271,20 +272,13 @@ function validateSavedConfigForActivation(db: Database, config: RuntimeSettings,
   // Sandbox availability can depend on runtime-discovered providers. The other
   // shipped Settings V2 areas are static in schema version 1.
   availability.sandboxProviders = new Set(sandboxProviders
-    .map(sandboxSettingForActivation)
+    .map(sandboxSettingForProvider)
     .filter((value): value is RuntimeSettings['sandbox']['provider'] => Boolean(value)));
   const result = validateRuntimeSettings(config, availability);
   return [
     ...result.errors,
     ...validateRuntimeSettingsCredentials(config, (path) => hasRuntimeSettingsSecret(db, path)),
   ];
-}
-
-function sandboxSettingForActivation(value: string): RuntimeSettings['sandbox']['provider'] | undefined {
-  if (value === 'local') return 'local';
-  if (value === 'docker') return 'docker';
-  if (value === 'remote' || value === 'self_hosted') return 'remote';
-  return undefined;
 }
 
 function parseRuntimeSettings(value: string): RuntimeSettings | undefined {
@@ -312,11 +306,13 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
   `).get() as { config: string } | undefined;
   const envConfig = parseObject(environment?.config);
   const vendor = normalizeVendor(model?.provider);
-  const sandbox = envConfig.sandbox_provider === 'docker'
-    ? 'docker'
-    : envConfig.sandbox_provider === 'self_hosted'
-      ? 'remote'
-      : 'local';
+  // Seeding from pre-Settings-V2 workspace data: an absent or unrecognized
+  // legacy value means "was never configured", so local is the right seed here.
+  // This is the one place a default is correct — runtime resolution must still
+  // fail loud rather than substitute a backend (see sandbox/registry).
+  const sandbox = typeof envConfig.sandbox_provider === 'string'
+    ? sandboxSettingForProvider(envConfig.sandbox_provider) ?? 'local'
+    : 'local';
   const memoryEnabled = seed.memoryEnabled === true;
 
   return {

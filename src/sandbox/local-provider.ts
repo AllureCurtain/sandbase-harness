@@ -4,7 +4,14 @@
  * Default execution backend: runs commands as local subprocesses.
  * Working directory: <runtime-data-dir>/sandbox/<session_id>/
  *
- * Zero isolation — suitable for development mode only.
+ * No kernel-level isolation. File tools are confined to the workspace by path
+ * resolution (including symlink-escape checks) and the subprocess environment
+ * is reduced to an allowlist, but a shell command still runs as the same OS
+ * user on the same machine as the runtime: it can read outside the workspace
+ * and reach the network. This is why the provider declares
+ * `isolatedExecution: false` — suitable for trusted local development, not for
+ * running untrusted agent output.
+ *
  * Reference: OMA local-subprocess.ts
  */
 
@@ -19,12 +26,13 @@ import {
   realpathSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import type {
-  SandboxProvider,
-  SandboxInstance,
-  EnvironmentConfig,
-  ExecOptions,
-  ExecResult,
+import {
+  sandboxCapabilities,
+  type SandboxProvider,
+  type SandboxInstance,
+  type EnvironmentConfig,
+  type ExecOptions,
+  type ExecResult,
 } from '@/types/sandbox.js';
 
 const INHERITED_ENVIRONMENT_KEYS = [
@@ -53,6 +61,16 @@ function sandboxEnvironment(extra: Record<string, string> | undefined): Record<s
 
 export class LocalSandboxProvider implements SandboxProvider {
   readonly type = 'local';
+
+  readonly capabilities = sandboxCapabilities({
+    // Same host, same user: path confinement only, no kernel boundary.
+    isolatedExecution: false,
+    // The workspace is a real directory under the runtime data dir.
+    hostFilesystem: true,
+    // `resources.memory` / `resources.cpu` cannot be enforced for a plain
+    // subprocess, so the provider reports it rather than ignoring them.
+    resourceLimits: false,
+  });
 
   constructor(private readonly baseDir: string) {}
 

@@ -12,6 +12,7 @@ import type { SandboxProvider } from '@/types/sandbox.js';
 import type { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { AgentStrategy } from '@/types/strategy.js';
+import type { SandboxLifecycleLogger } from '../session/sandbox-lifecycle.js';
 import type { RuntimeComposition } from './composition.js';
 
 export interface RuntimeSessionServicesOptions {
@@ -26,6 +27,8 @@ export interface RuntimeSessionServicesOptions {
   memory?: MemoryProvider;
   artifactStore: Pick<ArtifactStore, 'path'>;
   defaultMaxSteps: number;
+  /** Optional sink for sandbox capability-gap warnings. */
+  logger?: SandboxLifecycleLogger;
 }
 
 export interface RuntimeSessionServices {
@@ -54,6 +57,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     memory: options.memory,
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,
+    logger: options.logger,
   });
   sessionManager.setExecutor(executor);
 

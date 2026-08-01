@@ -14,12 +14,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  SandboxProvider,
-  SandboxInstance,
-  EnvironmentConfig,
-  ExecOptions,
-  ExecResult,
+import {
+  sandboxCapabilities,
+  type SandboxProvider,
+  type SandboxInstance,
+  type EnvironmentConfig,
+  type ExecOptions,
+  type ExecResult,
 } from '@/types/sandbox.js';
 
 const DEFAULT_IMAGE = 'node:22-slim';
@@ -40,6 +41,16 @@ export function isDockerAvailable(): boolean {
 
 export class DockerSandboxProvider implements SandboxProvider {
   readonly type = 'docker';
+
+  readonly capabilities = sandboxCapabilities({
+    // Container namespaces provide a real boundary against the runtime host.
+    isolatedExecution: true,
+    // The workspace lives inside the container; files move via `docker cp`, so
+    // there is no host path for the snapshot manager to read.
+    hostFilesystem: false,
+    // Enforced through `--memory` / `--cpus` at provision time.
+    resourceLimits: true,
+  });
 
   async provision(sessionId: string, config: EnvironmentConfig): Promise<SandboxInstance> {
     const image = config.image ?? DEFAULT_IMAGE;

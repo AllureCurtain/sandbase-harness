@@ -1,10 +1,12 @@
 import type { Database } from '@/core/db/database.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
 import { SqliteMemoryProvider } from '@/core/memory/sqlite-memory-provider.js';
+import type { RuntimeSettings } from '@/core/settings/schema.js';
 import { activateRuntimeSettings, localArtifactStorageDir, modelConfigFromRuntimeSettings, type RuntimeSettingsRecord } from '@/core/settings/store.js';
 import { LocalArtifactStore } from '@/core/storage/artifact-store.js';
 import type { ModelRegistry } from '@/model/registry.js';
-import type { EnvironmentConfig, SandboxProviderType } from '@/types/sandbox.js';
+import { sandboxProviderForSettings } from '@/sandbox/provider-names.js';
+import type { EnvironmentConfig, KubernetesEnvironmentConfig, SandboxProviderType } from '@/types/sandbox.js';
 
 export interface RuntimeComposition {
   settings: RuntimeSettingsRecord;
@@ -52,10 +54,7 @@ export function composeRuntimeFromSettings({
       if (row.id !== 'env_default') return environment;
       return {
         ...environment,
-        sandbox_provider: effectiveSettings.sandbox.provider === 'remote'
-          ? 'self_hosted'
-          : effectiveSettings.sandbox.provider,
-        timeout: effectiveSettings.sandbox.options.timeout_seconds,
+        ...sandboxConfigFromSettings(effectiveSettings.sandbox),
       } as EnvironmentConfig;
     },
   };
@@ -74,14 +73,56 @@ export function normalizeRuntimeEnvironment(row: { id: string; name: string; con
   };
 }
 
+/**
+ * Project the Settings V2 sandbox section onto the Environment shape the
+ * providers consume.
+ *
+ * Settings V2 keeps backend-specific values in a flat `options` bag (that is
+ * what the adapter `options_schema` describes and what the Console form
+ * writes), while providers read `EnvironmentConfig`. Without this translation
+ * every backend-specific setting a user configured — namespace, kubeconfig,
+ * image — was silently dropped and the backend ran on its own defaults.
+ */
+function sandboxConfigFromSettings(
+  sandbox: RuntimeSettings['sandbox'],
+): Pick<EnvironmentConfig, 'sandbox_provider' | 'timeout' | 'image' | 'kubernetes'> {
+  const options = sandbox.options;
+  const image = stringOption(options.image);
+  const kubernetes: KubernetesEnvironmentConfig = {
+    ...optionalString('namespace', options.namespace),
+    ...optionalString('context', options.context),
+    ...optionalString('kubeconfig', options.kubeconfig),
+    ...optionalString('service_account', options.service_account),
+  };
+
+  return {
+    sandbox_provider: sandboxProviderForSettings(sandbox.provider),
+    timeout: options.timeout_seconds,
+    ...(image ? { image } : {}),
+    ...(Object.keys(kubernetes).length > 0 ? { kubernetes } : {}),
+  };
+}
+
+function stringOption(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function optionalString(key: string, value: unknown): Record<string, string> {
+  const resolved = stringOption(value);
+  return resolved ? { [key]: resolved } : {};
+}
+
+/**
+ * Read the configured backend name without judging whether it exists.
+ *
+ * Availability is the sandbox registry's call, not this function's: rewriting
+ * an unrecognized name to a default here is what previously turned a typo (or
+ * a provider whose optional dependency is missing) into a silent switch to
+ * unsandboxed local execution. Any non-empty string is preserved so the
+ * registry can reject it at provision time and name the registered backends.
+ */
 function parseSandboxProvider(value: unknown): SandboxProviderType | undefined {
-  return value === 'local'
-    || value === 'docker'
-    || value === 'e2b'
-    || value === 'daytona'
-    || value === 'self_hosted'
-    ? value
-    : undefined;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function parseJsonObject(value: string): Record<string, any> {

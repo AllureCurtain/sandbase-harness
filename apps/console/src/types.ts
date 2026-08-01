@@ -323,7 +323,7 @@ export type RuntimeSettingsConfig = {
     artifacts: { provider: 'local' | 's3'; options: Record<string, unknown> };
   };
   memory: { enabled: boolean; provider: 'sqlite' | 'memu' | 'mem0'; options: Record<string, unknown> };
-  sandbox: { provider: 'local' | 'docker' | 'remote'; options: { timeout_seconds: number; [key: string]: unknown } };
+  sandbox: { provider: 'local' | 'docker' | 'kubernetes' | 'remote'; options: { timeout_seconds: number; [key: string]: unknown } };
 };
 
 export type RuntimeSettings = {

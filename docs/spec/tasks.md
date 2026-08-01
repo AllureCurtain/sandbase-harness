@@ -22,7 +22,18 @@ This document tracks public implementation status for `managed-agents`.
 - [x] Model registry with retry-aware execution path.
 - [x] Local sandbox provider with path isolation.
 - [x] Docker sandbox provider.
+- [x] Kubernetes sandbox provider: one Pod per session over `kubectl`, with
+      namespace/context/kubeconfig/ServiceAccount settings and no mounted API
+      token by default.
 - [x] Self-hosted sandbox work queue.
+- [x] Declared sandbox capabilities (`isolatedExecution`, `hostFilesystem`,
+      `resourceLimits`, `streamingExec`) with capability-gated snapshots and
+      logged reporting when an Environment asks for something a backend cannot
+      enforce.
+- [x] Sandbox resolution fails with the registered backends listed instead of
+      falling back to unsandboxed local execution.
+- [x] Single sandbox naming boundary between registry provider types and
+      Settings V2 provider ids.
 - [x] Built-in tools: `bash`, `read`, `write`, `edit`, `glob`,
       and `grep`.
 - [x] Tool result size cap.

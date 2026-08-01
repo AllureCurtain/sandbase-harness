@@ -4,13 +4,24 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
-import { InMemoryLogStore } from '@/core/observability/logger.js';
+import { InMemoryLogStore, type Logger } from '@/core/observability/logger.js';
 import { Metrics } from '@/core/observability/metrics.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
 import { WorkQueue } from '@/sandbox/self-hosted-provider.js';
 import { createRuntimeServerApp } from '@/core/runtime/server-assembly.js';
+
+/** Silent logger satisfying the full Logger contract, including `child`. */
+function stubLogger(): Logger {
+  return {
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    debug: () => undefined,
+    child: () => stubLogger(),
+  };
+}
 
 describe('runtime server assembly', () => {
   let tmpDir: string | undefined;
@@ -42,7 +53,7 @@ describe('runtime server assembly', () => {
       apiKeys: ['ma_static'],
       hasRuntimeApiKeys: () => true,
       validateRuntimeApiKey: (key) => key === 'ma_static',
-      logger: { info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined },
+      logger: stubLogger(),
       logStore,
       metrics: new Metrics(),
       restart: () => undefined,

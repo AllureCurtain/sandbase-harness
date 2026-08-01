@@ -20,6 +20,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Covers src and the runtime test suite. The test suite is a separate
+      # program because the root config scopes build output to src; without it a
+      # breaking interface change type-checks clean while every test call site
+      # is already wrong.
       - name: Type check
         run: npm run typecheck
 

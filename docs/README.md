@@ -9,7 +9,7 @@ open-source runtime.
 | Document | Audience | Contents |
 | --- | --- | --- |
 | [Installation](installation.md) | Users and operators | Install options, model configuration, startup flags, and health checks. |
-| [Usage Guide](usage.md) | Users and integrators | Workspace layout, Console workflows, sessions, resources, credentials, memory, and SDK usage. |
+| [Usage Guide](usage.md) | Users and integrators | Workspace layout, Console workflows, sessions, sandbox backends, resources, credentials, memory, and SDK usage. |
 | [API Reference](api.md) | API and SDK integrators | HTTP endpoints, request shapes, response shapes, errors, and examples. |
 | [Versioned API Matrix](api-matrix.md) | SDK authors and integrators | `/v1` endpoint status, SDK coverage, CLI coverage, and compatibility gaps. |
 | [Skills](skills.md) | Agent builders | Skill package format, upload flow, validation rules, and agent references. |
@@ -25,7 +25,7 @@ local SQLite + local filesystem runtime is working.
 
 | Document | Audience | Contents |
 | --- | --- | --- |
-| [Deployment Examples](deployment.md) | Operators | systemd, Docker Compose, Kubernetes, self-hosted workers, and production checks. |
+| [Deployment Examples](deployment.md) | Operators | systemd, Docker Compose, running the runtime on Kubernetes, the RBAC for Kubernetes session sandboxes, self-hosted workers, and production checks. |
 
 ## Documentation Rules
 

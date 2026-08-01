@@ -1,15 +1,32 @@
 /**
  * Sandbox Provider Registry
  *
- * Maps a sandbox provider type (`local`, `docker`, ...) to its implementation.
- * The executor resolves a provider by an Environment's `sandbox_provider` type
- * (R12.3), so an agent can switch execution backends without code changes.
+ * Maps a sandbox provider type (`local`, `docker`, `kubernetes`, ...) to its
+ * implementation. The executor resolves a provider by an Environment's
+ * `sandbox_provider` type (R12.3), so an agent can switch execution backends
+ * without code changes.
  *
- * If a requested provider type is not registered, a descriptive error is
- * thrown naming the missing dependency (R12.4).
+ * The registry is the single authority on which backends exist in this process.
+ * A requested type that is not registered is an error naming the missing
+ * dependency (R12.4) — never a silent downgrade to a weaker backend, because
+ * "asked for an isolated sandbox, got an unsandboxed local subprocess" is a
+ * security regression rather than a degraded experience.
  */
 
-import type { SandboxProvider } from '@/types/sandbox.js';
+import type { SandboxCapabilities, SandboxProvider, SandboxProviderType } from '@/types/sandbox.js';
+
+export class UnknownSandboxProviderError extends Error {
+  constructor(
+    readonly requested: string,
+    readonly registered: string[],
+  ) {
+    super(
+      `Sandbox provider "${requested}" is not available (registered: ${registered.join(', ') || 'none'}). `
+      + hintForProvider(requested),
+    );
+    this.name = 'UnknownSandboxProviderError';
+  }
+}
 
 export class SandboxProviderRegistry {
   private providers = new Map<string, SandboxProvider>();
@@ -23,33 +40,53 @@ export class SandboxProviderRegistry {
   }
 
   /**
-   * Get a provider by type. Throws with an install hint if not registered.
+   * Get a provider by type. Throws {@link UnknownSandboxProviderError} with an
+   * install hint if not registered.
    */
   get(type: string): SandboxProvider {
     const provider = this.providers.get(type);
     if (!provider) {
-      const available = Array.from(this.providers.keys()).join(', ') || 'none';
-      throw new Error(
-        `Sandbox provider "${type}" is not available (registered: ${available}). ` +
-          hintForProvider(type),
-      );
+      throw new UnknownSandboxProviderError(type, this.listTypes());
     }
     return provider;
   }
 
-  listTypes(): string[] {
+  /** Capabilities of a registered provider, or undefined when not registered. */
+  capabilitiesOf(type: string): SandboxCapabilities | undefined {
+    return this.providers.get(type)?.capabilities;
+  }
+
+  listTypes(): SandboxProviderType[] {
     return Array.from(this.providers.keys());
+  }
+
+  /** Registered types paired with their capabilities, for runtime summaries. */
+  describe(): Array<{ type: SandboxProviderType; capabilities: SandboxCapabilities }> {
+    return Array.from(this.providers.values()).map((provider) => ({
+      type: provider.type,
+      capabilities: provider.capabilities,
+    }));
   }
 }
 
 function hintForProvider(type: string): string {
   switch (type) {
+    // Retired backend names. They were selectable before any adapter existed,
+    // so a workspace created then can still hold them in environments.config.
+    // Resolution now fails rather than quietly running unsandboxed on the host,
+    // which is the correct outcome but needs to say what to change.
+    case 'e2b':
+    case 'daytona':
+      return `The "${type}" backend was never implemented and has been removed. `
+        + 'Update this Environment to a shipped backend (local, docker, kubernetes, or self_hosted).';
     case 'docker':
       return 'Install Docker and ensure the `docker` CLI is on PATH.';
-    case 'e2b':
-      return 'Install the E2B SDK and set E2B_API_KEY.';
-    case 'daytona':
-      return 'Install the Daytona SDK and configure credentials.';
+    case 'kubernetes':
+      return 'Install the `kubectl` CLI and ensure it can reach a cluster (`kubectl version -o json`).';
+    case 'local':
+      return 'The local provider is always registered; this usually means runtime bootstrap did not complete.';
+    case 'self_hosted':
+      return 'Run a self-hosted worker and ensure the work queue is initialized.';
     default:
       return 'Check your Environment sandbox_provider configuration.';
   }

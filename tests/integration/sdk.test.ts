@@ -65,8 +65,10 @@ describe('Client SDK', () => {
 
     client = new ManagedAgentsClient({
       baseUrl: 'http://managed-agents.test',
-      fetch: (input, init) => {
-        const url = new URL(input.toString());
+      // async so the signature matches `typeof fetch`: Hono's request() can
+      // return a Response synchronously, which is not assignable on its own.
+      fetch: async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.toString());
         return app.request(`${url.pathname}${url.search}`, init);
       },
     });

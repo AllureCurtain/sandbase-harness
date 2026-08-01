@@ -14,12 +14,13 @@
 
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
-import type {
-  SandboxProvider,
-  SandboxInstance,
-  EnvironmentConfig,
-  ExecOptions,
-  ExecResult,
+import {
+  sandboxCapabilities,
+  type SandboxProvider,
+  type SandboxInstance,
+  type EnvironmentConfig,
+  type ExecOptions,
+  type ExecResult,
 } from '@/types/sandbox.js';
 
 export type WorkItemKind = 'exec' | 'write' | 'read' | 'list';
@@ -165,6 +166,19 @@ export class WorkQueue {
 
 export class SelfHostedSandboxProvider implements SandboxProvider {
   readonly type = 'self_hosted';
+
+  readonly capabilities = sandboxCapabilities({
+    // Execution happens on infrastructure the user runs; the runtime host is
+    // not the execution host. Whatever isolation the worker applies is outside
+    // this process's knowledge, so from the runtime's perspective the work is
+    // off-host rather than kernel-confined here.
+    isolatedExecution: true,
+    // Files live wherever the worker put them; the queue protocol exposes no
+    // host path back to the runtime.
+    hostFilesystem: false,
+    // The work-item protocol carries no resource-limit fields today.
+    resourceLimits: false,
+  });
 
   constructor(private readonly queue: WorkQueue) {}
 

@@ -3,14 +3,17 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describeSettingsAdapters, availabilityFromDescriptors } from '@/core/settings/adapters.js';
-import { validateRuntimeSettings, validateRuntimeSettingsCredentials } from '@/core/settings/schema.js';
+import { validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from '@/core/settings/schema.js';
 import { testRuntimeSettingsArea, testRuntimeSettingsAreaWithFetch } from '@/core/settings/test.js';
 import { Database } from '@/core/db/database.js';
 import { activateRuntimeSettings, getOrSeedRuntimeSettings, localArtifactStorageDir, maskRuntimeSettings, modelConfigFromRuntimeSettings, runtimeSettingsSecretStates, saveRuntimeSettings } from '@/core/settings/store.js';
 import { composeRuntimeFromSettings } from '@/core/runtime/composition.js';
 import { ModelRegistry } from '@/model/registry.js';
 
-const validConfig = {
+// Typed rather than inferred: without the annotation the literal widens
+// (`schema_version: number`, `provider: string`) and every spread of it into a
+// RuntimeSettings parameter fails to type-check.
+const validConfig: RuntimeSettings = {
   schema_version: 1,
   model: { vendor: 'openai', api_key: '${OPENAI_API_KEY}', options: {} },
   loop_engine: { provider: 'builtin', options: { default_max_steps: 25 } },
@@ -841,6 +844,109 @@ describe('Settings V2 activation', () => {
     });
     expect(dockerCapable.settings.activation_status).toBe('active');
     expect(dockerCapable.resolveEnvironmentConfig('env_default')).toMatchObject({ sandbox_provider: 'docker', timeout: 321 });
+    db.close();
+  });
+});
+
+describe('Settings V2 sandbox options reach the sandbox provider', () => {
+  const directories: string[] = [];
+
+  afterEach(() => {
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  });
+
+  function seedWorkspace(sandbox: Record<string, unknown>) {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-sandbox-options-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    const initial = getOrSeedRuntimeSettings(db);
+    expect(saveRuntimeSettings(db, {
+      ...initial.saved_config,
+      model: { ...initial.saved_config.model, api_key: 'model-secret' },
+      sandbox: sandbox as never,
+    }, initial.revision, directory).ok).toBe(true);
+    return { db, directory };
+  }
+
+  it('projects kubernetes options onto the Environment the provider consumes', () => {
+    // Regression guard: these options are what the Console form writes. They
+    // used to be dropped between Settings V2 and EnvironmentConfig, so a
+    // configured namespace/context/ServiceAccount silently had no effect and
+    // Pods landed in `default` with the ambient context.
+    const { db, directory } = seedWorkspace({
+      provider: 'kubernetes',
+      options: {
+        timeout_seconds: 600,
+        image: 'python:3.12-slim',
+        namespace: 'agent-sandboxes',
+        context: 'staging',
+        kubeconfig: '/tmp/kubeconfig',
+        service_account: 'agent-runner',
+      },
+    });
+
+    const runtime = composeRuntimeFromSettings({
+      db,
+      dataDir: directory,
+      modelRegistry: new ModelRegistry(),
+      memorySeedEnabled: false,
+      sandboxProviders: ['local', 'kubernetes'],
+    });
+
+    expect(runtime.settings.activation_status).toBe('active');
+    expect(runtime.resolveEnvironmentConfig('env_default')).toMatchObject({
+      sandbox_provider: 'kubernetes',
+      timeout: 600,
+      image: 'python:3.12-slim',
+      kubernetes: {
+        namespace: 'agent-sandboxes',
+        context: 'staging',
+        kubeconfig: '/tmp/kubeconfig',
+        service_account: 'agent-runner',
+      },
+    });
+    db.close();
+  });
+
+  it('omits backend-specific keys that were left blank', () => {
+    // An empty ServiceAccount must stay absent rather than becoming "", since
+    // the Pod manifest keys token mounting off its presence.
+    const { db, directory } = seedWorkspace({
+      provider: 'kubernetes',
+      options: { timeout_seconds: 300, namespace: 'agents', context: '   ', service_account: '' },
+    });
+
+    const config = composeRuntimeFromSettings({
+      db,
+      dataDir: directory,
+      modelRegistry: new ModelRegistry(),
+      memorySeedEnabled: false,
+      sandboxProviders: ['local', 'kubernetes'],
+    }).resolveEnvironmentConfig('env_default');
+
+    expect(config?.kubernetes).toEqual({ namespace: 'agents' });
+    expect(config?.image).toBeUndefined();
+    db.close();
+  });
+
+  it('leaves the kubernetes block absent for backends that do not use it', () => {
+    const { db, directory } = seedWorkspace({
+      provider: 'local',
+      options: { timeout_seconds: 300 },
+    });
+
+    const config = composeRuntimeFromSettings({
+      db,
+      dataDir: directory,
+      modelRegistry: new ModelRegistry(),
+      memorySeedEnabled: false,
+      sandboxProviders: ['local'],
+    }).resolveEnvironmentConfig('env_default');
+
+    expect(config).toMatchObject({ sandbox_provider: 'local' });
+    expect(config?.kubernetes).toBeUndefined();
     db.close();
   });
 });

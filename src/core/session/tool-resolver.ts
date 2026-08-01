@@ -26,7 +26,7 @@ export class ToolResolver {
     const delegationCtx = rootDelegationContext(agent.name, DEFAULT_MAX_DELEGATION_DEPTH);
     const tools = this.buildSandboxTools(agent, sandbox);
     Object.assign(tools, await this.getOrConnectMcp(session.id, agent));
-    Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx));
+    Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx, session));
 
     for (const name of getToolsRequiringConfirmation(agent)) {
       if (tools[name]) {
@@ -73,6 +73,7 @@ export class ToolResolver {
         this.deps.delegationService.buildDelegationTools(
           agent,
           rootDelegationContext(agent.name, DEFAULT_MAX_DELEGATION_DEPTH),
+          session,
         ),
       );
       const tool = executableTools[pendingUse.name];

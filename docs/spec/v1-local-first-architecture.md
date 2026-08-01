@@ -252,16 +252,32 @@ V1 default:
 Advanced:
 
 - docker
+- kubernetes
 - self-hosted worker
 
 Roadmap:
 
-- remote managed sandbox
+- managed hosted sandbox
+
+Every backend declares an explicit capability set — `isolatedExecution`,
+`hostFilesystem`, `resourceLimits`, `streamingExec` — and the runtime reads it
+instead of inferring support from optional fields. This is what keeps the P3
+gate checkable in code rather than only in prose: a backend cannot appear to
+support snapshots or resource limits it does not enforce.
+
+`local` declares `isolatedExecution: false`. Path confinement and an
+environment allowlist are not a security boundary, and the settings surface
+should not imply otherwise.
 
 Validation:
 
 - selected provider must be available in the running process;
-- local default must work without Docker or external services.
+- local default must work without Docker, `kubectl`, or external services;
+- an Environment naming an unregistered provider fails at provision time with
+  the registered providers listed. It must never fall back to another backend:
+  silently running unsandboxed after an isolated backend was requested is a
+  security regression, not a degraded experience;
+- a capability the selected backend lacks is reported, not silently dropped.
 
 ## Implementation Plan
 
@@ -353,6 +369,6 @@ Then verify:
 | Artifact storage | Local filesystem | S3 controls without adapter |
 | Memory backend | SQLite, in-memory for dev/tests | mem0/MemU/external DB controls without adapters |
 | Memory Stores | Resource CRUD | Treating stores as backend config |
-| Sandbox | Local default | Remote sandbox promises without worker/probe |
+| Sandbox | Local default; Docker/Kubernetes/worker as advanced opt-ins with real probes | Backends without a reachable transport shown as selectable |
 | Console | Claude-like local Dashboard | Fake enterprise/cloud controls |
 | Docs | Fast local start | Provider marketplace wording |

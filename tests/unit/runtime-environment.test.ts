@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeRuntimeEnvironment } from '@/core/runtime/environment.js';
+import { normalizeRuntimeEnvironment } from '@/core/runtime/composition.js';
 
 describe('runtime environment normalization', () => {
   it('defaults to local sandbox with a stable timeout', () => {
@@ -35,6 +35,30 @@ describe('runtime environment normalization', () => {
       name: 'docker dev',
       sandbox_provider: 'docker',
       network: { type: 'limited' },
+    });
+  });
+
+  it('preserves the kubernetes provider and its nested settings', () => {
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_k8s',
+      name: 'cluster',
+      config: '{"sandbox_provider":"kubernetes","kubernetes":{"namespace":"agents"}}',
+    })).toMatchObject({
+      sandbox_provider: 'kubernetes',
+      kubernetes: { namespace: 'agents' },
+    });
+  });
+
+  it('preserves an unknown provider so resolution can fail loudly later', () => {
+    // Normalization must not rewrite a typo into the unsandboxed local
+    // backend: the registry rejects it at provision time with a message
+    // naming the registered providers.
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_typo',
+      name: 'typo',
+      config: '{"sandbox_provider":"dokcer"}',
+    })).toMatchObject({
+      sandbox_provider: 'dokcer',
     });
   });
 });

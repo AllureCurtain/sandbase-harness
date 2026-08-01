@@ -25,7 +25,7 @@ import { ContextCompactor } from './context-compactor.js';
 import type { Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
 import type { SnapshotManager } from './snapshot-manager.js';
-import { SandboxLifecycle } from './sandbox-lifecycle.js';
+import { SandboxLifecycle, type SandboxLifecycleLogger } from './sandbox-lifecycle.js';
 import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver } from './tool-resolver.js';
@@ -54,6 +54,8 @@ export interface ExecutorDeps {
   snapshots?: SnapshotManager;
   /** Workspace fallback when an agent does not set max_turns. */
   defaultMaxSteps?: number;
+  /** Optional sink for sandbox capability-gap warnings. */
+  logger?: SandboxLifecycleLogger;
 }
 
 export class DefaultSessionExecutor implements SessionExecutor {
@@ -74,7 +76,9 @@ export class DefaultSessionExecutor implements SessionExecutor {
       agents: deps.agents,
       modelRegistry: deps.modelRegistry,
       strategy: deps.strategy,
-      sandboxProvider: deps.sandboxProvider,
+      // Route sub-agent sandboxes through the lifecycle so they resolve to the
+      // parent session's backend instead of always landing on local.
+      provisionSandbox: (session, sandboxId) => this.sandboxLifecycle.provisionDetached(session, sandboxId),
       composeSystemPrompt: (agent) => this.contextBuilder.composeSystemPrompt(agent),
       buildSandboxTools: (agent, sandbox) => this.toolResolver.buildSandboxTools(agent, sandbox),
     });
