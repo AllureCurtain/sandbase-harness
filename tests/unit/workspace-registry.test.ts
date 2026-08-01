@@ -22,7 +22,7 @@ describe('workspace registry', () => {
     expect(created.root).toBe(root);
     // Runtime state is workspace-local now; only the registry index lives in home.
     expect(created.data_dir).toBe(join(root, '.managed-agents'));
-    expect(readFileSync(join(root, 'managed-agents.config.yaml'), 'utf8')).toContain('environments:');
+    expect(readFileSync(join(root, '.managed-agents', 'config.yaml'), 'utf8')).toContain('environments:');
 
     expect(listRegisteredWorkspaces({ home })).toHaveLength(1);
     const opened = resolveRegisteredWorkspace('Acme', { home, now: new Date('2026-07-22T01:00:00.000Z') });

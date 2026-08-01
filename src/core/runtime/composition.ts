@@ -19,18 +19,21 @@ export function composeRuntimeFromSettings({
   db,
   dataDir,
   modelRegistry,
-  memorySeedEnabled,
   settingsSeed,
   sandboxProviders = ['local'],
 }: {
   db: Database;
   dataDir: string;
   modelRegistry: ModelRegistry;
-  memorySeedEnabled?: boolean;
+  /**
+   * Values used only when `runtime_settings` has no row yet. `RuntimeSettingsSeed`
+   * already carries `memoryEnabled`, so there is one way to express a seed
+   * rather than a separate flag that has to be merged in here.
+   */
   settingsSeed?: RuntimeSettingsSeed;
   sandboxProviders?: string[];
 }): RuntimeComposition {
-  const settings = activateRuntimeSettings(db, { memoryEnabled: memorySeedEnabled, ...settingsSeed }, dataDir, sandboxProviders);
+  const settings = activateRuntimeSettings(db, settingsSeed ?? {}, dataDir, sandboxProviders);
   const effectiveSettings = settings.effective_config;
 
   modelRegistry.clear();

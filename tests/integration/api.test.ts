@@ -1444,7 +1444,7 @@ description: Uploaded from a compressed package.
           db: workspaceDb,
           dataDir: workspaceDataDir,
           modelRegistry,
-          memorySeedEnabled: false,
+          settingsSeed: { memoryEnabled: false },
           sandboxProviders: ['local'],
         });
         const artifactApp = createServer({

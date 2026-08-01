@@ -96,6 +96,70 @@ export function runtimeRoutes(deps: ServerDeps) {
     return c.text(deps.metrics.render(), 200, { 'Content-Type': 'text/plain; version=0.0.4' });
   });
 
+  // GET /metrics/summary - JSON runtime/workspace summary for Console monitoring.
+  app.get('/metrics/summary', (c) => {
+    const sessionsByStatus = countBy(deps.db, 'sessions', 'status');
+    const eventsByType = countBy(deps.db, 'events', 'type');
+    const sessionUsage = deps.db.prepare(
+      `SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(usage_tokens_in), 0) AS input_tokens,
+        COALESCE(SUM(usage_tokens_out), 0) AS output_tokens
+       FROM sessions`,
+    ).get() as { total: number; input_tokens: number; output_tokens: number };
+    const eventUsage = deps.db.prepare(
+      `SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(tokens_in), 0) AS input_tokens,
+        COALESCE(SUM(tokens_out), 0) AS output_tokens,
+        COALESCE(AVG(NULLIF(duration_ms, 0)), 0) AS average_duration_ms
+       FROM events`,
+    ).get() as { total: number; input_tokens: number; output_tokens: number; average_duration_ms: number };
+    const files = deps.db.prepare(
+      `SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(size_bytes), 0) AS bytes
+       FROM files
+       WHERE archived_at IS NULL`,
+    ).get() as { total: number; bytes: number };
+    const artifacts = deps.db.prepare(
+      `SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(size_bytes), 0) AS bytes
+       FROM files
+       WHERE archived_at IS NULL AND role = 'artifact'`,
+    ).get() as { total: number; bytes: number };
+    const metricsSnapshot = deps.metrics?.snapshot();
+    return c.json({
+      type: 'metrics_summary',
+      generated_at: new Date().toISOString(),
+      sessions: {
+        total: Number(sessionUsage.total ?? 0),
+        by_status: sessionsByStatus,
+        input_tokens: Number(sessionUsage.input_tokens ?? 0),
+        output_tokens: Number(sessionUsage.output_tokens ?? 0),
+      },
+      events: {
+        total: Number(eventUsage.total ?? 0),
+        by_type: eventsByType,
+        input_tokens: Number(eventUsage.input_tokens ?? 0),
+        output_tokens: Number(eventUsage.output_tokens ?? 0),
+        average_duration_ms: Math.round(Number(eventUsage.average_duration_ms ?? 0)),
+      },
+      storage: {
+        files: Number(files.total ?? 0),
+        file_bytes: Number(files.bytes ?? 0),
+        artifacts: Number(artifacts.total ?? 0),
+        artifact_bytes: Number(artifacts.bytes ?? 0),
+      },
+      work_queue: deps.workQueue?.stats() ?? {},
+      http: {
+        requests: metricsSnapshot?.counters.http_requests_total ?? 0,
+        errors: metricsSnapshot?.counters.http_errors_total ?? 0,
+        request_duration_ms: metricsSnapshot?.histograms.http_request_duration_ms ?? { count: 0, sum: 0 },
+      },
+    });
+  });
   app.get('/mcp/status', (c) => {
     const sessionId = c.req.query('session_id');
     if (!sessionId) {
@@ -155,6 +219,11 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
   return Math.trunc(parsed);
+}
+
+function countBy(db: ServerDeps['db'], table: 'sessions' | 'events', column: 'status' | 'type'): Record<string, number> {
+  const rows = db.prepare(`SELECT ${column} AS name, COUNT(*) AS count FROM ${table} GROUP BY ${column}`).all() as Array<{ name: string; count: number }>;
+  return Object.fromEntries(rows.map((row) => [row.name, Number(row.count)]));
 }
 
 function runtimeModels(deps: ServerDeps) {

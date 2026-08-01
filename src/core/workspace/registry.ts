@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { defaultDataDir, defaultRuntimeHome, resolveUserPath } from '@/core/config/paths.js';
+import { defaultConfigPath, defaultDataDir, defaultRuntimeHome, resolveUserPath } from '@/core/config/paths.js';
 
 export type WorkspaceRegistryEntry = {
   id: string;
@@ -49,8 +49,11 @@ export function createRegisteredWorkspace(input: { root: string; name?: string; 
   mkdirSync(root, { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, 'skills'), { recursive: true });
-  const configPath = join(root, 'managed-agents.config.yaml');
+  // Same location `managed-agents init` and the runtime's config resolution use,
+  // so a registered workspace and a hand-initialized one are indistinguishable.
+  const configPath = defaultConfigPath(root);
   if (!existsSync(configPath)) {
+    mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(configPath, defaultWorkspaceConfig(), 'utf8');
   }
   return registerWorkspace({ ...input, root });

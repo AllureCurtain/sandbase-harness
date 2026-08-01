@@ -230,7 +230,7 @@ describe('runtime session services', () => {
       db,
       dataDir: directory,
       modelRegistry,
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
     });
     expect(runtime.memory?.name).toBe('sqlite');
     await runtime.memory!.add('ctx_settings_memory', 'I prefer Rust for systems work', { source: 'test' });

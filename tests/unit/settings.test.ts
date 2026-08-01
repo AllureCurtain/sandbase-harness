@@ -842,7 +842,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: registry,
-      memorySeedEnabled: true,
+      settingsSeed: { memoryEnabled: true },
     });
 
     expect(registry.getDefaultName()).toBe('default');
@@ -871,7 +871,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local'],
     });
     expect(localOnly.settings.activation_status).toBe('failed');
@@ -881,7 +881,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'docker'],
     });
     expect(dockerCapable.settings.activation_status).toBe('active');
@@ -933,7 +933,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'kubernetes'],
     });
 
@@ -964,7 +964,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'kubernetes'],
     }).resolveEnvironmentConfig('env_default');
 
@@ -983,7 +983,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local'],
     }).resolveEnvironmentConfig('env_default');
 
