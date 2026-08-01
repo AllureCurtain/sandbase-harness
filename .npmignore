@@ -1,0 +1,3 @@
+# Runtime artifacts that smoke tests leave behind
+**/.managed-agents/logs/
+**/.managed-agents/data.db*

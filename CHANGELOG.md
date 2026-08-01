@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.0 - 2026-08-01
+
+### Breaking changes
+
+- **Workspace state directory moved**: runtime state (database, config, logs)
+  now lives at `<workspace>/.managed-agents/` instead of
+  `~/.managed-agents/<name>-<hash>/`. Existing workspaces need their state
+  moved manually or will re-initialize on next start.
+- **`composeRuntimeFromSettings`**: the `memorySeedEnabled` parameter was
+  removed; use `settingsSeed: { memoryEnabled: true }` instead.
+- **Legacy provider endpoints permanently removed**: `/v1/x/model-providers`,
+  `/memory-providers`, `/storage-providers` return 404. Use
+  `/v1/x/settings` to configure providers.
+
+### Highlights
+
+- **Runtime decomposition**: the monolithic route and session files are split
+  into focused modules (environments, files, credential-vaults, memory-stores,
+  runtime, settings, templates, session-normalizers, session-stream,
+  session-records, session-lifecycle, session-recovery, secrets,
+  skill-packages, skill-resources, resource-utils). `resources.ts` and
+  `extended.ts` are now pure composition roots.
+- **Sandbox backends**: local process, Docker (with per-session container
+  labels and path confinement), and Kubernetes (kubectl exec/cp transport)
+  are shipped; Environment write-side validation rejects unknown providers.
+- **Docker environment mode**: `hosting_type: docker` with image/resources
+  fields in the Environment config.
+- **Console improvements**: YAML/JSON agent config editor, fix modal crashes,
+  session send failure handling, environment editor polish, settings form
+  splitting.
+- **Release gate**: `npm run release:check` covers typecheck (src + tests),
+  full test suite, production build, package dry-run, CLI init smoke, and
+  example workspace startup.
+- **Model registry**: `resolveModelConfig()` supports `openai/gpt-5.5`-style
+  qualified model references.
+- **Workspace registry**: `managed-agents init` and
+  `createRegisteredWorkspace` write config to `.managed-agents/config.yaml`,
+  consistent with the runtime's path resolution.
+
+### Stats
+
+- 75 test files, 569 tests (up from 67 / 544 in 0.1.0).
+- 24 new source modules, 7 new test files.
+- `release:check` passes on a clean checkout.
+
 ## 0.1.0 - 2026-07-18
 
 First public release of `managed-agents`.
