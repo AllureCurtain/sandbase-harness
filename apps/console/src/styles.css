@@ -721,6 +721,26 @@ button {
   color: #fca5a5;
 }
 
+.codeEditorHighlight .yamlKey {
+  color: #93c5fd;
+}
+
+.codeEditorHighlight .yamlString {
+  color: #86efac;
+}
+
+.codeEditorHighlight .yamlNumber {
+  color: #fbbf24;
+}
+
+.codeEditorHighlight .yamlBoolean {
+  color: #c4b5fd;
+}
+
+.codeEditorHighlight .yamlNull {
+  color: #fca5a5;
+}
+
 .formActions {
   display: flex;
   align-items: center;
@@ -948,6 +968,13 @@ h2 {
   color: var(--danger);
   background: var(--danger-soft);
   border-color: #f6bdb7;
+}
+
+.consoleCrashBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 900px;
 }
 
 .panel,
@@ -4090,6 +4117,36 @@ label.searchBox input {
   align-items: center;
 }
 
+.editingEnvironment > .editField,
+.editingEnvironment .environmentSection {
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.editingEnvironment > .editField {
+  padding: 20px;
+}
+
+.editingEnvironment .environmentBody {
+  gap: 18px;
+}
+
+.editingEnvironment .environmentSection {
+  padding: 20px;
+}
+
+.editingEnvironment .environmentSection > h2,
+.editingEnvironment .sectionHeaderRow h2 {
+  margin: 0;
+}
+
+.editingEnvironment .environmentSection > p,
+.editingEnvironment .sectionHeaderRow p {
+  margin: 4px 0 0;
+}
+
 .editHero {
   margin-bottom: 4px;
 }
@@ -4123,6 +4180,38 @@ label.searchBox input {
 .editField textarea {
   min-height: 96px;
   font-size: 14px;
+}
+
+.editingEnvironment .editField textarea {
+  min-height: 104px;
+}
+
+.editingEnvironment .environmentSection > .editField {
+  margin-top: 4px;
+}
+
+.editingEnvironment .environmentSection > .editField select,
+.editingEnvironment .environmentSection > .editField textarea {
+  width: 100%;
+}
+
+.environmentExecutionSection {
+  gap: 18px;
+}
+
+.environmentNestedGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.4fr) minmax(180px, 0.8fr) minmax(160px, 0.6fr);
+  gap: 14px;
+}
+
+.subtleNotice {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  padding: 12px 14px;
+  line-height: 1.45;
 }
 
 .editField small {
@@ -4318,11 +4407,44 @@ label.searchBox input {
 }
 
 .yamlToolbar {
-  min-height: 44px;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.yamlToolbar label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+}
+
+.yamlToolbar select {
+  appearance: none;
+  min-width: 106px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-soft);
+  font-size: 15px;
+  font-weight: 720;
+  line-height: 1;
+  padding: 0 34px 0 12px;
+  cursor: pointer;
+}
+
+.yamlToolbar label svg {
+  position: absolute;
+  right: 11px;
+  pointer-events: none;
+  color: var(--muted);
 }
 
 .yamlToolbar button {
@@ -4334,6 +4456,11 @@ label.searchBox input {
   color: var(--text-soft);
   font-size: 16px;
   font-weight: 720;
+}
+
+.yamlShell .codeEditorShell {
+  border: 0;
+  border-radius: 0;
 }
 
 .yamlTextarea {
@@ -4351,6 +4478,18 @@ label.searchBox input {
 .yamlTextarea:focus {
   box-shadow: none;
   border-color: transparent;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .stickyActions {

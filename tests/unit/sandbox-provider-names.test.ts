@@ -106,7 +106,7 @@ describe('persisted remote settings', () => {
         db,
         dataDir: directory,
         modelRegistry: new ModelRegistry(),
-        memorySeedEnabled: false,
+        settingsSeed: { memoryEnabled: false },
         sandboxProviders: ['local', 'self_hosted'],
       });
 

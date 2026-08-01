@@ -30,8 +30,10 @@
     // needs the Console's own cleanup first; tracked in BACKLOG.md under
     // Dashboard. Excluded here so the runtime suite can be enforced now rather
     // than waiting on unrelated work.
+    "tests/unit/agent-modals.test.tsx",
     "tests/unit/console-pages.test.ts",
     "tests/unit/runtime-settings-forms.test.tsx",
+    "tests/unit/session-modals.test.tsx",
     "tests/unit/ui-primitives.test.tsx",
     "tests/unit/api-reference-docs.test.tsx",
     "tests/unit/docs-api.test.ts",

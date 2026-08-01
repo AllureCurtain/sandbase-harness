@@ -111,7 +111,7 @@ export type ApiKeyCreateResponse = ApiKey & {
   secret_key: string;
 };
 
-export type EnvironmentHostingType = 'cloud' | 'local' | 'self_hosted';
+export type EnvironmentHostingType = 'cloud' | 'local' | 'docker' | 'self_hosted';
 export type EnvironmentNetworkType = 'limited' | 'unrestricted';
 export type EnvironmentPackageDraft = { id: string; manager: string; package: string };
 export type MetadataDraft = { id: string; key: string; value: string };
@@ -120,6 +120,9 @@ export type EnvironmentDraft = {
   name: string;
   description: string;
   hostingType: EnvironmentHostingType;
+  dockerImage: string;
+  dockerMemory: string;
+  dockerCpu: string;
   networkType: EnvironmentNetworkType;
   allowMcpServerNetworkAccess: boolean;
   allowPackageManagerNetworkAccess: boolean;
@@ -362,16 +365,22 @@ export type Workspace = {
   root?: string;
   configDir?: string;
   dataDir?: string;
+  databasePath?: string;
   agentsDir?: string;
   skillsDir?: string;
   configPath?: string;
+  logFile?: string;
+  logsDir?: string;
   target?: string;
   directories?: {
     root?: string;
     agents?: string;
     skills?: string;
     data?: string;
+    database?: string;
     config?: string;
+    logs?: string;
+    logFile?: string;
   };
 };
 

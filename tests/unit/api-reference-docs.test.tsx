@@ -34,11 +34,18 @@ describe('API reference docs', () => {
     const mountedRouteFiles: Record<string, string> = {
       'agents.ts': '/v1/agents',
       'api-keys.ts': '/v1/api-keys',
+      'credential-vaults.ts': '/v1',
       'extended.ts': '/v1/x',
+      'environments.ts': '/v1',
+      'files.ts': '/v1',
+      'memory-stores.ts': '/v1',
       'resources.ts': '/v1',
+      'runtime.ts': '/v1/x',
+      'settings.ts': '/v1/x/settings',
       'sessions.ts': '/v1/sessions',
       'skills.ts': '/v1/skills',
       'stream.ts': '/v1/sessions',
+      'templates.ts': '/v1/x/templates',
       'worker.ts': '/v1/x/worker',
     };
     const documented = new Set(API_REFERENCE_DOCS.map((endpoint) => routeKey(endpoint.method, endpoint.path)));

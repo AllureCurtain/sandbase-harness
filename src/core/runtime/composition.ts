@@ -2,7 +2,7 @@ import type { Database } from '@/core/db/database.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
 import { SqliteMemoryProvider } from '@/core/memory/sqlite-memory-provider.js';
 import type { RuntimeSettings } from '@/core/settings/schema.js';
-import { activateRuntimeSettings, localArtifactStorageDir, modelConfigFromRuntimeSettings, type RuntimeSettingsRecord } from '@/core/settings/store.js';
+import { activateRuntimeSettings, localArtifactStorageDir, modelConfigFromRuntimeSettings, type RuntimeSettingsRecord, type RuntimeSettingsSeed } from '@/core/settings/store.js';
 import { LocalArtifactStore } from '@/core/storage/artifact-store.js';
 import type { ModelRegistry } from '@/model/registry.js';
 import { sandboxProviderForSettings } from '@/sandbox/provider-names.js';
@@ -19,16 +19,21 @@ export function composeRuntimeFromSettings({
   db,
   dataDir,
   modelRegistry,
-  memorySeedEnabled,
+  settingsSeed,
   sandboxProviders = ['local'],
 }: {
   db: Database;
   dataDir: string;
   modelRegistry: ModelRegistry;
-  memorySeedEnabled: boolean;
+  /**
+   * Values used only when `runtime_settings` has no row yet. `RuntimeSettingsSeed`
+   * already carries `memoryEnabled`, so there is one way to express a seed
+   * rather than a separate flag that has to be merged in here.
+   */
+  settingsSeed?: RuntimeSettingsSeed;
   sandboxProviders?: string[];
 }): RuntimeComposition {
-  const settings = activateRuntimeSettings(db, { memoryEnabled: memorySeedEnabled }, dataDir, sandboxProviders);
+  const settings = activateRuntimeSettings(db, settingsSeed ?? {}, dataDir, sandboxProviders);
   const effectiveSettings = settings.effective_config;
 
   modelRegistry.clear();

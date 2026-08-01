@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { defaultRuntimeHome, resolveUserPath, workspaceDataSlug } from '@/core/config/paths.js';
+import { createHash } from 'node:crypto';
+import { defaultConfigPath, defaultDataDir, defaultRuntimeHome, resolveUserPath } from '@/core/config/paths.js';
 
 export type WorkspaceRegistryEntry = {
   id: string;
@@ -31,10 +32,10 @@ export function registerWorkspace(input: { root: string; name?: string; dataDir?
   const registry = readRegistry(home);
   const existing = registry.workspaces.find((workspace) => workspace.root === root);
   const entry: WorkspaceRegistryEntry = {
-    id: workspaceDataSlug(root),
+    id: workspaceEntryId(root),
     name: cleanName(input.name) ?? (basename(root) || 'workspace'),
     root,
-    data_dir: input.dataDir ? resolveUserPath(input.dataDir, root) : join(home, workspaceDataSlug(root)),
+    data_dir: input.dataDir ? resolveUserPath(input.dataDir, root) : defaultDataDir(root),
     created_at: existing?.created_at ?? now,
     last_opened_at: now,
   };
@@ -48,8 +49,11 @@ export function createRegisteredWorkspace(input: { root: string; name?: string; 
   mkdirSync(root, { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, 'skills'), { recursive: true });
-  const configPath = join(root, 'managed-agents.config.yaml');
+  // Same location `managed-agents init` and the runtime's config resolution use,
+  // so a registered workspace and a hand-initialized one are indistinguishable.
+  const configPath = defaultConfigPath(root);
   if (!existsSync(configPath)) {
+    mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(configPath, defaultWorkspaceConfig(), 'utf8');
   }
   return registerWorkspace({ ...input, root });
@@ -111,6 +115,20 @@ function isEntry(value: unknown): value is WorkspaceRegistryEntry {
     && typeof record.data_dir === 'string'
     && typeof record.created_at === 'string'
     && typeof record.last_opened_at === 'string';
+}
+
+/**
+ * Stable per-root identifier for registry entries.
+ *
+ * Runtime state now lives in `<root>/.managed-agents`, so this no longer names
+ * a directory — it only has to stay stable across re-registration and stay
+ * unique for two workspaces that share a basename.
+ */
+function workspaceEntryId(workspaceRoot: string): string {
+  const root = resolve(workspaceRoot);
+  const name = (basename(root) || 'workspace').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'workspace';
+  const hash = createHash('sha256').update(root).digest('hex').slice(0, 8);
+  return `${name}-${hash}`;
 }
 
 function cleanName(value: string | undefined): string | undefined {

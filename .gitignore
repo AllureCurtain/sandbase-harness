@@ -1,7 +1,12 @@
 node_modules/
 dist/
-# Runtime data if explicitly configured inside the repository.
-.managed-agents/
+# Runtime state written into a workspace. The root entry covers a runtime
+# started in this checkout; the logs/data entries cover workspaces committed as
+# examples, where the config file is tracked but everything the runtime
+# generates beside it is not.
+/.managed-agents/
+**/.managed-agents/logs/
+**/.managed-agents/data.db*
 .managed-agents-dev/
 /agents/
 /skills/

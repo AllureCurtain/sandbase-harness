@@ -43,15 +43,15 @@ loop_engine:
 storage:
   metadata:
     type: sqlite
-    path: ~/.managed-agents/<workspace>/data.db
+    path: <workspace>/.managed-agents/data.db
   artifacts:
     type: local_filesystem
-    path: ~/.managed-agents/<workspace>/files
+    path: <workspace>/.managed-agents/files
 
 memory:
   backend:
     type: sqlite
-    path: ~/.managed-agents/<workspace>/data.db
+    path: <workspace>/.managed-agents/data.db
 
 sandbox:
   type: local

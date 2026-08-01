@@ -3,6 +3,11 @@
 **SandBase managed-agents is the safe, local-first runtime layer for enterprise
 AI agents.**
 
+`managed-agents@0.1.0` is the first public release candidate: a self-hosted AI
+agent runtime, local agent Console, and Claude Managed Agents-style `/v1` API
+for teams that need auditable sessions, sandboxed tools, memory, credentials,
+and replayable event streams before they move agent workflows into production.
+
 `managed-agents` helps teams move AI agents from demos to production with
 runtime infrastructure for sessions, tools, approvals, sandboxed execution,
 memory, credential vaults, audit trails, replayable events, and operational
@@ -13,6 +18,11 @@ default.
 Use it to build and operate self-hosted AI agents, local developer agents,
 desktop agent runtimes, MCP-enabled workflows, and enterprise proofs of concept
 without locking your runtime layer to a single model provider.
+
+Search-friendly topics: self-hosted AI agents, local-first agent runtime,
+Claude Managed Agents API, OpenAI-compatible agents, MCP tools, sandboxed tool
+execution, agent memory, credential vaults, SSE event replay, and enterprise AI
+agent observability.
 
 ## Why managed-agents?
 
@@ -42,6 +52,20 @@ environments.
 - One configured model vendor boundary with adapter-owned model defaults
 - Optional TypeScript convenience SDK at `managed-agents/sdk`
 
+## Screenshots
+
+### Local agent Console
+
+![managed-agents Dashboard showing local agents](docs/assets/dashboard-overview.png)
+
+### Runtime Settings V2
+
+![managed-agents Settings V2 model vendor configuration](docs/assets/dashboard-settings-models.png)
+
+### Built-in API reference
+
+![managed-agents built-in API reference](docs/assets/dashboard-api-reference.png)
+
 ## Common Use Cases
 
 - Run a local Claude Managed Agents-style Console for agent development
@@ -51,6 +75,32 @@ environments.
 - Package reusable agent templates, MCP connectors, permission policies, and
   skills for field deployments
 - Embed an agent runtime in a future desktop app or private internal platform
+
+## 0.1.0 Release Scope
+
+The first release is intentionally local-first and honest about adapter
+availability. It ships the production-shaped control plane and implemented
+local adapters, while planned integrations stay disabled until their backing
+runtime implementations exist.
+
+Included in 0.1.0:
+
+- One workspace model vendor configured through Settings V2
+- Built-in loop engine with configurable max steps
+- SQLite metadata and memory storage
+- Local artifact storage
+- Local sandbox provider plus runtime-registered Docker/self-hosted sandbox
+  availability
+- Agent, Environment, Memory Store, File, Credential Vault, Skill, Session,
+  Event, API key, Logs, Monitoring, and API reference surfaces
+- Release gate: typecheck, tests, build, package dry-run, init smoke, and
+  example workspace startup smoke
+
+Deferred beyond 0.1.0:
+
+- S3 artifact storage, Postgres/MySQL metadata storage, mem0/MemU memory
+  adapters, Harness/Codex/Claude loop engines, live remote model credential
+  checks, and production deployment examples
 
 ## Requirements
 
@@ -122,12 +172,28 @@ Open the Dashboard:
 http://127.0.0.1:3000/dashboard
 ```
 
-Open `Settings > Models` and configure the single workspace model vendor:
-vendor, optional base URL, and API key. The Dashboard stores Settings V2 in the
-runtime SQLite database under the user data directory. Agents that use
-`model: default` run through that configured vendor; concrete model IDs remain
-adapter-owned implementation details. No source-controlled file changes are
-required for normal local use.
+Configure the workspace model connection in `.managed-agents/config.yaml`:
+provider, optional base URL, and API key. Agents choose concrete model IDs in
+their own YAML definitions; the workspace config only says how to reach the
+model service.
+
+The same config file also declares the default local storage layout. The first
+release uses SQLite for metadata and local files for artifacts:
+
+```yaml
+model:
+  provider: openai
+  api_key: ${OPENAI_API_KEY}
+
+storage:
+  metadata:
+    provider: sqlite
+    options: {}
+  artifacts:
+    provider: local
+    options:
+      base_path: files
+```
 
 The API is available at:
 
@@ -140,6 +206,8 @@ developer reference page. It shows the active base URL, authentication mode,
 grouped endpoints, parameter descriptions, return fields, and copyable `curl`
 and TypeScript SDK examples generated from your running runtime.
 
+See [CHANGELOG.md](CHANGELOG.md) for the 0.1.0 release notes.
+
 ## Workspace Layout
 
 ```text
@@ -149,21 +217,19 @@ my-agents/
 +-- skills/                  # Optional seed skill packages
 |   +-- example-skill/
 |       +-- SKILL.md
-+-- managed-agents.config.yaml
++-- .managed-agents/
+    +-- config.yaml          # Workspace runtime configuration
+    +-- data.db              # SQLite metadata store
+    +-- logs/
+    |   +-- runtime.log
+    +-- files/               # Uploaded file bytes
+    +-- skills/              # Uploaded custom skill package assets
+    +-- snapshots/           # Session workspace snapshots
+    +-- sandbox/             # Local session workspaces
 ```
 
-Runtime state is stored outside the repository by default:
-
-```text
-~/.managed-agents/<workspace-name>-<hash>/
-+-- data.db                  # SQLite metadata store
-+-- files/                   # Uploaded file bytes
-+-- skills/                  # Uploaded custom skill package assets
-+-- snapshots/               # Session workspace snapshots
-+-- sandbox/                 # Local session workspaces
-```
-
-Set `MANAGED_AGENTS_HOME` or pass `--data-dir` to override this location.
+Pass `--workspace`, `--config`, `--data-dir`, or `--log-file` when you need to
+override the default workspace layout.
 
 ## Agent Definition
 
@@ -174,7 +240,7 @@ or uniqueness key.
 ```yaml
 name: Incident commander
 description: Triages alerts, opens incident tickets, and coordinates status updates.
-model: default
+model: gpt-4o
 system: |-
   You are an on-call incident commander. Be decisive, cite the evidence you used,
   and recommend rollback when confidence is high.
@@ -217,11 +283,11 @@ metadata:
   template: incident-commander
 ```
 
-Use `model: default` for the common path. The workspace Settings page maps that
-name to the configured vendor, and each vendor adapter owns its default concrete
-model ID. Runtime settings are stored in SQLite under the runtime data
-directory. API clients may also send a model configuration object when they need
-additional controls such as `speed`.
+Set `model` on the Agent to the concrete model ID you want to call, such as
+`gpt-4o`, `claude-sonnet-4-20250514`, or a gateway-qualified value like
+`openai/gpt-5.5`. The workspace model config supplies provider credentials and
+base URL only. API clients may also send a model configuration object when they
+need additional controls such as `speed`.
 
 ## Dashboard
 
@@ -292,6 +358,23 @@ curl -X POST http://127.0.0.1:3000/v1/environments \
       "sandbox_provider": "local",
       "network": { "type": "limited" },
       "packages": []
+    }
+  }'
+```
+
+Run each session in an isolated Docker container instead:
+
+```bash
+curl -X POST http://127.0.0.1:3000/v1/environments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Docker tools",
+    "description": "Runs each session in an isolated Docker container.",
+    "config": {
+      "hosting_type": "docker",
+      "sandbox_provider": "docker",
+      "image": "node:22-slim",
+      "resources": { "memory": "1g", "cpu": 1 }
     }
   }'
 ```
@@ -476,18 +559,11 @@ for await (const event of client.sessions.chat(session.id, 'Hello')) {
 ## Authentication
 
 Local development is open by default. Authentication turns on when at least one
-API key exists. You can create managed keys from the Console/API, or configure a
-static key:
+API key exists. You can create managed keys from the Console/API, or set a
+static key through the environment:
 
 ```bash
 export MANAGED_AGENTS_API_KEY=sk-local-example
-```
-
-Static keys can also be configured in `managed-agents.config.yaml`:
-
-```yaml
-api_keys:
-  - ${MANAGED_AGENTS_API_KEY}
 ```
 
 Create a managed key through the API:
@@ -530,6 +606,16 @@ npm test
 npm run build
 ```
 
+Before handing a branch to release, run the full local release gate:
+
+```bash
+npm run release:check
+```
+
+That gate runs typecheck, the Vitest suite, production builds, `npm pack
+--dry-run`, and a CLI smoke test that verifies both `managed-agents init` and
+the `examples/basic` workspace startup path.
+
 Run the runtime and Dashboard during development:
 
 ```bash
@@ -553,17 +639,27 @@ Before publishing a release:
 
 ```bash
 npm ci
-npm run typecheck
-npm test
-npm run build
+npm run release:check
 ```
 
-Smoke test the example project:
+`release:check` verifies:
+
+- TypeScript type safety
+- Unit and integration tests
+- Runtime and Dashboard production builds
+- npm package contents with `npm pack --dry-run`
+- `managed-agents init` output in a temporary workspace
+- `examples/basic` startup, health, and agent loading
+
+Manual example smoke, when you want to inspect the running Dashboard:
 
 ```bash
 cd examples/basic
-npx managed-agents start --config managed-agents.config.yaml --agents-dir agents --skills-dir skills
+npx managed-agents start --config .managed-agents/config.yaml --agents-dir agents --skills-dir skills
 ```
+
+Then open `http://127.0.0.1:3000/dashboard` and configure
+`Settings > Models` before calling a real hosted model.
 
 ## License
 

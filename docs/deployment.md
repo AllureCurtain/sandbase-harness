@@ -51,7 +51,7 @@ ExecStart=/usr/bin/managed-agents start \
   --host 127.0.0.1 \
   --port 3000 \
   --data-dir /var/lib/managed-agents/runtime \
-  --config /etc/managed-agents/managed-agents.config.yaml
+  --config /etc/managed-agents/config.yaml
 Restart=on-failure
 RestartSec=5
 
@@ -84,7 +84,7 @@ services:
       - managed_agents_data:/data
       - ./agents:/app/agents:ro
       - ./skills:/app/skills:ro
-      - ./managed-agents.config.yaml:/app/managed-agents.config.yaml:ro
+      - ./config.yaml:/app/.managed-agents/config.yaml:ro
 
 volumes:
   managed_agents_data:

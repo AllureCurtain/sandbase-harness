@@ -60,16 +60,53 @@ export class ModelRegistry {
   }
 
   /**
-   * Create a Vercel AI SDK LanguageModel instance, wrapped with the retry
-   * middleware (Property 14). Resolves ${ENV_VAR} in api_key and base_url.
-   * Throws if model not registered.
+   * Resolve an agent-facing model reference into a concrete provider config.
+   *
+   * Exact registry names still work (`default`, `anthropic`, custom aliases).
+   * Otherwise, the user-provided model is treated as the concrete model id:
+   * - `openai/gpt-5.5` => provider `openai`, model `gpt-5.5`
+   * - `anthropic/claude-...` => provider `anthropic`, model `claude-...`
+   * - `gpt-4o` => default provider credentials/base URL, model `gpt-4o`
    */
-  createModel(name: string): LanguageModelV1 {
-    const config = this.models.get(name);
-    if (!config) {
-      throw new ModelNotFoundError(name, Array.from(this.models.keys()));
+  resolveModelConfig(name: string): ModelConfig {
+    const exact = this.models.get(name);
+    if (exact?.model) return exact;
+    if (exact && !exact.model) {
+      throw new ModelNotFoundError(name, Array.from(this.models.keys()), 'Provider configuration does not include a concrete model id. Set model on the Agent instead.');
     }
 
+    const parsed = parseModelReference(name);
+    const providerConfig = parsed.provider
+      ? this.findProviderConfig(parsed.provider)
+      : this.getDefaultConfig();
+    if (providerConfig) {
+      return {
+        ...providerConfig,
+        name,
+        provider: parsed.provider ?? providerConfig.provider,
+        model: parsed.model,
+        is_default: false,
+      };
+    }
+    if (parsed.provider) {
+      return {
+        name,
+        provider: parsed.provider,
+        model: parsed.model,
+      };
+    }
+    throw new ModelNotFoundError(name, Array.from(this.models.keys()));
+  }
+
+  /**
+   * Create a Vercel AI SDK LanguageModel instance, wrapped with the retry
+   * middleware (Property 14). Resolves ${ENV_VAR} in api_key and base_url.
+   */
+  createModel(name: string): LanguageModelV1 {
+    const config = this.resolveModelConfig(name);
+    if (!config.model) {
+      throw new ModelNotFoundError(name, Array.from(this.models.keys()), 'Agent model id is required.');
+    }
     const resolvedApiKey = config.api_key ? resolveEnvVars(config.api_key, false) : undefined;
     const resolvedBaseUrl = config.base_url ? resolveEnvVars(config.base_url, false) : undefined;
 
@@ -113,16 +150,33 @@ export class ModelRegistry {
       .map((config) => ({
       name: config.name,
       provider: config.provider ?? 'unknown',
-      model: config.model ?? config.name,
+      ...(config.model ? { model: config.model } : {}),
       base_url: publicBaseUrl(config.base_url),
       api_key_state: configState(config.api_key),
       base_url_state: configState(config.base_url),
       is_default: config.name === defaultName,
     }));
   }
+
+  private getDefaultConfig(): ModelConfig | undefined {
+    const defaultName = this.getDefaultName();
+    return defaultName ? this.models.get(defaultName) : undefined;
+  }
+
+  private findProviderConfig(provider: string): ModelConfig | undefined {
+    return Array.from(this.models.values()).find((config) => config.provider === provider);
+  }
 }
 
 const ENV_PLACEHOLDER = /\$\{[^}]+\}/;
+const QUALIFIED_MODEL = /^([a-zA-Z][a-zA-Z0-9_-]*)\/(.+)$/;
+
+function parseModelReference(name: string): { provider?: ModelProviderType; model: string } {
+  const trimmed = name.trim();
+  const match = QUALIFIED_MODEL.exec(trimmed);
+  if (!match) return { model: trimmed };
+  return { provider: match[1], model: match[2] };
+}
 
 function configState(value?: string): RuntimeConfigState {
   if (!value) return 'not_set';
@@ -232,11 +286,12 @@ export class ModelNotFoundError extends Error {
   constructor(
     public readonly modelName: string,
     public readonly available: string[],
+    detail?: string,
   ) {
     const suggestion = available.length > 0
       ? `Available models: ${available.join(', ')}`
       : 'No models registered. Add a model provider in Dashboard Settings > Models';
-    super(`Model not found: "${modelName}". ${suggestion}`);
+    super(`Model not found: "${modelName}". ${detail ? `${detail} ` : ''}${suggestion}`);
     this.name = 'ModelNotFoundError';
   }
 }

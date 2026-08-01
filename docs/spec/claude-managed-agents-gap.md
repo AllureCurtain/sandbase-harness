@@ -185,15 +185,15 @@ loop_engine:
 storage:
   metadata:
     type: sqlite
-    path: ~/.managed-agents/data.db
+    path: <workspace>/.managed-agents/data.db
   artifacts:
     type: local_filesystem
-    path: ~/.managed-agents/files
+    path: <workspace>/.managed-agents/files
 
 memory:
   backend:
     type: sqlite
-    connection_url: ~/.managed-agents/memory.db
+    connection_url: <workspace>/.managed-agents/memory.db
 
 sandbox:
   type: local

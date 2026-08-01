@@ -639,7 +639,8 @@ describe('Settings V2 activation', () => {
     const initial = getOrSeedRuntimeSettings(db);
     const config = { ...initial.effective_config, model: { vendor: 'anthropic' as const, options: {} } };
     const model = modelConfigFromRuntimeSettings(db, config, directory);
-    expect(model).toMatchObject({ name: 'default', provider: 'anthropic', model: 'claude-sonnet-4-20250514' });
+    expect(model).toMatchObject({ name: 'default', provider: 'anthropic' });
+    expect(model.model).toBeUndefined();
     db.close();
   });
 
@@ -655,6 +656,47 @@ describe('Settings V2 activation', () => {
     expect(settings.saved_config.model.base_url).toBeUndefined();
     expect(validateRuntimeSettings(settings.saved_config).valid).toBe(true);
     db.close();
+  });
+
+  it('does not seed unresolved environment placeholders as Settings V2 model URLs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-placeholder-url-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    db.prepare(`
+      INSERT INTO models (name, provider, model, base_url, api_key, config, is_default)
+      VALUES (?, ?, ?, ?, ?, '{}', 1)
+    `).run('default', 'openai', 'gpt-4o', '${OPENAI_BASE_URL}', '${OPENAI_API_KEY}');
+
+    const settings = getOrSeedRuntimeSettings(db, {}, directory);
+
+    expect(settings.saved_config.model).toMatchObject({
+      vendor: 'openai',
+      api_key: '${OPENAI_API_KEY}',
+      options: {},
+    });
+    expect(settings.saved_config.model.base_url).toBeUndefined();
+    expect(validateRuntimeSettings(settings.saved_config).valid).toBe(true);
+    db.close();
+  });
+
+  it('seeds resolved environment model URLs into Settings V2', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-resolved-url-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    process.env.TEST_MANAGED_AGENTS_BASE_URL = 'https://models.example.test/v1';
+    db.prepare(`
+      INSERT INTO models (name, provider, model, base_url, api_key, config, is_default)
+      VALUES (?, ?, ?, ?, ?, '{}', 1)
+    `).run('default', 'openai', 'gpt-4o', '${TEST_MANAGED_AGENTS_BASE_URL}', '${OPENAI_API_KEY}');
+
+    const settings = getOrSeedRuntimeSettings(db, {}, directory);
+
+    expect(settings.saved_config.model.base_url).toBe('https://models.example.test/v1');
+    expect(validateRuntimeSettings(settings.saved_config).valid).toBe(true);
+    db.close();
+    delete process.env.TEST_MANAGED_AGENTS_BASE_URL;
   });
 
   it('seeds Settings V2 memory enablement from runtime bootstrap configuration', () => {
@@ -800,7 +842,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: registry,
-      memorySeedEnabled: true,
+      settingsSeed: { memoryEnabled: true },
     });
 
     expect(registry.getDefaultName()).toBe('default');
@@ -829,7 +871,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local'],
     });
     expect(localOnly.settings.activation_status).toBe('failed');
@@ -839,7 +881,7 @@ describe('Settings V2 activation', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'docker'],
     });
     expect(dockerCapable.settings.activation_status).toBe('active');
@@ -891,7 +933,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'kubernetes'],
     });
 
@@ -922,7 +964,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local', 'kubernetes'],
     }).resolveEnvironmentConfig('env_default');
 
@@ -941,7 +983,7 @@ describe('Settings V2 sandbox options reach the sandbox provider', () => {
       db,
       dataDir: directory,
       modelRegistry: new ModelRegistry(),
-      memorySeedEnabled: false,
+      settingsSeed: { memoryEnabled: false },
       sandboxProviders: ['local'],
     }).resolveEnvironmentConfig('env_default');
 
