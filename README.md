@@ -12,6 +12,8 @@ A local-first runtime for AI agents. Sessions, sandboxed tools, memory,
 credentials, audit trails, and a built-in Console — all running on your
 machine or in your own infrastructure.
 
+![SandBase Harness architecture](docs/assets/sandbase-harness-architecture.svg)
+
 > Looking for a lightweight bridge instead of a full runtime? [SandBase CLI](https://github.com/sandbaseai/cli)
 > connects 25 AI client targets to 2,000+ models through a local stdio MCP bridge.
 
