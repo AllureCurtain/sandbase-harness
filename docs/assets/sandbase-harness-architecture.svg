@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">SandBase Harness architecture</title>
+  <desc id="desc">A local-first runtime connecting AI agents to sandboxed execution, memory, credentials, and audit trails.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/>
+  <circle cx="1080" cy="-10" r="230" fill="#2563eb" opacity=".10"/>
+  <circle cx="1120" cy="330" r="180" fill="#10b981" opacity=".08"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="64" y="82" fill="#f8fafc" font-size="40" font-weight="700">SandBase Harness</text>
+    <text x="64" y="120" fill="#94a3b8" font-size="20">Local-first infrastructure for agents that need to run, persist, and be inspected.</text>
+    <rect x="64" y="148" width="338" height="5" rx="2.5" fill="url(#accent)"/>
+    <g filter="url(#shadow)">
+      <rect x="64" y="198" width="220" height="94" rx="16" fill="#172033" stroke="#334155"/>
+      <text x="88" y="234" fill="#93c5fd" font-size="14" font-weight="700" letter-spacing="1.4">YOUR AGENTS</text>
+      <text x="88" y="263" fill="#f8fafc" font-size="18">Any model or client</text>
+    </g>
+    <path d="M298 245H414" stroke="#60a5fa" stroke-width="3"/>
+    <path d="M404 237l12 8-12 8" fill="none" stroke="#60a5fa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <g filter="url(#shadow)">
+      <rect x="430" y="178" width="276" height="134" rx="18" fill="#15243a" stroke="#60a5fa" stroke-width="2"/>
+      <text x="462" y="222" fill="#f8fafc" font-size="24" font-weight="700">Harness runtime</text>
+      <text x="462" y="252" fill="#bfdbfe" font-size="16">Sessions · policies · tools</text>
+      <text x="462" y="278" fill="#94a3b8" font-size="15">API + Console + MCP</text>
+    </g>
+    <path d="M720 245H814" stroke="#34d399" stroke-width="3"/>
+    <path d="M804 237l12 8-12 8" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <g filter="url(#shadow)">
+      <rect x="830" y="178" width="306" height="134" rx="18" fill="#132a2b" stroke="#34d399" stroke-width="2"/>
+      <text x="862" y="216" fill="#a7f3d0" font-size="14" font-weight="700" letter-spacing="1.2">CONTROLLED EXECUTION</text>
+      <text x="862" y="247" fill="#f8fafc" font-size="17">Sandbox · memory · credentials</text>
+      <text x="862" y="275" fill="#f8fafc" font-size="17">Audit · replay · observability</text>
+    </g>
+    <text x="64" y="334" fill="#64748b" font-size="14">Self-hosted · Apache-2.0 · Model Context Protocol</text>
+  </g>
+</svg>
