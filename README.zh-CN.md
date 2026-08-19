@@ -6,6 +6,8 @@
 Memory、凭证、审计日志、事件回放和可视化 Console 放在同一个运行时边界中，
 并提供原生 DeepSeek Harness stdio MCP 插件。
 
+![SandBase Harness 架构](docs/assets/sandbase-harness-architecture.svg)
+
 > 当前稳定版本：[v0.3.4](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.4)
 
 > 官方 MCP Registry：[io.github.sandbaseai/sandbase-harness](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)（状态：`active`）
