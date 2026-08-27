@@ -15,7 +15,9 @@ machine or in your own infrastructure.
 ![SandBase Harness architecture](docs/assets/sandbase-harness-architecture.svg)
 
 > Looking for a lightweight bridge instead of a full runtime? [SandBase CLI](https://github.com/sandbaseai/cli)
-> connects 25 AI client targets to 2,000+ models through a local stdio MCP bridge.
+> connects 25 AI client targets to 2,000+ models and APIs through a local stdio MCP bridge.
+> If it fits your workflow, [star SandBase CLI](https://github.com/sandbaseai/cli/stargazers)
+> so other agent users can discover it.
 
 > Need hosted model and media APIs instead? SandBase provides one interface for
 > [LLM, image, and video generation APIs](https://blog.sandbase.ai/unified-ai-api-llm-image-video-2026/),
@@ -439,7 +441,7 @@ init smoke, and `examples/basic` startup smoke.
   workflows across Codex, Claude Code, Cursor, Gemini CLI, and other clients.
 - [SandBase CLI](https://github.com/sandbaseai/cli) — connect Cursor, Claude Code,
   Codex, Windsurf, Gemini CLI, OpenCode, and other MCP clients to 2,000+ AI
-  models with one onboarding command.
+  models and APIs with one onboarding command.
 - [DSH Plugin Store](https://github.com/sandbaseai/dsh-plugin-store) — discover,
   filter, install, and manage community DeepSeek Harness plugins from the native
   Settings experience.
