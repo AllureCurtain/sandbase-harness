@@ -8,6 +8,8 @@
 Memory、凭证、审计日志、事件回放和可视化 Console 放在同一个运行时边界中，
 并提供原生 DeepSeek Harness stdio MCP 插件。
 
+> 正在使用 DeepSeek Harness 构建 Agent？可查看独立的 [DeepSeek Harness Handbook](https://github.com/sandbaseai/deepseek-harness-handbook)，其中包含有来源依据的运行时指南、多语言故障排查，以及 [31 条 Agent-first 资源地图](https://sandbaseai.github.io/deepseek-harness-handbook/awesome-deepseek-harness-resources.html)。
+
 ![SandBase Harness 架构](docs/assets/sandbase-harness-architecture.svg)
 
 > 当前稳定版本：[v0.3.7](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.7)
