@@ -46,6 +46,8 @@ The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) w
 
 The new [MyMCPTools issue #8](https://github.com/shibley/mymcptools/issues/8) proposes the published SandBase Harness MCP bridge for the directory. It includes the v0.3.8 release, official installation/MCP documentation, and the pinned GHCR command; the issue is pending maintainer review and makes no claim of a public listing, score, or endorsement.
 
+Daily Ops [PR #247](https://github.com/sandbaseai/sandbase-daily-ops/pull/247) adds the latest Agentic Community Landscape, Awesome AI Agent Engineering, and MyMCPTools review paths to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW`; no social-account publication is claimed.
+
 The existing [AI Native Landscape project submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) was rechecked and given a current v0.3.8 / installation-guide follow-up ([comment](https://github.com/rootsongjc/ai-native-landscape/issues/18#issuecomment-5471400667)). It remains an open curator review request under `platform-infra` / `sandboxes-runtimes`; no inclusion or ranking is claimed.
 
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
