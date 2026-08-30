@@ -25,7 +25,7 @@ controlled rather than verified discovery.
 
 The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18208574).
 
-The latest promotion checkpoint is also summarized in [Discussion #94](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209013), including the merged MCP catalog entry and the newly verified DSH Plugin Store page.
+The latest promotion checkpoint is also summarized in [Discussion #94](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209143), including the canonical Docker and ToolSDK registry review paths and the TensorBlock metadata gate.
 
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
