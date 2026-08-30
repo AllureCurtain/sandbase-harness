@@ -54,6 +54,7 @@ If this runtime solves a real agent-infrastructure problem for you,
 The project is also discoverable through these independent ecosystem directories:
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
 - [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
 - [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/)
