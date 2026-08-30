@@ -88,6 +88,7 @@ do not imply endorsement or security review.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
 - [AgentsAI.tools submission](https://agentsai.tools/submit): public agent form accepts GitHub projects without account login; the submission was attempted with the official repository details, but the backing Supabase hostname now returns NXDOMAIN in public DNS, so no successful submission is claimed and the form is gated until its backend is restored.
 - [Moltbook AI submission](https://moltbook-ai.com/submit-tool): submitted the official repository, GitHub URL, factual runtime description, and project maintainer GitHub noreply contact through the public review form; HTTP 200 confirmation received, directory review pending.
+- [AiAgents.Directory submission](https://aiagents.directory/submit/): submitted the official repository, factual runtime description, and project maintainer GitHub noreply contact through the public form; redirected to the site's success page, directory review pending.
 - [CordisPlugin](https://cordisplugin.com/plugins/sandbaseai-sandbase-harness): a public detail-page result was discovered, but direct verification currently returns HTTP 402; do not treat its metadata or install instructions as verified until the page is accessible.
 - [sandbase-blog freshness issue #272](https://github.com/sandbaseai/sandbase-blog/issues/272)
 - [Handbook freshness issue #290](https://github.com/sandbaseai/deepseek-harness-handbook/issues/290)
