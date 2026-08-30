@@ -283,7 +283,7 @@ promotion channel.
 - [Deep Insight Awesome AI Agents PR #50](https://github.com/Deep-Insight-Labs/awesome-ai-agents/pull/50): open; maintainer review pending.
 - [Picrew Awesome Agent Harness PR #85](https://github.com/Picrew/awesome-agent-harness/pull/85): open and clean; current v0.3.8, runtime capabilities, and installation evidence were posted for maintainer review.
 - [Awesome MCP List PR #408](https://github.com/MobinX/awesome-mcp-list/pull/408): open; maintainer review pending.
-- [Awesome MCP Devtools PR #299](https://github.com/punkpeye/awesome-mcp-devtools/pull/299): open; maintainer review pending.
+- [Awesome MCP Devtools PR #299](https://github.com/punkpeye/awesome-mcp-devtools/pull/299): open and clean; added SandBase Harness to Proxies and Gateways with self-hosted MCP bridge, permissions, approvals, credentials, audit/replay, and Docker/Kubernetes providers. The [maintainer verification](https://github.com/punkpeye/awesome-mcp-devtools/pull/299#issuecomment-5470201809) confirms v0.3.8, the official MCP configuration guide, and the backend-dependent isolation boundary; review is pending.
 - [YuzeHao Awesome MCP Servers PR #461](https://github.com/YuzeHao2023/Awesome-MCP-Servers/pull/461): open; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [MeshKore directory submission](https://meshkore.com/submit): free public submission accepted with response `status=received`, submission id `13`, and a stated 24-hour review window; no public profile is claimed until the review creates one.
