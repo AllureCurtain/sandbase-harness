@@ -56,6 +56,8 @@ The project is also discoverable through these independent ecosystem directories
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
+- [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
+- [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
