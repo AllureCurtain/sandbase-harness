@@ -23,7 +23,7 @@ MCP.Directory's submission endpoint reports that this repository has already
 been submitted; no public detail page is available yet, so it remains review-
 controlled rather than verified discovery.
 
-The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18207042).
+The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18207151).
 
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
@@ -34,7 +34,7 @@ successfully.
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
 - [GitHub repository topics](https://github.com/sandbaseai/sandbase-harness/topics): refreshed with `agentic-ai`, `agent-framework`, `agent-harness`, runtime, MCP, sandbox, and self-hosted discovery terms.
 - [v0.3.8 Release Notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8): now includes verified dshbase discovery, the official Showcase, and community self-hosting guides for release-page visitors.
-- [Project Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18207042): latest distribution update records the recent source-backed community replies, AgentDepot evidence refresh, new Agent Harness directory requests, and the distinction between pending and verified discovery.
+- [Project Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18207151): latest distribution update records the AgentSpot and AgentMatter submissions, Backblaze review path, recent source-backed community replies, and the distinction between pending and verified discovery.
 - [Official DeepSeek Harness Showcase](https://github.com/deepseek-ai/deepseek-harness/discussions/1918): project showcase thread; the latest update records the merged runtime landscape entry and current v0.3.8 bridge/install links ([comment](https://github.com/deepseek-ai/deepseek-harness/discussions/1918#discussioncomment-18206361)).
 - [DeepSeek Harness security discussion](https://github.com/deepseek-ai/deepseek-harness/discussions/5068#discussioncomment-18202943): answered a user asking how to prevent third-party APIs or plugins from reaching the host filesystem, with factual sandbox, approval, least-privilege, audit, and negative-test guidance plus the Harness reference implementation.
 - [DeepSeek Harness memory discussion](https://github.com/deepseek-ai/deepseek-harness/discussions/14#discussioncomment-18202967): explained safe separation of imported preferences, workspace context, transcripts, credentials, and tool permissions, and linked the runnable Harness reference for users evaluating memory migration.
