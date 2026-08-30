@@ -86,6 +86,8 @@ An [additional verification comment](https://github.com/pjlsergeant/ai-sandboxes
 
 The merged [Daily Ops PR #262](https://github.com/sandbaseai/sandbase-daily-ops/pull/262) (`87a7ca4c63f3104b005ba1d54b3c07f1803b916f`) adds AI Agent Sandboxes PR #3 to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
 
+The merged [Daily Ops PR #263](https://github.com/sandbaseai/sandbase-daily-ops/pull/263) (`19c50e76a2ffa60fbe85529510a6d8c6a81fc0f8`) adds Awesome AI Coding Tools PR #665 to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
+
 After its GitGuardian check passed, a [maintainer-facing verification comment](https://github.com/restyler/awesome-sandbox/pull/27#issuecomment-5471724970) added the official installation, sandbox-backend, and v0.3.8 release links and reiterated the backend-dependent isolation boundary. The PR remains open for destination-maintainer review.
 
 The merged [Daily Ops PR #261](https://github.com/sandbaseai/sandbase-daily-ops/pull/261) (`f45f7535ded89266e3440c045b487fe23e27fa10`) adds Awesome Sandbox PR #27 to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
