@@ -98,6 +98,14 @@ The project is also discoverable through these independent ecosystem directories
 - [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
 - [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
 
+Recently verified community references:
+
+- [dshbase verified plugin page](https://dshbase.com/plugins/sandbase-harness/)
+- [awesome-agent-runtime — merged entry](https://github.com/sandbaseai/awesome-agent-runtime/pull/15)
+- [Awesome Agent Cortex — merged entry](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
+- [Awesome AI Devtools — merged entry](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
+- [Awesome Agent Skills — merged entry](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
+
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.
 

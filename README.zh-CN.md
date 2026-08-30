@@ -90,6 +90,14 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
 - [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
 
+近期已核验的社区引用：
+
+- [dshbase 已核验插件页](https://dshbase.com/plugins/sandbase-harness/)
+- [awesome-agent-runtime — 已合并条目](https://github.com/sandbaseai/awesome-agent-runtime/pull/15)
+- [Awesome Agent Cortex — 已合并条目](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
+- [Awesome AI Devtools — 已合并条目](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
+- [Awesome Agent Skills — 已合并条目](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
+
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 
 ### 在 Codespaces 中试用
