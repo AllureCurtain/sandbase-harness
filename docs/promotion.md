@@ -210,6 +210,7 @@ successfully.
 
 - [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
 - [AgentAtlas submission](https://agentatlas.org/submit/): the directory advertises a one-time `$39` submission fee; no paid submission was made.
+- [Bloom publish](https://www.usebloom.org/publish): open-source AI-agent registry with a public publish page, but publishing redirects to account sign-in; no account was available, so no submission was made.
 - [agents-lib](https://agents-lib.com/): the public directory invites GitHub contributions, but its GitHub link currently points to the placeholder `your-org/agents-lib` repository; no unverifiable submission was made.
 - [AI Agents Directory submission](https://aiagentautomation.site/submit/): the public form routes to a Dodo Payments checkout and the page advertises a $10 one-time listing fee; no paid submission was made.
 - [CyberAgents Exchange](https://exchange.tenable.com/contributing): relevant free, vendor-neutral directory for open-source security agents, skills, MCP servers, and playbooks; manual submission requires accepting the CyberAgents Contribution Agreement and recording the acceptance timestamp, so no PR was opened without explicit authorization to accept that agreement.
