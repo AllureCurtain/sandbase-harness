@@ -91,6 +91,7 @@ do not imply endorsement or security review.
 ## Gated or not eligible
 
 - [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
+- [AAIF project proposal](https://aaif.io/submit-a-project): the Linux Foundation intake requires production adoption in at least two organizations, two maintainers from different organizations, at least ten contributors, and agreement to the hosted-project trademark/account and contribution-agreement process; the current project evidence does not satisfy those requirements, so no proposal was submitted.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
 - [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
 - [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm installation path is unsafe to promote: the public `managed-agents` package currently reports `latest` as `0.0.1`, while this repository is `0.3.8`; the page presents that package as the current runtime. The repository's GitHub-source install remains the source-of-truth path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
