@@ -80,6 +80,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Arnon-hs Open Source — MCP 项目](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
 - [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime)
 - [WalkingLabs Awesome Harness Engineering — 已合并收录](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)
+- [Yenanjing Awesome Harness Engineering PR #6 — 等待审核](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp)
 - [cccakeee/awesome-dsh-plugins](https://github.com/cccakeee/awesome-dsh-plugins)
 - [anbeime/skill — Skills 索引](https://github.com/anbeime/skill)
