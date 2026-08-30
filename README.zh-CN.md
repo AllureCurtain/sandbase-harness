@@ -85,6 +85,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [DSH Plugin Directory](https://dsh-plugin.github.io/directory.html)
 - [DSH Plugin Registry](https://github.com/dshplugin-app/deepseek-harness-plugins)
 - [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
+- [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 

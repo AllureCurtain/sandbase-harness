@@ -49,6 +49,7 @@
 - DSH Plugin Directory: https://dsh-plugin.github.io/directory.html
 - DSH Plugin Registry: https://github.com/dshplugin-app/deepseek-harness-plugins
 - dsh-market: https://dshmarket.com/p/sandbaseai/sandbase-harness/
+- dshplugin.dev: https://dshplugin.dev/plugins/sandbaseai-sandbase-harness
 
 These independent directory pages are discovery mirrors; this repository and its
 release metadata remain the source of truth.
