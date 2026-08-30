@@ -7,7 +7,7 @@ description now explicitly identifies SandBase Harness as a self-hosted AI
 agent runtime and MCP bridge. The existing release homepage and 20 relevant
 GitHub topics were retained.
 
-The published [v0.3.8 release notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8) were also refreshed with the newly verified merged directory entries, the still-pending HabitoAI/mcpdir review links, and current Hugging Face, Agent Switchboard, and MeshKore review submissions.
+The published [v0.3.8 release notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8) were also refreshed with the newly verified merged directory entries, the public MCPVault auto-indexed listing, the still-pending HabitoAI/mcpdir review links, and current Hugging Face, Agent Switchboard, and MeshKore review submissions.
 
 This is an operational handoff for maintainers. The repository, release tags,
 and official MCP Registry remain the source of truth; independent directories
@@ -48,7 +48,7 @@ The new [MyMCPTools issue #8](https://github.com/shibley/mymcptools/issues/8) pr
 
 The merged Daily Ops [PR #247](https://github.com/sandbaseai/sandbase-daily-ops/pull/247) (`d75b84ebede271228a37fdaeb1fbc38c30d9acc4`) adds the latest Agentic Community Landscape, Awesome AI Agent Engineering, and MyMCPTools review paths to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW`; no social-account publication is claimed. The merge was recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210392).
 
-The merged Daily Ops [PR #248](https://github.com/sandbaseai/sandbase-daily-ops/pull/248) (`49d950616232556cf952cadfe9a6b99821ead49a`) adds the public MCPVault auto-indexed/unclaimed listing to the X, LinkedIn, and Discord drafts. The copy distinguishes automated discovery signals from maintainer certification; the merge is recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210407).
+The merged Daily Ops [PR #248](https://github.com/sandbaseai/sandbase-daily-ops/pull/248) (`49d950616232556cf952cadfe9a6b99821ead49a`) adds the public MCPVault auto-indexed/unclaimed listing to the X, LinkedIn, and Discord drafts. The copy distinguishes automated discovery signals from maintainer certification; the merge is recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210407). The release-note update is recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210413).
 
 The existing [AI Native Landscape project submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) was rechecked and given a current v0.3.8 / installation-guide follow-up ([comment](https://github.com/rootsongjc/ai-native-landscape/issues/18#issuecomment-5471400667)). It remains an open curator review request under `platform-infra` / `sandboxes-runtimes`; no inclusion or ranking is claimed.
 
