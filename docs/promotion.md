@@ -98,6 +98,10 @@ do not imply endorsement or security review.
 - [Awesome Agent Harnesses inclusion suggestion #1](https://github.com/open-kairox/awesome-agent-harnesses/issues/1): opened after the upstream fork name conflicted with an existing unrelated fork; maintainer can review the prepared entry and decide whether to include it.
 - [Bilingual Awesome Agent Harness PR #6](https://github.com/to-real/awesome-agent-harness/pull/6): open; matching English and Chinese entries added to the reference harnesses section; maintainer review pending.
 - [Bayshier Awesome Agent Harnesses PR #2](https://github.com/bayshier/awesome-agent-harnesses/pull/2): open; SandBase Harness added to Platforms & Frameworks with the submission-time star count and factual positioning; maintainer review pending.
+- [Cline MCP Marketplace submission #2364](https://github.com/cline/mcp-marketplace/issues/2364): open; non-interactive Cline installation and stdio `initialize` handshake were documented for the published v0.3.8 bridge image; marketplace review pending.
+- [ChatMCP MCPSo submission #3834](https://github.com/chatmcp/mcpso/issues/3834): open; submitted the official MCP metadata, v0.3.8 image, six-tool description, and self-hosted runtime configuration; review pending.
+- [Harness Engineering Guide resource #70](https://github.com/nexu-io/harness-engineering-guide/issues/70): open; submitted SandBase Harness as a tool/framework reference for lifecycle, sandboxing, MCP, memory, credentials, audit, and replay; curator review pending.
+- [BrethofAI Awesome MCP Servers proposal #12](https://github.com/BrethofAI/awesome-mcp-servers/issues/12): open; submitted the MCP bridge with official metadata, published image, and installation evidence; maintainer review pending.
 - [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58): open; maintainer review pending.
 - [Awesome AgentOps PR #14](https://github.com/natnew/awesome-agentops/pull/14): open; deployment/runtime infrastructure entry review pending.
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open; generated-list maintainer review pending.
