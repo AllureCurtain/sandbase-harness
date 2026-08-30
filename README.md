@@ -165,6 +165,7 @@ Pending community review:
 - [Agent Switchboard listing PR #44](https://github.com/assafbar2/agentswitchboard.dev/pull/44) — refreshed v0.3.8 listing; maintainer verification pending
 - [Awesome AI Agents 2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) — added SandBase Harness to Agent Runtimes and Platforms; maintainer review pending
 - [Awesome AI Agent Engineering PR #1](https://github.com/sspoisk/awesome-ai-agent-engineering/pull/1) — added SandBase Harness to Deployment; maintainer review pending
+- [AI Native Landscape submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) — submitted under `platform-infra` / `sandboxes-runtimes`; curator review pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — added to Local Runtimes & LLM Management; maintainer review pending
