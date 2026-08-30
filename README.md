@@ -84,6 +84,7 @@ The project is also discoverable through these independent ecosystem directories
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [DSH Plugins](https://github.com/HackSing/dsh-plugins)
+- [Awesome DSH Hub](https://github.com/ukinch605/awesome-dsh-hub)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness)
