@@ -56,6 +56,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
 - [Awesome DeepSeek Harness — 生态列表](https://github.com/fendouai/awesome-deepseek-harness)
 - [DSHarness 101 插件雷达](https://dsharness101.com/plugins/)
+- [DeepSeekDocs 生态目录](https://deepseekdocs.com/en/ecosystem)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source — MCP 项目](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)

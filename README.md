@@ -63,6 +63,7 @@ The project is also discoverable through these independent ecosystem directories
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
 - [Awesome DeepSeek Harness — ecosystem list](https://github.com/fendouai/awesome-deepseek-harness)
 - [DSHarness 101 Plugin Radar](https://dsharness101.com/plugins/)
+- [DeepSeekDocs Ecosystem](https://deepseekdocs.com/en/ecosystem)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
