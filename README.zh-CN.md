@@ -100,6 +100,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DSH Hub](https://github.com/ukinch605/awesome-dsh-hub)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [MCP Server Hub](https://mcpserver.dev/s/sandbase-harness_4o5awxb)：MCP Server Hub 已公开展示 SandBase Harness 条目。
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness)
 - [F8W 中文项目档案](https://www.f8w.com/github/sandbaseai__sandbase-harness/)
 - [RepoRank 俄语项目档案](https://reporank.net/ru/repo/sandbaseai-sandbase-harness.html)

@@ -92,6 +92,7 @@ The project is also discoverable through these independent ecosystem directories
 - [Awesome DSH Hub](https://github.com/ukinch605/awesome-dsh-hub)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [MCP Server Hub](https://mcpserver.dev/s/sandbase-harness_4o5awxb): public MCP Server Hub listing for SandBase Harness.
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness)
 - [F8W 中文项目档案](https://www.f8w.com/github/sandbaseai__sandbase-harness/)
 - [RepoRank Русский профиль](https://reporank.net/ru/repo/sandbaseai-sandbase-harness.html)
