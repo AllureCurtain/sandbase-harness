@@ -119,6 +119,7 @@ Recently verified community references:
 - [HackSing DSH Plugins — verified public entry](https://github.com/HackSing/dsh-plugins)
 - [white0dew Awesome DSH Plugins — verified generated entry](https://github.com/white0dew/awesome-dsh-plugins)
 - [saltbo Awesome Stars — verified public entry](https://github.com/saltbo/awesome-stars)
+- [GitHub Insight Radar — verified public recommendation](https://github.com/LeombE/github-insight-radar/blob/main/reports/daily/2026-08-30-action-list.md)
 - [DSH Plugin Radar — verified automatic entry](https://github.com/AdamPlatin123/dsh-plugin-radar)
 - [Awesome DSH Plugin — merged Harness entry](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
 - [Awesome DeepSeek Harness — merged runtime entry](https://github.com/0xsline/awesome-deepseek-harness/pull/141)
