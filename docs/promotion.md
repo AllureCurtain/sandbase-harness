@@ -70,6 +70,7 @@ promotion channel.
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
 - [dsh.so Trust & Discovery Registry](https://www.dsh.so/artifact/sandbase-harness/): public DSH detail page verified with HTTP 200 and a matching SandBase Harness entry; its trust level is an automated registry signal, not a maintainer security endorsement.
+- [Duink DSH Universe](https://duink.com/plugins/1297278222/): public DSH Universe detail page verified with HTTP 200 and a matching `sandbaseai/sandbase-harness` entry; it is an automated topic-derived catalog and its “outside plugin validation” marker is not a compatibility or security endorsement.
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
 - [DSH Harness](https://dsharness.io/en/plugins?search=sandbase-harness)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
@@ -326,6 +327,7 @@ promotion channel.
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the page still contains `v0.3.2` references; use the repository's current release tag and README as the source of truth.
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness): the public submission API confirms the repository is already listed, but its detail page still reports `v0.3.7`; use the repository's current release tag and README as the source of truth.
 - [DSH Hub](https://dshhub.org/plugins/sandbaseai/sandbase-harness): a public detail page exists, but it currently presents the old `managed-agents` package/repository metadata; do not use it as the current installation source until corrected.
+- [Agent Plugins Hub](https://agentplugin.net/dsh/plugins/managed-agents): public discovery is confirmed, but the detail page currently reports the old `v0.2.0` package snapshot and marks install/runtime as not tested; use the repository's current release and installation guide instead.
 - [DSHPlugin registry](https://dshplugin.org/): the public registry currently shows a SandBase Harness entry under the legacy `managed-agents` display name, but no current-version detail route was exposed by the page; keep the repository's pinned Git source as the installation authority.
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the detail page still reports `v0.3.7` and links to an older pinned commit; use the repository's current release tag and README as the source of truth. Its submission FAQ says listed projects sync automatically, so no duplicate submission is needed; recheck after the next directory refresh.
 - [CordisPlugin](https://cordisplugin.com/plugins/sandbaseai-sandbase-harness): search discovery reports a matching Listed page, but a direct verification request returned HTTP 402 from this environment, so no verified public listing or current-version claim is recorded.
