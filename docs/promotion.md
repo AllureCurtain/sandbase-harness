@@ -65,6 +65,7 @@ successfully.
 
 ## Pending or review-controlled
 
+- [AgentDepot submission PR #9](https://github.com/biagruot/agentdepot-agents/pull/9): open; free MCP directory submission with a public-repository install path. The repository's `npm run validate` passed with 86 agents; maintainer review is pending.
 - [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95): closed after the maintainer confirmed the verified listing above.
 - [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411): open and clean; current v0.3.8, native DeepSeek Harness example, installation guide, and official Showcase context were posted for maintainer review.
 - [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending. The only reported check failure is the repository owner's Vercel authorization; current-version context was added in [the PR comment](https://github.com/assafbar2/agentswitchboard.dev/pull/42#issuecomment-5468257984).
