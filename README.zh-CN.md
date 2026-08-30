@@ -170,6 +170,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome AI Agents 2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) — 已将 SandBase Harness 加入 Agent Runtimes and Platforms，等待维护者审核
 - [Awesome AI Agent Engineering PR #1](https://github.com/sspoisk/awesome-ai-agent-engineering/pull/1) — 已将 SandBase Harness 加入 Deployment，等待维护者审核
 - [AI Native Landscape 提交 #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) — 已提交至 `platform-infra` / `sandboxes-runtimes`，等待策展审核
+- [Agentic Community Landscape PR #2](https://github.com/agentic-community/agentic-landscape/pull/2) — 已将 SandBase Harness 加入 Agentic → Runtime，等待维护者审核
 - [MeshKore 目录提交](https://meshkore.com/submit) — 已接受审核，提交编号 #14，公开档案待生成
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — 已加入 Agent Frameworks & Orchestration，等待维护者审核
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — 已加入 Local Runtimes & LLM Management，等待维护者审核
