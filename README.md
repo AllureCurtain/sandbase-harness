@@ -68,6 +68,7 @@ The project is also discoverable through these independent ecosystem directories
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [dsh.so Trust & Discovery Registry](https://www.dsh.so/artifact/sandbase-harness/)
 - [Duink DSH Universe](https://duink.com/plugins/1297278222/)
+- [DSH Plugin Leaderboard](https://dshpluginleaderboard.com/)
 - [Awesome repository index](https://awesome.lvtd.dev/repos/?topic=dsh-plugin)
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)

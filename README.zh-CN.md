@@ -72,6 +72,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [dsh.so 信任与发现目录](https://www.dsh.so/zh/artifact/sandbase-harness/)
 - [Duink DSH Universe](https://duink.com/plugins/1297278222/)
+- [DSH Plugin Leaderboard](https://dshpluginleaderboard.com/)
 - [Awesome 仓库索引](https://awesome.lvtd.dev/repos/?topic=dsh-plugin)
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
