@@ -36,6 +36,8 @@ The latest promotion checkpoint is also summarized in [Discussion #94](https://g
 
 The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews. Its [follow-up comment](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209484) adds the pinned GHCR quick start, current six-tool scope, and security-boundary reminder.
 
+The latest [Discussion #116 promotion update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210213) records MeshKore submission #14 and explicitly notes that it is directory-only with `connect_to_mesh=false`; no public profile is claimed before review.
+
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
 
 The [Show and tell Discussion #94 follow-up](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209922) now links the live English and Chinese DeepSeek Harness walkthroughs and invites deployment/install feedback. It keeps the backend-dependent isolation and no-security-certification qualification explicit.
