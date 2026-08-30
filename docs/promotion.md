@@ -15,7 +15,7 @@ MCP.Directory's submission endpoint reports that this repository has already
 been submitted; no public detail page is available yet, so it remains review-
 controlled rather than verified discovery.
 
-The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18206498).
+The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18206511).
 
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
@@ -78,6 +78,7 @@ successfully.
 - [mcpservers.org submission](https://mcpservers.org/submit): free submission accepted through the public form; the confirmation page states that SandBase Harness will be reviewed within 12 hours. No public listing URL is available yet.
 - [Open Source Observer OSS Directory PR #1211](https://github.com/opensource-observer/oss-directory/pull/1211): open; adds SandBase Harness to the actively maintained public OSS registry. `pnpm validate:projects` passed for all 7,133 projects, owner-validation is green, and the remaining CI is `ACTION_REQUIRED` pending fork-workflow approval; maintainer review is pending ([status note](https://github.com/opensource-observer/oss-directory/pull/1211#issuecomment-5468590097)).
 - [OpenSourceChoice submission](https://opensourcechoice.com/): the public free-submission endpoint returned HTTP 202 and `{"ok":true}` after a pre-submit search found no SandBase match. The project is private until human review; no public listing is claimed yet.
+- [Ossium submission](https://ossium.in/submit-oss): the public submission API returned HTTP 200 with `success:true` and review id `G1BPvgbobGfKn1x9nSasR`; free manual review is pending and no public project page is claimed yet.
 - [MyMCPTools submission](https://mymcptools.com/submit): the directory advertises a free reviewed listing, but its submission route returned HTTP 403 to this environment and did not expose a usable form in Chrome; no submission is claimed and manual follow-up remains.
 - [AgentDepot submission PR #9](https://github.com/biagruot/agentdepot-agents/pull/9): open; free MCP directory submission with a public-repository install path. The repository's `npm run validate` passed with 86 agents; maintainer review is pending.
 - [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95): closed after the maintainer confirmed the verified listing above.
