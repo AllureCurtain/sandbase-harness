@@ -42,6 +42,8 @@ The new [Supersynergy/awesome-ai-agents-2026 PR #16](https://github.com/Supersyn
 
 The new [NEXUS Algo Awesome AI Agent Engineering PR #1](https://github.com/sspoisk/awesome-ai-agent-engineering/pull/1) adds SandBase Harness to the deployment list. The entry is one factual line linking the official repository and describing the documented local-first/self-hosted runtime, MCP tools, sandboxed sessions, memory, approvals, audit, and replay; maintainer review is pending.
 
+The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) was evaluated as a potential high-impact channel but not submitted: its form requests a Contribution Agreement, project governance/adoption evidence, and consent to transfer project trademarks and accounts if accepted. That is a foundation-hosting/legal commitment rather than a routine directory listing and requires an explicit project-owner decision.
+
 The existing [AI Native Landscape project submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) was rechecked and given a current v0.3.8 / installation-guide follow-up ([comment](https://github.com/rootsongjc/ai-native-landscape/issues/18#issuecomment-5471400667)). It remains an open curator review request under `platform-infra` / `sandboxes-runtimes`; no inclusion or ranking is claimed.
 
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
