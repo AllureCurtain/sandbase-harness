@@ -85,6 +85,7 @@ do not imply endorsement or security review.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
 - [AgentsAI.tools submission](https://agentsai.tools/submit): public agent form accepts GitHub projects without account login; submission was attempted with the official repository details, but the backing Supabase endpoint failed DNS resolution, so no successful submission is claimed and the entry remains pending retry.
+- [Moltbook AI submission](https://moltbook-ai.com/submit-tool): submitted the official repository, GitHub URL, factual runtime description, and project maintainer GitHub noreply contact through the public review form; HTTP 200 confirmation received, directory review pending.
 - [CordisPlugin](https://cordisplugin.com/plugins/sandbaseai-sandbase-harness): a public detail-page result was discovered, but direct verification currently returns HTTP 402; do not treat its metadata or install instructions as verified until the page is accessible.
 - [sandbase-blog freshness issue #272](https://github.com/sandbaseai/sandbase-blog/issues/272)
 - [Handbook freshness issue #290](https://github.com/sandbaseai/deepseek-harness-handbook/issues/290)
