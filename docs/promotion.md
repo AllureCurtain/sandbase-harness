@@ -93,6 +93,7 @@ do not imply endorsement or security review.
 ## Gated or not eligible
 
 - [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
+- [AI Agents Directory submission](https://aiagentautomation.site/submit/): the public form routes to a Dodo Payments checkout and the page advertises a $10 one-time listing fee; no paid submission was made.
 - [AAIF project proposal](https://aaif.io/submit-a-project): the Linux Foundation intake requires production adoption in at least two organizations, two maintainers from different organizations, at least ten contributors, and agreement to the hosted-project trademark/account and contribution-agreement process; the current project evidence does not satisfy those requirements, so no proposal was submitted.
 - [AgentIndex missing-agent report #3](https://github.com/agentidx/agentindex/issues/3): submitted a structured request to index SandBase Harness as a local-first runtime with persistent sessions, sandboxed execution, MCP, approvals, audit, and replay; directory review pending.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
