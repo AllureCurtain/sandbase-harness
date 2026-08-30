@@ -196,7 +196,7 @@ promotion channel.
 - [WunderCorp Awesome MCP PR #54](https://github.com/wundercorp/awesome-mcp/pull/54): open; maintainer review pending.
 - [Awesome AI Agents PR #57](https://github.com/aloth/awesome-ai-agents/pull/57): open; maintainer review pending.
 - [Awesome Agent Infra PR #5](https://github.com/shenli/awesome-agent-infra/pull/5): open; maintainer review pending.
-- [Awesome Agent Frameworks PR #7](https://github.com/alexbevi/awesome-agent-frameworks/pull/7): open; maintainer review pending.
+- [Awesome Agent Frameworks PR #7](https://github.com/alexbevi/awesome-agent-frameworks/pull/7): open; added SandBase Harness to Agent graph / runtime with managed sessions, MCP, sandboxing, approvals, and audit/replay; the repository's README/data validations passed. The [maintainer verification](https://github.com/alexbevi/awesome-agent-frameworks/pull/7#issuecomment-5470173956) confirms v0.3.8, the official MCP configuration guide, and the backend-dependent/no-universal-isolation qualification; GitHub currently reports `UNSTABLE` with no automated check result.
 - [Scottcjn Awesome Agents PR #59](https://github.com/Scottcjn/awesome-agents/pull/59): open; maintainer review pending.
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28): open; maintainer review pending.
 - [Awesome Agent Harnesses PR #3](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/pull/3): open; maintainer review pending.
