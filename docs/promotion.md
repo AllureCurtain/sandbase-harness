@@ -29,6 +29,8 @@ The latest promotion checkpoint is also summarized in [Discussion #94](https://g
 
 The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews. Its [follow-up comment](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209484) adds the pinned GHCR quick start, current six-tool scope, and security-boundary reminder.
 
+Channel-native social drafts for the same verified release are now available in the merged [Daily Ops PR #238](https://github.com/sandbaseai/sandbase-daily-ops/pull/238): [X](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/x/2026-08-31-sandbase-harness.md), [LinkedIn](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/linkedin/2026-08-31-sandbase-harness.md), and [Discord](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/discord/2026-08-31-sandbase-harness.md). They remain `NEEDS REVIEW`; no account publication is claimed.
+
 GitHub repository discovery metadata was refreshed on 2026-08-31: the topic set now explicitly includes `devops`, `docker`, and `kubernetes` while retaining the MCP, sandbox, audit, DeepSeek, and DSH terms; no capability or security claim was changed.
 
 The bilingual Showcase quickstart was locally verified with `npm ci` and
