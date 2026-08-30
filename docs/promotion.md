@@ -40,6 +40,8 @@ The latest [Discussion #116 promotion update](https://github.com/sandbaseai/sand
 
 The new [Supersynergy/awesome-ai-agents-2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) adds SandBase Harness to the agent runtimes and platforms table. The one-line entry uses the project's public local-first/self-hosted runtime description and names session isolation, memory, credentials, audit/replay, and the local Console; maintainer review is pending.
 
+The new [NEXUS Algo Awesome AI Agent Engineering PR #1](https://github.com/sspoisk/awesome-ai-agent-engineering/pull/1) adds SandBase Harness to the deployment list. The entry is one factual line linking the official repository and describing the documented local-first/self-hosted runtime, MCP tools, sandboxed sessions, memory, approvals, audit, and replay; maintainer review is pending.
+
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
 
 The [Show and tell Discussion #94 follow-up](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209922) now links the live English and Chinese DeepSeek Harness walkthroughs and invites deployment/install feedback. It keeps the backend-dependent isolation and no-security-certification qualification explicit.
