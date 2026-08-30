@@ -111,6 +111,8 @@ Recently verified community references:
 - [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Agent Framework Radar — verified automatic entry](https://github.com/linny006/agent-framework-radar)
 - [LLM Agents Radar — verified automatic entry](https://github.com/linny006/llm-agents-radar)
+- [Awesome DSH Plugin — verified entry](https://github.com/Anil-matcha/awesome-dsh-plugin)
+- [Awesome DeepSeek Harness — verified entry](https://github.com/awesome-deepseekharness/awesome-deepseek-harness)
 - [Arnon-hs Open Source / AtlasRepo — verified MCP entry](https://github.com/Arnon-hs/open-source/blob/main/mcp/sandbaseai-sandbase-harness.md)
 - [Sagargupta16 Awesome MCP Servers — merged entry](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79)
 - [Awesome Agents — public entry](https://github.com/kyrolabs/awesome-agents)
