@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: "SandBase Harness"
+message: "If you use SandBase Harness in research or a technical report, please cite this release."
+type: software
+authors:
+  - name: "SandBase AI"
+    website: "https://www.sandbase.ai/"
+abstract: "Local-first, self-hosted runtime for durable and auditable AI agent execution with persistent sessions, sandboxed tools, MCP integration, memory, approvals, audit logs, replay, and a local Console."
+repository-code: "https://github.com/sandbaseai/sandbase-harness"
+license: Apache-2.0
+version: 0.3.8
+date-released: 2026-08-30
+keywords:
+  - agent runtime
+  - agent harness
+  - sandboxed execution
+  - Model Context Protocol
+  - persistent sessions
+  - auditability
+  - local-first
