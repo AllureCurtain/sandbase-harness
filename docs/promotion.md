@@ -9,6 +9,7 @@ do not imply endorsement or security review.
 ## Verified public discovery
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [dshbase](https://dshbase.com/plugins/sandbase-harness/): verified listing; the maintainer marked the plugin `test=verified` after headless L3 validation.
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
@@ -49,7 +50,7 @@ do not imply endorsement or security review.
 
 ## Pending or review-controlled
 
-- [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95)
+- [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95): closed after the maintainer confirmed the verified listing above.
 - [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411)
 - [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending. The only reported check failure is the repository owner's Vercel authorization; current-version context was added in [the PR comment](https://github.com/assafbar2/agentswitchboard.dev/pull/42#issuecomment-5468257984).
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
@@ -80,6 +81,18 @@ do not imply endorsement or security review.
 - [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4): open; SandBase Harness added to the agent engineering project table; maintainer review pending.
 - [Awesome AI Agents Frameworks PR #17](https://github.com/mb-mal/awesome-ai-agents-frameworks/pull/17): open; SandBase Harness added to the source repository list; maintainer review and generated ranking update pending.
 - [Agent Infra Foundation PR #3](https://github.com/agent-infra-foundation/agent-infra-projects/pull/3): open; SandBase Harness added to the vendor-neutral agent infrastructure index; maintainer review pending.
+- [MCPFind PR #168](https://github.com/MCPFind/mcp-find/pull/168): open; SandBase Harness added as an MCP server, maintainer review pending.
+- [E2B Awesome AI SDKs PR #344](https://github.com/e2b-dev/awesome-ai-sdks/pull/344): open; maintainer review pending.
+- [Agentic Community Landscape PR #2](https://github.com/agentic-community/agentic-landscape/pull/2): open; landscape entry review pending.
+- [AIM Intelligence Awesome MCP Security PR #48](https://github.com/AIM-Intelligence/awesome-mcp-security/pull/48): open; maintainer review pending.
+- [MCP Marketplace PR #5](https://github.com/aiagenta2z/mcp-marketplace/pull/5): open; maintainer review pending.
+- [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1): open; SandBase Harness runtime profile review pending.
+- [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58): open; maintainer review pending.
+- [Awesome AgentOps PR #14](https://github.com/natnew/awesome-agentops/pull/14): open; deployment/runtime infrastructure entry review pending.
+- [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open; generated-list maintainer review pending.
+- [Production Agentic Systems PR #57](https://github.com/EthicalML/awesome-production-agentic-systems/pull/57): open; maintainer review pending.
+- [Awesome LLM Agents PR #318](https://github.com/kaushikb11/awesome-llm-agents/pull/318): open; maintainer review pending.
+- [Docker MCP Registry PR #4838](https://github.com/docker/mcp-registry/pull/4838): open; registry review and validation pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [Agent Launchpad submission](https://launchpad.smartbizcalc.com/submit): free listing is available, but submission requires an authenticated magic-link session and a project screenshot; no credentials or upload were available, so this remains a manual outreach candidate.
 - [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
