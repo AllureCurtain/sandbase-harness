@@ -93,6 +93,21 @@ do not imply endorsement or security review.
 - [Production Agentic Systems PR #57](https://github.com/EthicalML/awesome-production-agentic-systems/pull/57): open; maintainer review pending.
 - [Awesome LLM Agents PR #318](https://github.com/kaushikb11/awesome-llm-agents/pull/318): open; maintainer review pending.
 - [Docker MCP Registry PR #4838](https://github.com/docker/mcp-registry/pull/4838): open; registry review and validation pending.
+- [Awesome AI Agents PR #467](https://github.com/jim-schwoebel/awesome_ai_agents/pull/467): open; maintainer review pending.
+- [Authora Awesome Agent Security PR #10](https://github.com/authora-dev/awesome-agent-security/pull/10): open; maintainer review pending.
+- [DevInsight Awesome MCP PR #6](https://github.com/devinsightdotio/awesome_mcp/pull/6): open; maintainer review pending.
+- [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4): open; maintainer review pending.
+- [Awesome AI Agents 2026 PR #539](https://github.com/caramaschiHG/awesome-ai-agents-2026/pull/539): open; maintainer review pending.
+- [AdventureWave Awesome Agent Security PR #2](https://github.com/adventurewave-labs/awesome-agent-security/pull/2): open; maintainer review pending.
+- [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060): open; maintainer review pending.
+- [Bureado Runtime Security PR #27](https://github.com/bureado/awesome-agent-runtime-security/pull/27): open; maintainer review pending.
+- [Sagar Gupta Awesome MCP Servers PR #79](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79): open; maintainer review pending.
+- [Awesome MCP 中文 PR #521](https://github.com/yzfly/Awesome-MCP-ZH/pull/521): open; Chinese-language directory review pending.
+- [Deep Insight Awesome AI Agents PR #50](https://github.com/Deep-Insight-Labs/awesome-ai-agents/pull/50): open; maintainer review pending.
+- [Picrew Awesome Agent Harness PR #85](https://github.com/Picrew/awesome-agent-harness/pull/85): open; maintainer review pending.
+- [Awesome MCP List PR #408](https://github.com/MobinX/awesome-mcp-list/pull/408): open; maintainer review pending.
+- [Awesome MCP Devtools PR #299](https://github.com/punkpeye/awesome-mcp-devtools/pull/299): open; maintainer review pending.
+- [YuzeHao Awesome MCP Servers PR #461](https://github.com/YuzeHao2023/Awesome-MCP-Servers/pull/461): open; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [Agent Launchpad submission](https://launchpad.smartbizcalc.com/submit): free listing is available, but submission requires an authenticated magic-link session and a project screenshot; no credentials or upload were available, so this remains a manual outreach candidate.
 - [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
