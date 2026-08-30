@@ -68,7 +68,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Sandboxes PR #58](https://github.com/msyvr/awesome-agent-sandboxes/pull/58): open; maintainer review pending.
 - [Arjan Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9): open; SandBase Harness added under self-hosted sandboxes; maintainer review pending.
 - [Fishman Awesome Agent Sandbox PR #2](https://github.com/fishman/awesome-agent-sandbox/pull/2): open; SandBase Harness added to the sandbox list; maintainer review pending.
-- [Dloss Awesome Agent Sandboxes PR #7](https://github.com/dloss/awesome-agent-sandboxes/pull/7): open; SandBase Harness added to the sandbox list; maintainer review pending.
+- [Dloss Awesome Agent Sandboxes PR #7](https://github.com/dloss/awesome-agent-sandboxes/pull/7): open and clean; SandBase Harness added to the sandbox list; maintainer review pending. Latest v0.3.8 context was posted in [the PR comment](https://github.com/dloss/awesome-agent-sandboxes/pull/7#issuecomment-5468252089).
 - [Awesome AI Sandboxing PR #3](https://github.com/webcoyote/awesome-AI-sandbox/pull/3): open; maintainer review pending.
 - [Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86): open; maintainer review pending.
 - [Awesome Security Agent Harnesses PR #1](https://github.com/Ed-Marcavage/awesome-security-agent-harnesses/pull/1): open; maintainer review pending; the target repository has pre-existing `awesome-lint` baseline errors documented in the PR.
