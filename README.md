@@ -118,6 +118,9 @@ See the [Showcase](docs/showcase.md) for three practical paths: an auditable
 coding agent, DeepSeek Harness as an interactive front end, and controlled code
 execution across Local, Docker, Kubernetes, and self-hosted sandboxes.
 
+For client-specific setup, see the [installation guide](llms-install.md),
+including the pinned Cline CLI command and the Docker MCP Bridge configuration.
+
 ## Requirements
 
 - Node.js 22+
