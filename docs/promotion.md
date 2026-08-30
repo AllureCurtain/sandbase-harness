@@ -60,6 +60,8 @@ The new [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sa
 
 The new [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) adds SandBase Harness to the Runtime and Control Plane table. It follows the directory's infrastructure-focused format and links the public runtime capabilities and deployment-dependent boundary; maintainer review is pending.
 
+The new [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) adds SandBase Harness to a dedicated Runtime & execution backends section. The entry covers the MCP bridge, governed sessions, and selectable backends while preserving the deployment-dependent isolation qualification; GitHub reports it mergeable with no failed checks, and maintainer review is pending.
+
 The merged Daily Ops [PR #247](https://github.com/sandbaseai/sandbase-daily-ops/pull/247) (`d75b84ebede271228a37fdaeb1fbc38c30d9acc4`) adds the latest Agentic Community Landscape, Awesome AI Agent Engineering, and MyMCPTools review paths to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW`; no social-account publication is claimed. The merge was recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210392).
 
 The merged Daily Ops [PR #248](https://github.com/sandbaseai/sandbase-daily-ops/pull/248) (`49d950616232556cf952cadfe9a6b99821ead49a`) adds the public MCPVault auto-indexed/unclaimed listing to the X, LinkedIn, and Discord drafts. The copy distinguishes automated discovery signals from maintainer certification; the merge is recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210407). The release-note update is recorded in [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210413).
@@ -446,6 +448,7 @@ promotion channel.
 - [Awesome Agent Runtimes PR #4](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4): proposed SandBase Harness for the maturity-gated watchlist; generated-data checks pass and maintainer review is pending.
 - [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2): added SandBase Harness to Related Projects with deployment-dependent isolation wording; maintainer checks and review are pending.
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6): added SandBase Harness to Runtime and Control Plane; maintainer review is pending.
+- [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314): added SandBase Harness to Runtime & execution backends; PR is mergeable and maintainer review is pending.
 - [A2M submission](https://a2m.one/submit): supports terminal-first AI project listings; SandBase is not currently indexed, but the submission flow requires account authentication through the A2M CLI/site, so this remains a manual outreach candidate.
 - [AgentKart submission](https://www.agentkart.ai/submit): open-source AI agent marketplace with a public submission page, but the flow requires an authenticated site session; no credentials were available, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
