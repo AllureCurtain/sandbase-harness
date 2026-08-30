@@ -21,6 +21,8 @@ do not imply endorsement or security review.
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
+- [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
+- [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
 - [HackSing DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 
