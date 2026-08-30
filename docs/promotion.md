@@ -81,6 +81,7 @@ do not imply endorsement or security review.
 - [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
 - [MCP.so submission](https://mcp.so/submit): accepts MCP servers, agent apps, CLI tools, skills, and loops; SandBase is not currently indexed, but the submission endpoint requires an authenticated account, so this remains a manual outreach candidate.
 - [A2M submission](https://a2m.one/submit): supports terminal-first AI project listings; SandBase is not currently indexed, but the submission flow requires account authentication through the A2M CLI/site, so this remains a manual outreach candidate.
+- [AgentKart submission](https://www.agentkart.ai/submit): open-source AI agent marketplace with a public submission page, but the flow requires an authenticated site session; no credentials were available, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
