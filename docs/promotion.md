@@ -8,6 +8,8 @@ The new [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-m
 
 The merged [Daily Ops PR #264](https://github.com/sandbaseai/sandbase-daily-ops/pull/264) (`87f15bee0bcee622b3020fc73dcb54513f9cf405`) queues Awesome MCP Collection PR #39 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
 
+The new [Awesome MCP Issue #99](https://github.com/abordage/awesome-mcp/issues/99) requests SandBase Harness for the directory's Aggregators & Gateways section. A normal PR was not possible because the existing personal fork has no comparable upstream history; the public issue workflow was used instead. The request contains one factual entry and remains pending maintainer review; no directory endorsement or security certification is claimed.
+
 Repository discoverability metadata was refreshed on 2026-08-31: the GitHub
 description now explicitly identifies SandBase Harness as a self-hosted AI
 agent runtime and MCP bridge. The existing release homepage and 20 relevant
