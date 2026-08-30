@@ -87,7 +87,7 @@ successfully.
 - [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending. The only reported check failure is the repository owner's Vercel authorization; current-version context was added in [the PR comment](https://github.com/assafbar2/agentswitchboard.dev/pull/42#issuecomment-5468257984).
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
-- [Awesome MCP Servers PR #13201](https://github.com/punkpeye/awesome-mcp-servers/pull/13201): open; maintainer review pending.
+- [Awesome MCP Servers PR #13201](https://github.com/punkpeye/awesome-mcp-servers/pull/13201): open; maintainer review pending. A follow-up records that the current [Glama SandBase page](https://glama.ai/mcp/servers/sandbaseai/cli) publicly mentions Harness, while noting that it is not a standalone Harness listing ([comment](https://github.com/punkpeye/awesome-mcp-servers/pull/13201#issuecomment-5468672754)).
 - [WunderCorp Awesome MCP PR #54](https://github.com/wundercorp/awesome-mcp/pull/54): open; maintainer review pending.
 - [Awesome AI Agents PR #57](https://github.com/aloth/awesome-ai-agents/pull/57): open; maintainer review pending.
 - [Awesome Agent Infra PR #5](https://github.com/shenli/awesome-agent-infra/pull/5): open; maintainer review pending.
