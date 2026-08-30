@@ -134,7 +134,7 @@ successfully.
 - [Awesome AI Sandboxing PR #3](https://github.com/webcoyote/awesome-AI-sandbox/pull/3): open; maintainer review pending.
 - [Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86): open; maintainer review pending.
 - [Awesome Security Agent Harnesses PR #1](https://github.com/Ed-Marcavage/awesome-security-agent-harnesses/pull/1): open; maintainer review pending; the target repository has pre-existing `awesome-lint` baseline errors documented in the PR.
-- [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21): open; existing focused entry under `execution-sandboxes`, maintainer review pending.
+- [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21): open; focused SandBase entry under `execution-sandboxes`, with refreshed API/release/license evidence in [the follow-up comment](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21#issuecomment-5468843018); duplicate PR #22 was closed to keep one review path.
 - [Awesome Agent Control Plane PR #3](https://github.com/Ar9av/awesome-agent-control-plane/pull/3): open; existing focused entry under `Sandboxing & Isolation`, maintainer review pending.
 - [Awesome AI Sandboxes PR #28](https://github.com/tizkovatereza/awesome-ai-sandboxes/pull/28): open; maintainer review pending.
 - [Awesome CLI Coding Agents PR #313](https://github.com/bradAGI/awesome-cli-coding-agents/pull/313): open; SandBase Harness added under Agent infrastructure; maintainer review pending.
