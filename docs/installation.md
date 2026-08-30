@@ -4,6 +4,24 @@ This guide covers installing and starting `managed-agents` in a local
 workspace. The runtime is a single Node.js process that serves both the HTTP API
 and the local Console.
 
+## Recover A Plugin Hub Install
+
+If the DSH Plugin Hub reports `already installed: managed-agents` after a
+partial or repeated install, update the Hub and remove only the exact residual
+entry shown in its Installed view before retrying the tagged HTTPS Git source:
+
+```bash
+dsh plugin --profile web update dsh-plugin
+dsh plugin --profile web remove managed-agents
+dsh plugin --profile web add git+https://github.com/sandbaseai/sandbase-harness.git
+```
+
+Use the identifier shown by the Installed view if it differs from
+`managed-agents`. Do not delete the whole DSH home or install the unrelated
+unscoped npm package. Keep the profile and Hub log until the runtime starts;
+see [Issue #78](https://github.com/sandbaseai/sandbase-harness/issues/78) for
+the original report and recovery discussion.
+
 ## Requirements
 
 - Node.js 22 or newer
