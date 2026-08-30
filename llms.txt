@@ -13,6 +13,7 @@
 
 - MCP Market: https://mcpmarket.com/server/sandbase-harness
 - deepseek-plugin.org: https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness
+- DeepseekPlugin: https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness
 - DSH Plugin Directory: https://dshplugin.app/plugins/sandbase-harness
 - DSH Plugin Hub: https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness
 - DSH Directory: https://dsh.directory/plugins/sandbaseai/sandbase-harness

@@ -10,6 +10,7 @@ do not imply endorsement or security review.
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
+- [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
@@ -75,6 +76,7 @@ do not imply endorsement or security review.
 - [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/): public discovery is confirmed, but its install snippet still pins `v0.3.7`; use the repository's current release tag instead.
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but its indexed metadata still reports `0.3.7`; use the repository's current release tag and README as the source of truth.
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the page still contains `v0.3.2` references; use the repository's current release tag and README as the source of truth.
+- [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness): the public submission API confirms the repository is already listed, but its detail page still reports `v0.3.7`; use the repository's current release tag and README as the source of truth.
 
 ## Promotion rules
 
