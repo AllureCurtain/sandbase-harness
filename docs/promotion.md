@@ -42,6 +42,12 @@ do not imply endorsement or security review.
 - [sandbase-blog freshness issue #272](https://github.com/sandbaseai/sandbase-blog/issues/272)
 - [Handbook freshness issue #290](https://github.com/sandbaseai/deepseek-harness-handbook/issues/290)
 
+## Gated or not eligible
+
+- [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
+- [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
+- [DSH Directory](https://github.com/alexchenzl/dsh-plugin-directory): currently requires a `dsh.bundle.patch` package manifest, which this runtime repository does not provide.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
