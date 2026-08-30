@@ -170,6 +170,7 @@ promotion channel.
 - [AIM Intelligence Awesome MCP Security PR #48](https://github.com/AIM-Intelligence/awesome-mcp-security/pull/48): open; maintainer review pending.
 - [MCP Marketplace PR #5](https://github.com/aiagenta2z/mcp-marketplace/pull/5): open; maintainer review pending.
 - [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1): open; SandBase Harness runtime profile review pending.
+- [Beejmaxx Awesome Agent Runtimes PR #3](https://github.com/beejmaxx/awesome-agent-runtimes/pull/3): open and mergeable; SandBase Harness added to the maintained watchlist with current GitHub metadata and a review date, because it has not yet met the active-core adoption and age gates.
 - [Awesome AI Agent Runtimes PR #3](https://github.com/pandastack-io/awesome-ai-agent-runtimes/pull/3): open; SandBase Harness added to Self-Hosted Solutions and the comparison matrix; maintainer review pending.
 - [Awesome Agent Harness PR #29](https://github.com/mahonzhan/awesome-agent-harness/pull/29): open; SandBase Harness added to the Agent Harness timeline; maintainer review pending.
 - [Awesome Harness Engineering PR #224](https://github.com/ai-boost/awesome-harness-engineering/pull/224): open; SandBase Harness added to Demo Harnesses with local, Docker, Kubernetes, and worker execution details; maintainer review pending.
