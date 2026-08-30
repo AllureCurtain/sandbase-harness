@@ -203,7 +203,7 @@ successfully.
 - [A2M submission](https://a2m.one/submit): supports terminal-first AI project listings; SandBase is not currently indexed, but the submission flow requires account authentication through the A2M CLI/site, so this remains a manual outreach candidate.
 - [AgentKart submission](https://www.agentkart.ai/submit): open-source AI agent marketplace with a public submission page, but the flow requires an authenticated site session; no credentials were available, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
-- [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
+- [MCP.Directory](https://mcp.directory/submit): the public submission API confirms the repository is already submitted and queued (`409`, “We'll review it soon!”); a public detail page is not yet discoverable. The free review queue is the selected path; no paid acceleration was used.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
 - [AgentsAI.tools submission](https://agentsai.tools/submit): public agent form accepts GitHub projects without account login; the submission was attempted with the official repository details, but the backing Supabase hostname now returns NXDOMAIN in public DNS, so no successful submission is claimed and the form is gated until its backend is restored.
 - [Moltbook AI submission](https://moltbook-ai.com/submit-tool): submitted the official repository, GitHub URL, factual runtime description, and project maintainer GitHub noreply contact through the public review form; HTTP 200 confirmation received, directory review pending.
