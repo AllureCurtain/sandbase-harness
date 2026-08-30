@@ -132,6 +132,28 @@ metrics.
 - Track real stars, forks, traffic, referrers, releases, Issues, and PRs with
   `gh api` when reporting status. Re-check changing metrics before publishing.
 
+### Promotion status audit
+
+For every external promotion recorded in `docs/promotion.md`:
+
+1. Query the current PR or Issue state with `gh pr view` or `gh issue view`.
+2. If a PR is merged, inspect the target repository's default branch and verify
+   that the SandBase entry is still present before moving it to verified
+   discovery.
+3. If a PR is closed without merge, keep it out of verified discovery and
+   record the closure reason when available.
+4. Read new maintainer comments before opening another submission. Respond to
+   actionable feedback once, with source links and an explicit disclosure of
+   project affiliation.
+5. Search the target repository for existing SandBase references before
+   submitting. Do not create a duplicate PR when an open PR or public entry
+   already exists.
+
+Use `verified public discovery` only for a reachable public entry on the
+target's current published branch or catalog. A submitted form, open PR,
+generated preview, or stale cached page remains `pending` until that condition
+is verified.
+
 ### Promotion boundaries
 
 - Never spam, mass-comment, manufacture engagement, purchase or fake stars,
