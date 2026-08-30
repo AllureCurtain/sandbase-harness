@@ -21,9 +21,9 @@ do not imply endorsement or security review.
 - [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
 - [DSHPlugin](https://dshplugin.org/)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
+- [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
-- [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
@@ -68,6 +68,7 @@ do not imply endorsement or security review.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
 - [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
 - [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm installation path is unsafe to promote: the public `managed-agents` package currently reports `latest` as `0.0.1`, while this repository is `0.3.8`; the page presents that package as the current runtime. The repository's GitHub-source install remains the source-of-truth path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
+- [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/): public discovery is confirmed, but its install snippet still pins `v0.3.7`; use the repository's current release tag instead.
 
 ## Promotion rules
 
