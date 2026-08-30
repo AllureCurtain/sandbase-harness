@@ -93,6 +93,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DeepSeek Harness Plugins](https://github.com/Zhiyuan-Fan/Awesome-DeepSeek-Harness-Plugins)
 - [Hermes Ecosystem — SandBase 技术栈](https://github.com/ksimback/hermes-ecosystem/blob/main/projects/sandbaseai/cli.html)
 - [AgentStack](https://www.agentstack.live/mcp/io.github.sandbaseai/sandbase-harness)
+- [HVTracker](https://hvtracker.net/agents/sandbase-harness/)：独立自动生成的 Agent Frameworks 项目档案与排名快照，不代表维护者审核或安全认证。
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [DSH Plugins](https://github.com/HackSing/dsh-plugins)

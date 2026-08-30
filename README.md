@@ -85,6 +85,7 @@ The project is also discoverable through these independent ecosystem directories
 - [Awesome DeepSeek Harness Plugins](https://github.com/Zhiyuan-Fan/Awesome-DeepSeek-Harness-Plugins)
 - [Hermes Ecosystem — SandBase stack](https://github.com/ksimback/hermes-ecosystem/blob/main/projects/sandbaseai/cli.html)
 - [AgentStack](https://www.agentstack.live/mcp/io.github.sandbaseai/sandbase-harness)
+- [HVTracker](https://hvtracker.net/agents/sandbase-harness/): independent automated Agent Frameworks profile and ranking snapshot; not a maintainer review or security certification.
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [DSH Plugins](https://github.com/HackSing/dsh-plugins)
