@@ -123,6 +123,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks 架构提案 #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 - [Agent Sandbox Taxonomy 档案提案 #5](https://github.com/kajogo777/the-agent-sandbox-taxonomy/issues/5)
+- [Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9)
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 
