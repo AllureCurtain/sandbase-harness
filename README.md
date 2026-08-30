@@ -112,6 +112,9 @@ The project is also discoverable through these independent ecosystem directories
 Recently verified community references:
 
 - [dshbase verified plugin page](https://dshbase.com/plugins/sandbase-harness/)
+- [MCP Repository — verified project page](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [DSHarness 101 — verified plugin radar entry](https://dsharness101.com/plugins/)
+- [DSH Plugin Leaderboard — install-verified entry](https://dshpluginleaderboard.com/)
 - [awesome-agent-runtime — merged entry](https://github.com/sandbaseai/awesome-agent-runtime/pull/15)
 - [Awesome Agent Cortex — merged entry](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
 - [Awesome AI Devtools — merged entry](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
