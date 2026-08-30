@@ -82,7 +82,7 @@ successfully.
 - [DSHarness 101 Plugin Radar](https://dsharness101.com/plugins/)
 - [DeepSeekDocs Ecosystem](https://deepseekdocs.com/en/ecosystem)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
-- [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
+- [Sifted Awesome AI Agents — verified Agent Runtime Top 100 entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md): SandBase appears in the published Agent Runtime table; the generated snapshot currently shows it at rank 65 with 637 stars.
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
 - [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime): public runtime landscape; its SandBase entry now links v0.3.8, the official MCP Registry, verified dshbase discovery, and the client installation guide via [merged PR #15](https://github.com/sandbaseai/awesome-agent-runtime/pull/15).
 - [Awesome Agent Cortex](https://github.com/0xNyk/awesome-agent-cortex): SandBase CLI is publicly listed in the MCP ecosystem after [merged PR #72](https://github.com/0xNyk/awesome-agent-cortex/pull/72).

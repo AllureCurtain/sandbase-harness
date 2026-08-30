@@ -108,6 +108,7 @@ Recently verified community references:
 - [Awesome AI Devtools — merged entry](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — merged entry](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
 - [WalkingLabs Awesome Harness Engineering — merged entry](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)
+- [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Awesome Agents — public entry](https://github.com/kyrolabs/awesome-agents)
 - [abordage/awesome-mcp — public entry](https://github.com/abordage/awesome-mcp)
 
