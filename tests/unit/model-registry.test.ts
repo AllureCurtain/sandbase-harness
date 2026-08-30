@@ -87,7 +87,11 @@ describe('ModelRegistry runtime introspection', () => {
     });
   });
 
-  it('does not borrow credentials from a different provider for qualified model ids', () => {
+  it('rejects a qualified model id whose provider is unrelated and unconfigured', () => {
+    // Previously this returned a bare {provider:'openai'} config with no base
+    // URL/key, which silently sent the request to OpenAI's public endpoint even
+    // though only Anthropic was configured. Now it fails loud instead of
+    // leaking traffic to an unconfigured vendor.
     const registry = new ModelRegistry();
     registry.register({
       name: 'default',
@@ -97,12 +101,31 @@ describe('ModelRegistry runtime introspection', () => {
       is_default: true,
     });
 
-    const resolved = registry.resolveModelConfig('openai/gpt-5.5');
+    expect(() => registry.resolveModelConfig('openai/gpt-5.5')).toThrow(/not configured/);
+  });
 
-    expect(resolved).toEqual({
-      name: 'openai/gpt-5.5',
-      provider: 'openai',
-      model: 'gpt-5.5',
+  it('reuses the default provider endpoint for a same-family qualified model id', () => {
+    // An agent references `openai/...` while the configured provider is an
+    // openai_compatible gateway. The request must stay on the configured base
+    // URL/key (same protocol family), not hit api.openai.com.
+    const registry = new ModelRegistry();
+    registry.register({
+      name: 'default',
+      provider: 'openai_compatible',
+      api_key: '${SANDBASE_API_KEY}',
+      base_url: 'https://api.sandbase.ai/v1',
+      is_default: true,
+    });
+
+    const resolved = registry.resolveModelConfig('openai/gpt-5.6-luna');
+
+    expect(resolved).toMatchObject({
+      name: 'openai/gpt-5.6-luna',
+      provider: 'openai_compatible',
+      model: 'gpt-5.6-luna',
+      api_key: '${SANDBASE_API_KEY}',
+      base_url: 'https://api.sandbase.ai/v1',
+      is_default: false,
     });
   });
 });

@@ -68,6 +68,15 @@ export class ModelRegistry {
    * - `openai/gpt-5.5` => provider `openai`, model `gpt-5.5`
    * - `anthropic/claude-...` => provider `anthropic`, model `claude-...`
    * - `gpt-4o` => default provider credentials/base URL, model `gpt-4o`
+   *
+   * A `provider/model` reference whose provider is not registered does NOT
+   * silently fall back to a public vendor endpoint. If the referenced provider
+   * belongs to the same protocol family as the active default (e.g. an agent
+   * says `openai/...` while the configured provider is `openai_compatible`
+   * pointing at a self-hosted gateway), the default provider's base URL and
+   * key are reused so traffic stays on the configured endpoint. A reference to
+   * an unrelated, unconfigured provider is rejected rather than leaked to that
+   * vendor's public API.
    */
   resolveModelConfig(name: string): ModelConfig {
     const exact = this.models.get(name);
@@ -77,26 +86,35 @@ export class ModelRegistry {
     }
 
     const parsed = parseModelReference(name);
-    const providerConfig = parsed.provider
-      ? this.findProviderConfig(parsed.provider)
-      : this.getDefaultConfig();
-    if (providerConfig) {
-      return {
-        ...providerConfig,
-        name,
-        provider: parsed.provider ?? providerConfig.provider,
-        model: parsed.model,
-        is_default: false,
-      };
+
+    // No provider prefix → use the active default provider's config.
+    if (!parsed.provider) {
+      const defaultConfig = this.getDefaultConfig();
+      if (!defaultConfig) throw new ModelNotFoundError(name, Array.from(this.models.keys()));
+      return { ...defaultConfig, name, model: parsed.model, is_default: false };
     }
-    if (parsed.provider) {
-      return {
-        name,
-        provider: parsed.provider,
-        model: parsed.model,
-      };
+
+    // Explicit provider prefix that matches a registered provider → use it.
+    const exactProvider = this.findProviderConfig(parsed.provider);
+    if (exactProvider) {
+      return { ...exactProvider, name, provider: parsed.provider, model: parsed.model, is_default: false };
     }
-    throw new ModelNotFoundError(name, Array.from(this.models.keys()));
+
+    // Provider prefix with no exact match. Reuse the default provider's
+    // credentials/base URL when they share a protocol family (so a configured
+    // gateway is honored instead of hitting the vendor's public endpoint).
+    const defaultConfig = this.getDefaultConfig();
+    if (defaultConfig && providerFamily(parsed.provider) === providerFamily(defaultConfig.provider)) {
+      return { ...defaultConfig, name, model: parsed.model, is_default: false };
+    }
+
+    // Unrelated, unconfigured provider: fail loud instead of leaking the
+    // request to that vendor's public API with no base URL or key.
+    throw new ModelNotFoundError(
+      name,
+      Array.from(this.models.keys()),
+      `Provider "${parsed.provider}" is not configured. Configure it in Settings > Models, or reference the model without a provider prefix to use the active provider.`,
+    );
   }
 
   /**
@@ -177,6 +195,18 @@ export class ModelRegistry {
 
 const ENV_PLACEHOLDER = /\$\{[^}]+\}/;
 const QUALIFIED_MODEL = /^([a-zA-Z][a-zA-Z0-9_-]*)\/(.+)$/;
+
+/**
+ * Group providers by wire protocol. Providers in the same family can share a
+ * base URL and key: `anthropic` speaks the Anthropic Messages API, while
+ * `openai`, `ollama`, `minimax`, `openai_compatible`, and any custom provider
+ * are all handled through the OpenAI-compatible client (see
+ * createModelInstance). Used to decide whether an agent's `provider/model`
+ * reference may reuse the active default provider's endpoint.
+ */
+function providerFamily(provider: ModelProviderType): 'anthropic' | 'openai' {
+  return provider === 'anthropic' ? 'anthropic' : 'openai';
+}
 
 function parseModelReference(name: string): { provider?: ModelProviderType; model: string } {
   const trimmed = name.trim();
