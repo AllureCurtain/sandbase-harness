@@ -150,6 +150,7 @@ promotion channel.
 
 ## Pending or review-controlled
 
+- [Msyvr Awesome Agent Sandboxes discovery issue #55](https://github.com/msyvr/awesome-agent-sandboxes/issues/55): proposed SandBase Harness for curator review as a backend-aware agent execution sandbox, with explicit local/Docker/Kubernetes/worker scope and no universal or microVM isolation claim ([verification comment](https://github.com/msyvr/awesome-agent-sandboxes/issues/55#issuecomment-5470276837)).
 - [libukai Awesome DeepSeek Harness issue #94](https://github.com/libukai/awesome-deepseek-harness/issues/94): proposed a factual SandBase Harness entry in the curated DSH external integrations/runtime section; the maintainer's review is pending because the available personal fork belongs to another upstream and cannot be used as a PR head.
 - [Awesome DeepSeek Harness Top 500 issue #3](https://github.com/weekend-project-space/awesome-deepseek-harness-top-500/issues/3): proposed a factual SandBase Harness entry in the DSH integration/deployment ranking; curator review and placement are pending.
 - [Awesome Agentic AI 中文 issue #210](https://github.com/WenyuChiou/awesome-agentic-ai-zh/issues/210): proposed SandBase Harness for the Stage 7 Agent Production Engineering runtime resources, with learning rationale, runnable release evidence, and explicit deployment/isolation limits; curator review is pending.
