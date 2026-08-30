@@ -41,6 +41,8 @@ The new [MCP Find PR #171](https://github.com/MCPFind/mcp-find/pull/171) submits
 
 The new [MCP-Directory PR #5](https://github.com/girishlade111/MCP-Directory/pull/5) adds the SandBase Harness MCP bridge to both the interactive `index.html` catalog and the README table, using the published GHCR `0.3.8` image and a tested Docker command. GitHub reports the PR as clean and mergeable with no failed checks; external maintainer review and merge remain pending.
 
+An independent security-discovery request is now open at [MCPRadar Issue #8](https://github.com/yatuk/mcpradar/issues/8). It provides the official Registry/source links and the credential-free Docker handshake command, while explaining that session calls may require a user-owned API URL/key. The request is for manual scanning and leaderboard review only; no score, endorsement, or security result is claimed.
+
 
 The follow-up [promotion progress comment](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209817) also links the Agent Cortex, Autonomous Ops, Agentic Hardening, Agent Harnesses, and X-Ops review paths, with the same pending-review and deployment-dependent isolation qualifications.
 
