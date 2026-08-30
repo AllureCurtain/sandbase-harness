@@ -12,6 +12,7 @@
 - Verified dshbase listing: https://dshbase.com/plugins/sandbase-harness/
 - Independent self-hosting guide (SSD Nodes): https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime
 - Agent Runtime landscape: https://github.com/sandbaseai/awesome-agent-runtime
+- Verified community references: dshbase, Awesome Agents, abordage/awesome-mcp, and merged entries in awesome-agent-runtime, Awesome Agent Cortex, and Awesome AI Devtools.
 
 ## Discovery
 
