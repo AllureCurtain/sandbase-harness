@@ -58,6 +58,7 @@ do not imply endorsement or security review.
 - [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
 - [DSH Directory](https://github.com/alexchenzl/dsh-plugin-directory): currently requires a `dsh.bundle.patch` package manifest, which this runtime repository does not provide.
+- [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
 
 ## Promotion rules
 
