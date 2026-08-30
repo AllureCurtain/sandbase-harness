@@ -131,7 +131,7 @@ both the repository validator and the v0.3.8 MCP `initialize` handshake.
 - [Sagar Gupta Awesome MCP Servers PR #79](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79): open; maintainer review pending.
 - [Awesome MCP 中文 PR #521](https://github.com/yzfly/Awesome-MCP-ZH/pull/521): open; Chinese-language directory review pending.
 - [Deep Insight Awesome AI Agents PR #50](https://github.com/Deep-Insight-Labs/awesome-ai-agents/pull/50): open; maintainer review pending.
-- [Picrew Awesome Agent Harness PR #85](https://github.com/Picrew/awesome-agent-harness/pull/85): open; maintainer review pending.
+- [Picrew Awesome Agent Harness PR #85](https://github.com/Picrew/awesome-agent-harness/pull/85): open and clean; current v0.3.8, runtime capabilities, and installation evidence were posted for maintainer review.
 - [Awesome MCP List PR #408](https://github.com/MobinX/awesome-mcp-list/pull/408): open; maintainer review pending.
 - [Awesome MCP Devtools PR #299](https://github.com/punkpeye/awesome-mcp-devtools/pull/299): open; maintainer review pending.
 - [YuzeHao Awesome MCP Servers PR #461](https://github.com/YuzeHao2023/Awesome-MCP-Servers/pull/461): open; maintainer review pending.
