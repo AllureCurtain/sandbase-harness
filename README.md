@@ -58,6 +58,7 @@ The project is also discoverable through these independent ecosystem directories
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
+- [Awesome repository index](https://awesome.lvtd.dev/repos/?topic=dsh-plugin)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
