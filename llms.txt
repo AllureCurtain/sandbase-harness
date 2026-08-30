@@ -16,6 +16,8 @@
 - DSH Plugin Directory: https://dshplugin.app/plugins/sandbase-harness
 - DSH Plugin Hub: https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness
 - Awesome repository index: https://awesome.lvtd.dev/repos/?topic=dsh-plugin
+- Awesome DSH Plugin: https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
+- Awesome DeepSeek Harness: https://github.com/0xsline/awesome-deepseek-harness
 - MCP Repository: https://mcprepository.com/sandbaseai/sandbase-harness
 - OpenAgentSkill (code-review): https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review
 - PluginBench: https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness

@@ -52,6 +52,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
 - [Awesome 仓库索引](https://awesome.lvtd.dev/repos/?topic=dsh-plugin)
+- [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+- [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
