@@ -61,6 +61,7 @@ The project is also discoverable through these independent ecosystem directories
 - [Awesome repository index](https://awesome.lvtd.dev/repos/?topic=dsh-plugin)
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
+- [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [DSH Plugins](https://github.com/HackSing/dsh-plugins)
