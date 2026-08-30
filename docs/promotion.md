@@ -47,7 +47,7 @@ both the repository validator and the v0.3.8 MCP `initialize` handshake.
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
-- [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime)
+- [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime): public runtime landscape; its SandBase entry now links v0.3.8, the official MCP Registry, verified dshbase discovery, and the client installation guide via [merged PR #15](https://github.com/sandbaseai/awesome-agent-runtime/pull/15).
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp)
 - [cccakeee/awesome-dsh-plugins](https://github.com/cccakeee/awesome-dsh-plugins)
 - [anbeime/skill — Skills index](https://github.com/anbeime/skill)
