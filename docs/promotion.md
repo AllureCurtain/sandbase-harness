@@ -44,6 +44,8 @@ The new [NEXUS Algo Awesome AI Agent Engineering PR #1](https://github.com/sspoi
 
 The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) was evaluated as a potential high-impact channel but not submitted: its form requests a Contribution Agreement, project governance/adoption evidence, and consent to transfer project trademarks and accounts if accepted. That is a foundation-hosting/legal commitment rather than a routine directory listing and requires an explicit project-owner decision.
 
+The new [MyMCPTools issue #8](https://github.com/shibley/mymcptools/issues/8) proposes the published SandBase Harness MCP bridge for the directory. It includes the v0.3.8 release, official installation/MCP documentation, and the pinned GHCR command; the issue is pending maintainer review and makes no claim of a public listing, score, or endorsement.
+
 The existing [AI Native Landscape project submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) was rechecked and given a current v0.3.8 / installation-guide follow-up ([comment](https://github.com/rootsongjc/ai-native-landscape/issues/18#issuecomment-5471400667)). It remains an open curator review request under `platform-infra` / `sandboxes-runtimes`; no inclusion or ranking is claimed.
 
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
