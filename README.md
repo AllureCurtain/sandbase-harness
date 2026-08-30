@@ -161,6 +161,7 @@ Pending community review:
 - [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — independent MCP bridge evaluation requested; no score or certification claimed
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — schema and Biome checks pass; maintainer review pending
 - [MCP.Directory submission](https://mcp.directory/submit) — already submitted; directory review pending
+- [Hugging Face agent-harness registry PR #2432](https://github.com/huggingface/huggingface.js/pull/2432) — adds SandBase Harness attribution metadata for `MANAGED_AGENTS_HOME`; maintainer review pending
 - [Agent Switchboard listing PR #44](https://github.com/assafbar2/agentswitchboard.dev/pull/44) — refreshed v0.3.8 listing; maintainer verification pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
