@@ -8,6 +8,10 @@
 - Showcase: https://github.com/sandbaseai/sandbase-harness/blob/main/docs/showcase.md
 - Official MCP Registry: https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness
 - Latest tagged release: v0.3.8
+- Official DeepSeek Harness Showcase: https://github.com/deepseek-ai/deepseek-harness/discussions/1918
+- Verified dshbase listing: https://dshbase.com/plugins/sandbase-harness/
+- Independent self-hosting guide (SSD Nodes): https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime
+- Agent Runtime landscape: https://github.com/sandbaseai/awesome-agent-runtime
 
 ## Discovery
 
