@@ -61,7 +61,7 @@ An additional diff audit confirmed that the actual submitted files in all ten ac
 
 Channel-native social drafts for the same verified release are now available in the merged [Daily Ops PR #238](https://github.com/sandbaseai/sandbase-daily-ops/pull/238): [X](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/x/2026-08-31-sandbase-harness.md), [LinkedIn](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/linkedin/2026-08-31-sandbase-harness.md), and [Discord](https://github.com/sandbaseai/sandbase-daily-ops/blob/main/social/discord/2026-08-31-sandbase-harness.md). They remain `NEEDS REVIEW`; no account publication is claimed.
 
-The follow-up [Daily Ops PR #240](https://github.com/sandbaseai/sandbase-daily-ops/pull/240) adds the latest ecosystem-review links to the LinkedIn and Discord drafts and records them as pending external review. The drafts remain `NEEDS REVIEW`; no social account publication is claimed.
+The follow-up [merged Daily Ops PR #240](https://github.com/sandbaseai/sandbase-daily-ops/pull/240) adds the latest ecosystem-review links to the LinkedIn and Discord drafts and records them as pending external review. The drafts remain `NEEDS REVIEW`; no social account publication is claimed. Its merge commit is `f868499b7e039ff9f141c12ad7c54a2831acf203`.
 
 GitHub repository discovery metadata was refreshed on 2026-08-31: the topic set now explicitly includes `devops`, `docker`, and `kubernetes` while retaining the MCP, sandbox, audit, DeepSeek, and DSH terms; no capability or security claim was changed.
 
