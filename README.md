@@ -161,6 +161,7 @@ Pending community review:
 - [Agentic DevOps MCP PR #42](https://github.com/agenticdevops/awesome-devops-mcp/pull/42) — added to Kubernetes & Containers; maintainer review pending
 - [Awesome DevOps AI PR #54](https://github.com/hammadhaqqani/awesome-devops-ai/pull/54) — added to MCP Servers for DevOps; maintainer review pending
 - [Awesome Platform Engineering PR #63](https://github.com/shospodarets/awesome-platform-engineering/pull/63) — added to Internal Developer Platforms; maintainer review pending
+- [Awesome DevOps Platform PR #4](https://github.com/tysoncung/awesome-devops-platform/pull/4) — added to AI & Automation in DevOps; maintainer review pending
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — official DevOps runtime and MCP bridge discovery post
 - [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
