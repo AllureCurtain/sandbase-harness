@@ -84,6 +84,7 @@ The project is also discoverable through these independent ecosystem directories
 - [DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [MCPVault](https://mcpvault.io/servers/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)

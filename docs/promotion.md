@@ -23,6 +23,7 @@ do not imply endorsement or security review.
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [MCPVault](https://mcpvault.io/servers/sandbase-harness): public automated listing verified; the page reports Apache-2.0 and current repository signals, but its own notice says the grade is computed from public signals and has not been maintainer-reviewed.
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
