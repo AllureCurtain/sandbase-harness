@@ -62,7 +62,7 @@ do not imply endorsement or security review.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
 - [DSH Directory](https://github.com/alexchenzl/dsh-plugin-directory): currently requires a `dsh.bundle.patch` package manifest, which this runtime repository does not provide.
 - [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
-- [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm/package verdict and `managed-agents` installation instructions do not match this repository's source-of-truth install path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
+- [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm installation path is unsafe to promote: the public `managed-agents` package currently reports `latest` as `0.0.1`, while this repository is `0.3.8`; the page presents that package as the current runtime. The repository's GitHub-source install remains the source-of-truth path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
 
 ## Promotion rules
 
