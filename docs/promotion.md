@@ -274,6 +274,7 @@ promotion channel.
 - [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4): open; maintainer review pending.
 - [Awesome AI Agents 2026 PR #539](https://github.com/caramaschiHG/awesome-ai-agents-2026/pull/539): open; maintainer review pending.
 - [AdventureWave Awesome Agent Security PR #2](https://github.com/adventurewave-labs/awesome-agent-security/pull/2): open; maintainer review pending.
+- [Puliczek Awesome MCP Security PR #299](https://github.com/Puliczek/awesome-mcp-security/pull/299): open; added SandBase Harness to MCP security tools with permissions, approvals, credentials, sandboxed execution, and audit/replay wording. The [maintainer verification](https://github.com/Puliczek/awesome-mcp-security/pull/299#issuecomment-5470163474) confirms v0.3.8, the official MCP configuration guide, and the distinction from vulnerability scanning; GitHub currently reports `UNKNOWN` with no automated check result.
 - [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060): open; maintainer review pending.
 - [Bureado Runtime Security PR #27](https://github.com/bureado/awesome-agent-runtime-security/pull/27): open; maintainer review pending.
 - [Awesome MCP 中文 PR #521](https://github.com/yzfly/Awesome-MCP-ZH/pull/521): open; Chinese-language directory review pending.
