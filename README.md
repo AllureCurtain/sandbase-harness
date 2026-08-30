@@ -180,6 +180,7 @@ Pending community review:
 - [Awesome Agent Cortex PR #74](https://github.com/0xNyk/awesome-agent-cortex/pull/74) — added SandBase Harness to Agent Runtime Infrastructure; maintainer review pending
 - [Awesome Agentic AI 中文 Stage 7 PR #213](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213) — added SandBase Harness to the Track B Harness/Sandbox/Deploy learning collection; maintainer review pending
 - [Awesome Terminal Agents PR #5](https://github.com/EnigmaYYYY/awesome-terminal-agents/pull/5) — added SandBase Harness as an Engineering-Practice-Tool reference; maintainer review pending
+- [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-devtools/pull/13) — added SandBase Harness to Proxies and Gateways; maintainer review pending
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — added SandBase Harness to Execution Sandboxes; maintainer review pending
 - [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — added SandBase Harness to Self-hosted Agent Runtimes; maintainer review pending
 - [Awesome Sandbox PR #27](https://github.com/restyler/awesome-sandbox/pull/27) — added a dedicated SandBase Harness runtime/sandbox guide section; maintainer review pending
