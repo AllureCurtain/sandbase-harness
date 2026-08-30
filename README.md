@@ -195,6 +195,21 @@ dsh plugin --profile web add -w ../sandbase-harness
 dsh web
 ```
 
+If Plugin Hub reports `already installed: managed-agents` after a partial or
+repeated install, update the Hub first, then remove only the displayed
+`managed-agents` plugin entry and retry from the tagged HTTPS Git source:
+
+```bash
+dsh plugin --profile web update dsh-plugin
+dsh plugin --profile web remove managed-agents
+dsh plugin --profile web add git+https://github.com/sandbaseai/sandbase-harness.git
+```
+
+This is a Plugin Hub duplicate-install path, not an npm installation path. If
+the installed view shows a different target identifier, remove that exact
+identifier instead. Keep the profile directory and its evidence until the
+runtime starts successfully; see [the reported recovery issue](https://github.com/sandbaseai/sandbase-harness/issues/78).
+
 The profile installs the verified source checkout directly; it does not resolve
 the unrelated unscoped npm package. A git-hosted install runs `prepare` only
 when `dist/` is missing. Keep the HTTPS git spec; converting it to SSH fails on

@@ -187,6 +187,20 @@ dsh plugin --profile web add -w ../sandbase-harness
 dsh web
 ~~~
 
+如果 Plugin Hub 在重复或半途失败的安装后提示
+`already installed: managed-agents`，请先更新 Hub，再只移除已显示的
+`managed-agents` 插件条目，然后使用带标签的 HTTPS Git 源重试：
+
+~~~bash
+dsh plugin --profile web update dsh-plugin
+dsh plugin --profile web remove managed-agents
+dsh plugin --profile web add git+https://github.com/sandbaseai/sandbase-harness.git
+~~~
+
+这是 Plugin Hub 的重复安装路径问题，不是 npm 安装路径。如果已安装列表
+显示了不同的目标标识，就只移除列表中显示的精确标识。运行成功前请保留
+profile 目录和诊断证据；详见[已报告的恢复 Issue](https://github.com/sandbaseai/sandbase-harness/issues/78)。
+
 Git 安装需要额外一步 pnpm 构建白名单。第一次 add 会以
 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 失败，并打印对应的精确 key；把该 key
 加到 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds:` 下，然后重新运行同一条
