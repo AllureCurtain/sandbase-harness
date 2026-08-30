@@ -29,6 +29,16 @@ The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
 successfully.
 
+## GitHub distribution snapshot
+
+Owner-only GitHub traffic endpoints were checked on 2026-08-30. The repository
+had 638 stars and 61 forks. The current GitHub traffic window reports 2,679
+repository views from 757 unique visitors and 2,234 clones from 463 unique
+cloners. The visible popular referrers include `github.com`, `chatgpt.com`,
+Bing, `awesome-dsh-plugin.com`, and `dshbase.com`. These figures measure
+discovery and activity, not conversion, and are not attributed to any single
+promotion channel.
+
 ## Verified public discovery
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
