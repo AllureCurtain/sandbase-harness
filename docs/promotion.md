@@ -20,7 +20,7 @@ do not imply endorsement or security review.
 - [DSH Plugin Registry](https://github.com/dshplugin-app/deepseek-harness-plugins)
 - [DSH Plugin](https://dshplugin.me/?q=sandbase-harness)
 - [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
-- [DSHPlugin](https://dshplugin.org/)
+- [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
@@ -77,6 +77,8 @@ do not imply endorsement or security review.
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but its indexed metadata still reports `0.3.7`; use the repository's current release tag and README as the source of truth.
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the page still contains `v0.3.2` references; use the repository's current release tag and README as the source of truth.
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness): the public submission API confirms the repository is already listed, but its detail page still reports `v0.3.7`; use the repository's current release tag and README as the source of truth.
+- [DSH Hub](https://dshhub.org/plugins/sandbaseai/sandbase-harness): a public detail page exists, but it currently presents the old `managed-agents` package/repository metadata; do not use it as the current installation source until corrected.
+- [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the detail page still reports `v0.3.7` and links to an older pinned commit; use the repository's current release tag and README as the source of truth.
 
 ## Promotion rules
 
