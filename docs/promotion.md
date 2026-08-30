@@ -26,6 +26,8 @@ do not imply endorsement or security review.
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness): public automated listing verified; the page reports Apache-2.0 and current repository signals, but its own notice says the grade is computed from public signals and has not been maintainer-reviewed.
+- [SSD Nodes self-hosting guide](https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime): independent third-party walkthrough covering installation, MCP servers, sandbox modes, and reverse-proxy deployment; the article demonstrates v0.3.2, so current release instructions remain authoritative.
+- [SandBase auditable research agent guide](https://blog.sandbase.ai/auditable-research-agent-evidence-ledger-sandbox-replay/): first-party practical guide showing evidence ledgers, sandboxed execution, credentials, audit, and replay.
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
