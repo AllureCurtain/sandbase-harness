@@ -81,6 +81,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
 - [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
 - [dshbase](https://dshbase.com/plugins/sandbase-harness/)
+- [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
+- [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 

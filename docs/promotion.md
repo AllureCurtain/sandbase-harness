@@ -14,6 +14,7 @@ do not imply endorsement or security review.
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
 - [DSH Harness](https://dsharness.io/en/plugins?search=sandbase-harness)
+- [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin](https://dshplugin.me/?q=sandbase-harness)
 - [DSHPlugin](https://dshplugin.org/)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
