@@ -136,6 +136,7 @@ both the repository validator and the v0.3.8 MCP `initialize` handshake.
 - [Awesome MCP Devtools PR #299](https://github.com/punkpeye/awesome-mcp-devtools/pull/299): open; maintainer review pending.
 - [YuzeHao Awesome MCP Servers PR #461](https://github.com/YuzeHao2023/Awesome-MCP-Servers/pull/461): open; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
+- [Promotion outreach templates](./promotion-outreach.md): ready-to-send factual drafts for Agentbrisk and harnesses.sh; no email or direct message was sent from this environment.
 - [Agent Launchpad submission](https://launchpad.smartbizcalc.com/submit): free listing is available, but submission requires an authenticated magic-link session and a project screenshot; no credentials or upload were available, so this remains a manual outreach candidate.
 - [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
 - [MCP.so submission](https://mcp.so/submit): accepts MCP servers, agent apps, CLI tools, skills, and loops; SandBase is not currently indexed, but the submission endpoint requires an authenticated account, so this remains a manual outreach candidate.
