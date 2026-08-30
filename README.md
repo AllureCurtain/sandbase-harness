@@ -174,6 +174,7 @@ Pending community review:
 - [Awesome MCP List PR #409](https://github.com/MobinX/awesome-mcp-list/pull/409) — added SandBase Harness to AI Agents & Frameworks; maintainer review pending
 - [Awesome Agent Runtimes PR #4](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4) — proposed SandBase Harness for the maturity-gated watchlist; maintainer review pending
 - [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — added SandBase Harness to Related Projects; maintainer review pending
+- [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — added SandBase Harness to Runtime and Control Plane; maintainer review pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — added to Local Runtimes & LLM Management; maintainer review pending
