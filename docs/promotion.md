@@ -57,6 +57,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Infra PR #5](https://github.com/shenli/awesome-agent-infra/pull/5): open; maintainer review pending.
 - [Awesome Agent Frameworks PR #7](https://github.com/alexbevi/awesome-agent-frameworks/pull/7): open; maintainer review pending.
 - [Scottcjn Awesome Agents PR #59](https://github.com/Scottcjn/awesome-agents/pull/59): open; maintainer review pending.
+- [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28): open; maintainer review pending.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
