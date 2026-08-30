@@ -168,6 +168,11 @@ execution across Local, Docker, Kubernetes, and self-hosted sandboxes.
 For client-specific setup, see the [installation guide](llms-install.md),
 including the pinned Cline CLI command and the Docker MCP Bridge configuration.
 
+Community use-case discussions:
+
+- [Memory migration between Codex, Claude Code, and DSH](https://github.com/deepseek-ai/deepseek-harness/discussions/14#discussioncomment-18202967)
+- [Sandbox and filesystem protection for third-party plugins](https://github.com/deepseek-ai/deepseek-harness/discussions/5068#discussioncomment-18202943)
+
 ## Requirements
 
 - Node.js 22+
