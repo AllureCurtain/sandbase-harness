@@ -59,6 +59,9 @@ successfully.
 - [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
 - [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime): public runtime landscape; its SandBase entry now links v0.3.8, the official MCP Registry, verified dshbase discovery, and the client installation guide via [merged PR #15](https://github.com/sandbaseai/awesome-agent-runtime/pull/15).
+- [Awesome Agent Cortex](https://github.com/0xNyk/awesome-agent-cortex): SandBase CLI is publicly listed in the MCP ecosystem after [merged PR #72](https://github.com/0xNyk/awesome-agent-cortex/pull/72).
+- [Awesome AI Devtools](https://github.com/yeaight7/awesome-ai-devtools): SandBase CLI is publicly listed in the MCP tooling comparison and catalog after [merged PR #33](https://github.com/yeaight7/awesome-ai-devtools/pull/33).
+- [VoltAgent Awesome Agent Skills](https://github.com/VoltAgent/awesome-agent-skills): the SandBase `multi-source-search` skill is publicly listed after [merged PR #946](https://github.com/VoltAgent/awesome-agent-skills/pull/946).
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp)
 - [cccakeee/awesome-dsh-plugins](https://github.com/cccakeee/awesome-dsh-plugins)
 - [anbeime/skill — Skills index](https://github.com/anbeime/skill)
