@@ -9,6 +9,8 @@
 [![Discussions](https://img.shields.io/github/discussions/sandbaseai/sandbase-harness)](https://github.com/sandbaseai/sandbase-harness/discussions)
 [![License](https://img.shields.io/github/license/sandbaseai/sandbase-harness)](LICENSE)
 
+AI-readable project metadata: [llms.txt](./llms.txt) · [installation guide](./llms-install.md)
+
 A local-first runtime for AI agents. Sessions, sandboxed tools, memory,
 credentials, audit trails, and a built-in Console — all running on your
 machine or in your own infrastructure.
