@@ -21,6 +21,8 @@ Memory、凭证、审计日志、事件回放和可视化 Console 放在同一�
 
 > 当前稳定版本：[v0.3.8](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8)
 
+MCP Bridge 容器镜像：[GitHub Container Registry](https://github.com/orgs/sandbaseai/packages/container/package/sandbase-harness-mcp)。
+
 ## 从使用场景开始
 
 参见[场景展示](docs/showcase.zh-CN.md)，了解可审计 Coding Agent、以 DeepSeek

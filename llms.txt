@@ -73,6 +73,7 @@ release metadata remain the source of truth.
 ## MCP bridge
 
 - Docker image: `ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8`
+- Container package: https://github.com/orgs/sandbaseai/packages/container/package/sandbase-harness-mcp
 - Tools: `list_agents`, `create_session`, `run_session`, `get_session`, `list_artifacts`, `stop_session`
 - Runtime endpoint: `MANAGED_AGENTS_URL` (default `http://127.0.0.1:3000`)
 - Optional authentication: `MANAGED_AGENTS_API_KEY`

@@ -275,6 +275,8 @@ tagged GitHub source release shown above. Do not run `npx managed-agents` or
 The six-tool MCP bridge is published as a multi-architecture OCI image. Start
 the Harness API, then add this stdio command to an MCP client:
 
+Container package: [GitHub Container Registry](https://github.com/orgs/sandbaseai/packages/container/package/sandbase-harness-mcp)
+
 ```bash
 docker pull ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
 docker run --rm -i \
