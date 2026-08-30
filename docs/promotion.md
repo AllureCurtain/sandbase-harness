@@ -94,6 +94,7 @@ do not imply endorsement or security review.
 - [Awesome AI Agent Runtimes PR #3](https://github.com/pandastack-io/awesome-ai-agent-runtimes/pull/3): open; SandBase Harness added to Self-Hosted Solutions and the comparison matrix; maintainer review pending.
 - [Awesome Agent Harness PR #29](https://github.com/mahonzhan/awesome-agent-harness/pull/29): open; SandBase Harness added to the Agent Harness timeline; maintainer review pending.
 - [Awesome Harness Engineering PR #224](https://github.com/ai-boost/awesome-harness-engineering/pull/224): open; SandBase Harness added to Demo Harnesses with local, Docker, Kubernetes, and worker execution details; maintainer review pending.
+- [Awesome Agent Harnesses inclusion suggestion #1](https://github.com/open-kairox/awesome-agent-harnesses/issues/1): opened after the upstream fork name conflicted with an existing unrelated fork; maintainer can review the prepared entry and decide whether to include it.
 - [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58): open; maintainer review pending.
 - [Awesome AgentOps PR #14](https://github.com/natnew/awesome-agentops/pull/14): open; deployment/runtime infrastructure entry review pending.
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open; generated-list maintainer review pending.
