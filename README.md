@@ -499,6 +499,9 @@ init smoke, and `examples/basic` startup smoke.
 
 ## Community Guides
 
+- [Build an Auditable Research Agent](https://blog.sandbase.ai/auditable-research-agent-evidence-ledger-sandbox-replay/)
+  — a reproducible guide combining evidence ledgers, sandboxed execution,
+  credentials, audit, and replay with SandBase Harness.
 - [Self-host the SandBase agent runtime](https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime)
   by SSD Nodes — an independent VPS walkthrough covering installation, agent
   configuration, MCP servers, sandbox modes, and reverse-proxy deployment. The
