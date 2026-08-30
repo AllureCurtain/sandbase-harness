@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.sandbaseai/sandbase-harness",
   "title": "SandBase Harness",
-  "description": "Stdio MCP bridge for SandBase Harness agents, sessions, turns, artifacts, and cancellation.",
+  "description": "Stdio MCP bridge for the local-first SandBase Harness runtime: manage durable agent sessions, sandboxed turns, artifacts, and cancellation with credential-aware audit and replay.",
   "repository": {
     "url": "https://github.com/sandbaseai/sandbase-harness",
     "source": "github"
