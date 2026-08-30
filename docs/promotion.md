@@ -15,7 +15,9 @@ The MCP Registry publish workflow was re-run after the metadata description
 update: image verification, metadata validation, and GitHub OIDC authentication
 passed, but the Registry rejected the publish because version `0.3.8` already
 exists (`cannot publish duplicate version`). The improved `server.json` will be
-published with the next genuine release; no artificial version was created.
+published with the next genuine release; no artificial version was created
+([initial validation run](https://github.com/sandbaseai/sandbase-harness/actions/runs/33311700959),
+[duplicate-version run](https://github.com/sandbaseai/sandbase-harness/actions/runs/33311736860)).
 
 MCP.Directory's submission endpoint reports that this repository has already
 been submitted; no public detail page is available yet, so it remains review-
