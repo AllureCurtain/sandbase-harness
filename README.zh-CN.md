@@ -162,6 +162,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [AI Agent Tools 提交](https://aiagenttools.dev/submit) — 已提交至 MCP Servers 分类，等待目录审核
 - [MCP Server Finder 评估 Issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — 已请求对 MCP bridge 进行独立质量与安全评估，等待审核
 - [Agentic DevOps MCP PR #42](https://github.com/agenticdevops/awesome-devops-mcp/pull/42) — 已加入 Kubernetes & Containers，等待维护者审核
+- [Awesome DevOps AI PR #54](https://github.com/hammadhaqqani/awesome-devops-ai/pull/54) — 已加入 MCP Servers for DevOps，等待维护者审核
 - [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks 架构提案 #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)

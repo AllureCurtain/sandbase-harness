@@ -158,6 +158,7 @@ Pending community review:
 - [AI Agent Tools submission](https://aiagenttools.dev/submit) — submitted to the MCP Servers category; directory review pending
 - [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — requested an independent quality and security assessment of the MCP bridge; review pending
 - [Agentic DevOps MCP PR #42](https://github.com/agenticdevops/awesome-devops-mcp/pull/42) — added to Kubernetes & Containers; maintainer review pending
+- [Awesome DevOps AI PR #54](https://github.com/hammadhaqqani/awesome-devops-ai/pull/54) — added to MCP Servers for DevOps; maintainer review pending
 - [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
