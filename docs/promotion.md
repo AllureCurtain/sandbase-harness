@@ -43,6 +43,7 @@ do not imply endorsement or security review.
 - [AgentStack](https://www.agentstack.live/mcp/io.github.sandbaseai/sandbase-harness)
 - [HackSing DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
+- [Glama](https://glama.ai/mcp/servers/sandbaseai/cli): SandBase has a public Glama page, but it is the CLI listing; no separate Harness listing was verified. The repository now declares maintainers in `glama.json` for a future authenticated claim.
 
 ## Pending or review-controlled
 
@@ -62,7 +63,6 @@ do not imply endorsement or security review.
 
 - [AgentForge submission](https://agentforge.community/submit): the public form API returned `401 Authentication required`; no submission was created.
 - [dshplugin.dev submission](https://dshplugin.dev/submit): public form requires Turnstile verification; no automated bypass attempted.
-- [DSH Directory](https://github.com/alexchenzl/dsh-plugin-directory): currently requires a `dsh.bundle.patch` package manifest, which this runtime repository does not provide.
 - [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
 - [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm installation path is unsafe to promote: the public `managed-agents` package currently reports `latest` as `0.0.1`, while this repository is `0.3.8`; the page presents that package as the current runtime. The repository's GitHub-source install remains the source-of-truth path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
 
