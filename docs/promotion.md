@@ -69,6 +69,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86): open; maintainer review pending.
 - [Awesome Security Agent Harnesses PR #1](https://github.com/Ed-Marcavage/awesome-security-agent-harnesses/pull/1): open; maintainer review pending; the target repository has pre-existing `awesome-lint` baseline errors documented in the PR.
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21): open; existing focused entry under `execution-sandboxes`, maintainer review pending.
+- [Awesome AI Sandboxes PR #28](https://github.com/tizkovatereza/awesome-ai-sandboxes/pull/28): open; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
