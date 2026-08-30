@@ -545,6 +545,7 @@ init smoke, and `examples/basic` startup smoke.
 - [Architecture](docs/spec/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 - [Promotion status](docs/promotion.md)
+- [Promotion outreach templates](docs/promotion-outreach.md)
 - [Changelog](CHANGELOG.md)
 
 ## Community Guides

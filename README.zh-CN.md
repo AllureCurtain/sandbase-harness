@@ -268,4 +268,5 @@ npm run release:check
 [Discussions](https://github.com/sandbaseai/sandbase-harness/discussions)
 反馈问题、分享集成经验或参与贡献。
 
-推广入口和审核状态见[推广状态台账](./docs/promotion.md)。
+推广入口和审核状态见[推广状态台账](./docs/promotion.md)；可复用的事实型
+[推广联系模板](./docs/promotion-outreach.md)供维护者发送给人工审核渠道。
