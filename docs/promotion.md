@@ -99,6 +99,8 @@ The [Daily Ops PR #243](https://github.com/sandbaseai/sandbase-daily-ops/pull/24
 
 The follow-up [Daily Ops PR #244](https://github.com/sandbaseai/sandbase-daily-ops/pull/244) is also merged (`1ba5f6b481668906c0251d7ed55c611e150f740d`), recording the draft-update evidence in the social publication log while preserving the no-publication claim.
 
+The merged [Daily Ops PR #245](https://github.com/sandbaseai/sandbase-daily-ops/pull/245) adds MeshKore submission #14 and Agent Switchboard PR #44 to the X, LinkedIn, and Discord drafts. The drafts remain `NEEDS REVIEW`; no social account publication or endorsement is claimed.
+
 The bilingual DeepSeek Harness developer-preview articles were refreshed for SandBase Harness v0.3.8 in merged [sandbase-blog PR #273](https://github.com/sandbaseai/sandbase-blog/pull/273), addressing the DeepSeek portion of [blog issue #272](https://github.com/sandbaseai/sandbase-blog/issues/272). Article quality, 27 tests, Astro checks, and the 1,227-page production build passed; [Cloudflare deployment run 33332934282](https://github.com/sandbaseai/sandbase-blog/actions/runs/33332934282) succeeded, and the [English page](https://blog.sandbase.ai/deepseek-harness-developer-preview-2026/) plus [Chinese page](https://blog.sandbase.ai/zh-CN/deepseek-harness-developer-preview-2026/) return HTTP 200 with v0.3.8. The separate auditable-research article remains pending because its required dedicated durable cover and three evidence screenshots are not yet available.
 
 GitHub repository discovery metadata was refreshed on 2026-08-31: the topic set now explicitly includes `devops`, `docker`, and `kubernetes` while retaining the MCP, sandbox, audit, DeepSeek, and DSH terms; no capability or security claim was changed.
