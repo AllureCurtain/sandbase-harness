@@ -128,6 +128,7 @@ export function ConsoleRouteView(props: {
           onBack={() => props.setView('sessions')}
           onRefresh={props.onRefresh}
           onOpenAgent={(agent) => props.onOpenAgent(agent)}
+          onNewSession={props.onNewSession}
         />
       ) : <EmptyState icon={<MessageSquare size={22} />} title="No session selected" body="The selected session could not be found. Return to Sessions and choose another run." />;
     }

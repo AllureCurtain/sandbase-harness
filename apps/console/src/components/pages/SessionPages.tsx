@@ -121,12 +121,14 @@ export function SessionDetail({
   onBack,
   onRefresh,
   onOpenAgent,
+  onNewSession,
 }: {
   session: Session;
   data: ConsoleData;
   onBack: () => void;
   onRefresh: () => void;
   onOpenAgent: (agent: Agent) => void;
+  onNewSession: (agentId?: string) => void;
 }) {
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
@@ -354,26 +356,37 @@ export function SessionDetail({
         </div>
       </div>
 
-      <form className="sessionComposer" onSubmit={(event) => void sendMessage(event)}>
-        <textarea
-          value={messageDraft}
-          onChange={(event) => setMessageDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void sendMessage();
-            }
-          }}
-          placeholder="Message this session..."
-          aria-label="Message this session"
-          disabled={sendingMessage || displayStatus === 'failed' || displayStatus === 'terminated'}
-        />
-        <button className="primaryButton" type="submit" disabled={!canSendMessage}>
-          <Send size={16} />
-          {sendingMessage ? 'Sending...' : 'Send'}
-        </button>
-        {messageError ? <div className="sessionComposerError">{messageError}</div> : null}
-      </form>
+      {displayStatus === 'failed' || displayStatus === 'terminated' ? (
+        <div className="sessionComposerClosed" role="note">
+          <span>
+            This session is {displayStatus} and cannot receive new messages. Start a new session to continue.
+          </span>
+          <button className="secondaryButton" type="button" onClick={() => onNewSession(session.agent.id)}>
+            <Plus size={16} />New session
+          </button>
+        </div>
+      ) : (
+        <form className="sessionComposer" onSubmit={(event) => void sendMessage(event)}>
+          <textarea
+            value={messageDraft}
+            onChange={(event) => setMessageDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder="Message this session..."
+            aria-label="Message this session"
+            disabled={sendingMessage}
+          />
+          <button className="primaryButton" type="submit" disabled={!canSendMessage}>
+            <Send size={16} />
+            {sendingMessage ? 'Sending...' : 'Send'}
+          </button>
+          {messageError ? <div className="sessionComposerError">{messageError}</div> : null}
+        </form>
+      )}
     </section>
   );
 }
