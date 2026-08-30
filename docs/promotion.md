@@ -86,7 +86,7 @@ do not imply endorsement or security review.
 - [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the page still contains `v0.3.2` references; use the repository's current release tag and README as the source of truth.
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness): the public submission API confirms the repository is already listed, but its detail page still reports `v0.3.7`; use the repository's current release tag and README as the source of truth.
 - [DSH Hub](https://dshhub.org/plugins/sandbaseai/sandbase-harness): a public detail page exists, but it currently presents the old `managed-agents` package/repository metadata; do not use it as the current installation source until corrected.
-- [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the detail page still reports `v0.3.7` and links to an older pinned commit; use the repository's current release tag and README as the source of truth.
+- [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the detail page still reports `v0.3.7` and links to an older pinned commit; use the repository's current release tag and README as the source of truth. Its submission FAQ says listed projects sync automatically, so no duplicate submission is needed; recheck after the next directory refresh.
 
 ## Promotion rules
 
