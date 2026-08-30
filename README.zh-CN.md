@@ -118,6 +118,9 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [LLM Agents Radar — 已核验自动收录](https://github.com/linny006/llm-agents-radar)
 - [Awesome DSH Plugin — 已核验条目](https://github.com/Anil-matcha/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness — 已核验条目](https://github.com/awesome-deepseekharness/awesome-deepseek-harness)
+- [DSH Plugin Radar — 已核验自动收录](https://github.com/AdamPlatin123/dsh-plugin-radar)
+- [Awesome DSH Plugin — 已合并 Harness 条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
+- [Awesome DeepSeek Harness — 已合并 Runtime 条目](https://github.com/0xsline/awesome-deepseek-harness/pull/141)
 - [Awesome Agents — 公开条目](https://github.com/kyrolabs/awesome-agents)
 - [abordage/awesome-mcp — 公开条目](https://github.com/abordage/awesome-mcp)
 
