@@ -61,7 +61,7 @@ both the repository validator and the v0.3.8 MCP `initialize` handshake.
 ## Pending or review-controlled
 
 - [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95): closed after the maintainer confirmed the verified listing above.
-- [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411)
+- [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411): open and clean; current v0.3.8, native DeepSeek Harness example, installation guide, and official Showcase context were posted for maintainer review.
 - [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending. The only reported check failure is the repository owner's Vercel authorization; current-version context was added in [the PR comment](https://github.com/assafbar2/agentswitchboard.dev/pull/42#issuecomment-5468257984).
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
