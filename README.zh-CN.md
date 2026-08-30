@@ -42,6 +42,20 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 如果它解决了你的真实 Agent 基础设施问题，欢迎
 [为仓库点 Star](https://github.com/sandbaseai/sandbase-harness)，帮助更多开发者发现它。
 
+## 发现 SandBase Harness
+
+项目也可以通过以下独立生态目录发现：
+
+- [官方 MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
+- [MCP Market](https://mcpmarket.com/server/sandbase-harness)
+- [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
+- [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
+- [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
+- [dshbase](https://dshbase.com/plugins/sandbase-harness/)
+
+这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
+
 ### 在 Codespaces 中试用
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sandbaseai/sandbase-harness?quickstart=1)
