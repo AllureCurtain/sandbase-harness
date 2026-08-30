@@ -168,6 +168,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DevOps Platform PR #4](https://github.com/tysoncung/awesome-devops-platform/pull/4) — 已加入 AI & Automation in DevOps，等待维护者审核
 - [Awesome Platform Engineering PR #11](https://github.com/ShakedBraimok/awesome-platform-engineering/pull/11) — 已加入 AI Platform Engineering & LLMOps，等待维护者审核
 - [Awesome LLMOps PR #539](https://github.com/InftyAI/Awesome-LLMOps/pull/539) — 由项目申请 #538 自动生成，已加入 Runtime / AI Agent，构建通过，等待维护者审核
+- [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21) — 已加入 Execution Sandboxes，条目已更新至当前 MCP 安装文档，等待维护者审核
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — 官方 DevOps runtime 与 MCP bridge 推广介绍
 - [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
