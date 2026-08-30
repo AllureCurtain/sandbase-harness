@@ -151,6 +151,7 @@ Pending community review:
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
 - [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841) — validation complete; maintainer review pending
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — schema and Biome checks pass; maintainer review pending
+- [MCP.Directory submission](https://mcp.directory/submit) — already submitted; directory review pending
 - [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
