@@ -69,7 +69,7 @@ promotion channel.
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
-- [dsh.so Trust & Discovery Registry](https://www.dsh.so/): public DSH registry page verified with HTTP 200 and a matching SandBase Harness entry; its trust level is an automated registry signal, not a maintainer security endorsement.
+- [dsh.so Trust & Discovery Registry](https://www.dsh.so/artifact/sandbase-harness/): public DSH detail page verified with HTTP 200 and a matching SandBase Harness entry; its trust level is an automated registry signal, not a maintainer security endorsement.
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
 - [DSH Harness](https://dsharness.io/en/plugins?search=sandbase-harness)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
