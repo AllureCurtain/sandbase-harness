@@ -93,6 +93,7 @@ promotion channel.
 - [DeepSeekDocs Ecosystem](https://deepseekdocs.com/en/ecosystem)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — verified Agent Runtime Top 100 entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md): SandBase appears in the published Agent Runtime table; the generated snapshot currently shows it at rank 65 with 637 stars.
+- [Agent Framework Radar — verified automatic discovery](https://github.com/linny006/agent-framework-radar): SandBase Harness is included in the published `topic:agent-framework` radar, currently shown at rank 1 with 638 stars; no manual submission was needed because the index is generated from GitHub Search API results.
 - [Arnon-hs Open Source / AtlasRepo — verified MCP entry](https://github.com/Arnon-hs/open-source/blob/main/mcp/sandbaseai-sandbase-harness.md): SandBase appears in the published MCP index at rank 72 with a generated project profile, score, metadata, and Chinese summary.
 - [Sagargupta16 Awesome MCP Servers — merged entry](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79): the merged developer-tools entry is present on the public README and describes SandBase as a self-hosted MCP runtime with sessions, sandboxing, permissions, and audit/replay.
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
