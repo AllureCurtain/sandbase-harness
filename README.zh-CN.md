@@ -193,6 +193,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [EverWorks Awesome MCP Servers PR #161](https://github.com/ever-works/awesome-mcp-servers/pull/161) — 已将 SandBase Harness 加入 Code Execution & Automation，并新增带来源链接的详情页，PR 可合并，等待维护者审核
 - [AIAnytime Awesome MCP Server PR #78](https://github.com/AIAnytime/Awesome-MCP-Server/pull/78) — 已将 SandBase Harness 作为独立 MCP bridge 条目加入，并与 SandBase CLI 区分，PR 可合并，等待维护者审核
 - [Collabnix Awesome MCP Lists PR #105](https://github.com/collabnix/awesome-mcp-lists/pull/105) — 已将 SandBase Harness 加入 DevOps & Infrastructure，PR 可合并，等待维护者审核
+- [MCP Finder Awesome MCP Servers PR #9](https://github.com/mcp-finder/awesome-mcp-servers/pull/9) — 已将 SandBase Harness 加入 Cloud and DevOps，PR 可合并，等待维护者审核
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — 已加入带证据链接的结构化 SandBase Harness 元数据，等待维护者审核
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Self-hosted / Open Source 沙箱表格，等待维护者审核
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — 已将 SandBase Harness 加入 Containers，等待维护者审核

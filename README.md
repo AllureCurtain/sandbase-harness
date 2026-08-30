@@ -189,6 +189,7 @@ Pending community review:
 - [EverWorks Awesome MCP Servers PR #161](https://github.com/ever-works/awesome-mcp-servers/pull/161) — added SandBase Harness to Code Execution & Automation with a source-linked detail page; PR is mergeable and maintainer review pending
 - [AIAnytime Awesome MCP Server PR #78](https://github.com/AIAnytime/Awesome-MCP-Server/pull/78) — added SandBase Harness as a separate MCP bridge entry from SandBase CLI; PR is mergeable and maintainer review pending
 - [Collabnix Awesome MCP Lists PR #105](https://github.com/collabnix/awesome-mcp-lists/pull/105) — added SandBase Harness to DevOps & Infrastructure; PR is mergeable and maintainer review pending
+- [MCP Finder Awesome MCP Servers PR #9](https://github.com/mcp-finder/awesome-mcp-servers/pull/9) — added SandBase Harness to Cloud and DevOps; PR is mergeable and maintainer review pending
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — added evidence-linked structured SandBase Harness metadata; maintainer review pending
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — added SandBase Harness to the Self-hosted / Open Source sandbox table; maintainer review pending
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — added SandBase Harness to Containers; maintainer review pending
