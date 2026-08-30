@@ -183,6 +183,7 @@ Pending community review:
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — added SandBase Harness to Execution Sandboxes; maintainer review pending
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — added SandBase Harness to Containers; maintainer review pending
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — added SandBase Harness to Container Sandboxes and the comparison table; maintainer review pending
+- [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — added structured SandBase Harness sandbox metadata and regenerated catalog outputs; maintainer review pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — added to Local Runtimes & LLM Management; maintainer review pending
