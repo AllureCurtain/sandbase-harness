@@ -3,6 +3,13 @@
 当 Agent 需要持久化运行时边界，而不只是一次模型请求时，SandBase
 Harness 可以从下面三个场景开始使用。
 
+## 发现和验证项目
+
+- [当前版本：v0.3.8](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8)
+- [官方 MCP Registry 条目](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [已验证的 dshbase 条目](https://dshbase.com/plugins/sandbase-harness/)
+- [SandBase Agent Runtime 生态地图](https://github.com/sandbaseai/awesome-agent-runtime)
+
 ## 1. 可审计的 Coding Agent
 
 使用持久化会话、事件流、产物、快照和回放，检查长时间运行的 Agent 做过

@@ -3,6 +3,13 @@
 SandBase Harness is useful when an agent needs a durable runtime boundary, not
 just a single model request. These are three practical starting points.
 
+## Find and verify the project
+
+- [Current release: v0.3.8](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8)
+- [Official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [Verified dshbase listing](https://dshbase.com/plugins/sandbase-harness/)
+- [SandBase Agent Runtime landscape](https://github.com/sandbaseai/awesome-agent-runtime)
+
 ## 1. Auditable coding agent
 
 Use persistent sessions, event streams, artifacts, snapshots, and replay when
