@@ -95,6 +95,12 @@ is that runtime layer — not a visual workflow builder and not another model SD
 | --- | --- | --- |
 | ![overview](docs/assets/dashboard-overview.png) | ![settings](docs/assets/dashboard-settings-models.png) | ![api-ref](docs/assets/dashboard-api-reference.png) |
 
+## Start with a use case
+
+See the [Showcase](docs/showcase.md) for three practical paths: an auditable
+coding agent, DeepSeek Harness as an interactive front end, and controlled code
+execution across Local, Docker, Kubernetes, and self-hosted sandboxes.
+
 ## Requirements
 
 - Node.js 22+

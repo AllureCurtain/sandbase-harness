@@ -11,6 +11,7 @@ open-source runtime.
 | [Installation](installation.md) | Users and operators | Install options, model configuration, startup flags, and health checks. |
 | [MiniMax](minimax.md) | MiniMax users | Regional endpoints, model IDs, settings, and verification. |
 | [Usage Guide](usage.md) | Users and integrators | Workspace layout, Console workflows, sessions, sandbox backends, resources, credentials, memory, and SDK usage. |
+| [Showcase](showcase.md) | New users and integrators | Three practical paths: auditable sessions, DeepSeek Harness integration, and controlled code execution. |
 | [API Reference](api.md) | API and SDK integrators | HTTP endpoints, request shapes, response shapes, errors, and examples. |
 | [Versioned API Matrix](api-matrix.md) | SDK authors and integrators | `/v1` endpoint status, SDK coverage, CLI coverage, and compatibility gaps. |
 | [Skills](skills.md) | Agent builders | Skill package format, upload flow, validation rules, and agent references. |
