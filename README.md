@@ -98,6 +98,7 @@ The project is also discoverable through these independent ecosystem directories
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
+- [DSH Plugin Store](https://www.dshplugin.store/plugin/sandbaseai/sandbase-harness)
 - [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
 - [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/)
 - [dshbase](https://dshbase.com/plugins/sandbase-harness/)

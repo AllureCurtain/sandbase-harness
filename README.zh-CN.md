@@ -106,6 +106,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [OpenAgentSkill — code-review](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
+- [DSH Plugin Store](https://www.dshplugin.store/plugin/sandbaseai/sandbase-harness)
 - [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
 - [dshbase](https://dshbase.com/plugins/sandbase-harness/)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)

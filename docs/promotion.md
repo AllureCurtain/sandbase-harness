@@ -100,6 +100,7 @@ promotion channel.
 - [SandBase auditable research agent guide](https://blog.sandbase.ai/auditable-research-agent-evidence-ledger-sandbox-replay/): first-party practical guide showing evidence ledgers, sandboxed execution, credentials, audit, and replay.
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
 - [PluginBench](https://pluginbench.com/mcp/io.github.sandbaseai/sandbase-harness)
+- [DSH Plugin Store](https://www.dshplugin.store/plugin/sandbaseai/sandbase-harness): public DSH plugin detail page verified; its generated content includes SandBase Harness and the official repository link, but version/install snapshots may lag the current release, so the repository remains authoritative.
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp): the independently maintained MCP catalog publicly lists SandBase Harness under both MCP servers and Sandboxing & Execution, with repository-backed wording for sandboxed execution, approvals, audit, and replay; its star count is an automated snapshot.
 - [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/sandbaseai/sandbase-harness/)
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
