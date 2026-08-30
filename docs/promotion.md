@@ -27,6 +27,8 @@ The latest public handoff is recorded in [Discussion #82](https://github.com/san
 
 The latest promotion checkpoint is also summarized in [Discussion #94](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209143), including the canonical Docker and ToolSDK registry review paths and the TensorBlock metadata gate.
 
+The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews.
+
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
 successfully.
