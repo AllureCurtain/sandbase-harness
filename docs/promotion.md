@@ -114,6 +114,7 @@ promotion channel.
 
 ## Pending or review-controlled
 
+- [LLM Agents Radar — automatic discovery pending refresh](https://github.com/linny006/llm-agents-radar): added the accurate `llm-agent` GitHub topic (replacing the less broadly useful `dsh-plugin` topic while retaining the 20-topic limit); the radar's next scheduled refresh should evaluate the project, but no listing is claimed until it appears publicly.
 - [MCP.Directory submission](https://mcp.directory/submit): the submission API returned HTTP 409 with `This repository has already been submitted. We'll review it soon!`; no public listing URL is available yet.
 - [mcpservers.org submission](https://mcpservers.org/submit): free submission accepted through the public form; the confirmation page states that SandBase Harness will be reviewed within 12 hours. The current public [SandBase page](https://mcpservers.org/servers/sandbaseai/cli) is for SandBase CLI and mentions Harness in the open-source stack, but no standalone Harness listing has been verified yet.
 - [Open Source Observer OSS Directory PR #1211](https://github.com/opensource-observer/oss-directory/pull/1211): open; adds SandBase Harness to the actively maintained public OSS registry. `pnpm validate:projects` passed for all 7,133 projects, owner-validation is green, and the remaining CI is `ACTION_REQUIRED` pending fork-workflow approval; maintainer review is pending ([status note](https://github.com/opensource-observer/oss-directory/pull/1211#issuecomment-5468590097)).
