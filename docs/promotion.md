@@ -71,6 +71,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21): open; existing focused entry under `execution-sandboxes`, maintainer review pending.
 - [Awesome Agent Control Plane PR #3](https://github.com/Ar9av/awesome-agent-control-plane/pull/3): open; existing focused entry under `Sandboxing & Isolation`, maintainer review pending.
 - [Awesome AI Sandboxes PR #28](https://github.com/tizkovatereza/awesome-ai-sandboxes/pull/28): open; maintainer review pending.
+- [Awesome CLI Coding Agents PR #313](https://github.com/bradAGI/awesome-cli-coding-agents/pull/313): open; SandBase Harness added under Agent infrastructure; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
