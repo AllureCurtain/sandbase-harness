@@ -89,7 +89,7 @@ promotion channel.
 - [dshplugin.dev](https://dshplugin.dev/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
-- [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness): independent MCP detail page verified with a current repository/release snapshot; discovery only, with the repository remaining authoritative for installation and version claims.
 - [Awesome DSH Plugin web catalog](https://awesome-dsh-plugin.com/p/sandbaseai/sandbase-harness/): an independent public detail page now exposes the SandBase Harness entry; it is recorded as discovery only, and the repository/release metadata remain authoritative for installation and version claims.
 - [DSH Market](https://dshmarket.com/p/sandbaseai/sandbase-harness/): public detail page verified with HTTP 200 and a matching Harness entry; discovery only, with the repository remaining authoritative for installation and version claims.
 - [DSH Plugins](https://dshplugins.cc/en/plugins/sandbaseai-sandbase-harness): public detail page verified with HTTP 200 and a matching Harness entry; discovery only, with the repository remaining authoritative for installation and version claims.
@@ -106,7 +106,7 @@ promotion channel.
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
 - [Awesome DeepSeek Harness — ecosystem list](https://github.com/fendouai/awesome-deepseek-harness)
-- [DSHarness 101 Plugin Radar](https://dsharness101.com/plugins/)
+- [DSHarness 101 Plugin Radar](https://dsharness101.com/plugins/): independent bilingual DSH plugin radar lists `sandbase-harness` under Sandbox & Runtime; its directory label is a discovery classification and explicitly asks users to review the original repository before installation.
 - [DeepSeekDocs Ecosystem](https://deepseekdocs.com/en/ecosystem)
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — verified Agent Runtime Top 100 entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md): SandBase appears in the published Agent Runtime table; the generated snapshot currently shows it at rank 65 with 637 stars.
