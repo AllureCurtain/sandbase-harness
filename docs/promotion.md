@@ -102,6 +102,11 @@ do not imply endorsement or security review.
 - [ChatMCP MCPSo submission #3834](https://github.com/chatmcp/mcpso/issues/3834): open; submitted the official MCP metadata, v0.3.8 image, six-tool description, and self-hosted runtime configuration; review pending.
 - [Harness Engineering Guide resource #70](https://github.com/nexu-io/harness-engineering-guide/issues/70): open; submitted SandBase Harness as a tool/framework reference for lifecycle, sandboxing, MCP, memory, credentials, audit, and replay; curator review pending.
 - [BrethofAI Awesome MCP Servers proposal #12](https://github.com/BrethofAI/awesome-mcp-servers/issues/12): open; submitted the MCP bridge with official metadata, published image, and installation evidence; maintainer review pending.
+- [ToolSDK MCP Registry PR #487](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/487): open; SandBase Harness MCP bridge submission; registry review pending.
+- [E2B Awesome MCP Gateways PR #77](https://github.com/e2b-dev/awesome-mcp-gateways/pull/77): open; SandBase Harness MCP bridge added to the gateway list; maintainer review pending.
+- [AI Agent Infrastructure List PR #4](https://github.com/chgaowei/ai-agent-infra-list/pull/4): open; SandBase Harness added to runtime lists; maintainer review pending.
+- [Awesome MCP Clients PR #182](https://github.com/AlexMili/Awesome-MCP/pull/182): open; SandBase Harness added as an MCP client/runtime integration; maintainer review pending.
+- [Skyming Awesome AI Agent PR #19](https://github.com/skyming/awesome-ai-agent/pull/19): open; SandBase Harness added to open-source agent projects; maintainer review pending.
 - [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58): open; maintainer review pending.
 - [Awesome AgentOps PR #14](https://github.com/natnew/awesome-agentops/pull/14): open; deployment/runtime infrastructure entry review pending.
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open; generated-list maintainer review pending.
