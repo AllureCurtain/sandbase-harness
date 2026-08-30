@@ -78,6 +78,7 @@ promotion channel.
 - [DSH Plugin](https://dsh-plugin.org/plugins/sandbaseai/sandbase-harness)
 - [MCP Market](https://mcpmarket.com/server/sandbase-harness)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [Awesome DSH Plugin web catalog](https://awesome-dsh-plugin.com/p/sandbaseai/sandbase-harness/): an independent public detail page now exposes the SandBase Harness entry; it is recorded as discovery only, and the repository/release metadata remain authoritative for installation and version claims.
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness): public automated listing verified; the page reports Apache-2.0 and current repository signals, but its own notice says the grade is computed from public signals and has not been maintainer-reviewed.
 - [F8W 中文项目档案](https://www.f8w.com/github/sandbaseai__sandbase-harness/): public Chinese project profile verified with HTTP 200; its metadata matches the repository and current 638-star snapshot, but it is an independent index and not maintainer-reviewed.
 - [SSD Nodes self-hosting guide](https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime): independent third-party walkthrough covering installation, MCP servers, sandbox modes, and reverse-proxy deployment; the article demonstrates v0.3.2, so current release instructions remain authoritative.
