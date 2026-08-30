@@ -94,6 +94,7 @@ promotion channel.
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — verified Agent Runtime Top 100 entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md): SandBase appears in the published Agent Runtime table; the generated snapshot currently shows it at rank 65 with 637 stars.
 - [Agent Framework Radar — verified automatic discovery](https://github.com/linny006/agent-framework-radar): SandBase Harness is included in the published `topic:agent-framework` radar, currently shown at rank 1 with 638 stars; no manual submission was needed because the index is generated from GitHub Search API results.
+- [LLM Agents Radar — verified automatic discovery](https://github.com/linny006/llm-agents-radar): after adding the accurate `llm-agent` topic, SandBase Harness appears in the published radar at rank 1 with 638 stars; the index is generated from GitHub Search API results.
 - [Arnon-hs Open Source / AtlasRepo — verified MCP entry](https://github.com/Arnon-hs/open-source/blob/main/mcp/sandbaseai-sandbase-harness.md): SandBase appears in the published MCP index at rank 72 with a generated project profile, score, metadata, and Chinese summary.
 - [Sagargupta16 Awesome MCP Servers — merged entry](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79): the merged developer-tools entry is present on the public README and describes SandBase as a self-hosted MCP runtime with sessions, sandboxing, permissions, and audit/replay.
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
@@ -114,7 +115,6 @@ promotion channel.
 
 ## Pending or review-controlled
 
-- [LLM Agents Radar — automatic discovery pending refresh](https://github.com/linny006/llm-agents-radar): added the accurate `llm-agent` GitHub topic (replacing the less broadly useful `dsh-plugin` topic while retaining the 20-topic limit); the radar's next scheduled refresh should evaluate the project, but no listing is claimed until it appears publicly.
 - [MCP.Directory submission](https://mcp.directory/submit): the submission API returned HTTP 409 with `This repository has already been submitted. We'll review it soon!`; no public listing URL is available yet.
 - [mcpservers.org submission](https://mcpservers.org/submit): free submission accepted through the public form; the confirmation page states that SandBase Harness will be reviewed within 12 hours. The current public [SandBase page](https://mcpservers.org/servers/sandbaseai/cli) is for SandBase CLI and mentions Harness in the open-source stack, but no standalone Harness listing has been verified yet.
 - [Open Source Observer OSS Directory PR #1211](https://github.com/opensource-observer/oss-directory/pull/1211): open; adds SandBase Harness to the actively maintained public OSS registry. `pnpm validate:projects` passed for all 7,133 projects, owner-validation is green, and the remaining CI is `ACTION_REQUIRED` pending fork-workflow approval; maintainer review is pending ([status note](https://github.com/opensource-observer/oss-directory/pull/1211#issuecomment-5468590097)).
