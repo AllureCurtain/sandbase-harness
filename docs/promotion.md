@@ -53,6 +53,7 @@ do not imply endorsement or security review.
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
 - [Awesome MCP Servers PR #13201](https://github.com/punkpeye/awesome-mcp-servers/pull/13201): open; maintainer review pending.
+- [WunderCorp Awesome MCP PR #54](https://github.com/wundercorp/awesome-mcp/pull/54): open; maintainer review pending.
 - [Awesome AI Agents PR #57](https://github.com/aloth/awesome-ai-agents/pull/57): open; maintainer review pending.
 - [Awesome Agent Infra PR #5](https://github.com/shenli/awesome-agent-infra/pull/5): open; maintainer review pending.
 - [Awesome Agent Frameworks PR #7](https://github.com/alexbevi/awesome-agent-frameworks/pull/7): open; maintainer review pending.
