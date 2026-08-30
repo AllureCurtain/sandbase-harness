@@ -153,6 +153,9 @@ Pending community review:
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
 - [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841) — validation complete; maintainer review pending
+- [HabitoAI Awesome MCP Servers PR #37](https://github.com/habitoai/Awesome-MCP-Servers-directory/pull/37) — added to Developer Tools; PR is clean and maintainer review pending
+- [MCP Hub / mcpdir issue #20](https://github.com/eL1fe/mcpdir/issues/20) — separate Harness listing request from the existing CLI entry; directory review pending
+- [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — independent MCP bridge evaluation requested; no score or certification claimed
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — schema and Biome checks pass; maintainer review pending
 - [MCP.Directory submission](https://mcp.directory/submit) — already submitted; directory review pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending

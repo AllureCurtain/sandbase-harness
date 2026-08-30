@@ -157,6 +157,9 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
 - [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841) — 已完成验证，等待维护者审核
+- [HabitoAI Awesome MCP Servers PR #37](https://github.com/habitoai/Awesome-MCP-Servers-directory/pull/37) — 已加入 Developer Tools，PR 状态干净，等待维护者审核
+- [MCP Hub / mcpdir issue #20](https://github.com/eL1fe/mcpdir/issues/20) — 与已有 CLI 条目分开的 Harness 收录申请，等待目录审核
+- [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — 已申请独立 MCP bridge 评估，不宣称评分或安全认证
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — Schema 与 Biome 检查通过，等待维护者审核
 - [MCP.Directory 提交](https://mcp.directory/submit) — 已提交，等待目录审核
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — 已加入 Agent Frameworks & Orchestration，等待维护者审核
