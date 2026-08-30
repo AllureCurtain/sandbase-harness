@@ -99,7 +99,7 @@ successfully.
 - [AgentStack](https://www.agentstack.live/mcp/io.github.sandbaseai/sandbase-harness)
 - [HackSing DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
-- [Glama](https://glama.ai/mcp/servers/sandbaseai/cli): SandBase has a public Glama page, but it is the CLI listing; no separate Harness listing was verified. The repository now declares maintainers in `glama.json` for a future authenticated claim.
+- [Glama](https://glama.ai/mcp/servers/sandbaseai/cli): SandBase has a public Glama page, but it is the CLI listing; no separate Harness listing was verified. The repository now declares maintainers in `glama.json`. Glama's published scoring guidance says organization-owned servers still require GitHub-authenticated authorship claiming, so no separate Harness score badge is claimed until that step is completed.
 
 ## Pending or review-controlled
 
