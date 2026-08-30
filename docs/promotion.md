@@ -63,6 +63,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Harnesses PR #3](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/pull/3): open; maintainer review pending.
 - [Awesome Agent Runtime Security PR #28](https://github.com/bureado/awesome-agent-runtime-security/pull/28): open; maintainer review pending.
 - [Awesome Agent Cortex PR #73](https://github.com/0xNyk/awesome-agent-cortex/pull/73): open; maintainer review pending.
+- [Awesome Agentic Hardening PR #5](https://github.com/AgenticHardening/awesome-agentic-hardening/pull/5): open; maintainer review pending.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
