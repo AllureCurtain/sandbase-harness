@@ -197,6 +197,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome AI Agent Tools PR #27](https://github.com/michielhdoteth/awesome-ai-agent-tools/pull/27) — 已合并独立的 SandBase Harness MCP 目录条目和 Docker stdio 安装元数据
 - [Enterprise AI Atlas Awesome MCP Servers PR #10](https://github.com/Enterprise-AI-Atlas/awesome-mcp-servers/pull/10) — 已将 SandBase Harness 加入 Developer Tools，并添加 Docker stdio 安装元数据，PR 可合并，等待维护者审核
 - [Awesome-MCP PR #36](https://github.com/Albertchamberlain/Awesome-MCP/pull/36) — 已新增带 stdio transport 的结构化 SandBase Harness `server` 条目，PR 可合并，CI 已通过
+- [bgizdov Awesome MCP Servers PR #17](https://github.com/bgizdov/awesome-mcp-servers/pull/17) — 已在 DevOps 分类新增 JSON 条目及 Docker stdio bridge，PR 可合并，等待维护者审核
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — 已加入带证据链接的结构化 SandBase Harness 元数据，等待维护者审核
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Self-hosted / Open Source 沙箱表格，等待维护者审核
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — 已将 SandBase Harness 加入 Containers，等待维护者审核
