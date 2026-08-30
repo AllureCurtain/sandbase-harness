@@ -110,6 +110,15 @@ Recently verified community references:
 - [Awesome Agents — public entry](https://github.com/kyrolabs/awesome-agents)
 - [abordage/awesome-mcp — public entry](https://github.com/abordage/awesome-mcp)
 
+Pending community review:
+
+- [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
+- [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
+- [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841)
+- [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488)
+- [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
+- [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
+
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.
 
