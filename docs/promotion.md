@@ -69,6 +69,7 @@ promotion channel.
 - [DeepseekPlugin](https://deepseekplugin.org/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
+- [dsh.so Trust & Discovery Registry](https://www.dsh.so/): public DSH registry page verified with HTTP 200 and a matching SandBase Harness entry; its trust level is an automated registry signal, not a maintainer security endorsement.
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
 - [DSH Harness](https://dsharness.io/en/plugins?search=sandbase-harness)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
@@ -84,6 +85,7 @@ promotion channel.
 - [DSH Plugins](https://dshplugins.cc/en/plugins/sandbaseai-sandbase-harness): public detail page verified with HTTP 200 and a matching Harness entry; discovery only, with the repository remaining authoritative for installation and version claims.
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness): public automated listing verified; the page reports Apache-2.0 and current repository signals, but its own notice says the grade is computed from public signals and has not been maintainer-reviewed.
 - [F8W 中文项目档案](https://www.f8w.com/github/sandbaseai__sandbase-harness/): public Chinese project profile verified with HTTP 200; its metadata matches the repository and current 638-star snapshot, but it is an independent index and not maintainer-reviewed.
+- [RepoRank Русский профиль](https://reporank.net/ru/repo/sandbaseai-sandbase-harness.html): public Russian-language project profile verified with HTTP 200 and a matching repository/release snapshot; it is an automated index, not maintainer-reviewed evidence.
 - [SSD Nodes self-hosting guide](https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime): independent third-party walkthrough covering installation, MCP servers, sandbox modes, and reverse-proxy deployment; the article demonstrates v0.3.2, so current release instructions remain authoritative.
 - [SandBase auditable research agent guide](https://blog.sandbase.ai/auditable-research-agent-evidence-ledger-sandbox-replay/): first-party practical guide showing evidence ledgers, sandboxed execution, credentials, audit, and replay.
 - [OpenAgentSkill](https://www.openagentskill.com/skills/sandbaseai-sandbase-harness-code-review)
