@@ -118,6 +118,7 @@ Pending community review:
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488)
 - [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
+- [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.
