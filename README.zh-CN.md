@@ -229,3 +229,5 @@ npm run release:check
 [Issues](https://github.com/sandbaseai/sandbase-harness/issues) 和
 [Discussions](https://github.com/sandbaseai/sandbase-harness/discussions)
 反馈问题、分享集成经验或参与贡献。
+
+推广入口和审核状态见[推广状态台账](./docs/promotion.md)。

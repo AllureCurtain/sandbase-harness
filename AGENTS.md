@@ -155,6 +155,9 @@ At the end of each maintenance or promotion session, record:
 - verification results and known warnings;
 - open blockers and the next safe action.
 
+Keep the current promotion handoff in [docs/promotion.md](docs/promotion.md),
+and distinguish verified public listings from pending submissions.
+
 Default authorization covers routine work inside this repository, but it does
 not override platform permissions, required external approvals, secret
 handling, or destructive-action safeguards. Stop and report when those are

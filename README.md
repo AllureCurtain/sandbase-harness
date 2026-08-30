@@ -505,6 +505,7 @@ init smoke, and `examples/basic` startup smoke.
 - [Deployment](docs/deployment.md)
 - [Architecture](docs/spec/architecture.md)
 - [Contributing](CONTRIBUTING.md)
+- [Promotion status](docs/promotion.md)
 - [Changelog](CHANGELOG.md)
 
 ## Community Guides
