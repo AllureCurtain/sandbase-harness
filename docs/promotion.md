@@ -78,6 +78,7 @@ do not imply endorsement or security review.
 - [Awesome Loop Engineering resource suggestion #23](https://github.com/ChaoYue0307/awesome-loop-engineering/issues/23): submitted for review under Operations Playbooks; maintainer curation pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [Agent Launchpad submission](https://launchpad.smartbizcalc.com/submit): free listing is available, but submission requires an authenticated magic-link session and a project screenshot; no credentials or upload were available, so this remains a manual outreach candidate.
+- [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
