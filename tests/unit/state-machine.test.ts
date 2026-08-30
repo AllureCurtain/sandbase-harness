@@ -28,6 +28,8 @@ describe('Session State Machine', () => {
       ['requires_action', 'running'],
       ['requires_action', 'completed'],
       ['requires_action', 'failed'],
+      ['failed', 'running'],
+      ['failed', 'completed'],
     ];
 
     it.each(validCases)('%s → %s should succeed', (from, to) => {
@@ -47,9 +49,7 @@ describe('Session State Machine', () => {
       ['completed', 'running'],
       ['completed', 'queued'],
       ['completed', 'failed'],
-      ['failed', 'running'],
       ['failed', 'queued'],
-      ['failed', 'completed'],
     ];
 
     it.each(invalidCases)('%s → %s should throw InvalidTransitionError', (from, to) => {
@@ -70,9 +70,8 @@ describe('Session State Machine', () => {
   });
 
   describe('isTerminal', () => {
-    it('completed and failed are terminal', () => {
+    it('only completed is terminal', () => {
       expect(isTerminal('completed')).toBe(true);
-      expect(isTerminal('failed')).toBe(true);
     });
 
     it('other states are not terminal', () => {
@@ -80,6 +79,8 @@ describe('Session State Machine', () => {
       expect(isTerminal('running')).toBe(false);
       expect(isTerminal('paused')).toBe(false);
       expect(isTerminal('requires_action')).toBe(false);
+      // failed is recoverable (failed → running), so it is not terminal
+      expect(isTerminal('failed')).toBe(false);
     });
   });
 });

@@ -2,11 +2,15 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "rootDir": "./src",
     "outDir": "../../dist/console-types",
     "noEmit": true,
-    "types": ["vite/client"]
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["react", "react-dom", "vite/client"]
   },
   "include": ["src"]
 }

@@ -493,7 +493,7 @@ describe('Managed Agents API', () => {
       expect(res.status).toBe(404);
     });
 
-    it('returns 409 for messages on terminal sessions', async () => {
+    it('returns 409 for messages on terminal (completed) sessions', async () => {
       const id = await createSession();
       await app.request(`/v1/sessions/${id}/stop`, { method: 'POST' });
 
@@ -503,6 +503,23 @@ describe('Managed Agents API', () => {
         body: JSON.stringify({ content: 'hi' }),
       });
       expect(res.status).toBe(409);
+    });
+
+    it('accepts messages on a failed session (failed is recoverable, not terminal)', async () => {
+      const id = await createSession();
+      // Drive the session into failed directly; the failure path itself is
+      // covered by strategy-error.test.ts. Here we only assert the API no
+      // longer rejects a failed session as terminal.
+      db.prepare(`UPDATE sessions SET status = 'failed' WHERE id = ?`).run(id);
+
+      const res = await app.request(`/v1/sessions/${id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: [{ type: 'text', text: 'retry' }], stream: false }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.accepted).toBe(true);
     });
   });
 

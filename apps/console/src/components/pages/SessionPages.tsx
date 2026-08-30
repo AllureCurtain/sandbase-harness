@@ -2,7 +2,7 @@ import { Archive, ChevronDown, Clock, Cloud, Copy, Download, Keyboard, MessageSq
 import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useState } from 'react';
 import { deleteJson, getPage, postJson } from '../../api';
 import { EmptyState, FilterSelect, LoadingState, ResourceBadge, StatusPill, Toolbar } from '../Common';
-import { downloadJson, formatDateShort, formatDuration, formatUsage, relativeDate, shortId, titleCase } from '../../lib/format';
+import { downloadJson, formatDateShort, formatDuration, formatUsage, relativeDate, shortId, titleCase, truncateMiddle } from '../../lib/format';
 import type { Agent, ConsoleData, Session, SessionEvent } from '../../types';
 
 const SESSION_EVENT_KINDS = ['user', 'agent', 'tool', 'error', 'system'] as const;
@@ -121,12 +121,14 @@ export function SessionDetail({
   onBack,
   onRefresh,
   onOpenAgent,
+  onNewSession,
 }: {
   session: Session;
   data: ConsoleData;
   onBack: () => void;
   onRefresh: () => void;
   onOpenAgent: (agent: Agent) => void;
+  onNewSession: (agentId?: string) => void;
 }) {
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
@@ -186,7 +188,6 @@ export function SessionDetail({
 
   const canSendMessage = messageDraft.trim().length > 0
     && !sendingMessage
-    && displayStatus !== 'failed'
     && displayStatus !== 'terminated';
 
   useEffect(() => {
@@ -354,26 +355,42 @@ export function SessionDetail({
         </div>
       </div>
 
-      <form className="sessionComposer" onSubmit={(event) => void sendMessage(event)}>
-        <textarea
-          value={messageDraft}
-          onChange={(event) => setMessageDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              void sendMessage();
-            }
-          }}
-          placeholder="Message this session..."
-          aria-label="Message this session"
-          disabled={sendingMessage || displayStatus === 'failed' || displayStatus === 'terminated'}
-        />
-        <button className="primaryButton" type="submit" disabled={!canSendMessage}>
-          <Send size={16} />
-          {sendingMessage ? 'Sending...' : 'Send'}
-        </button>
-        {messageError ? <div className="sessionComposerError">{messageError}</div> : null}
-      </form>
+      {displayStatus === 'terminated' ? (
+        <div className="sessionComposerClosed" role="note">
+          <span>
+            This session is {displayStatus} and cannot receive new messages. Start a new session to continue.
+          </span>
+          <button className="secondaryButton" type="button" onClick={() => onNewSession(session.agent.id)}>
+            <Plus size={16} />New session
+          </button>
+        </div>
+      ) : (
+        <form className="sessionComposer" onSubmit={(event) => void sendMessage(event)}>
+          {displayStatus === 'failed' ? (
+            <div className="sessionComposerHint" role="note">
+              The last turn failed. Send a message to retry — the conversation is kept.
+            </div>
+          ) : null}
+          <textarea
+            value={messageDraft}
+            onChange={(event) => setMessageDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder="Message this session..."
+            aria-label="Message this session"
+            disabled={sendingMessage}
+          />
+          <button className="primaryButton" type="submit" disabled={!canSendMessage}>
+            <Send size={16} />
+            {sendingMessage ? 'Sending...' : 'Send'}
+          </button>
+          {messageError ? <div className="sessionComposerError">{messageError}</div> : null}
+        </form>
+      )}
     </section>
   );
 }
@@ -441,21 +458,22 @@ function eventsAfter(events: SessionEvent[], previousLastEventId: string | null)
 }
 
 function sessionDisplayStatus(session: Session, events: SessionEvent[]): SessionDisplayStatus {
-  if (session.status === 'failed' || hasErrorEvent(events)) return 'failed';
+  // The persisted session.status is authoritative (the backend state machine
+  // owns it). Trust it directly so a resumed failed session — which the
+  // backend moves back to running/idle — stops rendering as failed. The API
+  // maps the backend's completed status to 'terminated' on the wire.
   if (session.status === 'terminated') return 'terminated';
+  if (session.status === 'failed') return 'failed';
+  if (session.status === 'running') return 'running';
+
+  // For a session at rest (idle/paused/queued) refine from the last lifecycle
+  // signal in the log, which reflects finer live progress than the row.
   const lastStatus = [...events].reverse().find((event) => event.type.startsWith('session.status_'));
   if (!lastStatus) return session.status;
   if (lastStatus.type === 'session.status_running') return 'running';
-  if (lastStatus.type === 'session.status_queued') return 'queued';
   if (lastStatus.type === 'session.status_idle') return 'idle';
-  if (lastStatus.type === 'session.status_completed') return 'completed';
   if (lastStatus.type === 'session.status_terminated') return 'terminated';
-  if (lastStatus.type === 'session.status_failed') return 'failed';
   return session.status;
-}
-
-function hasErrorEvent(events: SessionEvent[]) {
-  return events.some((event) => eventKind(event) === 'error');
 }
 
 function eventTime(event: SessionEvent) {

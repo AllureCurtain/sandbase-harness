@@ -76,8 +76,8 @@ export function EmptyState({ icon, title, body, action }: { icon: ReactNode; tit
   );
 }
 
-export function LoadingState() {
-  return <div className="loading"><RefreshCw size={18} />Loading console</div>;
+export function LoadingState({ label }: { label?: string } = {}) {
+  return <div className="loading"><RefreshCw size={18} />{label ?? 'Loading console'}</div>;
 }
 
 export function StatusPill({ status }: { status: string }) {

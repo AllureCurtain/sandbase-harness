@@ -26,6 +26,79 @@ import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 const MAX_TOOL_RESULT_CHARS = 50_000;
 
 /**
+ * Turn a model/provider error into a diagnostic message. AI SDK errors
+ * (APICallError and friends) carry the useful detail — HTTP status, request
+ * URL, response body, and the underlying network cause (e.g. ECONNRESET) — in
+ * fields other than `message`, which is often empty. Collapsing to
+ * `error.message` or `String(error)` loses all of that and produces a blank or
+ * `[object Object]` session.error. This extracts the informative parts so an
+ * operator can see why a turn failed.
+ */
+export function describeModelError(error: unknown): Error {
+  if (error instanceof Error && !isEmptyErrorMessage(error)) {
+    const detail = modelErrorDetail(error);
+    if (detail) {
+      const enriched = new Error(`${error.message} (${detail})`);
+      enriched.stack = error.stack;
+      return enriched;
+    }
+    return error;
+  }
+
+  const parts: string[] = [];
+  const record = (error ?? {}) as Record<string, unknown>;
+  const status = record.statusCode ?? record.status;
+  if (typeof status === 'number') parts.push(`HTTP ${status}`);
+  if (typeof record.url === 'string' && record.url) parts.push(`url=${redactSecrets(record.url)}`);
+  const cause = record.cause as Record<string, unknown> | undefined;
+  const causeCode = cause && typeof cause.code === 'string' ? cause.code : undefined;
+  if (causeCode) parts.push(causeCode);
+  const body = record.responseBody ?? record.data;
+  if (typeof body === 'string' && body.trim()) parts.push(truncateDetail(redactSecrets(body.trim())));
+
+  const base = error instanceof Error && error.message ? error.message
+    : typeof record.name === 'string' ? record.name
+      : 'model request failed';
+  const message = parts.length > 0 ? `${base}: ${parts.join(' ')}` : base;
+  const result = new Error(message);
+  if (error instanceof Error) result.stack = error.stack;
+  return result;
+}
+
+function isEmptyErrorMessage(error: Error): boolean {
+  const message = error.message?.trim() ?? '';
+  return message === '' || message === '{}' || message === '[object Object]';
+}
+
+function modelErrorDetail(error: Error): string | undefined {
+  const record = error as unknown as Record<string, unknown>;
+  const parts: string[] = [];
+  const status = record.statusCode ?? record.status;
+  if (typeof status === 'number') parts.push(`HTTP ${status}`);
+  const cause = record.cause as Record<string, unknown> | undefined;
+  if (cause && typeof cause.code === 'string') parts.push(cause.code);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+function truncateDetail(value: string): string {
+  return value.length > 500 ? `${value.slice(0, 500)}…` : value;
+}
+
+/**
+ * Mask credential material before it is written into a persisted, UI-visible
+ * session.error. Covers secret-bearing URL query params (?key=/api_key=/token=/
+ * access_token=/password=/secret=), bearer tokens, and common provider key
+ * prefixes (sk-, sk-ant-). Best-effort defense so a gateway that authenticates
+ * via query string or echoes a key in its error body does not leak it.
+ */
+function redactSecrets(value: string): string {
+  return value
+    .replace(/([?&](?:api[-_]?key|access[-_]?token|auth|token|key|secret|password|pwd|sig|signature)=)[^&\s]+/gi, '$1***')
+    .replace(/\b(bearer\s+)[A-Za-z0-9._~+/-]{8,}=*/gi, '$1***')
+    .replace(/\bsk-(?:ant-)?[A-Za-z0-9._-]{8,}/g, 'sk-***');
+}
+
+/**
  * Build a transient (non-persisted) SessionEvent for live SSE streaming.
  * seq = 0 marks it transient so the SSE route does not treat it as a resume
  * cursor and does not dedup it against persisted events.
@@ -251,7 +324,9 @@ export class DefaultStrategy implements AgentStrategy {
         broadcast(transientEvent(session.id, 'agent.message_stream_end', { message_id: messageId }));
       }
       if (streamError) {
-        throw streamError instanceof Error ? streamError : new Error(String(streamError));
+        // Preserve the provider's diagnostic detail (status/url/cause/body)
+        // instead of collapsing to an empty message.
+        throw describeModelError(streamError);
       }
 
       const guarded = guard.finish();
@@ -306,15 +381,14 @@ export class DefaultStrategy implements AgentStrategy {
         });
       }
     } catch (error) {
+      // Enrich provider errors with diagnostic detail before they propagate,
+      // so the persisted session.error is informative rather than blank.
+      const described = describeModelError(error);
       // onError hook
       if (config.onError) {
-        const decision = await config.onError(error instanceof Error ? error : new Error(String(error)));
-        if (decision === 'retry') {
-          // For now, just re-throw — retry logic would need loop wrapping
-          throw error;
-        }
+        await config.onError(described);
       }
-      throw error;
+      throw described;
     }
   }
 }

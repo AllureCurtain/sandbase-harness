@@ -6,12 +6,15 @@ import type {
   ConsoleData,
   Environment,
   MemoryStore,
+  Outcome,
   Runtime,
   RuntimeSettings,
+  ScheduledDeployment,
   Session,
   Skill,
   Template,
   Vault,
+  Webhook,
   Workspace,
   WorkspaceFile,
 } from '../types';
@@ -20,6 +23,7 @@ function emptyConsoleData(): ConsoleData {
   return {
     agents: [], sessions: [], environments: [], vaults: [], memoryStores: [],
     files: [], apiKeys: [], skills: [], templates: [],
+    webhooks: [], scheduledDeployments: [], outcomes: [],
     runtime: null, workspace: null, settings: null,
   };
 }
@@ -59,6 +63,19 @@ async function loadAccessDomain(): Promise<Pick<ConsoleData, 'apiKeys'>> {
   return { apiKeys: apiKeys.data };
 }
 
+async function loadOperationsDomain(): Promise<Pick<ConsoleData, 'webhooks' | 'scheduledDeployments' | 'outcomes'>> {
+  const [webhooks, scheduledDeployments, outcomes] = await Promise.all([
+    getPage<Webhook>('/v1/webhooks'),
+    getPage<ScheduledDeployment>('/v1/scheduled-deployments'),
+    getPage<Outcome>('/v1/outcomes'),
+  ]);
+  return {
+    webhooks: webhooks.data,
+    scheduledDeployments: scheduledDeployments.data,
+    outcomes: outcomes.data,
+  };
+}
+
 async function loadRuntimeDomain(): Promise<Pick<ConsoleData, 'runtime' | 'workspace' | 'settings'>> {
   const [runtime, workspace, settings] = await Promise.all([
     getJson<Runtime>('/v1/x/runtime'),
@@ -78,10 +95,11 @@ export function useConsoleData() {
     setLoading(true);
     setError('');
     try {
-      const [build, resources, access, runtime] = await Promise.all([
+      const [build, resources, access, operations, runtime] = await Promise.all([
         loadBuildDomain(),
         loadResourceDomain(),
         loadAccessDomain(),
+        loadOperationsDomain(),
         loadRuntimeDomain(),
       ]);
       setData({
@@ -89,6 +107,7 @@ export function useConsoleData() {
         ...build,
         ...resources,
         ...access,
+        ...operations,
         ...runtime,
       });
     } catch (err) {

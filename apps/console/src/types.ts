@@ -203,6 +203,8 @@ export type MemoryRecord = {
   store_id: string;
   path: string;
   content: string;
+  content_size_bytes: number;
+  content_hash: string;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -242,6 +244,53 @@ export type Template = {
     skills: SkillRef[];
     metadata?: Record<string, unknown>;
   };
+};
+
+export type Webhook = {
+  id: string;
+  type: 'webhook';
+  name: string;
+  url: string;
+  events: string[];
+  description: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type ScheduledDeployment = {
+  id: string;
+  type: 'scheduled_deployment';
+  name: string;
+  agent_id: string;
+  environment_id: string | null;
+  cron: string;
+  payload: Record<string, unknown>;
+  status: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type Outcome = {
+  id: string;
+  type: 'outcome';
+  name: string;
+  description: string;
+  objective: string;
+  criteria: unknown[];
+  pass_threshold: number;
+  evaluator: string;
+  metadata: Record<string, unknown>;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
 };
 
 export type RuntimeConfigState = 'configured' | 'missing_env' | 'not_set';
@@ -350,6 +399,36 @@ export type RuntimeSettings = {
   };
 };
 
+export type RuntimeMetricsSummary = {
+  type: 'metrics_summary';
+  generated_at: string;
+  sessions: {
+    total: number;
+    by_status: Record<string, number>;
+    input_tokens: number;
+    output_tokens: number;
+  };
+  events: {
+    total: number;
+    by_type: Record<string, number>;
+    input_tokens: number;
+    output_tokens: number;
+    average_duration_ms: number;
+  };
+  storage: {
+    files: number;
+    file_bytes: number;
+    artifacts: number;
+    artifact_bytes: number;
+  };
+  work_queue: Record<string, number>;
+  http: {
+    requests: number;
+    errors: number;
+    request_duration_ms: { count: number; sum: number };
+  };
+};
+
 export type RuntimeLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type RuntimeLogEntry = {
@@ -395,6 +474,9 @@ export type ConsoleData = {
   apiKeys: ApiKey[];
   skills: Skill[];
   templates: Template[];
+  webhooks: Webhook[];
+  scheduledDeployments: ScheduledDeployment[];
+  outcomes: Outcome[];
   runtime: Runtime | null;
   workspace: Workspace | null;
   settings: RuntimeSettings | null;
@@ -422,6 +504,9 @@ export type ViewId =
   | 'monitoring'
   | 'api-reference'
   | 'api-keys'
+  | 'webhooks'
+  | 'scheduled-deployments'
+  | 'outcomes'
   | 'advanced'
   | 'observability'
   | 'agent-detail'

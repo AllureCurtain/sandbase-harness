@@ -3762,10 +3762,37 @@ label.searchBox input {
   background: var(--surface);
 }
 
+.sessionComposer textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .sessionComposerError {
   grid-column: 1 / -1;
   color: var(--danger);
   font-size: 13px;
+}
+
+.sessionComposerHint {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sessionComposerClosed {
+  position: sticky;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 12px 14px;
+  font-size: 13px;
+  z-index: 4;
 }
 
 .eventMiniMap {
