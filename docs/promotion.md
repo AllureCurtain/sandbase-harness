@@ -7,6 +7,8 @@ description now explicitly identifies SandBase Harness as a self-hosted AI
 agent runtime and MCP bridge. The existing release homepage and 20 relevant
 GitHub topics were retained.
 
+The published [v0.3.8 release notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8) were also refreshed with the newly verified merged directory entries and the still-pending HabitoAI/mcpdir review links.
+
 This is an operational handoff for maintainers. The repository, release tags,
 and official MCP Registry remain the source of truth; independent directories
 do not imply endorsement or security review.
