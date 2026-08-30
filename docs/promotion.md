@@ -153,7 +153,7 @@ successfully.
 - [Awesome Loop Engineering resource suggestion #23](https://github.com/ChaoYue0307/awesome-loop-engineering/issues/23): submitted for review under Operations Playbooks; maintainer curation pending.
 - [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4): open; SandBase Harness added to the agent engineering project table; maintainer review pending.
 - [Awesome AI Agents Frameworks PR #17](https://github.com/mb-mal/awesome-ai-agents-frameworks/pull/17): open; SandBase Harness added to the source repository list; maintainer review and generated ranking update pending.
-- [Agent Infra Foundation PR #3](https://github.com/agent-infra-foundation/agent-infra-projects/pull/3): open; SandBase Harness added to the vendor-neutral agent infrastructure index; maintainer review pending.
+- [Agent Infra Foundation PR #3](https://github.com/agent-infra-foundation/agent-infra-projects/pull/3): open; SandBase Harness added to the vendor-neutral agent infrastructure index; a follow-up disclosed project affiliation, Apache-2.0 licensing, v0.3.8 evidence, and backend-dependent isolation ([comment](https://github.com/agent-infra-foundation/agent-infra-projects/pull/3#issuecomment-5469202097)); maintainer review pending.
 - [MCPFind PR #168](https://github.com/MCPFind/mcp-find/pull/168): open; SandBase Harness added as an MCP server, maintainer review pending.
 - [E2B Awesome AI SDKs PR #344](https://github.com/e2b-dev/awesome-ai-sdks/pull/344): open; maintainer review pending.
 - [Agentic Community Landscape PR #2](https://github.com/agentic-community/agentic-landscape/pull/2): open; landscape entry review pending.
