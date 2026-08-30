@@ -41,6 +41,8 @@ The new [MCP Find PR #171](https://github.com/MCPFind/mcp-find/pull/171) submits
 
 The new [MCP-Directory PR #5](https://github.com/girishlade111/MCP-Directory/pull/5) adds the SandBase Harness MCP bridge to both the interactive `index.html` catalog and the README table, using the published GHCR `0.3.8` image and a tested Docker command. GitHub reports the PR as clean and mergeable with no failed checks; external maintainer review and merge remain pending.
 
+For release trust and promotion accuracy, security PR [#117](https://github.com/sandbaseai/sandbase-harness/pull/117) is now merged into `main`. It updates `prefix-safe-json` to the published `0.4.3` security release, adds post-terminal authority regression coverage, and passed the targeted typecheck, 11 affected tests, runtime/Console build, package check, and release smoke verification. The full-suite environment limitations documented in the PR remain separate and are not hidden.
+
 An independent security-discovery request is now open at [MCPRadar Issue #8](https://github.com/yatuk/mcpradar/issues/8). It provides the official Registry/source links and the credential-free Docker handshake command, while explaining that session calls may require a user-owned API URL/key. The request is for manual scanning and leaderboard review only; no score, endorsement, or security result is claimed.
 
 
