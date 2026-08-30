@@ -119,10 +119,14 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 近期已核验的社区引用：
 
 - [dshbase 已核验插件页](https://dshbase.com/plugins/sandbase-harness/)
+- [MCP Repository — 已核验项目页](https://mcprepository.com/sandbaseai/sandbase-harness)
+- [DSHarness 101 — 已核验插件雷达条目](https://dsharness101.com/plugins/)
+- [DSH Plugin Leaderboard — 已核验安装条目](https://dshpluginleaderboard.com/)
 - [awesome-agent-runtime — 已合并条目](https://github.com/sandbaseai/awesome-agent-runtime/pull/15)
 - [Awesome Agent Cortex — 已合并条目](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
 - [Awesome AI Devtools — 已合并条目](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — 已合并条目](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
+- [WalkingLabs Awesome Harness Engineering — 已合并条目](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)
 - [Agent Framework Radar — 已核验自动收录](https://github.com/linny006/agent-framework-radar)
 - [LLM Agents Radar — 已核验自动收录](https://github.com/linny006/llm-agents-radar)
 - [Awesome DSH Plugin — 已核验条目](https://github.com/Anil-matcha/awesome-dsh-plugin)
