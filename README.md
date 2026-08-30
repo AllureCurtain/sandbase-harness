@@ -316,6 +316,9 @@ tool list and authenticated-runtime configuration.
 For a walkthrough that starts with DSH and adds this runtime as a real
 third-party plugin, read the
 [DeepSeek Harness developer guide](https://blog.sandbase.ai/deepseek-harness-developer-preview-2026/#add-a-real-third-party-runtime-plugin).
+The [Chinese edition](https://blog.sandbase.ai/zh-CN/deepseek-harness-developer-preview-2026/#接入一个真实的第三方-runtime-插件)
+is available as well; both articles are maintained against the pinned
+SandBase Harness v0.3.8 integration.
 
 Pair the plugin with SandBase Skills to give the same DSH project a portable,
 source-verifiable research workflow:

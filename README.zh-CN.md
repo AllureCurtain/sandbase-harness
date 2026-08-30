@@ -311,6 +311,8 @@ DSH 随后可以通过原生 MCP Namespace：
 相关实践：[构建可审计的 Research Agent：证据账本、沙箱与回放](https://blog.sandbase.ai/zh-CN/auditable-research-agent-evidence-ledger-sandbox-replay/)。
 文章展示如何将证据账本、沙箱执行、凭证、审计和回放组合到 SandBase Harness 工作流中。
 
+该文档之外，也可以阅读已更新到 v0.3.8 的[中文 DeepSeek Harness 开发者指南](https://blog.sandbase.ai/zh-CN/deepseek-harness-developer-preview-2026/#接入一个真实的第三方-runtime-插件)，以及[英文版本](https://blog.sandbase.ai/deepseek-harness-developer-preview-2026/#add-a-real-third-party-runtime-plugin)。
+
 ## 添加可移植研究 Skill
 
 在同一个 DSH 项目根目录安装无需 SandBase 账号的 multi-source-search：
