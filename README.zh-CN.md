@@ -102,6 +102,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [DSH Hub](https://dshhub.dev/plugins/sandbase-harness)
 - [dshbase](https://dshbase.com/plugins/sandbase-harness/)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
+- [DSH Market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
+- [DSH Plugins](https://dshplugins.cc/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dsh-plugin.github.io/directory.html)
 - [DSH Plugin Registry](https://github.com/dshplugin-app/deepseek-harness-plugins)
 - [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)

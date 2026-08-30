@@ -95,6 +95,8 @@ The project is also discoverable through these independent ecosystem directories
 - [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/)
 - [dshbase](https://dshbase.com/plugins/sandbase-harness/)
 - [FindHarness](https://findharness.com/plugins/sandbaseai-sandbase-harness)
+- [DSH Market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
+- [DSH Plugins](https://dshplugins.cc/en/plugins/sandbaseai-sandbase-harness)
 - [DSH Plugin Directory](https://dsh-plugin.github.io/directory.html)
 - [DSH Plugin Registry](https://github.com/dshplugin-app/deepseek-harness-plugins)
 - [dsh-market](https://dshmarket.com/p/sandbaseai/sandbase-harness/)
