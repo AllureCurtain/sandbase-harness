@@ -20,6 +20,7 @@ do not imply endorsement or security review.
 - [DSH X-Ray](https://unstone.github.io/dsh-xray/p/sandbaseai__sandbase-harness.html)
 - [Awesome DSH Plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness](https://github.com/0xsline/awesome-deepseek-harness)
+- [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [HackSing DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 
