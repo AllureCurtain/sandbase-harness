@@ -1,6 +1,6 @@
 # Promotion status
 
-Last checked: 2026-08-30
+Last checked: 2026-08-31
 
 This is an operational handoff for maintainers. The repository, release tags,
 and official MCP Registry remain the source of truth; independent directories
@@ -28,6 +28,14 @@ The latest public handoff is recorded in [Discussion #82](https://github.com/san
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
 successfully.
+
+The public OpenSSF Scorecard result for commit `1359394` is now 4.6/10,
+including full scores for token permissions and SAST after the CodeQL workflow
+was added. `npm audit --omit=dev --audit-level=high` still reports 7 production
+dependency findings (5 low, 2 moderate); the remaining findings require a
+breaking AI SDK upgrade, so they are not hidden or force-upgraded. Dependabot
+now tracks npm and GitHub Actions updates weekly so the next upgrade arrives as
+a reviewable PR.
 
 ## GitHub distribution snapshot
 
