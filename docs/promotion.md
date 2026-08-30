@@ -6,6 +6,8 @@ The new [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-d
 
 The new [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) adds SandBase Harness to Development & Version Control. The entry follows the directory's table format and records the TypeScript/Apache-2.0 project, MCP bridge, sandboxed sessions, credentials, approvals, audit, and replay; maintainer review is pending and no directory endorsement or security certification is claimed.
 
+The [verification follow-up](https://github.com/JustInCache/awesome-mcp-collection/pull/39#issuecomment-5472054239) for PR #39 links v0.3.8, the installation/MCP guide, and the deployment-dependent isolation boundary so the maintainer can review the entry against primary sources.
+
 The merged [Daily Ops PR #264](https://github.com/sandbaseai/sandbase-daily-ops/pull/264) (`87f15bee0bcee622b3020fc73dcb54513f9cf405`) queues Awesome MCP Collection PR #39 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
 
 The new [Awesome MCP Issue #99](https://github.com/abordage/awesome-mcp/issues/99) requests SandBase Harness for the directory's Aggregators & Gateways section. A normal PR was not possible because the existing personal fork has no comparable upstream history; the public issue workflow was used instead. The request contains one factual entry and remains pending maintainer review; no directory endorsement or security certification is claimed.
