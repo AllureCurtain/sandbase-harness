@@ -88,6 +88,7 @@ successfully.
 - [Awesome Agent Cortex](https://github.com/0xNyk/awesome-agent-cortex): SandBase CLI is publicly listed in the MCP ecosystem after [merged PR #72](https://github.com/0xNyk/awesome-agent-cortex/pull/72).
 - [Awesome AI Devtools](https://github.com/yeaight7/awesome-ai-devtools): SandBase CLI is publicly listed in the MCP tooling comparison and catalog after [merged PR #33](https://github.com/yeaight7/awesome-ai-devtools/pull/33).
 - [VoltAgent Awesome Agent Skills](https://github.com/VoltAgent/awesome-agent-skills): the SandBase `multi-source-search` skill is publicly listed after [merged PR #946](https://github.com/VoltAgent/awesome-agent-skills/pull/946).
+- [WalkingLabs Awesome Harness Engineering](https://github.com/walkinglabs/awesome-harness-engineering): SandBase Harness is publicly listed in the Runtimes, Harnesses & Reference Implementations section after [merged PR #76](https://github.com/walkinglabs/awesome-harness-engineering/pull/76).
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp)
 - [cccakeee/awesome-dsh-plugins](https://github.com/cccakeee/awesome-dsh-plugins)
 - [anbeime/skill — Skills index](https://github.com/anbeime/skill)
