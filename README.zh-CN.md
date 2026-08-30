@@ -83,6 +83,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Sifted Awesome AI Agents — 已验证 Agent Runtime 收录](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source / AtlasRepo — 已验证 MCP 收录](https://github.com/Arnon-hs/open-source/blob/main/mcp/sandbaseai-sandbase-harness.md)
 - [Sagargupta16 Awesome MCP Servers — 已合并收录](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79)
+- [Adventure Wave Awesome Agent Security — 已合并收录](https://github.com/adventurewave-labs/awesome-agent-security/pull/2)
 - [Arnon-hs Open Source — MCP 项目](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
 - [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime)
 - [WalkingLabs Awesome Harness Engineering — 已合并收录](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)

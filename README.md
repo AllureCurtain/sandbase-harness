@@ -124,6 +124,7 @@ Recently verified community references:
 - [Awesome AI Devtools — merged entry](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — merged entry](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
 - [WalkingLabs Awesome Harness Engineering — merged entry](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)
+- [Adventure Wave Awesome Agent Security — merged entry](https://github.com/adventurewave-labs/awesome-agent-security/pull/2)
 - [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Agent Framework Radar — verified automatic entry](https://github.com/linny006/agent-framework-radar)
 - [LLM Agents Radar — verified automatic entry](https://github.com/linny006/llm-agents-radar)
