@@ -38,6 +38,8 @@ The current official DevOps-focused discovery post is [Discussion #116](https://
 
 The latest [Discussion #116 promotion update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18210213) records MeshKore submission #14 and explicitly notes that it is directory-only with `connect_to_mesh=false`; no public profile is claimed before review.
 
+The new [Supersynergy/awesome-ai-agents-2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) adds SandBase Harness to the agent runtimes and platforms table. The one-line entry uses the project's public local-first/self-hosted runtime description and names session isolation, memory, credentials, audit/replay, and the local Console; maintainer review is pending.
+
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
 
 The [Show and tell Discussion #94 follow-up](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209922) now links the live English and Chinese DeepSeek Harness walkthroughs and invites deployment/install feedback. It keeps the backend-dependent isolation and no-security-certification qualification explicit.
