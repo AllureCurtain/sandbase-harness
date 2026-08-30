@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Security
+
+- Updates `prefix-safe-json` `0.4.2` -> `0.4.3`, a security release fixing
+  GHSA-3xpw-9694-2xxp: the AI SDK adapter used to silently drop raw stream
+  events once it had already observed a call's own terminal, and
+  `takeDecision()` used to read a decision snapshot frozen at `finish()`
+  time instead of live coordinator diagnostics, so late or contradictory
+  lifecycle evidence for a tool call could fail to revoke its execution
+  authority. No public API change. Confirmed the exact vulnerable-then-fixed
+  behavior against this integration's own `createAiSdkV4ExecutionGuard`
+  wrapper (`tests/integration/post-terminal-authority.test.ts`), not just
+  the library's own test suite.
+
 ### Documentation
 
 - Documents the verified git-hosted DSH install flow: the first add fails with
