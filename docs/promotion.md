@@ -107,6 +107,7 @@ do not imply endorsement or security review.
 - [AI Agent Infrastructure List PR #4](https://github.com/chgaowei/ai-agent-infra-list/pull/4): open; SandBase Harness added to runtime lists; maintainer review pending.
 - [Awesome MCP Clients PR #182](https://github.com/AlexMili/Awesome-MCP/pull/182): open; SandBase Harness added as an MCP client/runtime integration; maintainer review pending.
 - [Skyming Awesome AI Agent PR #19](https://github.com/skyming/awesome-ai-agent/pull/19): open; SandBase Harness added to open-source agent projects; maintainer review pending.
+- [Awesome Multi-Agent AI Harnesses PR #4](https://github.com/ishandutta2007/Awesome-Multi-Agent-AI-Harnesses/pull/4): open; SandBase Harness added to Dedicated Multi-Agent Harness Systems with the project's existing stars-badge format; maintainer review pending.
 - [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58): open; maintainer review pending.
 - [Awesome AgentOps PR #14](https://github.com/natnew/awesome-agentops/pull/14): open; deployment/runtime infrastructure entry review pending.
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open; generated-list maintainer review pending.
