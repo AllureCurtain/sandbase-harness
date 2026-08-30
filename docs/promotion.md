@@ -30,6 +30,7 @@ do not imply endorsement or security review.
 - [Awesome Agents](https://github.com/kyrolabs/awesome-agents)
 - [Sifted Awesome AI Agents — Agent Runtime Top 100](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)
+- [SandBase Awesome Agent Runtime](https://github.com/sandbaseai/awesome-agent-runtime)
 - [abordage/awesome-mcp](https://github.com/abordage/awesome-mcp)
 - [cccakeee/awesome-dsh-plugins](https://github.com/cccakeee/awesome-dsh-plugins)
 - [anbeime/skill — Skills index](https://github.com/anbeime/skill)
