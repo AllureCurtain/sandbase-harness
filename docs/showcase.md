@@ -16,8 +16,13 @@ Use persistent sessions, event streams, artifacts, snapshots, and replay when
 you need to inspect what an agent did after a long-running task.
 
 ```bash
-node ../sandbase-harness/dist/index.js init
-node ../sandbase-harness/dist/index.js start
+npm ci
+npm run build
+HARNESS_DIR="$(pwd)"
+mkdir -p ../my-agents
+cd ../my-agents
+node "$HARNESS_DIR/dist/index.js" init
+node "$HARNESS_DIR/dist/index.js" start
 ```
 
 Open the Console at `http://127.0.0.1:3000/dashboard`, create an Agent, and
