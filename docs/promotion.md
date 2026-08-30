@@ -186,7 +186,7 @@ promotion channel.
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28): open; maintainer review pending.
 - [Awesome Agent Harnesses PR #3](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/pull/3): open; maintainer review pending.
 - [Awesome Agent Runtime Security PR #28](https://github.com/bureado/awesome-agent-runtime-security/pull/28): open; maintainer review pending.
-- [Awesome Agent Cortex PR #73](https://github.com/0xNyk/awesome-agent-cortex/pull/73): open; maintainer review pending.
+- [Awesome Agent Cortex PR #73](https://github.com/0xNyk/awesome-agent-cortex/pull/73): open and mergeable; `awesome-lint` and `internal-links` pass, while `lychee` fails on two pre-existing upstream links returning HTTP 429. A [status comment](https://github.com/0xNyk/awesome-agent-cortex/pull/73#issuecomment-5469763413) records that the SandBase link is not implicated; maintainer review is pending.
 - [Awesome Agentic Hardening PR #5](https://github.com/AgenticHardening/awesome-agentic-hardening/pull/5): open; maintainer review pending.
 - [Awesome Agent Sandboxes PR #58](https://github.com/msyvr/awesome-agent-sandboxes/pull/58): open; maintainer review pending.
 - [Arjan Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9): open; SandBase Harness added under self-hosted sandboxes; maintainer review pending.
