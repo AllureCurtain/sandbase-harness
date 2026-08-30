@@ -173,6 +173,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Agentic Community Landscape PR #2](https://github.com/agentic-community/agentic-landscape/pull/2) — 已将 SandBase Harness 加入 Agentic → Runtime，等待维护者审核
 - [MyMCPTools 目录 Issue #8](https://github.com/shibley/mymcptools/issues/8) — 已提交 v0.3.8 MCP bridge 目录申请，等待维护者审核
 - [mcp.so/mcpso 提交线程](https://github.com/chatmcp/mcpso/issues/1#issuecomment-5471477016) — 已通过公开 GitHub Issue 流程提交 v0.3.8 MCP bridge，等待目录审核
+- [Collective AI Tools Issue #332](https://github.com/hanishrao/collective-ai-tools/issues/332) — 已与现有 CLI 条目分开提交 SandBase Harness，等待目录审核
 - [MeshKore 目录提交](https://meshkore.com/submit) — 已接受审核，提交编号 #14，公开档案待生成
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — 已加入 Agent Frameworks & Orchestration，等待维护者审核
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — 已加入 Local Runtimes & LLM Management，等待维护者审核
