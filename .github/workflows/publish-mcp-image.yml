@@ -4,17 +4,18 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: read
-  packages: write
-  attestations: write
-  artifact-metadata: write
-  id-token: write
+permissions: read-all
 
 jobs:
   publish:
     name: Publish multi-platform MCP image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      artifact-metadata: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 

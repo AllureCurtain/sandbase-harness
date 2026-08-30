@@ -5,9 +5,7 @@ on:
     types: [published]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
+permissions: read-all
 
 concurrency:
   group: publish-mcp-registry
@@ -21,6 +19,9 @@ jobs:
   publish:
     name: Validate and publish registry metadata
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
