@@ -176,6 +176,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome AI Agents PR #1](https://github.com/tioraicom/awesome-ai-agents/pull/1) — 已将 SandBase Harness 加入 Agent infrastructure，PR 状态 clean，等待维护者审核
 - [Awesome Agent Operating Systems PR #11](https://github.com/frankxai/awesome-agent-operating-systems/pull/11) — 已将 SandBase Harness 加入 Agent Runtimes，并添加日期验证链接，等待维护者审核
 - [Awesome Agent Services PR #8](https://github.com/farol-team/awesome-agent-services/pull/8) — 已将 SandBase Harness 加入 Sandboxes & Compute，PR 状态 clean，等待维护者审核
+- [Awesome AI Automation PR #3](https://github.com/minhazda/awesome-ai-automation/pull/3) — 已将 SandBase Harness 加入 AI agents & LLM automation，PR 状态 clean，等待维护者审核
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — 官方 DevOps runtime 与 MCP bridge 推广介绍
 - [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
