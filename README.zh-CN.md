@@ -150,6 +150,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DSH Plugin — 已合并 Harness 条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
 - [Awesome DeepSeek Harness — 已合并 Runtime 条目](https://github.com/0xsline/awesome-deepseek-harness/pull/141)
 - [Awesome Agents — 已合并 Harness 条目](https://github.com/kyrolabs/awesome-agents/pull/707)
+- [Awesome AI Engineering — 已合并 Harness 条目](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4)
 - [abordage/awesome-mcp — 已合并 Harness 条目](https://github.com/abordage/awesome-mcp/pull/95)
 - [Awesome DSH Plugin — 已合并 Harness 条目](https://github.com/Anil-matcha/awesome-dsh-plugin/pull/47)
 - [Awesome DeepSeek Harness — 已合并 Harness 条目](https://github.com/Dominic789654/awesome-deepseek-harness/pull/182)

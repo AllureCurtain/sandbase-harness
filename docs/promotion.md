@@ -205,6 +205,7 @@ promotion channel.
 - [mcpHQ Awesome MCP Servers — merged entry](https://github.com/mcpHQ/awesome-mcp-servers/pull/45): the merged catalog entry is publicly present alongside the SandBase CLI entry, with the `Official` TypeScript label and self-hosted MCP bridge description; `npm run validate`, `npm run generate`, and `npm run check-generated` passed for 138 servers across 13 categories.
 - [abordage/awesome-mcp — merged Harness entry](https://github.com/abordage/awesome-mcp/pull/95): the merged SandBase Harness entry is publicly listed under Sandboxing & Execution.
 - [kyrolabs/awesome-agents — merged Harness entry](https://github.com/kyrolabs/awesome-agents/pull/707): the merged entry is publicly listed in the agent ecosystem catalog.
+- [Eric-LLMs/Awesome-AI-Engineering — merged Harness entry](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4): the merged entry is publicly listed in the open-source agent engineering project table.
 - [Anil-matcha/awesome-dsh-plugin — merged Harness entry](https://github.com/Anil-matcha/awesome-dsh-plugin/pull/47): the merged runtime entry is publicly listed in the DSH plugin catalog.
 - [Dominic789654/awesome-deepseek-harness — merged Harness entry](https://github.com/Dominic789654/awesome-deepseek-harness/pull/182): the merged runtime entry is publicly listed in the DeepSeek Harness ecosystem catalog.
 - [Arnon-hs Open Source — MCP projects](https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md)

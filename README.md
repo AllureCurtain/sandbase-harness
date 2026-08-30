@@ -146,6 +146,7 @@ Recently verified community references:
 - [Arnon-hs Open Source / AtlasRepo — verified MCP entry](https://github.com/Arnon-hs/open-source/blob/main/mcp/sandbaseai-sandbase-harness.md)
 - [Sagargupta16 Awesome MCP Servers — merged entry](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79)
 - [Awesome Agents — merged Harness entry](https://github.com/kyrolabs/awesome-agents/pull/707)
+- [Awesome AI Engineering — merged Harness entry](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4)
 - [abordage/awesome-mcp — merged Harness entry](https://github.com/abordage/awesome-mcp/pull/95)
 - [Awesome DSH Plugin — merged Harness entry](https://github.com/Anil-matcha/awesome-dsh-plugin/pull/47)
 - [Awesome DeepSeek Harness — merged Harness entry](https://github.com/Dominic789654/awesome-deepseek-harness/pull/182)
