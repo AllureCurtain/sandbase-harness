@@ -151,6 +151,7 @@ promotion channel.
 
 ## Pending or review-controlled
 
+- [AgentsAI.tools submission](https://agentsai.tools/submit): a new public Agent/Framework directory was identified, but its frontend currently points to a Supabase hostname that returns NXDOMAIN from this environment, so the submission request was not sent and no listing is claimed. Recheck the form when the backend is reachable.
 - [SafeMCP directory](https://safemcp.info/browse/): the public directory search was checked for `sandbase` and `sandbase-harness` on 2026-08-31; no standalone SandBase Harness listing was returned, so no unverified entry or claim is advertised yet.
 - [Msyvr Awesome Agent Sandboxes discovery issue #55](https://github.com/msyvr/awesome-agent-sandboxes/issues/55): proposed SandBase Harness for curator review as a backend-aware agent execution sandbox, with explicit local/Docker/Kubernetes/worker scope and no universal or microVM isolation claim. The proposal now has a corresponding [catalog PR #58](https://github.com/msyvr/awesome-agent-sandboxes/pull/58); the [issue follow-up](https://github.com/msyvr/awesome-agent-sandboxes/issues/55#issuecomment-5470325747) links the review path and keeps the boundary qualification explicit.
 - [libukai Awesome DeepSeek Harness issue #94](https://github.com/libukai/awesome-deepseek-harness/issues/94): proposed a factual SandBase Harness entry in the curated DSH external integrations/runtime section; the maintainer's review is pending because the available personal fork belongs to another upstream and cannot be used as a PR head.
