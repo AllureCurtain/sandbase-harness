@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- Builds missing `dist/` entries during git-hosted installs through `prepare`,
+  so DSH can install `git+https://github.com/sandbaseai/sandbase-harness.git`
+  without a prior local `npm run build`. Published packages that already ship
+  `dist/` skip the rebuild. MCP image builds install dependencies with
+  `--ignore-scripts` because the Dockerfile copies `package.json` before
+  `scripts/`.
+
 ## 0.3.7 - 2026-08-20
 
 ### Fixes
