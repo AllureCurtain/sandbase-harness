@@ -202,7 +202,6 @@ successfully.
 - [AdventureWave Awesome Agent Security PR #2](https://github.com/adventurewave-labs/awesome-agent-security/pull/2): open; maintainer review pending.
 - [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060): open; maintainer review pending.
 - [Bureado Runtime Security PR #27](https://github.com/bureado/awesome-agent-runtime-security/pull/27): open; maintainer review pending.
-- [Sagar Gupta Awesome MCP Servers PR #79](https://github.com/Sagargupta16/awesome-mcp-servers/pull/79): open; maintainer review pending.
 - [Awesome MCP 中文 PR #521](https://github.com/yzfly/Awesome-MCP-ZH/pull/521): open; Chinese-language directory review pending.
 - [Deep Insight Awesome AI Agents PR #50](https://github.com/Deep-Insight-Labs/awesome-ai-agents/pull/50): open; maintainer review pending.
 - [Picrew Awesome Agent Harness PR #85](https://github.com/Picrew/awesome-agent-harness/pull/85): open and clean; current v0.3.8, runtime capabilities, and installation evidence were posted for maintainer review.
