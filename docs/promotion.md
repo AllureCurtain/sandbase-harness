@@ -14,6 +14,8 @@ The new [Awesome MCP Issue #99](https://github.com/abordage/awesome-mcp/issues/9
 
 The new [Awesome MCP Gateways PR #81](https://github.com/e2b-dev/awesome-mcp-gateways/pull/81) adds SandBase Harness to Open-source MCP Gateways. The entry meets the directory's stated 200-star/2-contributor threshold; GitHub reports the PR `MERGEABLE`, with its `verification/cla-signed` check awaiting a conclusion. Maintainer review is pending and no directory endorsement or security certification is claimed.
 
+The merged [Daily Ops PR #266](https://github.com/sandbaseai/sandbase-daily-ops/pull/266) (`1e2cdf09535dfc1dd1c9dc17d0d76518c7d8042d`) queues Awesome MCP Gateways PR #81 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
+
 The merged [Daily Ops PR #265](https://github.com/sandbaseai/sandbase-daily-ops/pull/265) (`4d8e05241836f90e419f674923537166afa0ce16`) queues Awesome MCP issue #99 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
 
 Repository discoverability metadata was refreshed on 2026-08-31: the GitHub
