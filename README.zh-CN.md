@@ -186,6 +186,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Terminal Agents PR #5](https://github.com/EnigmaYYYY/awesome-terminal-agents/pull/5) — 已将 SandBase Harness 作为 Engineering-Practice-Tool 加入终端 Agent 专题，等待维护者审核
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — 已将 SandBase Harness 加入 Execution Sandboxes，等待维护者审核
 - [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — 已将 SandBase Harness 加入 Self-hosted Agent Runtimes，等待维护者审核
+- [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Self-hosted / Open Source 沙箱表格，等待维护者审核
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — 已将 SandBase Harness 加入 Containers，等待维护者审核
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — 已将 SandBase Harness 加入 Container Sandboxes 及对比表，等待维护者审核
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — 已加入结构化 SandBase Harness 沙箱元数据并重新生成目录文件，等待维护者审核
