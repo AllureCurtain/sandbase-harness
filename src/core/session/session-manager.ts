@@ -190,6 +190,14 @@ export class SessionManager {
       throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
     }
 
+    // Resuming a failed session: the previous turn may have failed mid-tool,
+    // leaving an agent.tool_use with no paired result. Inject placeholder
+    // results before the new user event so the next eventsToMessages
+    // projection has a valid, paired sequence (mirrors reconcileOrphans).
+    if (session.status === 'failed') {
+      this.resolveOrphanedToolUses(sessionId, '(previous turn failed before this tool returned)');
+    }
+
     // Append the user event to the log
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
@@ -367,16 +375,8 @@ export class SessionManager {
       .all() as Array<{ id: string }>;
 
     for (const { id: sessionId } of running) {
-      const events = this.eventLogger.getEvents(sessionId);
-
       // Inject placeholder results for orphaned tool_use calls
-      const placeholder = '(interrupted by server restart — retry if needed)';
-      for (const toolUse of findOrphanedToolUses(events)) {
-        this.eventLogger.append(sessionId, {
-          type: toolUse.resultType,
-          content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: placeholder, is_error: true }],
-        });
-      }
+      this.resolveOrphanedToolUses(sessionId, '(interrupted by server restart — retry if needed)');
 
       // Reset to idle so the session can continue on the next user event
       this.updateStatus(sessionId, 'paused');
@@ -524,6 +524,22 @@ export class SessionManager {
       } catch {
         // best-effort
       }
+    }
+  }
+
+  /**
+   * Append a placeholder tool_result for every tool_use in the session log
+   * that has no paired result. Called on crash recovery and on failed-session
+   * resume so the next eventsToMessages projection yields a valid, paired
+   * message sequence instead of an unpaired tool-call the model rejects.
+   */
+  private resolveOrphanedToolUses(sessionId: string, placeholder: string): void {
+    const events = this.eventLogger.getEvents(sessionId);
+    for (const toolUse of findOrphanedToolUses(events)) {
+      this.eventLogger.append(sessionId, {
+        type: toolUse.resultType,
+        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: placeholder, is_error: true }],
+      });
     }
   }
 }

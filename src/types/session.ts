@@ -33,7 +33,11 @@ export const SESSION_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   paused: ['running', 'completed', 'failed'],
   requires_action: ['running', 'completed', 'failed'],
   completed: [],
-  failed: [],
+  // A failed session is recoverable: a new user message resumes it (failed →
+  // running), preserving the full event log. It can also be stopped/deleted,
+  // which drives it to the completed terminal state. Only completed is truly
+  // terminal (no outbound edges).
+  failed: ['running', 'completed'],
 };
 
 // ============================================================

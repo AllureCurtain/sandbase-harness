@@ -17,6 +17,7 @@ import type { ServerDeps } from '../server.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { pageOf, toApiEvent, toApiSession } from '../standard.js';
+import { isTerminal } from '@/core/session/state-machine.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { persistFileResource, toFileResource, type FileRow } from './files.js';
@@ -214,11 +215,12 @@ export function sessionsRoutes(deps: ServerDeps) {
 
     // Pre-flight: reject the whole batch up-front if the session is missing or
     // terminal, so we don't partially apply (L4). sendEvent still re-checks.
+    // A failed session is not terminal — a new event resumes it.
     const session = sessionManager.get(sessionId);
     if (!session) {
       return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
     }
-    if (['completed', 'failed'].includes(session.status)) {
+    if (isTerminal(session.status)) {
       return c.json({ error: { type: 'conflict', message: `Session ${sessionId} is in terminal state: ${session.status}` } }, 409);
     }
 
@@ -266,7 +268,9 @@ export function sessionsRoutes(deps: ServerDeps) {
     if (!session) {
       return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
     }
-    if (['completed', 'failed'].includes(session.status)) {
+    // A failed session is not terminal — a new message resumes it. Only
+    // completed sessions reject new messages.
+    if (isTerminal(session.status)) {
       return c.json({ error: { type: 'conflict', message: `Session ${sessionId} is in terminal state: ${session.status}` } }, 409);
     }
 

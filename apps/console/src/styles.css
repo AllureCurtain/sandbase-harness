@@ -3773,6 +3773,12 @@ label.searchBox input {
   font-size: 13px;
 }
 
+.sessionComposerHint {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .sessionComposerClosed {
   position: sticky;
   bottom: 14px;

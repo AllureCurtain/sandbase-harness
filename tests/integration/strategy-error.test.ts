@@ -77,4 +77,32 @@ describe('Model error → failed turn', () => {
     const errEvent = events.find((e) => e.type === 'session.error');
     expect(errEvent).toBeDefined();
   });
+
+  it('accepts a new message on a failed session and resumes the turn', async () => {
+    const session = manager.create({ agent: 'agent_b' });
+    await manager.sendEvent(session.id, {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'hi' }],
+    } as any);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(manager.get(session.id)!.status).toBe('failed');
+
+    // A failed session is recoverable: sending another message must be
+    // accepted (not rejected as terminal) and must re-run the turn.
+    const result = await manager.sendEvent(session.id, {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'retry please' }],
+    } as any);
+    expect(result.accepted).toBe(true);
+
+    // The resume runs a fresh turn. Its status_running event proves the
+    // failed → running transition was allowed. (This model always throws, so
+    // it lands back in failed — the point is the turn was re-entered.)
+    await new Promise((r) => setTimeout(r, 200));
+    const events = manager.getEventLogger().getEvents(session.id);
+    const runningEvents = events.filter((e) => e.type === 'session.status_running');
+    expect(runningEvents.length).toBe(2);
+    const userMessages = events.filter((e) => e.type === 'user.message');
+    expect(userMessages.length).toBe(2);
+  });
 });

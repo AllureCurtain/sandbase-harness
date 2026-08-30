@@ -7,8 +7,9 @@
  *   running → paused | requires_action | completed | failed
  *   paused → running
  *   requires_action → running
+ *   failed → running (resume) | completed (stopped/deleted)
  *
- * Terminal states: completed, failed (no transitions out)
+ * Terminal state: completed only (no transitions out). `failed` is recoverable.
  */
 
 import { type SessionStatus, SESSION_TRANSITIONS } from '@/types/session.js';
