@@ -1,4 +1,4 @@
-import type { UIEvent } from 'react';
+import type { JSX, UIEvent } from 'react';
 
 export function JsonCodeEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return <CodeEditor value={value} onChange={onChange} language="json" />;

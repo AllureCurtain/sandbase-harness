@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
@@ -175,12 +176,15 @@ function listMemories(deps: ServerDeps, storeId: string) {
 }
 
 function toMemory(row: MemoryRecordRow) {
+  const content = row.content ?? '';
   return {
     id: row.id,
     type: 'memory',
     store_id: row.store_id,
     path: row.path,
-    content: row.content,
+    content,
+    content_size_bytes: Buffer.byteLength(content, 'utf8'),
+    content_hash: createHash('sha256').update(content, 'utf8').digest('hex'),
     metadata: parseObject(row.metadata),
     created_at: row.created_at,
     updated_at: row.updated_at,
