@@ -168,6 +168,7 @@ Pending community review:
 - [AI Native Landscape submission #18](https://github.com/rootsongjc/ai-native-landscape/issues/18) — submitted under `platform-infra` / `sandboxes-runtimes`; curator review pending
 - [Agentic Community Landscape PR #2](https://github.com/agentic-community/agentic-landscape/pull/2) — added SandBase Harness under Agentic → Runtime; maintainer review pending
 - [MyMCPTools directory issue #8](https://github.com/shibley/mymcptools/issues/8) — proposed the v0.3.8 MCP bridge for directory review; maintainer review pending
+- [mcp.so/mcpso submission thread](https://github.com/chatmcp/mcpso/issues/1#issuecomment-5471477016) — submitted the v0.3.8 MCP bridge through the public GitHub Issue workflow; directory review pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — added to Local Runtimes & LLM Management; maintainer review pending
