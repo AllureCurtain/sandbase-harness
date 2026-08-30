@@ -4,6 +4,8 @@ Last checked: 2026-08-31
 
 The new [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-devtools/pull/13) adds SandBase Harness to Proxies and Gateways. The one-line entry describes the local-first, self-hosted runtime and MCP bridge with sandboxed sessions, memory, credentials, audit/replay, and the local Console; GitHub reports it mergeable with no reported checks, and maintainer review is pending.
 
+The new [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) adds SandBase Harness to Development & Version Control. The entry follows the directory's table format and records the TypeScript/Apache-2.0 project, MCP bridge, sandboxed sessions, credentials, approvals, audit, and replay; maintainer review is pending and no directory endorsement or security certification is claimed.
+
 Repository discoverability metadata was refreshed on 2026-08-31: the GitHub
 description now explicitly identifies SandBase Harness as a self-hosted AI
 agent runtime and MCP bridge. The existing release homepage and 20 relevant
