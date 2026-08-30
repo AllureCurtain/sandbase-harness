@@ -53,6 +53,7 @@ do not imply endorsement or security review.
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
 - [Awesome MCP Servers PR #13201](https://github.com/punkpeye/awesome-mcp-servers/pull/13201): open; maintainer review pending.
+- [Awesome AI Agents PR #57](https://github.com/aloth/awesome-ai-agents/pull/57): open; maintainer review pending.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
