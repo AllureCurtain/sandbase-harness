@@ -76,6 +76,7 @@ do not imply endorsement or security review.
 - [Awesome AI Sandboxes PR #28](https://github.com/tizkovatereza/awesome-ai-sandboxes/pull/28): open; maintainer review pending.
 - [Awesome CLI Coding Agents PR #313](https://github.com/bradAGI/awesome-cli-coding-agents/pull/313): open; SandBase Harness added under Agent infrastructure; maintainer review pending.
 - [Awesome Loop Engineering resource suggestion #23](https://github.com/ChaoYue0307/awesome-loop-engineering/issues/23): submitted for review under Operations Playbooks; maintainer curation pending.
+- [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4): open; SandBase Harness added to the agent engineering project table; maintainer review pending.
 - [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [Agent Launchpad submission](https://launchpad.smartbizcalc.com/submit): free listing is available, but submission requires an authenticated magic-link session and a project screenshot; no credentials or upload were available, so this remains a manual outreach candidate.
 - [harnesses.sh](https://www.harnesses.sh/about): curated, manually verified cross-vendor harness directory; SandBase is not currently indexed, and the site requests missing-harness corrections through the maintainer's public channels rather than a submission form, so this remains a manual outreach candidate.
