@@ -125,7 +125,7 @@ promotion channel.
 
 ## Verified public discovery
 
-- [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness): the registry currently returns v0.3.8 as the active `isLatest` record and retains v0.3.4 as a non-latest historical record; direct installation should use the current v0.3.8 metadata.
 - [GitHub repository topics](https://github.com/sandbaseai/sandbase-harness/topics): refreshed with `agentic-ai`, `agent-framework`, `agent-harness`, runtime, MCP, sandbox, and self-hosted discovery terms.
 - [v0.3.8 Release Notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8): now includes verified dshbase discovery, the official Showcase, and community self-hosting guides for release-page visitors.
 - [Project Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18208574): latest distribution update records the public OpenSSF Scorecard result, scoped workflow permissions, Dependabot coverage, remaining audit findings, and the distinction between pending and verified discovery.
