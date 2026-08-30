@@ -183,6 +183,7 @@ Pending community review:
 - [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-devtools/pull/13) — added SandBase Harness to Proxies and Gateways; maintainer review pending
 - [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) — added SandBase Harness to Development & Version Control; maintainer review pending
 - [Awesome MCP Issue #99](https://github.com/abordage/awesome-mcp/issues/99) — requested addition to Aggregators & Gateways; maintainer review pending
+- [Awesome MCP Gateways PR #81](https://github.com/e2b-dev/awesome-mcp-gateways/pull/81) — added SandBase Harness to Open-source MCP Gateways; maintainer review and CLA check pending
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — added SandBase Harness to Execution Sandboxes; maintainer review pending
 - [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — added SandBase Harness to Self-hosted Agent Runtimes; maintainer review pending
 - [Awesome Sandbox PR #27](https://github.com/restyler/awesome-sandbox/pull/27) — added a dedicated SandBase Harness runtime/sandbox guide section; maintainer review pending
