@@ -6,6 +6,11 @@ This is an operational handoff for maintainers. The repository, release tags,
 and official MCP Registry remain the source of truth; independent directories
 do not imply endorsement or security review.
 
+Latest follow-up: Open Source Radar issue #7 remains open with no maintainer
+reply after the factual evidence update. Docker MCP Registry PR #4838 remains
+open and review-gated (`REVIEW_REQUIRED`/`BLOCKED`); its maintainer note records
+both the repository validator and the v0.3.8 MCP `initialize` handshake.
+
 ## Verified public discovery
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
