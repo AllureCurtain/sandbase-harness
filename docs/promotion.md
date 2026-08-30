@@ -59,6 +59,7 @@ do not imply endorsement or security review.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
+- [CordisPlugin](https://cordisplugin.com/plugins/sandbaseai-sandbase-harness): a public detail-page result was discovered, but direct verification currently returns HTTP 402; do not treat its metadata or install instructions as verified until the page is accessible.
 - [sandbase-blog freshness issue #272](https://github.com/sandbaseai/sandbase-blog/issues/272)
 - [Handbook freshness issue #290](https://github.com/sandbaseai/deepseek-harness-handbook/issues/290)
 
