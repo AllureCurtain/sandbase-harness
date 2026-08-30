@@ -73,6 +73,8 @@ do not imply endorsement or security review.
 - [FindMCP](https://findmcp.app/submit): submission form is publicly reachable, but its API returned HTTP 500 for a valid open-source repository submission; no listing was created.
 - [DSH Market](https://dshplugin.market/plugins/sandbase-harness): a public page exists, but its npm installation path is unsafe to promote: the public `managed-agents` package currently reports `latest` as `0.0.1`, while this repository is `0.3.8`; the page presents that package as the current runtime. The repository's GitHub-source install remains the source-of-truth path. Its submit page exposes placeholder correction links (`hello@example.com` and a non-existent issue route), and its API is disallowed by `robots.txt`, so no correction could be filed.
 - [DSH Packs](https://www.dshpacks.com/plugins/sandbaseai-sandbase-harness/): public discovery is confirmed, but its install snippet still pins `v0.3.7`; use the repository's current release tag instead.
+- [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but its indexed metadata still reports `0.3.7`; use the repository's current release tag and README as the source of truth.
+- [deepseek-plugin.org](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness): public discovery is confirmed, but the page still contains `v0.3.2` references; use the repository's current release tag and README as the source of truth.
 
 ## Promotion rules
 
