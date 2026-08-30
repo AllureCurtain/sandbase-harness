@@ -114,6 +114,7 @@ Recently verified community references:
 - [Awesome DSH Plugin — verified entry](https://github.com/Anil-matcha/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness — verified entry](https://github.com/awesome-deepseekharness/awesome-deepseek-harness)
 - [Dominic789654 Awesome DeepSeek Harness — verified public entry](https://github.com/Dominic789654/awesome-deepseek-harness)
+- [Zhiyuan-Fan Awesome DeepSeek Harness Plugins — verified runtime entry](https://github.com/Zhiyuan-Fan/Awesome-DeepSeek-Harness-Plugins)
 - [DSH Plugin Radar — verified automatic entry](https://github.com/AdamPlatin123/dsh-plugin-radar)
 - [Awesome DSH Plugin — merged Harness entry](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
 - [Awesome DeepSeek Harness — merged runtime entry](https://github.com/0xsline/awesome-deepseek-harness/pull/141)

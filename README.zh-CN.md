@@ -119,6 +119,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome DSH Plugin — 已核验条目](https://github.com/Anil-matcha/awesome-dsh-plugin)
 - [Awesome DeepSeek Harness — 已核验条目](https://github.com/awesome-deepseekharness/awesome-deepseek-harness)
 - [Dominic789654 Awesome DeepSeek Harness — 已核验公开条目](https://github.com/Dominic789654/awesome-deepseek-harness)
+- [Zhiyuan-Fan Awesome DeepSeek Harness Plugins — 已核验 Runtime 条目](https://github.com/Zhiyuan-Fan/Awesome-DeepSeek-Harness-Plugins)
 - [DSH Plugin Radar — 已核验自动收录](https://github.com/AdamPlatin123/dsh-plugin-radar)
 - [Awesome DSH Plugin — 已合并 Harness 条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
 - [Awesome DeepSeek Harness — 已合并 Runtime 条目](https://github.com/0xsline/awesome-deepseek-harness/pull/141)
