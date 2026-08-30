@@ -113,6 +113,15 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agents — 公开条目](https://github.com/kyrolabs/awesome-agents)
 - [abordage/awesome-mcp — 公开条目](https://github.com/abordage/awesome-mcp)
 
+正在等待社区审核：
+
+- [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
+- [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
+- [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841)
+- [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488)
+- [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
+- [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
+
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 
 ### 在 Codespaces 中试用
