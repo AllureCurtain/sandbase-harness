@@ -76,6 +76,7 @@ successfully.
 
 - [MCP.Directory submission](https://mcp.directory/submit): the submission API returned HTTP 409 with `This repository has already been submitted. We'll review it soon!`; no public listing URL is available yet.
 - [mcpservers.org submission](https://mcpservers.org/submit): free submission accepted through the public form; the confirmation page states that SandBase Harness will be reviewed within 12 hours. No public listing URL is available yet.
+- [MyMCPTools submission](https://mymcptools.com/submit): the directory advertises a free reviewed listing, but its submission route returned HTTP 403 to this environment and did not expose a usable form in Chrome; no submission is claimed and manual follow-up remains.
 - [AgentDepot submission PR #9](https://github.com/biagruot/agentdepot-agents/pull/9): open; free MCP directory submission with a public-repository install path. The repository's `npm run validate` passed with 86 agents; maintainer review is pending.
 - [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95): closed after the maintainer confirmed the verified listing above.
 - [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411): open and clean; current v0.3.8, native DeepSeek Harness example, installation guide, and official Showcase context were posted for maintainer review.
