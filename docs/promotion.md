@@ -51,7 +51,7 @@ do not imply endorsement or security review.
 
 - [dshbase submission #95](https://github.com/ylwl1997/dshbase/issues/95)
 - [DeepSeek Awesome Agent PR #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411)
-- [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending.
+- [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending. The only reported check failure is the repository owner's Vercel authorization; current-version context was added in [the PR comment](https://github.com/assafbar2/agentswitchboard.dev/pull/42#issuecomment-5468257984).
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
 - [Awesome MCP Servers PR #13201](https://github.com/punkpeye/awesome-mcp-servers/pull/13201): open; maintainer review pending.
