@@ -125,6 +125,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [white0dew Awesome DSH Plugins — 已核验生成条目](https://github.com/white0dew/awesome-dsh-plugins)
 - [saltbo Awesome Stars — 已核验公开条目](https://github.com/saltbo/awesome-stars)
 - [GitHub Insight Radar — 已核验公开推荐](https://github.com/LeombE/github-insight-radar/blob/main/reports/daily/2026-08-30-action-list.md)
+- [Blue-Whale-Harness — 已核验公开目录条目](https://github.com/leenkcool/Blue-Whale-Harness/blob/main/repos.json)
 - [DSH Plugin Radar — 已核验自动收录](https://github.com/AdamPlatin123/dsh-plugin-radar)
 - [Awesome DSH Plugin — 已合并 Harness 条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1879)
 - [Awesome DeepSeek Harness — 已合并 Runtime 条目](https://github.com/0xsline/awesome-deepseek-harness/pull/141)
