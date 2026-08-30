@@ -105,6 +105,8 @@ Recently verified community references:
 - [Awesome Agent Cortex — merged entry](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
 - [Awesome AI Devtools — merged entry](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — merged entry](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
+- [Awesome Agents — public entry](https://github.com/kyrolabs/awesome-agents)
+- [abordage/awesome-mcp — public entry](https://github.com/abordage/awesome-mcp)
 
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.

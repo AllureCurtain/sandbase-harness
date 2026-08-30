@@ -97,6 +97,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agent Cortex — 已合并条目](https://github.com/0xNyk/awesome-agent-cortex/pull/72)
 - [Awesome AI Devtools — 已合并条目](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — 已合并条目](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
+- [Awesome Agents — 公开条目](https://github.com/kyrolabs/awesome-agents)
+- [abordage/awesome-mcp — 公开条目](https://github.com/abordage/awesome-mcp)
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 
