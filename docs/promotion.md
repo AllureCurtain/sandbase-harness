@@ -67,6 +67,7 @@ do not imply endorsement or security review.
 - [Awesome Agent Sandboxes PR #58](https://github.com/msyvr/awesome-agent-sandboxes/pull/58): open; maintainer review pending.
 - [Awesome AI Sandboxing PR #3](https://github.com/webcoyote/awesome-AI-sandbox/pull/3): open; maintainer review pending.
 - [Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86): open; maintainer review pending.
+- [Agentbrisk submission](https://agentbrisk.com/submit/): accepts open-source agents, frameworks, and MCP projects by email; no automated submission was attempted, so this remains a manual outreach candidate.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
