@@ -31,6 +31,8 @@ The current official DevOps-focused discovery post is [Discussion #116](https://
 
 The same Discussion now has a [promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209700) linking the current MCP, runtime, self-hosted, automation, and agent-service review submissions. It explicitly labels them as pending review rather than endorsements or security certifications.
 
+The [Show and tell Discussion #94 follow-up](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209922) now links the live English and Chinese DeepSeek Harness walkthroughs and invites deployment/install feedback. It keeps the backend-dependent isolation and no-security-certification qualification explicit.
+
 The latest [Discussion #116 progress comment](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209760) adds the Awesome MCP Collection, Cue OS Awesome Agent OS, Awesome AI Coding Sandboxes, and Awesome MCP Servers for DevOps PRs. Each remains pending external maintainer review; no merge, endorsement, or security certification is claimed.
 
 The latest directory-state audit found three additional completed public listings: [Awesome Agent Runtime PR #15](https://github.com/sandbaseai/awesome-agent-runtime/pull/15), [Awesome Native Agent Platforms PR #1](https://github.com/sandbaseai/awesome-native-agent-platforms/pull/1), and [awesome-mcp-servers PR #45](https://github.com/mcpHQ/awesome-mcp-servers/pull/45). Their merged entries use current repository/source links and retain the backend-dependent isolation qualification where applicable; they are directory listings, not endorsements or security certifications.
