@@ -158,6 +158,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCP.Directory 提交](https://mcp.directory/submit) — 已提交，等待目录审核
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — 已加入 Agent Frameworks & Orchestration，等待维护者审核
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — 已加入 Local Runtimes & LLM Management，等待维护者审核
+- [AgentFirst 目录 PR #46](https://github.com/bradvin/agentfirst.directory/pull/46) — 已加入 Compute & Sandboxes，等待 enrichment 检查和维护者审核
 - [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks 架构提案 #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
