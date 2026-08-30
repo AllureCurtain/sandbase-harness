@@ -7,8 +7,8 @@ and official MCP Registry remain the source of truth; independent directories
 do not imply endorsement or security review.
 
 Latest follow-up: Open Source Radar issue #7 remains open with no maintainer
-reply after the factual evidence update. Docker MCP Registry PR #4838 remains
-open and review-gated (`REVIEW_REQUIRED`/`BLOCKED`); its maintainer note records
+reply after the factual evidence update. Docker MCP Registry PR #4841 is the
+canonical submission; duplicate PR #4838 was closed and its maintainer note records
 both the repository validator and the v0.3.8 MCP `initialize` handshake.
 
 The MCP Registry publish workflow was re-run after the metadata description
@@ -276,7 +276,7 @@ promotion channel.
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99): open and mergeable; generated-list maintainer review pending. The [maintainer verification](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99#issuecomment-5470293386) records v0.3.8, installation/MCP evidence, runtime capabilities, and the backend-dependent isolation boundary; a [follow-up review nudge](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99#issuecomment-5470302021) was posted after the PR remained idle for more than a day.
 - [Production Agentic Systems PR #57](https://github.com/EthicalML/awesome-production-agentic-systems/pull/57): open and mergeable; maintainer review pending. The [maintainer verification](https://github.com/EthicalML/awesome-production-agentic-systems/pull/57#issuecomment-5470293476) records v0.3.8, the Managed Agents API, DeepSeek MCP bridge, sessions, governance, audit/replay, and the backend-dependent isolation boundary.
 - [Awesome LLM Agents PR #318](https://github.com/kaushikb11/awesome-llm-agents/pull/318): open; maintainer review pending.
-- [Docker MCP Registry PR #4838](https://github.com/docker/mcp-registry/pull/4838): open; registry review and validation pending.
+- [Docker MCP Registry PR #4838](https://github.com/docker/mcp-registry/pull/4838): closed as a duplicate of the canonical [PR #4841](https://github.com/docker/mcp-registry/pull/4841); review should continue on #4841 only.
 - [Awesome AI Agents PR #467](https://github.com/jim-schwoebel/awesome_ai_agents/pull/467): open; maintainer review pending.
 - [Authora Awesome Agent Security PR #10](https://github.com/authora-dev/awesome-agent-security/pull/10): open; maintainer review pending.
 - [DevInsight Awesome MCP PR #6](https://github.com/devinsightdotio/awesome_mcp/pull/6): open; maintainer review pending.
