@@ -11,6 +11,12 @@ reply after the factual evidence update. Docker MCP Registry PR #4838 remains
 open and review-gated (`REVIEW_REQUIRED`/`BLOCKED`); its maintainer note records
 both the repository validator and the v0.3.8 MCP `initialize` handshake.
 
+The MCP Registry publish workflow was re-run after the metadata description
+update: image verification, metadata validation, and GitHub OIDC authentication
+passed, but the Registry rejected the publish because version `0.3.8` already
+exists (`cannot publish duplicate version`). The improved `server.json` will be
+published with the next genuine release; no artificial version was created.
+
 MCP.Directory's submission endpoint reports that this repository has already
 been submitted; no public detail page is available yet, so it remains review-
 controlled rather than verified discovery.
