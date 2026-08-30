@@ -121,6 +121,7 @@ promotion channel.
 
 ## Pending or review-controlled
 
+- [libukai Awesome DeepSeek Harness issue #94](https://github.com/libukai/awesome-deepseek-harness/issues/94): proposed a factual SandBase Harness entry in the curated DSH external integrations/runtime section; the maintainer's review is pending because the available personal fork belongs to another upstream and cannot be used as a PR head.
 - [MCP.Directory submission](https://mcp.directory/submit): the submission API returned HTTP 409 with `This repository has already been submitted. We'll review it soon!`; no public listing URL is available yet.
 - [mcpservers.org submission](https://mcpservers.org/submit): free submission accepted through the public form; the confirmation page states that SandBase Harness will be reviewed within 12 hours. The current public [SandBase page](https://mcpservers.org/servers/sandbaseai/cli) is for SandBase CLI and mentions Harness in the open-source stack, but no standalone Harness listing has been verified yet.
 - [Open Source Observer OSS Directory PR #1211](https://github.com/opensource-observer/oss-directory/pull/1211): open; adds SandBase Harness to the actively maintained public OSS registry. `pnpm validate:projects` passed for all 7,133 projects, owner-validation is green, and the remaining CI is `ACTION_REQUIRED` pending fork-workflow approval; maintainer review is pending ([status note](https://github.com/opensource-observer/oss-directory/pull/1211#issuecomment-5468590097)).
