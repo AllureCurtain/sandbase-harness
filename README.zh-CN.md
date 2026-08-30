@@ -133,6 +133,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome AI Devtools — 已合并条目](https://github.com/yeaight7/awesome-ai-devtools/pull/33)
 - [Awesome Agent Skills — 已合并条目](https://github.com/VoltAgent/awesome-agent-skills/pull/946)
 - [WalkingLabs Awesome Harness Engineering — 已合并条目](https://github.com/walkinglabs/awesome-harness-engineering/pull/76)
+- [awesome-mcp-servers — 已合并 MCP 条目](https://github.com/mcpHQ/awesome-mcp-servers/pull/45)
 - [Agent Framework Radar — 已核验自动收录](https://github.com/linny006/agent-framework-radar)
 - [LLM Agents Radar — 已核验自动收录](https://github.com/linny006/llm-agents-radar)
 - [Awesome DSH Plugin — 已核验条目](https://github.com/Anil-matcha/awesome-dsh-plugin)
