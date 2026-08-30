@@ -41,6 +41,8 @@ An additional submission to the general DevOps catalog is [Awesome DevOps PR #30
 
 [Awesome Agent Operating Systems PR #11](https://github.com/frankxai/awesome-agent-operating-systems/pull/11) adds SandBase Harness to Agent Runtimes with the requested verification date. The PR changes only `README.md`, is mergeable, and has the [maintainer disclosure](https://github.com/frankxai/awesome-agent-operating-systems/pull/11#issuecomment-5470795654); review is pending.
 
+[Awesome Agent Services PR #8](https://github.com/farol-team/awesome-agent-services/pull/8) adds SandBase Harness to Sandboxes & Compute. The PR changes only `README.md`, is clean and mergeable, and has the [maintainer disclosure](https://github.com/farol-team/awesome-agent-services/pull/8#issuecomment-5470801538); review is pending.
+
 The same correction was added to the key MCP/DeepSeek review paths: [Docker MCP Registry #4841](https://github.com/docker/mcp-registry/pull/4841#issuecomment-5470707104), [ToolSDK #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488#issuecomment-5470707207), [DeepSeek Agent #411](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/411#issuecomment-5470707314), [TensorBlock #2068](https://github.com/TensorBlock/awesome-mcp-servers/pull/2068#issuecomment-5470707431), and [OpenModels #20](https://github.com/openmodelsrun/mcp/pull/20#issuecomment-5470707567).
 
 An additional diff audit confirmed that the actual submitted files in all ten active catalog/registry PRs contain no `docs/mcp-install.md` reference; each current installation link resolves to [`docs/installation.md`](https://github.com/sandbaseai/sandbase-harness/blob/main/docs/installation.md).
