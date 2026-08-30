@@ -3,6 +3,7 @@
 [English](./README.md) | 中文
 
 [![GitHub stars](https://img.shields.io/github/stars/sandbaseai/sandbase-harness?style=social)](https://github.com/sandbaseai/sandbase-harness/stargazers)
+[![已收录于 deepseek-plugin.org](https://img.shields.io/badge/listed_on-deepseek--plugin.org-007EC6)](https://deepseek-plugin.org/plugins/sandbaseai/sandbase-harness)
 
 一个本地优先、可自托管的 AI Agent Runtime。它把持久化会话、沙箱工具、
 Memory、凭证、审计日志、事件回放和可视化 Console 放在同一个运行时边界中，
