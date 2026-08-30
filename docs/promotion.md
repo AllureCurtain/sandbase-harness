@@ -29,6 +29,8 @@ The latest promotion checkpoint is also summarized in [Discussion #94](https://g
 
 The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews.
 
+GitHub repository discovery metadata was refreshed on 2026-08-31: the topic set now explicitly includes `devops`, `docker`, and `kubernetes` while retaining the MCP, sandbox, audit, DeepSeek, and DSH terms; no capability or security claim was changed.
+
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
 successfully.
