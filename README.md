@@ -174,6 +174,7 @@ Pending community review:
 - [Awesome Agent Services PR #8](https://github.com/farol-team/awesome-agent-services/pull/8) — added SandBase Harness to Sandboxes & Compute; PR is clean and maintainer review pending
 - [Awesome AI Automation PR #3](https://github.com/minhazda/awesome-ai-automation/pull/3) — added SandBase Harness to AI agents & LLM automation; PR is clean and maintainer review pending
 - [Awesome Best Open Source AI Agents 2026 PR #1](https://github.com/GagnDeep/awesome-best-open-source-ai-agents-2026/pull/1) — added a GitHub-verified runtime entry with license, language, Stars, activity, and Best-for metadata; PR is clean and maintainer review pending
+- [Awesome AI Agents — Agent Playbook PR #1](https://github.com/agentplaybook-io/awesome-ai-agents/pull/1) — added SandBase Harness to the self-hosted frameworks list; PR is clean and maintainer review pending
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — official DevOps runtime and MCP bridge discovery post
 - [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
