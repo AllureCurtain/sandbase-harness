@@ -27,7 +27,7 @@ The latest public handoff is recorded in [Discussion #82](https://github.com/san
 
 The latest promotion checkpoint is also summarized in [Discussion #94](https://github.com/sandbaseai/sandbase-harness/discussions/94#discussioncomment-18209143), including the canonical Docker and ToolSDK registry review paths and the TensorBlock metadata gate.
 
-The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews.
+The current official DevOps-focused discovery post is [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116), linking the installation guide, v0.3.8 release, MCP Registry review, and the two DevOps catalog reviews. Its [follow-up comment](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18209484) adds the pinned GHCR quick start, current six-tool scope, and security-boundary reminder.
 
 GitHub repository discovery metadata was refreshed on 2026-08-31: the topic set now explicitly includes `devops`, `docker`, and `kubernetes` while retaining the MCP, sandbox, audit, DeepSeek, and DSH terms; no capability or security claim was changed.
 
