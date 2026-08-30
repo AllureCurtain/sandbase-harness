@@ -26,6 +26,7 @@ do not imply endorsement or security review.
 - [anbeime/skill — Skills index](https://github.com/anbeime/skill)
 - [Awesome DeepSeek Harness Plugins](https://github.com/Zhiyuan-Fan/Awesome-DeepSeek-Harness-Plugins)
 - [Hermes Ecosystem — SandBase stack](https://github.com/ksimback/hermes-ecosystem/blob/main/projects/sandbaseai/cli.html)
+- [AgentStack](https://www.agentstack.live/mcp/io.github.sandbaseai/sandbase-harness)
 - [HackSing DSH Plugins](https://github.com/HackSing/dsh-plugins)
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 
@@ -36,7 +37,6 @@ do not imply endorsement or security review.
 - [Agent Switchboard listing PR #42](https://github.com/assafbar2/agentswitchboard.dev/pull/42): open; maintainer verification pending.
 - [OpenModels MCP Registry PR #20](https://github.com/openmodelsrun/mcp/pull/20): open and mergeable; maintainer review pending.
 - [curated_mcp_servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9): open; maintainer review pending.
-- [AgentStack submission](https://www.agentstack.live/submit): submitted for review; no public listing confirmed yet.
 - [DeepYard submission](https://deepyard.dev/submit): submitted for review; no public listing confirmed.
 - [MCP.Directory](https://mcp.directory/submit): submitted/queued; no public detail page confirmed.
 - [AIMCP submissions](https://www.aimcp.info/en/submit): pending; no public detail page confirmed.
