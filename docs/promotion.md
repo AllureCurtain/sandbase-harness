@@ -24,6 +24,7 @@ successfully.
 ## Verified public discovery
 
 - [Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
+- [GitHub repository topics](https://github.com/sandbaseai/sandbase-harness/topics): refreshed with `agentic-ai`, `agent-framework`, `agent-harness`, runtime, MCP, sandbox, and self-hosted discovery terms.
 - [v0.3.8 Release Notes](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8): now includes verified dshbase discovery, the official Showcase, and community self-hosting guides for release-page visitors.
 - [Project Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18206339): latest distribution update records the merged runtime landscape entry and current review-controlled submissions.
 - [Official DeepSeek Harness Showcase](https://github.com/deepseek-ai/deepseek-harness/discussions/1918): project showcase thread; the latest update records the merged runtime landscape entry and current v0.3.8 bridge/install links ([comment](https://github.com/deepseek-ai/deepseek-harness/discussions/1918#discussioncomment-18206361)).
