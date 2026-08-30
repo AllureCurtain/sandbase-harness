@@ -15,6 +15,8 @@ MCP.Directory's submission endpoint reports that this repository has already
 been submitted; no public detail page is available yet, so it remains review-
 controlled rather than verified discovery.
 
+The latest public handoff is recorded in [Discussion #82](https://github.com/sandbaseai/sandbase-harness/discussions/82#discussioncomment-18206415).
+
 The bilingual Showcase quickstart was locally verified with `npm ci` and
 `npm run build`; runtime, MCP bridge, and Console artifacts all built
 successfully.
