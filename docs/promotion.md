@@ -740,6 +740,8 @@ The [MiniMax Awesome Integrations issue #12](https://github.com/MiniMax-AI/aweso
 
 The [DhanushNehru Awesome MCP Servers PR #75](https://github.com/DhanushNehru/awesome-mcp-servers/pull/75) remains open for maintainer review. A correction to the earlier verification note replaces the removed `docs/mcp-server.md` path with the current `llms-install.md` and `docs/installation.md` links ([comment](https://github.com/DhanushNehru/awesome-mcp-servers/pull/75#issuecomment-5475948809)); the entry remains a factual, source-linked discovery proposal with backend/deployment-dependent isolation and no endorsement or security-certification claim.
 
+The [Picrew Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86) remains the canonical open entry after duplicate #85 was closed. A link-correction follow-up replaces the removed `docs/mcp-server.md` path with the current `llms-install.md` MCP guide ([comment](https://github.com/Picrew/awesome-agent-harness/pull/86#issuecomment-5475963347)); the PR remains open for maintainer review with the backend/deployment-dependent isolation qualification.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
