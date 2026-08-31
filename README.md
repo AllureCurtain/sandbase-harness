@@ -94,6 +94,7 @@ The project is also discoverable through these independent ecosystem directories
 - [Awesome DSH Plugins 2026](https://github.com/Herdeny/awesome-dsh-plugins-2026)
 - [MCP Repository](https://mcprepository.com/sandbaseai/sandbase-harness)
 - [MCP Server Hub](https://mcpserver.dev/s/sandbase-harness_4o5awxb): public MCP Server Hub listing for SandBase Harness.
+- [MCPFly submission](https://mcpserver.so/submit): repository submission accepted and pending approval; no public listing is claimed yet
 - [MCP Central API](https://mcpcentral.io/api/servers?search=sandbase): public downstream registry mirror returning the active `io.github.sandbaseai/sandbase-harness` entry; its version snapshot may lag the current release.
 - [MCPVault](https://mcpvault.io/servers/sandbase-harness)
 - [F8W 中文项目档案](https://www.f8w.com/github/sandbaseai__sandbase-harness/)
