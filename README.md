@@ -815,6 +815,7 @@ init smoke, and `examples/basic` startup smoke.
 
 - [Machine-readable project metadata](llms.txt)
 - [Agent / MCP installation guide](llms-install.md)
+- [Agent Plugin marketplace manifest](agent-plugin/PLUGIN.md)
 - [Installation](docs/installation.md)
 - [Usage Guide](docs/usage.md)
 - [API Reference](docs/api.md)

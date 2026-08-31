@@ -750,6 +750,8 @@ The public [mcpub submission flow](https://mcpub.dev/) was evaluated and intenti
 
 The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) was evaluated as a high-value future promotion route but not submitted. The official template requires evidence of production adoption in at least two organizations, two core maintainers from different organizations, at least ten contributors, a public governance/decision process, and a required agreement to donate project trademarks and accounts if accepted. Those claims and legal commitments cannot be made on the project's behalf without verified evidence and explicit owner authorization. AAIF review remains a future option, not a current application or foundation affiliation.
 
+The [KillerSkills marketplace submission](https://killerskills.ai/submit) accepts a public `PLUGIN.md`, and the repository now provides [agent-plugin/PLUGIN.md](../agent-plugin/PLUGIN.md) alongside the schema-validated `plugin.json` and `mcp.json`. The document is source-backed and tested with the existing MCP distribution suite (6 tests passed). The marketplace requires GitHub sign-in to submit; no listing or marketplace approval is claimed until an authorized account completes that step.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
