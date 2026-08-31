@@ -177,6 +177,7 @@ Pending community review:
 - [Nandanhegde MCP Directory Issue #2](https://github.com/Nandanhegde1/mcp-directory/issues/2) — clarified the removed MCP-documentation path and supplied the current installation/runtime links; directory review remains pending
 - [Collective AI Tools Issue #332](https://github.com/hanishrao/collective-ai-tools/issues/332) — clarified the removed MCP-documentation path and supplied the current installation/runtime links; directory review remains pending
 - [MyMCPTools Issue #8](https://github.com/shibley/mymcptools/issues/8) — clarified the removed MCP-documentation path and supplied the current installation/runtime links; directory review remains pending
+- [Kubernetes Agent Sandbox Issue #1500](https://github.com/kubernetes-sigs/agent-sandbox/issues/1500) — opened a scope discussion about a source-linked SandBase Harness compatibility/deployment example; no existing adapter or inclusion is claimed
 - [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — added SandBase Harness to Core Frameworks using the directory's dynamic stars badge; maintainer review pending
 - [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — added SandBase Harness to Agent Systems & Harnesses; maintainer review pending
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
