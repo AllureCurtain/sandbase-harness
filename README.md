@@ -228,6 +228,7 @@ Pending community review:
 - [Awesome DevOps Platform PR #4](https://github.com/tysoncung/awesome-devops-platform/pull/4) — added to AI & Automation in DevOps; maintainer review pending
 - [Awesome Platform Engineering PR #11](https://github.com/ShakedBraimok/awesome-platform-engineering/pull/11) — added to AI Platform Engineering & LLMOps; maintainer review pending
 - [Awesome LLMOps PR #539](https://github.com/InftyAI/Awesome-LLMOps/pull/539) — generated from project request #538 under Runtime / AI Agent; build passed, maintainer review pending
+- [TensorChord Awesome LLMOps PR #785](https://github.com/tensorchord/Awesome-LLMOps/pull/785) — added SandBase Harness to the LLMOps catalog; PR is mergeable, while DCO completion remains contributor-owned
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21) — added to Execution Sandboxes; entry refreshed to the current MCP installation guide, maintainer review pending
 - [Awesome DevOps PR #30](https://github.com/nirgeier/awesome-devops/pull/30) — added SandBase Harness to the MCP tools catalog; DCO passed, maintainer review pending
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — added SandBase Harness to the self-hosted agent frameworks list; PR is clean and maintainer review pending
