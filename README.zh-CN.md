@@ -297,6 +297,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
 - [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/awesome-ai-engineering/pull/4) — 已于 `0a308b0` 合并，SandBase Harness 已加入开源 Agent Engineering 项目表
 - [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060) — 已于 `c88cedf` 合并，当前 v0.3.8 bridge 条目可通过 [TensorBlock profile](https://tensorblock.co/mcp/servers/github-sandbaseai-sandbase-harness-7a5986ca) 查看
+- [MCPVault 提交](https://mcpvault.io/submit) — 公开提交流程需要 GitHub 登录；正常提交返回 `401 not_signed_in`，因此当前不宣称已有收录
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28) — 已加入 MCP hosting/runtime，完成 v0.3.8 核验；GitHub 当前为 `UNSTABLE`
 - [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4) — 已加入 permission 分类，完成 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — 已加入 DevOps & Deployment，并核验当前 Registry/GHCR 与 v0.3.8，等待维护者审核

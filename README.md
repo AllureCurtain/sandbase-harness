@@ -296,6 +296,7 @@ Pending community review:
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — handbook entry prepared in commit `ddbf183`; waiting for the maintainer to apply it because the available fork has unrelated history
 - [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/awesome-ai-engineering/pull/4) — merged at `0a308b0`, adding SandBase Harness to the open-source agent-engineering project table
 - [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060) — merged at `c88cedf`; the current v0.3.8 bridge entry is now available through the [TensorBlock profile](https://tensorblock.co/mcp/servers/github-sandbaseai-sandbase-harness-7a5986ca)
+- [MCPVault submission](https://mcpvault.io/submit) — public submit flow requires GitHub sign-in; normal submission returned `401 not_signed_in`, so no listing is claimed
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28) — MCP hosting/runtime entry with v0.3.8 verification; GitHub reports `UNSTABLE`
 - [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4) — permission-category entry with v0.3.8 and backend-boundary verification; maintainer review pending
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — DevOps & Deployment entry with current Registry/GHCR and v0.3.8 verification; maintainer review pending
