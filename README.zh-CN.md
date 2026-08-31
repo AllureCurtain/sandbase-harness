@@ -160,6 +160,9 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 
 正在等待社区审核：
 
+- [NeuraLiying Awesome Agent Harnesses Issue #4](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/issues/4) — 建议加入 Production Harnesses、SDKs & Frameworks，已补充 v0.3.8、安装/MCP 来源、可选后端及依赖部署的隔离边界核验（[核验说明](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/issues/4#issuecomment-5473588176)）
+- [Acuvity MCP Servers Registry Issue #18](https://github.com/acuvity/mcp-servers-registry/issues/18) — 建议收录 v0.3.8 GHCR stdio Bridge、六个工具及运行时环境变量，已补充维护者核验与依赖后端的隔离边界（[核验说明](https://github.com/acuvity/mcp-servers-registry/issues/18#issuecomment-5473588201)）
+- [Nexu Harness Engineering Guide Issue #70](https://github.com/nexu-io/harness-engineering-guide/issues/70) — 建议作为有来源依据的 Runtime 资源，覆盖会话、工具治理、审批、凭证、Memory、产物、审计/回放及可选后端（[核验说明](https://github.com/nexu-io/harness-engineering-guide/issues/70#issuecomment-5473588182)）
 - [E2B Awesome AI SDKs PR #344](https://github.com/e2b-dev/awesome-ai-sdks/pull/344) — 已有 canonical Harness 条目，当前可合并；CLA 检查仍需贡献者账号完成
 - [Awesome MCP Servers PR #13240](https://github.com/punkpeye/awesome-mcp-servers/pull/13240) — canonical MCP 目录条目的 `check-submission` 已通过，等待维护者/Glama 审核；旧重复 PR #13188 已关闭
 - [Sunrisepeak dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 将 SandBase Harness descriptor 从 v0.3.7 更新至 v0.3.8，提交版本的构建与 boot 检查已通过，但当前 PR 需要 rebase

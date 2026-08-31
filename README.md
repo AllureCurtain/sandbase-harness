@@ -156,6 +156,9 @@ Recently verified community references:
 
 Pending community review:
 
+- [NeuraLiying Awesome Agent Harnesses Issue #4](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/issues/4) — proposed for Production Harnesses, SDKs & Frameworks; maintainer verification covers v0.3.8, installation/MCP sources, selectable backends, and the deployment-dependent isolation boundary ([verification](https://github.com/NeuraLiying/Awesome-Agent-Harnesses/issues/4#issuecomment-5473588176))
+- [Acuvity MCP Servers Registry Issue #18](https://github.com/acuvity/mcp-servers-registry/issues/18) — proposed the v0.3.8 GHCR stdio bridge with six tools and runtime environment variables; maintainer verification and backend-dependent isolation qualification supplied ([verification](https://github.com/acuvity/mcp-servers-registry/issues/18#issuecomment-5473588201))
+- [Nexu Harness Engineering Guide Issue #70](https://github.com/nexu-io/harness-engineering-guide/issues/70) — proposed as a source-backed runtime resource covering sessions, tool governance, approvals, credentials, memory, artifacts, audit/replay, and selectable backends ([verification](https://github.com/nexu-io/harness-engineering-guide/issues/70#issuecomment-5473588182))
 - [E2B Awesome AI SDKs PR #344](https://github.com/e2b-dev/awesome-ai-sdks/pull/344) — existing canonical Harness entry, currently mergeable; CLA verification still requires contributor action
 - [Awesome MCP Servers PR #13240](https://github.com/punkpeye/awesome-mcp-servers/pull/13240) — canonical MCP directory entry with passed `check-submission`; maintainer/Glama review remains pending; superseded duplicate #13188 is closed
 - [Sunrisepeak dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — updates the SandBase Harness descriptor from v0.3.7 to v0.3.8; build and boot checks passed at the submitted revision, but the PR currently needs a rebase
