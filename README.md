@@ -314,6 +314,7 @@ Pending community review:
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [Yenanjing Awesome Harness Engineering PR #6](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
 - [Awesome Harness Engineering 中文版 PR #6](https://github.com/whobot-ai/awesome-harness-engineering-zh/pull/6)
+- [Awesome Harness Engineering PR #226](https://github.com/ai-boost/awesome-harness-engineering/pull/226) — added SandBase Harness to Security, Sandbox & Permissions with a source-backed technical description; maintainer review pending
 - [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90) — proposed as a source-backed system under study, with architecture/runtime evidence and maintainer verification ([verification](https://github.com/hardness1020/awesome-agent-architecture/issues/90#issuecomment-5473624085))
 - [AgentIndex issue #3](https://github.com/agentidx/agentindex/issues/3) — proposed a source-backed runtime index entry; maintainer verification covers v0.3.8, installation/MCP, session governance, audit/replay, and backend-dependent isolation ([verification](https://github.com/agentidx/agentindex/issues/3#issuecomment-5473643330))
 - [Agent Harness MCP preset issue #47](https://github.com/madebywild/agent-harness/issues/47) — proposed a source-backed MCP preset using the published bridge image and six tools; maintainer review is pending ([verification](https://github.com/madebywild/agent-harness/issues/47#issuecomment-5473643364))
