@@ -292,6 +292,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
 - [HKUST-KnowComp Awesome Agent Harness Issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — 已提交为源链接 runtime 资源，已补充当前 v0.3.8 证据及依赖后端的隔离边界，等待策展审核
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
+- [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — 已加入 Developer Tools & Infrastructure，并完成 v0.3.8 来源核验，等待维护者审核
+- [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1) — 已加入 runtime 对比表，补充 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核
 - [AI Agent Infrastructure List PR #4](https://github.com/chgaowei/ai-agent-infra-list/pull/4) — 已新增中英文 Runtime 条目并核验当前 v0.3.8，等待维护者审核
 - [Skyming Awesome AI Agent PR #19](https://github.com/skyming/awesome-ai-agent/pull/19) — 已新增中文 runtime 条目并补充 v0.3.8 来源核验，等待维护者审核
 - [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58) — 已加入 Agent Runtimes，披露维护者关系并完成事实核验，等待维护者审核
