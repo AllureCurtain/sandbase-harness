@@ -760,7 +760,7 @@ The duplicate [weiwei966/awesome-ai-harness PR #4](https://github.com/weiwei966/
 
 The [Agent Plugins Directory listing](https://agent-plugins.directory/sandbaseai/sandbase-harness) is publicly live and source-indexed, with the plugin's MCP configuration and Copilot/Cursor/VS Code install paths visible. The current page is pinned to an older source revision and displays the earlier `0.3.4` bridge image, so the repository now links the page and states the current `0.3.8` source configuration; a future directory reindex is still required before calling the page refreshed. The directory is an independent discovery surface and does not execute plugin code or provide security endorsement.
 
-To improve the next source-indexed result, `agent-plugin/plugin.json` now declares the implemented discovery terms `agent-plugin`, `persistent-sessions`, `audit-replay`, and `credentials` in addition to its existing runtime/MCP/sandbox terms. The manifest validates against the Agent Plugins 1.0 schema and the MCP distribution test suite remains green; this change does not claim a refreshed directory page until its pinned revision changes.
+To improve the next source-indexed result, `agent-plugin/plugin.json` now declares the implemented discovery terms `agent-plugin`, `persistent-sessions`, `audit-replay`, and `credentials` in addition to its existing runtime/MCP/sandbox terms, and records plugin patch version `0.1.1`. The manifest validates against the Agent Plugins 1.0 schema and the MCP distribution test suite remains green; this change does not claim a refreshed directory page until its pinned revision changes.
 
 ## Promotion rules
 

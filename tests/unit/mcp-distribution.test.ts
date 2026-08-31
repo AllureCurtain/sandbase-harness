@@ -99,7 +99,7 @@ describe('MCP OCI distribution', () => {
     expect(plugin).toEqual(expect.objectContaining({
       $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
       name: 'sandbase-harness',
-      version: '0.1.0',
+      version: '0.1.1',
       license: 'Apache-2.0',
     }));
     expect(mcp.$schema).toBe('https://agent-plugins.org/schemas/1.0.0/mcp.schema.json');

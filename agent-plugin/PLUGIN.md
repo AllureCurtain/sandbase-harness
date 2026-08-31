@@ -40,6 +40,10 @@ The source-backed directory page is [Agent Plugins Directory](https://agent-plug
 - Docker on the host running the bridge
 - SandBase Harness v0.3.8 or a compatible runtime API
 
+The plugin manifest is version `0.1.1`; this patch release records the
+discovery metadata and current runtime bridge reference without changing the
+client-facing tool contract.
+
 The bridge is a client-side integration layer. Session execution and isolation
 remain properties of the connected Harness runtime and its selected backend
 and deployment configuration; this file does not claim universal isolation or
