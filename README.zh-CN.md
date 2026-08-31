@@ -237,7 +237,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — 已将 SandBase Harness 加入 self-hosted agent frameworks 列表，PR 状态 clean，等待维护者审核
 - [Awesome Agent Infra PR #2](https://github.com/jovial-liu/awesome-agent-infra/pull/2) — 已将 SandBase Harness 加入机器可读的 runtime catalog，校验、测试和 lint 均通过，等待维护者审核
 - [Awesome AI Agents PR #1](https://github.com/tioraicom/awesome-ai-agents/pull/1) — 已将 SandBase Harness 加入 Agent infrastructure，PR 状态 clean，等待维护者审核
-- [Awesome Agent Operating Systems PR #11](https://github.com/frankxai/awesome-agent-operating-systems/pull/11) — 已将 SandBase Harness 加入 Agent Runtimes，并添加日期验证链接，等待维护者审核
+- [Awesome Agent Operating Systems PR #13](https://github.com/frankxai/awesome-agent-operating-systems/pull/13) — 已将 SandBase Harness 合并加入 Agent Runtimes，并添加日期验证链接
 - [Awesome Agent Services PR #8](https://github.com/farol-team/awesome-agent-services/pull/8) — 已将 SandBase Harness 加入 Sandboxes & Compute，PR 状态 clean，等待维护者审核
 - [Awesome AI Automation PR #3](https://github.com/minhazda/awesome-ai-automation/pull/3) — 已将 SandBase Harness 加入 AI agents & LLM automation，PR 状态 clean，等待维护者审核
 - [Awesome Best Open Source AI Agents 2026 PR #1](https://github.com/GagnDeep/awesome-best-open-source-ai-agents-2026/pull/1) — 已加入包含许可证、语言、Stars、活跃度和 Best-for 元数据的 GitHub 验证条目，PR 状态 clean，等待维护者审核

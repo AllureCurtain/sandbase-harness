@@ -233,7 +233,7 @@ Pending community review:
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — added SandBase Harness to the self-hosted agent frameworks list; PR is clean and maintainer review pending
 - [Awesome Agent Infra PR #2](https://github.com/jovial-liu/awesome-agent-infra/pull/2) — added SandBase Harness to the machine-readable runtime catalog; validation, tests, and lint pass, maintainer review pending
 - [Awesome AI Agents PR #1](https://github.com/tioraicom/awesome-ai-agents/pull/1) — added SandBase Harness to Agent infrastructure; PR is clean and maintainer review pending
-- [Awesome Agent Operating Systems PR #11](https://github.com/frankxai/awesome-agent-operating-systems/pull/11) — added SandBase Harness to Agent Runtimes with a dated verification link; maintainer review pending
+- [Awesome Agent Operating Systems PR #13](https://github.com/frankxai/awesome-agent-operating-systems/pull/13) — merged SandBase Harness into Agent Runtimes with a dated verification link
 - [Awesome Agent Services PR #8](https://github.com/farol-team/awesome-agent-services/pull/8) — added SandBase Harness to Sandboxes & Compute; PR is clean and maintainer review pending
 - [Awesome AI Automation PR #3](https://github.com/minhazda/awesome-ai-automation/pull/3) — added SandBase Harness to AI agents & LLM automation; PR is clean and maintainer review pending
 - [Awesome Best Open Source AI Agents 2026 PR #1](https://github.com/GagnDeep/awesome-best-open-source-ai-agents-2026/pull/1) — added a GitHub-verified runtime entry with license, language, Stars, activity, and Best-for metadata; PR is clean and maintainer review pending
