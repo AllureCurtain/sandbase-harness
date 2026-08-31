@@ -128,6 +128,7 @@ Recently verified community references:
 - [Adventure Wave Awesome Agent Security — merged entry](https://github.com/adventurewave-labs/awesome-agent-security/pull/2)
 - [Awesome Native Agent Platforms — merged Harness entry](https://github.com/sandbaseai/awesome-native-agent-platforms/pull/1)
 - [awesome-mcp-servers — merged MCP entry](https://github.com/mcpHQ/awesome-mcp-servers/pull/45)
+- [Awesome Coding Agents — merged Harness entry](https://github.com/kailiu42/awesome-coding-agents/pull/41)
 - [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Agent Framework Radar — verified automatic entry](https://github.com/linny006/agent-framework-radar)
 - [LLM Agents Radar — verified automatic entry](https://github.com/linny006/llm-agents-radar)
@@ -217,7 +218,6 @@ Pending community review:
 - [Enterprise AI Atlas Awesome MCP Servers PR #10](https://github.com/Enterprise-AI-Atlas/awesome-mcp-servers/pull/10) — added SandBase Harness to Developer Tools with Docker stdio installation metadata; PR is mergeable and maintainer review pending
 - [Awesome-MCP PR #36](https://github.com/Albertchamberlain/Awesome-MCP/pull/36) — added a structured SandBase Harness `server` entry with stdio transport; PR is mergeable and CI passed
 - [bgizdov Awesome MCP Servers PR #17](https://github.com/bgizdov/awesome-mcp-servers/pull/17) — added a JSON contribution under DevOps with the published Docker stdio bridge; PR is mergeable and maintainer review pending
-- [Awesome Coding Agents PR #41](https://github.com/kailiu42/awesome-coding-agents/pull/41) — added SandBase Harness to CLI Agent Helpers; catalog validation and tests passed, and PR is mergeable pending review
 - [Awesome AI Coding Tools PR #665](https://github.com/ai-for-developers/awesome-ai-coding-tools/pull/665) — added SandBase Harness to MCP Servers and Directories; [verification follow-up](https://github.com/ai-for-developers/awesome-ai-coding-tools/pull/665#issuecomment-5473061822) posted, PR is mergeable and maintainer review pending
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — added SandBase Harness to DevOps & Deployment; PR is mergeable and maintainer review pending
 - [Pipedream Awesome MCP Servers PR #111](https://github.com/PipedreamHQ/awesome-mcp-servers/pull/111) — added SandBase Harness to the Artificial Intelligence MCP server list; verification follow-up is [posted](https://github.com/PipedreamHQ/awesome-mcp-servers/pull/111#issuecomment-5473048884), PR is mergeable, maintainer review pending
