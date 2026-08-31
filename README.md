@@ -260,7 +260,7 @@ Pending community review:
 - [Awesome Harness Engineering 中文版 PR #6](https://github.com/whobot-ai/awesome-harness-engineering-zh/pull/6)
 - [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90)
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
-- [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211980) — v0.3.8 installation and merged integration status; user feedback is invited
+- [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — v0.3.8 安装与已合并集成状态（中文更新）；欢迎用户反馈
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 
 These listings are independent directories; the repository and its release metadata
