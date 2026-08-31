@@ -235,6 +235,7 @@ Pending community review:
 - [Awesome AI Agents PR #467](https://github.com/jim-schwoebel/awesome_ai_agents/pull/467) — existing single-line SandBase Harness entry in the AI-agent resources list; PR is clean and mergeable, maintainer review pending
 - [Jenqyang Awesome AI Agents PR #460](https://github.com/Jenqyang/Awesome-AI-Agents/pull/460) — added SandBase Harness to Applications → Tools under the repository's OSS and neutral-description rules; PR is clean and mergeable, maintainer review pending
 - [Slava Awesome AI Agents PR #403](https://github.com/slavakurilyak/awesome-ai-agents/pull/403) — existing SandBase Harness entry in the AI Agents list; PR is clean and mergeable, maintainer review pending
+- [Scottcjn Awesome Agents PR #59](https://github.com/Scottcjn/awesome-agents/pull/59) — existing SandBase Harness entry in an Agent platforms/frameworks directory; PR is clean and mergeable, maintainer review pending
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21) — added to Execution Sandboxes; entry refreshed to the current MCP installation guide, maintainer review pending
 - [Awesome DevOps PR #30](https://github.com/nirgeier/awesome-devops/pull/30) — added SandBase Harness to the MCP tools catalog; DCO passed, maintainer review pending
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — added SandBase Harness to the self-hosted agent frameworks list; PR is clean and maintainer review pending
