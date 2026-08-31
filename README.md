@@ -130,6 +130,7 @@ Recently verified community references:
 - [Adventure Wave Awesome Agent Security — merged entry](https://github.com/adventurewave-labs/awesome-agent-security/pull/2)
 - [Awesome Native Agent Platforms — merged Harness entry](https://github.com/sandbaseai/awesome-native-agent-platforms/pull/1)
 - [awesome-mcp-servers — merged MCP entry](https://github.com/mcpHQ/awesome-mcp-servers/pull/45)
+- [Awesome MCP — merged Harness entry](https://github.com/AlexMili/Awesome-MCP/pull/182)
 - [Awesome Coding Agents — merged Harness entry](https://github.com/kailiu42/awesome-coding-agents/pull/41)
 - [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Agent Framework Radar — verified automatic entry](https://github.com/linny006/agent-framework-radar)
