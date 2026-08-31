@@ -159,6 +159,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 
 - [E2B Awesome AI SDKs PR #344](https://github.com/e2b-dev/awesome-ai-sdks/pull/344) — 已有 canonical Harness 条目，当前可合并；CLA 检查仍需贡献者账号完成
 - [Awesome MCP Servers PR #13240](https://github.com/punkpeye/awesome-mcp-servers/pull/13240) — canonical MCP 目录条目的 `check-submission` 已通过，等待维护者/Glama 审核；旧重复 PR #13188 已关闭
+- [Sunrisepeak dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 将 SandBase Harness descriptor 从 v0.3.7 更新至 v0.3.8，提交版本的构建与 boot 检查已通过，但当前 PR 需要 rebase
 - [Awesome AI Agents 2026 PR #240](https://github.com/ARUNAGIRINATHAN-K/awesome-ai-agents-2026/pull/240) — 已在 Agent Tooling and Infrastructure 中将 SandBase Harness runtime 与现有 CLI 条目区分收录，等待维护者审核；失败的链接检查仅涉及 PR 之外既有的 `ofekron/better-agent` 404
 - [E2B Awesome AI Agents Issue #1468](https://github.com/e2b-dev/awesome-ai-agents/issues/1468) — 请求将 SandBase Harness 与已关闭的 CLI 提交区分，已补充来源证据，等待目录确认范围
 - [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — 使用目录的动态 star badge 将 SandBase Harness 加入 Core Frameworks，等待维护者审核
