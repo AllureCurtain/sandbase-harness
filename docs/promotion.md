@@ -2,6 +2,8 @@
 
 Last checked: 2026-08-31
 
+The latest official [Discussion #116 promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18216385) records the merged Awesome MCP listing, the open Awesome Harness Engineering and Awesome LLM Agents review paths, and current AgentSeal/MCPDir verification comments. It is a factual discovery update; no ranking, endorsement, security certification, or social publication is claimed.
+
 The canonical [Awesome Agent OS PR #3](https://github.com/cueos/awesome-agent-os/pull/3) remains open and mergeable; older duplicate [PR #2](https://github.com/cueos/awesome-agent-os/pull/2) was closed to leave one review path. The directory workflow still requires maintainer approval for the external check, so no inclusion or endorsement is claimed.
 
 The latest verification on [Hugging Face agent-harness registry PR #2432](https://github.com/huggingface/huggingface.js/pull/2432) links v0.3.8 and confirms that `MANAGED_AGENTS_HOME` is a data-directory override rather than an identity marker. Cursor Bugbot is successful; the PR remains open and mergeable pending Hugging Face maintainer review. The [follow-up](https://github.com/huggingface/huggingface.js/pull/2432#issuecomment-5475166796) preserves the user-owned API and backend/deployment-dependent isolation boundary, with no endorsement or security-certification claim.
