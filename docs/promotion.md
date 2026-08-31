@@ -308,6 +308,7 @@ promotion channel.
 - [DSH Plugin Directory](https://dshplugin.app/plugins/sandbase-harness)
 - [DSH Plugin Hub](https://dshpluginhub.dev/en/plugins/sandbaseai/sandbase-harness)
 - [dsh.so Trust & Discovery Registry](https://www.dsh.so/artifact/sandbase-harness/): public DSH detail page verified with HTTP 200 and a matching SandBase Harness entry; its trust level is an automated registry signal, not a maintainer security endorsement.
+- [DeepSeek Harness Hub](https://deepseek-harness-hub.com/plugins/sandbase-harness/): newly verified public community detail page; it describes SandBase Harness and the six-tool DSH bridge, but its page still pins v0.3.4 and no public correction/submission channel was found. Use the canonical repository and current installation guide as the source of truth; no current-version listing or endorsement is claimed.
 - [Duink DSH Universe](https://duink.com/plugins/1297278222/): public DSH Universe detail page verified with HTTP 200 and a matching `sandbaseai/sandbase-harness` entry; it is an automated topic-derived catalog and its “outside plugin validation” marker is not a compatibility or security endorsement.
 - [DSH Plugin Leaderboard](https://dshpluginleaderboard.com/): public leaderboard verified with HTTP 200; SandBase Harness is shown as `Install verified` with an automated rank snapshot. This is a discovery/install signal, not a security or quality endorsement.
 - [DSH Directory](https://dsh.directory/plugins/sandbaseai/sandbase-harness)
