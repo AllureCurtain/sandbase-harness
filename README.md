@@ -291,6 +291,7 @@ Pending community review:
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 - [HKUST-KnowComp Awesome Agent Harness issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — proposed as a source-linked runtime resource; current v0.3.8 evidence and backend-dependent isolation scope were supplied for curator review
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — handbook entry prepared in commit `ddbf183`; waiting for the maintainer to apply it because the available fork has unrelated history
+- [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — Runtime and Control Plane entry with v0.3.8 source verification; GitHub reports `UNSTABLE`, maintainer review pending
 - [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — Developer Tools & Infrastructure entry with v0.3.8 source verification; maintainer review pending
 - [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1) — runtime comparison entry with v0.3.8 and backend-boundary verification; maintainer review pending
 - [AI Agent Infrastructure List PR #4](https://github.com/chgaowei/ai-agent-infra-list/pull/4) — English/Chinese runtime entries with current v0.3.8 evidence; verification posted, maintainer review pending
