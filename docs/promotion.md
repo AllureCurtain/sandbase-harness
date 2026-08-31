@@ -748,6 +748,8 @@ The [Kubernetes SIG Agent Sandbox issue #1500](https://github.com/kubernetes-sig
 
 The public [mcpub submission flow](https://mcpub.dev/) was evaluated and intentionally not used: it requires a public MCP endpoint plus `/.well-known/mcp.json`, while the SandBase Harness bridge is configured against a user's own API URL/API key rather than a public hosted endpoint. [MCP Central's submission documentation](https://mcpcentral.io/docs/submit-a-server) describes its catalog as a mirror of the official MCP Registry, which already contains the canonical Harness record; no duplicate submission was created.
 
+The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) was evaluated as a high-value future promotion route but not submitted. The official template requires evidence of production adoption in at least two organizations, two core maintainers from different organizations, at least ten contributors, a public governance/decision process, and a required agreement to donate project trademarks and accounts if accepted. Those claims and legal commitments cannot be made on the project's behalf without verified evidence and explicit owner authorization. AAIF review remains a future option, not a current application or foundation affiliation.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
