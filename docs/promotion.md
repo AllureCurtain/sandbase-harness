@@ -16,6 +16,8 @@ The canonical [Awesome MCP Gateways PR #77](https://github.com/e2b-dev/awesome-m
 
 The new [Awesome AI Harness PR #4](https://github.com/weiwei966/awesome-ai-harness/pull/4) adds SandBase Harness to the SDKs & runtimes section. Its one-line entry explains the runtime design surface—session state, governed MCP tools, approvals, credential scoping, audit/replay, and selectable deployment backends—rather than making a generic marketing claim. GitHub reports it `MERGEABLE` with no reported checks; maintainer review is pending and no directory endorsement or security certification is claimed.
 
+The [verification follow-up](https://github.com/weiwei966/awesome-ai-harness/pull/4#issuecomment-5472113726) for PR #4 links v0.3.8, the installation guide, and the harness-design rationale while reiterating that isolation is provider/configuration dependent.
+
 The new [Awesome AI Coding Sandboxes PR #15](https://github.com/fhiltscher/awesome-ai-coding-sandboxes/pull/15) adds SandBase Harness to the directory's Adjacent section for related runtime/orchestration projects. The entry explicitly says isolation depends on the provider and does not present SandBase as a standalone isolation engine; GitHub reports the README-only PR `MERGEABLE` with no reported checks, and maintainer review is pending.
 
 The merged [Daily Ops PR #269](https://github.com/sandbaseai/sandbase-daily-ops/pull/269) (`58d8222c9808c2b13932bce18fd8fe971ffa1209`) queues Awesome AI Coding Sandboxes PR #15 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
