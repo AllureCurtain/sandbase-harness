@@ -2,6 +2,8 @@
 
 Last checked: 2026-08-31
 
+The canonical [Awesome Agent Harnesses PR #2](https://github.com/bayshier/awesome-agent-harnesses/pull/2) remains open and mergeable, adding SandBase Harness to Platforms & Frameworks with a factual one-line description and current star count. A duplicate PR #3 was closed to avoid duplicate maintainer work. The merged [Daily Ops PR #270](https://github.com/sandbaseai/sandbase-daily-ops/pull/270) queues this review path in the X, LinkedIn, and Discord drafts; they remain `NEEDS REVIEW`, with no social-account publication, directory endorsement, or security certification claimed.
+
 The new [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-devtools/pull/13) adds SandBase Harness to Proxies and Gateways. The one-line entry describes the local-first, self-hosted runtime and MCP bridge with sandboxed sessions, memory, credentials, audit/replay, and the local Console; GitHub reports it mergeable with no reported checks, and maintainer review is pending.
 
 The new [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) adds SandBase Harness to Development & Version Control. The entry follows the directory's table format and records the TypeScript/Apache-2.0 project, MCP bridge, sandboxed sessions, credentials, approvals, audit, and replay; maintainer review is pending and no directory endorsement or security certification is claimed.
