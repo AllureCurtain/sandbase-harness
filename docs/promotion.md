@@ -738,6 +738,8 @@ The [LuciferForge MCP Directory issue #52](https://github.com/LuciferForge/mcp-d
 
 The [MiniMax Awesome Integrations issue #12](https://github.com/MiniMax-AI/awesome-minimax-integrations/issues/12) requests a SandBase Harness integration entry under Developer Tools. A follow-up updates the proposed release from v0.3.7 to v0.3.8 and links the current MiniMax, installation, and MCP guides ([comment](https://github.com/MiniMax-AI/awesome-minimax-integrations/issues/12#issuecomment-5475925962)); maintainer review remains pending. The request documents the public MiniMax endpoints and model IDs, discloses project affiliation, and makes no inclusion, endorsement, or security-certification claim.
 
+The [DhanushNehru Awesome MCP Servers PR #75](https://github.com/DhanushNehru/awesome-mcp-servers/pull/75) remains open for maintainer review. A correction to the earlier verification note replaces the removed `docs/mcp-server.md` path with the current `llms-install.md` and `docs/installation.md` links ([comment](https://github.com/DhanushNehru/awesome-mcp-servers/pull/75#issuecomment-5475948809)); the entry remains a factual, source-linked discovery proposal with backend/deployment-dependent isolation and no endorsement or security-certification claim.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
