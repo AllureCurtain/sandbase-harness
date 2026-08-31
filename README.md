@@ -271,11 +271,12 @@ Pending community review:
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 - [Agent Sandbox Taxonomy profile proposal #5](https://github.com/kajogo777/the-agent-sandbox-taxonomy/issues/5)
+- [Open-Kairox Awesome Agent Harnesses Issue #1](https://github.com/open-kairox/awesome-agent-harnesses/issues/1) — suggested for the bilingual Agent Harness list; maintainer verification covers v0.3.8, installation/MCP, runtime controls, and backend-dependent isolation ([verification](https://github.com/open-kairox/awesome-agent-harnesses/issues/1#issuecomment-5473624141))
 - [Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9)
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [Yenanjing Awesome Harness Engineering PR #6](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
 - [Awesome Harness Engineering 中文版 PR #6](https://github.com/whobot-ai/awesome-harness-engineering-zh/pull/6)
-- [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90)
+- [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90) — proposed as a source-backed system under study, with architecture/runtime evidence and maintainer verification ([verification](https://github.com/hardness1020/awesome-agent-architecture/issues/90#issuecomment-5473624085))
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
 - [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — v0.3.8 安装与已合并集成状态（中文更新）；欢迎用户反馈
 - [Discussion #116 latest update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212677) — announced the merged Awesome Coding Agents listing and reiterated the current installation source plus the TensorBlock metadata caveat

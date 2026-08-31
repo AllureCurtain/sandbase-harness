@@ -275,6 +275,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks 架构提案 #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 - [Agent Sandbox Taxonomy 档案提案 #5](https://github.com/kajogo777/the-agent-sandbox-taxonomy/issues/5)
+- [Open-Kairox Awesome Agent Harnesses Issue #1](https://github.com/open-kairox/awesome-agent-harnesses/issues/1) — 建议加入双语 Agent Harness 列表，已补充 v0.3.8、安装/MCP、Runtime 控制及依赖后端的隔离核验（[核验说明](https://github.com/open-kairox/awesome-agent-harnesses/issues/1#issuecomment-5473624141)）
 - [Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9)
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 已提交当前 SandBase Harness 描述；提交版本检查通过，但 PR 当前需要 rebase
