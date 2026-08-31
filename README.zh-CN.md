@@ -292,6 +292,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
 - [HKUST-KnowComp Awesome Agent Harness Issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — 已提交为源链接 runtime 资源，已补充当前 v0.3.8 证据及依赖后端的隔离边界，等待策展审核
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
+- [Awesome AI Engineering PR #4](https://github.com/Eric-LLMs/awesome-ai-engineering/pull/4) — 已于 `0a308b0` 合并，SandBase Harness 已加入开源 Agent Engineering 项目表
 - [TensorBlock Awesome MCP Servers PR #2060](https://github.com/TensorBlock/awesome-mcp-servers/pull/2060) — 已于 `c88cedf` 合并，当前 v0.3.8 bridge 条目可通过 [TensorBlock profile](https://tensorblock.co/mcp/servers/github-sandbaseai-sandbase-harness-7a5986ca) 查看
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — 已加入 DevOps & Deployment，并核验当前 Registry/GHCR 与 v0.3.8，等待维护者审核
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — 已加入生成式 sandbox 目录并刷新输出，明确非普适、依赖后端的隔离范围，等待维护者审核
