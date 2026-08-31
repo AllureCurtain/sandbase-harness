@@ -265,6 +265,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 已提交当前 SandBase Harness 描述；提交版本检查通过，但 PR 当前需要 rebase
 - [Discussion #116 更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — 发布 v0.3.8 安装与已合并集成状态，邀请用户反馈
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
+- [HKUST-KnowComp Awesome Agent Harness Issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — 已提交为源链接 runtime 资源，已补充当前 v0.3.8 证据及依赖后端的隔离边界，等待策展审核
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
