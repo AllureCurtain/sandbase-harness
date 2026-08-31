@@ -291,6 +291,10 @@ Pending community review:
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 - [HKUST-KnowComp Awesome Agent Harness issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — proposed as a source-linked runtime resource; current v0.3.8 evidence and backend-dependent isolation scope were supplied for curator review
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — handbook entry prepared in commit `ddbf183`; waiting for the maintainer to apply it because the available fork has unrelated history
+- [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — DevOps & Deployment entry with current Registry/GHCR and v0.3.8 verification; maintainer review pending
+- [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — generated sandbox catalog entry with refreshed outputs and non-universal isolation scope; maintainer review pending
+- [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — self-hosted sandbox entry with v0.3.8 source verification; maintainer review pending
+- [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — container sandbox entry with backend-dependent isolation verification; maintainer review pending
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — Runtime & execution backends entry with v0.3.8 source verification; maintainer review pending
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — Runtime and Control Plane entry with v0.3.8 source verification; GitHub reports `UNSTABLE`, maintainer review pending
 - [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — Developer Tools & Infrastructure entry with v0.3.8 source verification; maintainer review pending

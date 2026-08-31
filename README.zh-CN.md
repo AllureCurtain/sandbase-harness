@@ -292,6 +292,10 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
 - [HKUST-KnowComp Awesome Agent Harness Issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — 已提交为源链接 runtime 资源，已补充当前 v0.3.8 证据及依赖后端的隔离边界，等待策展审核
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
+- [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — 已加入 DevOps & Deployment，并核验当前 Registry/GHCR 与 v0.3.8，等待维护者审核
+- [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — 已加入生成式 sandbox 目录并刷新输出，明确非普适、依赖后端的隔离范围，等待维护者审核
+- [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已加入 self-hosted sandbox 条目并完成 v0.3.8 来源核验，等待维护者审核
+- [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — 已加入容器 sandbox 条目并核验依赖后端的隔离边界，等待维护者审核
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — 已加入 Runtime & execution backends，完成 v0.3.8 来源核验，等待维护者审核
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — 已加入 Runtime and Control Plane，完成 v0.3.8 来源核验；GitHub 当前为 `UNSTABLE`，等待维护者审核
 - [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — 已加入 Developer Tools & Infrastructure，并完成 v0.3.8 来源核验，等待维护者审核
