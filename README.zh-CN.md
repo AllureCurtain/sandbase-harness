@@ -254,6 +254,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Best Open Source AI Agents 2026 PR #1](https://github.com/GagnDeep/awesome-best-open-source-ai-agents-2026/pull/1) — 已加入包含许可证、语言、Stars、活跃度和 Best-for 元数据的 GitHub 验证条目，PR 状态 clean，等待维护者审核
 - [Awesome AI Agents — Agent Playbook PR #1](https://github.com/agentplaybook-io/awesome-ai-agents/pull/1) — 已将 SandBase Harness 加入 self-hosted frameworks 列表，PR 状态 clean，等待维护者审核
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — 官方 DevOps runtime 与 MCP bridge 推广介绍
+- [DeepSeek Harness Showcase 更新](https://github.com/deepseek-ai/deepseek-harness/discussions/1918#discussioncomment-18212204) — 双语介绍 gVisor 集成路径与 Hugging Face 归因修复审核状态
 - [Cline MCP Marketplace Issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
 - [MCPSo 提交 Issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks 架构提案 #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
