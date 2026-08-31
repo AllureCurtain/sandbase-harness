@@ -732,6 +732,8 @@ The latest [Discussion #116 queue clarification](https://github.com/sandbaseai/s
 
 The latest [Discussion #116 status update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18215004) records Yanmxa #2 as approved with successful Sourcery and GitGuardian checks, while preserving Yanmxa #1 as a separate Standalone Sandboxes entry. The remaining merge is controlled by the target repository maintainer.
 
+The [Awesome Open Source AI scope-check issue #723](https://github.com/alvinreal/awesome-opensource-ai/issues/723) proposes SandBase CLI for the curated open-source AI list's Agentic AI or Developer Tools & Integrations section. The issue follows the destination's request-first rule because category placement is not exact; it remains open with no maintainer response and no PR has been opened. The proposal is for the separate CLI/MCP bridge, not a SandBase Harness listing, and does not claim inclusion, endorsement, or security certification.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
