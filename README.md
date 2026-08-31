@@ -234,9 +234,11 @@ Pending community review:
 - [Awesome AI & Developer Tools PR #5](https://github.com/guojianrong/awesome-ai-developer-tools/pull/5) — added SandBase Harness to CI/CD & DevOps; PR is mergeable and maintainer review pending
 - [Awesome AI & Developer Tools PR #5 verification](https://github.com/guojianrong/awesome-ai-developer-tools/pull/5#issuecomment-5473810596) — current release, bridge image, scope, and backend boundary confirmed
 - [LaunchApp Awesome AI Coding Tools PR #34](https://github.com/launchapp-dev/awesome-ai-coding-tools/pull/34) — added SandBase Harness to the MCP section with self-hosted and free/open-source tags; PR is mergeable and maintainer review pending
+- [LaunchApp Awesome AI Coding Tools PR #34 verification](https://github.com/launchapp-dev/awesome-ai-coding-tools/pull/34#issuecomment-5473974225) — current v0.3.8, Registry/image references, and backend-dependent sandbox boundary confirmed
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — added evidence-linked structured SandBase Harness metadata; maintainer review pending
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — added SandBase Harness to the Self-hosted / Open Source sandbox table; maintainer review pending
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — added SandBase Harness to Containers; maintainer review pending
+- [Awesome Agent Sandboxes PR #9 verification](https://github.com/dloss/awesome-agent-sandboxes/pull/9#issuecomment-5473974508) — current v0.3.8 sources and backend-dependent isolation confirmed
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — added SandBase Harness to Container Sandboxes and the comparison table; maintainer review pending
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — added structured SandBase Harness sandbox metadata and regenerated catalog outputs; maintainer review pending
 - [MeshKore directory submission](https://meshkore.com/submit) — accepted for review as submission #14; public profile pending
@@ -297,6 +299,7 @@ Pending community review:
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28) — MCP hosting/runtime entry with v0.3.8 verification; GitHub reports `UNSTABLE`
 - [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4) — permission-category entry with v0.3.8 and backend-boundary verification; maintainer review pending
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — DevOps & Deployment entry with current Registry/GHCR and v0.3.8 verification; maintainer review pending
+- [LAS-WG Awesome Agent Infrastructure PR #10](https://github.com/las-wg/awesome-agent-infrastructure/pull/10) — Open-Source Projects entry with v0.3.8 and backend-boundary verification; maintainer review pending
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — generated sandbox catalog entry with refreshed outputs and non-universal isolation scope; maintainer review pending
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — self-hosted sandbox entry with v0.3.8 source verification; maintainer review pending
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — container sandbox entry with backend-dependent isolation verification; maintainer review pending

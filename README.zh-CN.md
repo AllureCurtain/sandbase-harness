@@ -238,9 +238,11 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome AI & Developer Tools PR #5](https://github.com/guojianrong/awesome-ai-developer-tools/pull/5) — 已将 SandBase Harness 加入 CI/CD & DevOps，PR 可合并，等待维护者审核
 - [Awesome AI & Developer Tools PR #5 核验](https://github.com/guojianrong/awesome-ai-developer-tools/pull/5#issuecomment-5473810596) — 已确认当前版本、bridge 镜像、项目范围与后端隔离边界
 - [LaunchApp Awesome AI Coding Tools PR #34](https://github.com/launchapp-dev/awesome-ai-coding-tools/pull/34) — 已将 SandBase Harness 加入 MCP 分类，并标注 self-hosted 与 free/open-source，PR 可合并，等待维护者审核
+- [LaunchApp Awesome AI Coding Tools PR #34 核验](https://github.com/launchapp-dev/awesome-ai-coding-tools/pull/34#issuecomment-5473974225) — 已确认当前 v0.3.8、Registry/镜像引用与依赖后端的 sandbox 边界
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — 已加入带证据链接的结构化 SandBase Harness 元数据，等待维护者审核
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Self-hosted / Open Source 沙箱表格，等待维护者审核
 - [Awesome Agent Sandboxes PR #9](https://github.com/dloss/awesome-agent-sandboxes/pull/9) — 已将 SandBase Harness 加入 Containers，等待维护者审核
+- [Awesome Agent Sandboxes PR #9 核验](https://github.com/dloss/awesome-agent-sandboxes/pull/9#issuecomment-5473974508) — 已确认当前 v0.3.8 来源与依赖后端的隔离边界
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — 已将 SandBase Harness 加入 Container Sandboxes 及对比表，等待维护者审核
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — 已加入结构化 SandBase Harness 沙箱元数据并重新生成目录文件，等待维护者审核
 - [MeshKore 目录提交](https://meshkore.com/submit) — 已接受审核，提交编号 #14，公开档案待生成
@@ -298,6 +300,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agentic MCP Security PR #28](https://github.com/mcp-security-project/awesome-agentic-mcp-security/pull/28) — 已加入 MCP hosting/runtime，完成 v0.3.8 核验；GitHub 当前为 `UNSTABLE`
 - [RoyalPinto Awesome MCP Security PR #4](https://github.com/royalpinto007/awesome-mcp-security/pull/4) — 已加入 permission 分类，完成 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — 已加入 DevOps & Deployment，并核验当前 Registry/GHCR 与 v0.3.8，等待维护者审核
+- [LAS-WG Awesome Agent Infrastructure PR #10](https://github.com/las-wg/awesome-agent-infrastructure/pull/10) — 已加入 Open-Source Projects，并完成 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核
 - [Awesome Agent Sandboxes PR #59](https://github.com/msyvr/awesome-agent-sandboxes/pull/59) — 已加入生成式 sandbox 目录并刷新输出，明确非普适、依赖后端的隔离范围，等待维护者审核
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已加入 self-hosted sandbox 条目并完成 v0.3.8 来源核验，等待维护者审核
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — 已加入容器 sandbox 条目并核验依赖后端的隔离边界，等待维护者审核
