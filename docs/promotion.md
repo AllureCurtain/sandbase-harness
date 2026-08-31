@@ -734,6 +734,8 @@ The latest [Discussion #116 status update](https://github.com/sandbaseai/sandbas
 
 The [Awesome Open Source AI scope-check issue #723](https://github.com/alvinreal/awesome-opensource-ai/issues/723) proposes SandBase CLI for the curated open-source AI list's Agentic AI or Developer Tools & Integrations section. The issue follows the destination's request-first rule because category placement is not exact; it remains open with no maintainer response and no PR has been opened. The proposal is for the separate CLI/MCP bridge, not a SandBase Harness listing, and does not claim inclusion, endorsement, or security certification.
 
+The [LuciferForge MCP Directory issue #52](https://github.com/LuciferForge/mcp-directory/issues/52) requests a SandBase Harness listing. A source-correction comment replaces the stale `docs/mcp-server.md` reference with the current installation, runtime, and MCP source paths ([comment](https://github.com/LuciferForge/mcp-directory/issues/52#issuecomment-5475904310)); directory review remains pending. The proposal discloses project affiliation and backend/deployment-dependent isolation, and does not claim inclusion, endorsement, or security certification.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
