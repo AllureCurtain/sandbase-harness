@@ -752,6 +752,8 @@ The [Agentic AI Foundation project proposal](https://aaif.io/submit-a-project) w
 
 The [KillerSkills marketplace submission](https://killerskills.ai/submit) accepts a public `PLUGIN.md`, and the repository now provides [agent-plugin/PLUGIN.md](../agent-plugin/PLUGIN.md) alongside the schema-validated `plugin.json` and `mcp.json`. The document is source-backed and tested with the existing MCP distribution suite (6 tests passed). The marketplace requires GitHub sign-in to submit; no listing or marketplace approval is claimed until an authorized account completes that step.
 
+The [MCP Find community directory PR #171](https://github.com/MCPFind/mcp-find/pull/171) adds the SandBase Harness MCP bridge to `community-servers.yml` using the published `ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8` image. The PR is open and currently mergeable; its entry links the canonical repository and qualifies isolation as dependent on the selected backend and deployment configuration. This is a maintainer-reviewed directory submission, not an endorsement or security certification.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
