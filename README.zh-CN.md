@@ -173,7 +173,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — 已申请独立 MCP bridge 评估，不宣称评分或安全认证
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — Schema 与 Biome 检查通过，等待维护者审核
 - [MCP.Directory 提交](https://mcp.directory/submit) — 已提交，等待目录审核
-- [Hugging Face agent-harness 注册 PR #2432](https://github.com/huggingface/huggingface.js/pull/2432) — 为 `MANAGED_AGENTS_HOME` 添加 SandBase Harness 归因元数据，等待维护者审核
+- [Hugging Face agent-harness 注册 PR #2432](https://github.com/huggingface/huggingface.js/pull/2432) — 已修正不应将 `MANAGED_AGENTS_HOME` 当作身份标记的问题，检查通过，等待维护者合并
 - [Agent Switchboard 收录 PR #44](https://github.com/assafbar2/agentswitchboard.dev/pull/44) — 已提交 v0.3.8 更新条目，等待维护者验证
 - [Awesome AI Agents 2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) — 已将 SandBase Harness 加入 Agent Runtimes and Platforms，等待维护者审核
 - [Awesome AI Agent Engineering PR #1](https://github.com/sspoisk/awesome-ai-agent-engineering/pull/1) — 已将 SandBase Harness 加入 Deployment，等待维护者审核
