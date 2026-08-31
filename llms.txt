@@ -9,10 +9,11 @@
 - Official MCP Registry: https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness
 - Latest tagged release: v0.3.8
 - Official DeepSeek Harness Showcase: https://github.com/deepseek-ai/deepseek-harness/discussions/1918
+- Official promotion and integration updates: https://github.com/sandbaseai/sandbase-harness/discussions/116
 - Verified dshbase listing: https://dshbase.com/plugins/sandbase-harness/
 - Independent self-hosting guide (SSD Nodes): https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime
 - Agent Runtime landscape: https://github.com/sandbaseai/awesome-agent-runtime
-- Verified community references: dshbase, Awesome Agents, abordage/awesome-mcp, and merged entries in awesome-agent-runtime, Awesome Agent Cortex, and Awesome AI Devtools.
+- Verified community references: dshbase, Awesome Agents, abordage/awesome-mcp, and merged entries in awesome-agent-runtime, Awesome Agent Cortex, Awesome AI Devtools, Awesome Coding Agents, and Awesome AI Engineering.
 
 ## Discovery
 
@@ -32,6 +33,8 @@
 - DSHarness 101 Plugin Radar: https://dsharness101.com/plugins/
 - DeepSeekDocs Ecosystem: https://deepseekdocs.com/en/ecosystem
 - Awesome Agents: https://github.com/kyrolabs/awesome-agents
+- Awesome Coding Agents (merged listing): https://github.com/kailiu42/awesome-coding-agents/pull/41
+- Awesome AI Engineering (merged listing): https://github.com/Eric-LLMs/Awesome-AI-Engineering/pull/4
 - Sifted Awesome AI Agents — Agent Runtime Top 100: https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md
 - Arnon-hs Open Source — MCP projects: https://github.com/Arnon-hs/open-source/blob/main/mcp/README.md
 - SandBase Awesome Agent Runtime: https://github.com/sandbaseai/awesome-agent-runtime
