@@ -131,6 +131,7 @@ Recently verified community references:
 - [Awesome Native Agent Platforms — merged Harness entry](https://github.com/sandbaseai/awesome-native-agent-platforms/pull/1)
 - [awesome-mcp-servers — merged MCP entry](https://github.com/mcpHQ/awesome-mcp-servers/pull/45)
 - [Awesome MCP — merged Harness entry](https://github.com/AlexMili/Awesome-MCP/pull/182)
+- [Awesome Agent Plugins — merged Harness plugin entry](https://github.com/ZeroPointRepo/awesome-agent-plugins/issues/5)
 - [Awesome Coding Agents — merged Harness entry](https://github.com/kailiu42/awesome-coding-agents/pull/41)
 - [Sifted Awesome AI Agents — verified Agent Runtime entry](https://github.com/sifted-network/sifted-awesome-ai-agents/blob/main/top100/Agent%20Runtime.md)
 - [Agent Framework Radar — verified automatic entry](https://github.com/linny006/agent-framework-radar)
@@ -271,7 +272,7 @@ Pending community review:
 - [we-can-use MCP curation PR #2](https://github.com/littleduck1219/we-can-use/pull/2) — added SandBase Harness to the curated English and Korean MCP infrastructure lists with an official source link and backend/deployment isolation qualification; maintainer review pending
 - [Awesome-AI-Repos PR #2](https://github.com/cyber-albsecop/Awesome-AI-Repos/pull/2) — added SandBase Harness to the AI Agents & Agent Frameworks section with a concise, canonical repository description; maintainer review pending
 - [AgentStack directory issue #1](https://github.com/magiautonomous/agentstack/issues/1) — suggested SandBase Harness for the MCP server category with the official repository, v0.3.8 Docker command, and deployment-dependent isolation note; maintainer review pending
-- [Awesome Agent Plugins issue #5](https://github.com/ZeroPointRepo/awesome-agent-plugins/issues/5) — proposed the existing `agent-plugin/` bundle as a compliant Agent Plugin; both manifests validate against the canonical 1.0.0 schemas, maintainer review pending
+- [Awesome Agent Plugins issue #5](https://github.com/ZeroPointRepo/awesome-agent-plugins/issues/5) — maintainer accepted the existing `agent-plugin/` bundle under Dev & Coding after validating both canonical 1.0.0 manifests; the issue is closed and the public catalog entry is live
 - [Official Discussion #116 Agent Plugin update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18214336) — published a bilingual integration note linking the schema-validated `agent-plugin/` bundle and its community review issue
 - [Official Discussion #116 promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18214545) — summarized four current community directory review paths and reiterated that they remain pending, with deployment-dependent isolation disclosed
 - [AI Systems Atlas suggestion #34](https://github.com/katagun/ai-systems-atlas/issues/34) — proposed SandBase Harness for evidence-backed review as an operational AI system; Atlas curation review pending
@@ -342,6 +343,7 @@ Pending community review:
 - [Discussion #116 promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18216462) — records four newly reconciled public directory merges and the corresponding [Daily Ops PR #458](https://github.com/sandbaseai/sandbase-daily-ops/pull/458)
 - [Discussion #116 promotion checkpoint](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18216609) — summarizes the latest MCP, AgentStack, AI Systems Atlas, Agent Harness, AAE, and bilingual-list review paths
 - [Discussion #116 registry status correction](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18216631) — records Awesome MCP Registry nomination workflow success while noting validation was skipped and public listing remains pending
+- [Discussion #116 public listing confirmation](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18216687) — confirms the maintained Awesome Agent Plugins catalog has accepted `sandbase-harness` under Dev & Coding
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 - [HKUST-KnowComp Awesome Agent Harness issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — proposed as a source-linked runtime resource; current v0.3.8 evidence and backend-dependent isolation scope were supplied for curator review
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — handbook entry prepared in commit `ddbf183`; waiting for the maintainer to apply it because the available fork has unrelated history
