@@ -218,22 +218,36 @@ describe('buildExecArgv', () => {
 
   it('runs the command in the workspace by default', () => {
     const argv = buildExecArgv({ ...base, command: 'echo hi' });
-    expect(argv.at(-1)).toBe(`cd '/workspace' && echo hi`);
+    expect(argv.at(-1)).toBe(`export AI_AGENT='sandbase-harness'; cd '/workspace' && echo hi`);
   });
 
   it('resolves a relative cwd under the workspace', () => {
     const argv = buildExecArgv({ ...base, command: 'ls', options: { cwd: 'src/lib' } });
-    expect(argv.at(-1)).toBe(`cd '/workspace/src/lib' && ls`);
+    expect(argv.at(-1)).toBe(`export AI_AGENT='sandbase-harness'; cd '/workspace/src/lib' && ls`);
   });
 
   it('honors an absolute cwd as given', () => {
     const argv = buildExecArgv({ ...base, command: 'ls', options: { cwd: '/etc' } });
-    expect(argv.at(-1)).toBe(`cd '/etc' && ls`);
+    expect(argv.at(-1)).toBe(`export AI_AGENT='sandbase-harness'; cd '/etc' && ls`);
   });
 
   it('exports environment variables before the command', () => {
     const argv = buildExecArgv({ ...base, command: 'printenv A', options: { env: { A: 'b c' } } });
-    expect(argv.at(-1)).toBe(`export A='b c'; cd '/workspace' && printenv A`);
+    expect(argv.at(-1)).toBe(`export AI_AGENT='sandbase-harness'; export A='b c'; cd '/workspace' && printenv A`);
+  });
+
+  it('exports the SandBase identity marker by default', () => {
+    const argv = buildExecArgv({ ...base, command: 'printenv AI_AGENT' });
+    expect(argv.at(-1)).toBe(`export AI_AGENT='sandbase-harness'; cd '/workspace' && printenv AI_AGENT`);
+  });
+
+  it('preserves an explicitly supplied nested agent identity', () => {
+    const argv = buildExecArgv({
+      ...base,
+      command: 'printenv AI_AGENT',
+      options: { env: { AI_AGENT: 'nested-agent' } },
+    });
+    expect(argv.at(-1)).toBe(`export AI_AGENT='nested-agent'; cd '/workspace' && printenv AI_AGENT`);
   });
 
   it('quotes an environment value that tries to close the quoting', () => {

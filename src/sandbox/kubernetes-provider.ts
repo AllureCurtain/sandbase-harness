@@ -38,6 +38,7 @@ import {
   type ExecOptions,
   type ExecResult,
 } from '@/types/sandbox.js';
+import { withAgentIdentity } from './agent-identity.js';
 
 const DEFAULT_IMAGE = 'node:22-slim';
 const DEFAULT_NAMESPACE = 'default';
@@ -492,11 +493,9 @@ export function buildExecArgv({
   options?: ExecOptions;
 }): string[] {
   const workdir = options?.cwd ? resolveExecCwd(options.cwd) : WORKDIR;
-  const envPrefix = options?.env
-    ? Object.entries(options.env)
-      .map(([key, value]) => `export ${key}=${shellQuote(value)}; `)
-      .join('')
-    : '';
+  const envPrefix = Object.entries(withAgentIdentity(options?.env))
+    .map(([key, value]) => `export ${key}=${shellQuote(value)}; `)
+    .join('');
   return [
     ...connection,
     'exec',

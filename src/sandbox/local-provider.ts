@@ -34,6 +34,7 @@ import {
   type ExecOptions,
   type ExecResult,
 } from '@/types/sandbox.js';
+import { withAgentIdentity } from './agent-identity.js';
 
 const INHERITED_ENVIRONMENT_KEYS = [
   'HOME',
@@ -56,7 +57,7 @@ function sandboxEnvironment(extra: Record<string, string> | undefined): Record<s
       return value === undefined ? [] : [[key, value]];
     }),
   );
-  return { ...inherited, ...extra };
+  return { ...inherited, ...withAgentIdentity(extra) };
 }
 
 export class LocalSandboxProvider implements SandboxProvider {

@@ -80,6 +80,26 @@ describe('Local Sandbox Provider', () => {
       expect(result.stdout).toBe('allowed');
     });
 
+    it('identifies SandBase child processes by default', async () => {
+      const sandbox = await provider.provision('sess_env_identity', {
+        name: 'local',
+        sandbox_provider: 'local',
+      });
+      const result = await sandbox.execute('printf %s "$AI_AGENT"');
+      expect(result.stdout).toBe('sandbase-harness');
+    });
+
+    it('preserves an explicitly supplied nested agent identity', async () => {
+      const sandbox = await provider.provision('sess_env_nested_identity', {
+        name: 'local',
+        sandbox_provider: 'local',
+      });
+      const result = await sandbox.execute('printf %s "$AI_AGENT"', {
+        env: { AI_AGENT: 'nested-agent' },
+      });
+      expect(result.stdout).toBe('nested-agent');
+    });
+
     it('times out long-running commands (Property 20)', async () => {
       const sandbox = await provider.provision('sess_timeout', {
         name: 'local',

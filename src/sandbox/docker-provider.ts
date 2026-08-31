@@ -22,6 +22,7 @@ import {
   type ExecOptions,
   type ExecResult,
 } from '@/types/sandbox.js';
+import { withAgentIdentity } from './agent-identity.js';
 
 const DEFAULT_IMAGE = 'node:22-slim';
 const WORKDIR = '/workspace';
@@ -98,10 +99,8 @@ class DockerSandboxInstance implements SandboxInstance {
     const cwd = options?.cwd ? dockerWorkspacePath(options.cwd) : WORKDIR;
 
     const execArgs = ['exec', '-w', cwd];
-    if (options?.env) {
-      for (const [k, v] of Object.entries(options.env)) {
-        execArgs.push('-e', `${k}=${v}`);
-      }
+    for (const [k, v] of Object.entries(withAgentIdentity(options?.env))) {
+      execArgs.push('-e', `${k}=${v}`);
     }
     execArgs.push(this.containerName, '/bin/sh', '-c', command);
 
