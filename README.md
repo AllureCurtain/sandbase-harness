@@ -153,6 +153,7 @@ Recently verified community references:
 
 Pending community review:
 
+- [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — added SandBase Harness to Agent Systems & Harnesses; maintainer review pending
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
 - [Docker MCP Registry PR #4841](https://github.com/docker/mcp-registry/pull/4841) — validation complete; maintainer review pending
