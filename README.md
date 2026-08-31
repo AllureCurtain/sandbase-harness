@@ -188,7 +188,7 @@ Pending community review:
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — added SandBase Harness to Runtime & execution backends; maintainer review pending
 - [Awesome AI Developer Stack PR #2](https://github.com/masrisystems/awesome-ai-developer-stack/pull/2) — added SandBase Harness to the MCP Servers table; maintainer review pending
 - [Awesome Agent Cortex PR #74](https://github.com/0xNyk/awesome-agent-cortex/pull/74) — added SandBase Harness to Agent Runtime Infrastructure; maintainer review pending
-- [Awesome Agentic AI 中文 Stage 7 PR #213](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213) — added SandBase Harness to the Track B Harness/Sandbox/Deploy learning collection; maintainer review pending
+- [Awesome Agentic AI 中文 Stage 7 PR #213](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213) — added the English, Traditional Chinese, and Simplified Chinese Track B Harness/Sandbox/Deploy entries; locale checks pass, maintainer PR gate/review pending ([follow-up](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213#issuecomment-5473308460))
 - [Awesome Terminal Agents PR #5](https://github.com/EnigmaYYYY/awesome-terminal-agents/pull/5) — added SandBase Harness as an Engineering-Practice-Tool reference; maintainer review pending
 - [Awesome MCP DevTools PR #13](https://github.com/Epistates/awesome-mcp-devtools/pull/13) — added SandBase Harness to Proxies and Gateways; maintainer review pending
 - [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) — added SandBase Harness to Development & Version Control; maintainer review pending
