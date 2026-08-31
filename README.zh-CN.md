@@ -188,6 +188,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome MCP Collection PR #39](https://github.com/JustInCache/awesome-mcp-collection/pull/39) — 已将 SandBase Harness 加入 Development & Version Control，等待维护者审核
 - [Awesome MCP Issue #99](https://github.com/abordage/awesome-mcp/issues/99) — 已请求加入 Aggregators & Gateways，等待维护者审核
 - [Awesome MCP Gateways PR #77](https://github.com/e2b-dev/awesome-mcp-gateways/pull/77) — 已将 SandBase Harness 加入 Open-source MCP Gateways，等待维护者审核及 CLA 检查
+- [Awesome AI Harness PR #4](https://github.com/weiwei966/awesome-ai-harness/pull/4) — 已将 SandBase Harness 加入 SDKs & runtimes，等待维护者审核
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — 已将 SandBase Harness 加入 Execution Sandboxes，等待维护者审核
 - [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — 已将 SandBase Harness 加入 Self-hosted Agent Runtimes，等待维护者审核
 - [Awesome Sandbox PR #27](https://github.com/restyler/awesome-sandbox/pull/27) — 已新增 SandBase Harness runtime/sandbox 专题章节，等待维护者审核
