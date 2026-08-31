@@ -291,6 +291,11 @@ Pending community review:
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 - [HKUST-KnowComp Awesome Agent Harness issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — proposed as a source-linked runtime resource; current v0.3.8 evidence and backend-dependent isolation scope were supplied for curator review
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — handbook entry prepared in commit `ddbf183`; waiting for the maintainer to apply it because the available fork has unrelated history
+- [AI Agent Infrastructure List PR #4](https://github.com/chgaowei/ai-agent-infra-list/pull/4) — English/Chinese runtime entries with current v0.3.8 evidence; verification posted, maintainer review pending
+- [Skyming Awesome AI Agent PR #19](https://github.com/skyming/awesome-ai-agent/pull/19) — concise Chinese runtime entry with v0.3.8 source verification; maintainer review pending
+- [Awesome Agent Harness PR #58](https://github.com/AutoJunjie/awesome-agent-harness/pull/58) — Agent Runtimes entry with maintainer disclosure and verification; maintainer review pending
+- [Awesome Agent Security PR #10](https://github.com/authora-dev/awesome-agent-security/pull/10) — Sandboxed Execution entry with explicit non-certification scope; maintainer review pending
+- [DevInsight Awesome MCP PR #6](https://github.com/devinsightdotio/awesome_mcp/pull/6) — MCP Servers entry with current v0.3.8 and backend-boundary verification; maintainer review pending
 
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.
