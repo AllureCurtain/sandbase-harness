@@ -246,7 +246,7 @@ Pending community review:
 - [MeshKore directory submission](https://meshkore.com/directory) — accepted for review as submission #15; public profile pending
 - [Awesome Agentic Open-Source Tools PR #1](https://github.com/samaybhavsar/awesome-agentic-opensource-tools/pull/1) — added to Agent Frameworks & Orchestration; maintainer review pending
 - [awesome-ai-agents-2026 PR #2](https://github.com/Dehar624/awesome-ai-agents-2026/pull/2) — added to Local Runtimes & LLM Management; maintainer review pending
-- [AgentFirst directory PR #46](https://github.com/bradvin/agentfirst.directory/pull/46) — added to Compute & Sandboxes; enrichment check passed, maintainer review pending
+- [AgentFirst directory PR #46](https://github.com/bradvin/agentfirst.directory/pull/46) — added to Compute & Sandboxes; the repository metadata/media generators were re-run successfully with no additional diff, and the existing `cf412e0` metadata commit is verified; maintainer review pending ([verification](https://github.com/bradvin/agentfirst.directory/pull/46#issuecomment-5475442727))
 - [AI Agent Tools submission](https://aiagenttools.dev/submit) — accepted as open-source infrastructure submission `mtgu4e78fw1ja`; directory review pending
 - [AgentVerse-5K PR #3](https://github.com/mrahm65/AgentVerse-5K/pull/3) — added SandBase Harness to Coding Agents and MCP Servers; PR is clean and mergeable, maintainer review pending
 - [AI Agent Marketplace PR #36](https://github.com/aiagenta2z/ai-agent-marketplace/pull/36) — added SandBase Harness to the marketplace `AGENT.md` using official installation, MCP, deployment, and issue links; maintainer review pending
