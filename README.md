@@ -816,6 +816,7 @@ init smoke, and `examples/basic` startup smoke.
 - [Machine-readable project metadata](llms.txt)
 - [Agent / MCP installation guide](llms-install.md)
 - [Agent Plugin marketplace manifest](agent-plugin/PLUGIN.md)
+- [Agent Plugins Directory listing](https://agent-plugins.directory/sandbaseai/sandbase-harness) — source-indexed plugin page; the directory does not execute plugin code or provide a security endorsement.
 - [Installation](docs/installation.md)
 - [Usage Guide](docs/usage.md)
 - [API Reference](docs/api.md)

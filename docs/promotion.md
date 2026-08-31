@@ -758,6 +758,8 @@ GitHub repository Topics were refreshed to replace the less central `agent-memor
 
 The duplicate [weiwei966/awesome-ai-harness PR #4](https://github.com/weiwei966/awesome-ai-harness/pull/4) was closed in favor of the more complete [PR #3](https://github.com/weiwei966/awesome-ai-harness/pull/3), which adds matching English and Chinese reference-Harness entries. The closure comment links the canonical review path; no directory inclusion or endorsement is claimed.
 
+The [Agent Plugins Directory listing](https://agent-plugins.directory/sandbaseai/sandbase-harness) is publicly live and source-indexed, with the plugin's MCP configuration and Copilot/Cursor/VS Code install paths visible. The current page is pinned to an older source revision and displays the earlier `0.3.4` bridge image, so the repository now links the page and states the current `0.3.8` source configuration; a future directory reindex is still required before calling the page refreshed. The directory is an independent discovery surface and does not execute plugin code or provide security endorsement.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.

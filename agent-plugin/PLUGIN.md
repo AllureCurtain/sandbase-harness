@@ -32,6 +32,8 @@ The bundled MCP configuration uses the pinned public image
 variables through to the bridge. The runtime API URL and any API key belong to
 the user and are not embedded in this plugin.
 
+The source-backed directory page is [Agent Plugins Directory](https://agent-plugins.directory/sandbaseai/sandbase-harness). It indexes the public manifests and source revision; the directory page is a discovery surface, not an execution service or security endorsement.
+
 ## Compatibility
 
 - Agent Plugins 1.0-compatible clients with MCP support
