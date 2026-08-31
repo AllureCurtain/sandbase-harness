@@ -150,6 +150,7 @@ Recently verified community references:
 - [abordage/awesome-mcp — merged Harness entry](https://github.com/abordage/awesome-mcp/pull/95)
 - [Awesome DSH Plugin — merged Harness entry](https://github.com/Anil-matcha/awesome-dsh-plugin/pull/47)
 - [Awesome DeepSeek Harness — merged Harness entry](https://github.com/Dominic789654/awesome-deepseek-harness/pull/182)
+- [DeepSeek Harness Handbook — merged v0.3.8 bridge guide](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291)
 
 Pending community review:
 
@@ -258,9 +259,8 @@ Pending community review:
 - [Yenanjing Awesome Harness Engineering PR #6](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
 - [Awesome Harness Engineering 中文版 PR #6](https://github.com/whobot-ai/awesome-harness-engineering-zh/pull/6)
 - [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90)
-- [DeepSeek Harness Handbook PR #291](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291) — merged the v0.3.8 SandBase bridge guide after catalog cleanup PR #292 restored verification
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
-- [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211885) — v0.3.8 installation and integration status update; user feedback is invited
+- [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211980) — v0.3.8 installation and merged integration status; user feedback is invited
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
 
 These listings are independent directories; the repository and its release metadata
