@@ -153,6 +153,7 @@ Recently verified community references:
 
 Pending community review:
 
+- [Awesome AI Agents 2026 PR #240](https://github.com/ARUNAGIRINATHAN-K/awesome-ai-agents-2026/pull/240) — added the distinct SandBase Harness runtime beside the existing CLI entry under Agent Tooling and Infrastructure; maintainer review pending
 - [E2B Awesome AI Agents Issue #1468](https://github.com/e2b-dev/awesome-ai-agents/issues/1468) — requested review of SandBase Harness as a distinct runtime entry from the closed CLI submission; scope decision pending
 - [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — added SandBase Harness to Core Frameworks using the directory's dynamic stars badge; maintainer review pending
 - [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — added SandBase Harness to Agent Systems & Harnesses; maintainer review pending

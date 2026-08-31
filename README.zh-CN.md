@@ -157,6 +157,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 
 正在等待社区审核：
 
+- [Awesome AI Agents 2026 PR #240](https://github.com/ARUNAGIRINATHAN-K/awesome-ai-agents-2026/pull/240) — 已在 Agent Tooling and Infrastructure 中将 SandBase Harness runtime 与现有 CLI 条目区分收录，等待维护者审核
 - [E2B Awesome AI Agents Issue #1468](https://github.com/e2b-dev/awesome-ai-agents/issues/1468) — 请求将 SandBase Harness 与已关闭的 CLI 提交区分，作为独立 runtime 条目审核，等待目录确认范围
 - [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — 使用目录的动态 star badge 将 SandBase Harness 加入 Core Frameworks，等待维护者审核
 - [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — 已将 SandBase Harness 加入 Agent Systems & Harnesses，等待维护者审核
