@@ -185,7 +185,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agent Skills PR #79](https://github.com/philipbankier/awesome-agent-skills/pull/79) — 已将 SandBase Harness 加入 MCP runtime 与 infrastructure，等待维护者审核
 - [Awesome MCP List PR #409](https://github.com/MobinX/awesome-mcp-list/pull/409) — 已将 SandBase Harness 加入 AI Agents & Frameworks，等待维护者审核
 - [Awesome Agent Runtimes PR #4](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4) — 已按成熟度门槛提交至 watchlist，等待维护者审核
-- [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Related Projects，等待维护者审核
+- [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Related Projects；Sourcery、GitGuardian 和可合并性检查已通过，仍等待维护者合并（[交接说明](https://github.com/yanmxa/awesome-agent-sandbox/pull/2#issuecomment-5473182863)）
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — 已将 SandBase Harness 加入 Runtime and Control Plane，等待维护者审核
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — 已将 SandBase Harness 加入 Runtime & execution backends，等待维护者审核
 - [Awesome AI Developer Stack PR #2](https://github.com/masrisystems/awesome-ai-developer-stack/pull/2) — 已将 SandBase Harness 加入 MCP Servers 表格，等待维护者审核

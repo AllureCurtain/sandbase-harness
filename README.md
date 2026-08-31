@@ -181,7 +181,7 @@ Pending community review:
 - [Awesome Agent Skills PR #79](https://github.com/philipbankier/awesome-agent-skills/pull/79) — added SandBase Harness to MCP runtime and infrastructure; maintainer review pending
 - [Awesome MCP List PR #409](https://github.com/MobinX/awesome-mcp-list/pull/409) — added SandBase Harness to AI Agents & Frameworks; maintainer review pending
 - [Awesome Agent Runtimes PR #4](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4) — proposed SandBase Harness for the maturity-gated watchlist; maintainer review pending
-- [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — added SandBase Harness to Related Projects; maintainer review pending
+- [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — added SandBase Harness to Related Projects; Sourcery review, GitGuardian, and mergeability checks passed, while maintainer merge remains pending ([handoff](https://github.com/yanmxa/awesome-agent-sandbox/pull/2#issuecomment-5473182863))
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — added SandBase Harness to Runtime and Control Plane; maintainer review pending
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — added SandBase Harness to Runtime & execution backends; maintainer review pending
 - [Awesome AI Developer Stack PR #2](https://github.com/masrisystems/awesome-ai-developer-stack/pull/2) — added SandBase Harness to the MCP Servers table; maintainer review pending
