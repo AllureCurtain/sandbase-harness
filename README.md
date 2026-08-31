@@ -216,7 +216,7 @@ Pending community review:
 - [Awesome AI Harness PR #4](https://github.com/weiwei966/awesome-ai-harness/pull/4) — added SandBase Harness to SDKs & runtimes; maintainer review pending
 - [Awesome AI Coding Sandboxes PR #15](https://github.com/fhiltscher/awesome-ai-coding-sandboxes/pull/15) — added SandBase Harness to Adjacent runtimes; maintainer review pending
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — added SandBase Harness to Execution Sandboxes; maintainer review pending
-- [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — added SandBase Harness to Self-hosted Agent Runtimes; maintainer review pending
+- [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — added SandBase Harness to Self-hosted Agent Runtimes; maintainer review pending (older duplicate #1 closed)
 - [Awesome Sandbox PR #27](https://github.com/restyler/awesome-sandbox/pull/27) — added a dedicated SandBase Harness runtime/sandbox guide section; maintainer review pending
 - [Awesome AI Agents Security PR #107](https://github.com/ProjectRecon/awesome-ai-agents-security/pull/107) — added SandBase Harness to Sandboxing & Isolation Environments; [verification follow-up](https://github.com/ProjectRecon/awesome-ai-agents-security/pull/107#issuecomment-5473074958) posted, PR is mergeable and maintainer review pending
 - [UCSB Awesome Agent Security PR #16](https://github.com/ucsb-mlsec/Awesome-Agent-Security/pull/16) — added SandBase Harness to System-level Runtime Defense; PR is mergeable and maintainer review pending
