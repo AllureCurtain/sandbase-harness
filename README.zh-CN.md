@@ -157,6 +157,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 
 正在等待社区审核：
 
+- [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — 使用目录的动态 star badge 将 SandBase Harness 加入 Core Frameworks，等待维护者审核
 - [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — 已将 SandBase Harness 加入 Agent Systems & Harnesses，等待维护者审核
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)

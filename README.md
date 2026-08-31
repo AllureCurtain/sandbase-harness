@@ -153,6 +153,7 @@ Recently verified community references:
 
 Pending community review:
 
+- [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) — added SandBase Harness to Core Frameworks using the directory's dynamic stars badge; maintainer review pending
 - [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) — added SandBase Harness to Agent Systems & Harnesses; maintainer review pending
 - [McpMux Server Registry PR #286](https://github.com/mcpmux/mcp-servers/pull/286)
 - [Mctrinh Awesome MCP Servers PR #105](https://github.com/mctrinh/awesome-mcp-servers/pull/105)
