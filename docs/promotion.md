@@ -724,6 +724,8 @@ promotion channel.
 - [Awesome MCP Toolkit PR #3](https://github.com/ihpwhath/awesome-mcp-toolkit/pull/3): proposed one concise Chinese-language entry under Developer & Code following the destination's contribution format. The entry links the official repository and documents the MCP/runtime boundary, user-owned API prerequisite, and backend/deployment-dependent isolation; maintainer review is pending and no inclusion, endorsement, ranking, or security certification is claimed.
 - [Awesome Agentic AI PR #2](https://github.com/Titan-Codes-Official/awesome-agentic-ai/pull/2): proposed one source-linked SandBase Harness entry under Sandboxes and Computer Use. The description covers durable sessions, governed MCP tools, approvals, credentials, audit/replay, and selectable backends; maintainer review is pending, with no inclusion, endorsement, ranking, or security certification claimed.
 
+The latest [Discussion #116 status update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18214874) records four duplicate cleanups: MCPFind #168, Awesome MCP Collection #38, Awesome Agent Sandboxes #8, and Awesome Agent Sandboxing #1 were closed in favor of their newer review paths (#171, #39, #9, and #2). It also records that Hugging Face #2432's Cursor Bugbot passed while Docker MCP Registry #4841, OpenModels #22, and Picrew #86 remain maintainer-reviewed. The update makes no inclusion, ranking, endorsement, or security-certification claim and preserves the user-owned API and backend/deployment-dependent isolation boundary.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
