@@ -742,6 +742,8 @@ The [DhanushNehru Awesome MCP Servers PR #75](https://github.com/DhanushNehru/aw
 
 The [Picrew Awesome Agent Harness PR #86](https://github.com/Picrew/awesome-agent-harness/pull/86) remains the canonical open entry after duplicate #85 was closed. A link-correction follow-up replaces the removed `docs/mcp-server.md` path with the current `llms-install.md` MCP guide ([comment](https://github.com/Picrew/awesome-agent-harness/pull/86#issuecomment-5475963347)); the PR remains open for maintainer review with the backend/deployment-dependent isolation qualification.
 
+The [Nandanhegde MCP Directory issue #2](https://github.com/Nandanhegde1/mcp-directory/issues/2), [Collective AI Tools issue #332](https://github.com/hanishrao/collective-ai-tools/issues/332), and [MyMCPTools issue #8](https://github.com/shibley/mymcptools/issues/8) each had an open SandBase Harness request with no prior maintainer response. Follow-up clarifications identify the removed `docs/mcp-server.md` path and provide the current `llms-install.md` and `docs/installation.md` links ([Nandanhegde](https://github.com/Nandanhegde1/mcp-directory/issues/2#issuecomment-5475989933), [Collective](https://github.com/hanishrao/collective-ai-tools/issues/332#issuecomment-5475990013), [MyMCPTools](https://github.com/shibley/mymcptools/issues/8#issuecomment-5475989984)); all remain curator-controlled and pending.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
