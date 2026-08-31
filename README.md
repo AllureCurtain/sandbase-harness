@@ -260,6 +260,7 @@ Pending community review:
 - [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90)
 - [DeepSeek Harness Handbook PR #291](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291) — refreshed the SandBase bridge guide to v0.3.8; handbook verification is blocked by three pre-existing stale 404 catalog links
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
+- [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211885) — v0.3.8 installation and integration status update; user feedback is invited
 
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.

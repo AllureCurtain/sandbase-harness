@@ -261,6 +261,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [DeepSeek Harness Handbook PR #291](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291) — 已将 SandBase bridge 指南更新至 v0.3.8；handbook 校验被 3 个预先存在的失效目录链接阻塞
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 已提交当前 SandBase Harness 描述；提交版本检查通过，但 PR 当前需要 rebase
+- [Discussion #116 更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211885) — 发布 v0.3.8 安装与集成状态，邀请用户反馈
 
 这些页面由独立目录维护；仓库源码和 release metadata 仍是项目事实来源。
 
