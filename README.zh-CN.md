@@ -197,7 +197,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Best-of MCP Servers Issue #370](https://github.com/tolkonepiu/best-of-mcp-servers/issues/370) — 已提交至 MCP 服务器排行榜，已补充 v0.3.8 bridge 和当前安装元数据，收录/排名仍待审核
 - [Awesome Agent Runtimes PR #4](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4) — 已按成熟度门槛提交至 watchlist，并在[维护者核验](https://github.com/beejmaxx/awesome-agent-runtimes/pull/4#issuecomment-5473692077)中补充当前 v0.3.8、安装、MCP 和 API 证据，等待审核
 - [DeepYard 提交](https://deepyard.dev/submit) — 已通过公开审核表单提交至 `Frameworks & SDKs` 分类，等待审核，尚未宣称公开收录
-- [BotMarket MCP 提交 #4](https://botmarket.bot/submit) — 已成功解析 canonical `server.json` 并进入人工审核队列，尚未宣称公开收录
+- [BotMarket MCP 记录](https://botmarket.bot/v1/mcp/io-github-sandbaseai-sandbase-harness) — 公开 API 当前报告一个来自官方 MCP Registry 的 active 记录（`102971`）；人工提交队列 `4` 仍单独跟踪
 - [Awesome Agent Sandbox PR #2](https://github.com/yanmxa/awesome-agent-sandbox/pull/2) — 已将 SandBase Harness 加入 Related Projects；Sourcery、GitGuardian 和可合并性检查已通过，仍等待维护者合并（[交接说明](https://github.com/yanmxa/awesome-agent-sandbox/pull/2#issuecomment-5473182863)）
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — 已将 SandBase Harness 加入 Runtime and Control Plane，等待维护者审核
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — 已将 SandBase Harness 加入 Runtime & execution backends，等待维护者审核
@@ -286,6 +286,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Discussion #116 更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — 发布 v0.3.8 安装与已合并集成状态，邀请用户反馈
 - [Discussion #116 最新更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212677) — 公布 Awesome Coding Agents 已合并收录，并重申当前安装入口与 TensorBlock 元数据问题
 - [Discussion #116 推广更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18213014) — 双语汇总 DeepYard 审核提交与 BotMarket 人工审核队列状态
+- [Discussion #116 BotMarket 状态修正](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18213051) — 记录来自官方 Registry 的 active MCP 条目，并与人工队列 `4` 分开说明
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
 - [HKUST-KnowComp Awesome Agent Harness Issue #8](https://github.com/HKUST-KnowComp/Awesome-Agent-Harness/issues/8) — 已提交为源链接 runtime 资源，已补充当前 v0.3.8 证据及依赖后端的隔离边界，等待策展审核
 - [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — 已在 `ddbf183` 准备 handbook 条目；因现有 fork 历史不相关，等待维护者应用变更
