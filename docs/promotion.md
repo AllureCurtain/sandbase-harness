@@ -20,6 +20,8 @@ The [verification follow-up](https://github.com/weiwei966/awesome-ai-harness/pul
 
 The new [Awesome AI Coding Sandboxes PR #15](https://github.com/fhiltscher/awesome-ai-coding-sandboxes/pull/15) adds SandBase Harness to the directory's Adjacent section for related runtime/orchestration projects. The entry explicitly says isolation depends on the provider and does not present SandBase as a standalone isolation engine; GitHub reports the README-only PR `MERGEABLE` with no reported checks, and maintainer review is pending.
 
+The [verification follow-up](https://github.com/fhiltscher/awesome-ai-coding-sandboxes/pull/15#issuecomment-5472119646) for PR #15 links v0.3.8, the installation guide, and sandbox-backend documentation, and explains why no unsupported isolation, egress, or secret-brokering claims were added to the comparison matrix.
+
 The merged [Daily Ops PR #269](https://github.com/sandbaseai/sandbase-daily-ops/pull/269) (`58d8222c9808c2b13932bce18fd8fe971ffa1209`) queues Awesome AI Coding Sandboxes PR #15 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
 
 The merged [Daily Ops PR #268](https://github.com/sandbaseai/sandbase-daily-ops/pull/268) (`9ed30afcb5b47e40b49591495aceb1d52dcd2b02`) queues Awesome AI Harness PR #4 in the Discord, LinkedIn, and X drafts. The drafts remain `NEEDS REVIEW` and require operator/account authorization; no social-account publication, directory endorsement, or security certification is claimed.
