@@ -224,9 +224,9 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [UCSB Awesome Agent Security PR #16](https://github.com/ucsb-mlsec/Awesome-Agent-Security/pull/16) — 已将 SandBase Harness 加入 System-level Runtime Defense，PR 可合并，等待维护者审核
 - [Awesome DevOps MCP Servers PR #327](https://github.com/rohitg00/awesome-devops-mcp-servers/pull/327) — 已加入 Code Execution，已发布[核验跟进](https://github.com/rohitg00/awesome-devops-mcp-servers/pull/327#issuecomment-5473090598)，PR 可合并，等待维护者审核
 - [EverWorks Awesome MCP Servers PR #161](https://github.com/ever-works/awesome-mcp-servers/pull/161) — 已加入 Code Execution & Automation，并在[核验说明](https://github.com/ever-works/awesome-mcp-servers/pull/161#issuecomment-5473781279)修正过期文档路径，等待审核
-- [AIAnytime Awesome MCP Server PR #78](https://github.com/AIAnytime/Awesome-MCP-Server/pull/78) — 已将 SandBase Harness 作为独立 MCP bridge 条目加入，并与 SandBase CLI 区分，PR 可合并，等待维护者审核
+- [AIAnytime Awesome MCP Server PR #78](https://github.com/AIAnytime/Awesome-MCP-Server/pull/78) — 已独立于 SandBase CLI 加入 MCP bridge 条目，并在[维护者核验](https://github.com/AIAnytime/Awesome-MCP-Server/pull/78#issuecomment-5473797072)修正过期文档路径，等待审核
 - [Collabnix Awesome MCP Lists PR #105](https://github.com/collabnix/awesome-mcp-lists/pull/105) — 已加入 DevOps & Infrastructure，并在[核验说明](https://github.com/collabnix/awesome-mcp-lists/pull/105#issuecomment-5473781090)修正过期文档路径，等待审核
-- [MCP Finder Awesome MCP Servers PR #9](https://github.com/mcp-finder/awesome-mcp-servers/pull/9) — 已将 SandBase Harness 加入 Cloud and DevOps，PR 可合并，等待维护者审核
+- [MCP Finder Awesome MCP Servers PR #9](https://github.com/mcp-finder/awesome-mcp-servers/pull/9) — 已加入 Cloud and DevOps，并在[维护者核验](https://github.com/mcp-finder/awesome-mcp-servers/pull/9#issuecomment-5473796953)确认当前来源与后端依赖隔离，等待审核
 - [Awesome AI Agent Tools PR #27](https://github.com/michielhdoteth/awesome-ai-agent-tools/pull/27) — 已合并独立的 SandBase Harness MCP 目录条目和 Docker stdio 安装元数据
 - [Enterprise AI Atlas Awesome MCP Servers PR #10](https://github.com/Enterprise-AI-Atlas/awesome-mcp-servers/pull/10) — 已将 SandBase Harness 加入 Developer Tools，并添加 Docker stdio 安装元数据，PR 可合并，等待维护者审核
 - [Awesome-MCP PR #36](https://github.com/Albertchamberlain/Awesome-MCP/pull/36) — 已新增带 stdio transport 的结构化 SandBase Harness `server` 条目，PR 可合并，CI 已通过
