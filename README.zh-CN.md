@@ -215,7 +215,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Coding Agents PR #41](https://github.com/kailiu42/awesome-coding-agents/pull/41) — 已将 SandBase Harness 加入 CLI Agent Helpers，目录校验和测试通过，PR 可合并，等待审核
 - [Awesome AI Coding Tools PR #665](https://github.com/ai-for-developers/awesome-ai-coding-tools/pull/665) — 已将 SandBase Harness 加入 MCP Servers and Directories，PR 可合并，等待维护者审核
 - [Awesome AI Developer Tools PR #11](https://github.com/ayushrajdev9-cmyk/awesome-ai-developer-tools/pull/11) — 已将 SandBase Harness 加入 DevOps & Deployment，PR 可合并，等待维护者审核
-- [Pipedream Awesome MCP Servers PR #111](https://github.com/PipedreamHQ/awesome-mcp-servers/pull/111) — 已将 SandBase Harness 加入 Artificial Intelligence MCP server 列表，PR 可合并，等待维护者审核
+- [Pipedream Awesome MCP Servers PR #111](https://github.com/PipedreamHQ/awesome-mcp-servers/pull/111) — 已加入 Artificial Intelligence MCP server 列表，已发布[核验跟进](https://github.com/PipedreamHQ/awesome-mcp-servers/pull/111#issuecomment-5473048884)，PR 可合并，等待维护者审核
 - [Awesome AI & Developer Tools PR #5](https://github.com/guojianrong/awesome-ai-developer-tools/pull/5) — 已将 SandBase Harness 加入 CI/CD & DevOps，PR 可合并，等待维护者审核
 - [LaunchApp Awesome AI Coding Tools PR #34](https://github.com/launchapp-dev/awesome-ai-coding-tools/pull/34) — 已将 SandBase Harness 加入 MCP 分类，并标注 self-hosted 与 free/open-source，PR 可合并，等待维护者审核
 - [AI Agent Sandboxes PR #3](https://github.com/pjlsergeant/ai-sandboxes/pull/3) — 已加入带证据链接的结构化 SandBase Harness 元数据，等待维护者审核
