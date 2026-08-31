@@ -12,8 +12,12 @@
   "license": "Apache-2.0",
   "keywords": [
     "agent-runtime",
+    "agent-plugin",
     "mcp",
     "sandbox",
-    "self-hosted"
+    "self-hosted",
+    "persistent-sessions",
+    "audit-replay",
+    "credentials"
   ]
 }
