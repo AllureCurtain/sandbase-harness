@@ -236,6 +236,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome-LLMSecOps PR #66](https://github.com/wearetyomsmnv/Awesome-LLMSecOps/pull/66) — 已将带来源链接的 SandBase Harness 条目加入 Agentic security，PR 状态干净且可合并，等待维护者审核
 - [Awesome Agent Runtime Security PR #30](https://github.com/bureado/awesome-agent-runtime-security/pull/30) — 已将 SandBase Harness 加入 Sandboxing & Isolation，并明确部署/后端限制，PR 状态干净且可合并，等待维护者审核
 - [Awesome LLM Security PR #313](https://github.com/corca-ai/awesome-llm-security/pull/313) — 已将 SandBase Harness 作为运行时治理参考加入 Tools，PR 状态干净且可合并，等待维护者审核
+- [Awesome AI Agents PR #467](https://github.com/jim-schwoebel/awesome_ai_agents/pull/467) — 现有 AI Agent 资源目录收录申请，已添加单行 SandBase Harness 条目，PR 状态干净且可合并，等待维护者审核
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21) — 已加入 Execution Sandboxes，条目已更新至当前 MCP 安装文档，等待维护者审核
 - [Awesome DevOps PR #30](https://github.com/nirgeier/awesome-devops/pull/30) — 已将 SandBase Harness 加入 MCP 工具目录，DCO 已通过，等待维护者审核
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — 已将 SandBase Harness 加入 self-hosted agent frameworks 列表，PR 状态 clean，等待维护者审核
