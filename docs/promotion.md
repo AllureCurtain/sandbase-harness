@@ -756,6 +756,8 @@ The [MCP Find community directory PR #171](https://github.com/MCPFind/mcp-find/p
 
 GitHub repository Topics were refreshed to replace the less central `agent-memory` tag with the published `agent-plugin` capability. The current 20-topic set now covers agent runtime, plugin, harness, sandbox, MCP, self-hosting, infrastructure, audit, and deployment discovery terms; this is repository discoverability metadata only and does not imply third-party endorsement.
 
+The duplicate [weiwei966/awesome-ai-harness PR #4](https://github.com/weiwei966/awesome-ai-harness/pull/4) was closed in favor of the more complete [PR #3](https://github.com/weiwei966/awesome-ai-harness/pull/3), which adds matching English and Chinese reference-Harness entries. The closure comment links the canonical review path; no directory inclusion or endorsement is claimed.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
