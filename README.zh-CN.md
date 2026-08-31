@@ -174,6 +174,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [MCP Hub / mcpdir issue #20](https://github.com/eL1fe/mcpdir/issues/20) — 与已有 CLI 条目分开的 Harness 收录申请，等待目录审核
 - [MCP Server Finder evaluation issue #4](https://github.com/ModelContextProtocol-Security/mcpserver-finder/issues/4) — 已申请独立 MCP bridge 评估，不宣称评分或安全认证
 - [TensorBlock Awesome MCP Servers issue #2067](https://github.com/TensorBlock/awesome-mcp-servers/issues/2067) — 自动 PR #2068 的安装元数据缺少 GHCR 镜像和环境变量参数，已提交修正命令，等待维护者重新生成（[修正说明](https://github.com/TensorBlock/awesome-mcp-servers/issues/2067#issuecomment-5473393345)）
+- [Awesome Agent-Native Services PR #116](https://github.com/haoruilee/awesome-agent-native-services/pull/116) — 已获策展批准并提交 v0.3.8 runtime、MCP、session、approval、credential、audit/replay 证据；PR 可合并但被仓库 gate 阻塞，等待策展方合并（[核验说明](https://github.com/haoruilee/awesome-agent-native-services/pull/116#issuecomment-5473455471)）
 - [ToolSDK MCP Registry PR #488](https://github.com/toolsdk-ai/toolsdk-mcp-registry/pull/488) — Schema 与 Biome 检查通过，等待维护者审核
 - [MCP.Directory 提交](https://mcp.directory/submit) — 已提交，等待目录审核
 - [Hugging Face agent-harness 注册 PR #2432](https://github.com/huggingface/huggingface.js/pull/2432) — 已修正不应将 `MANAGED_AGENTS_HOME` 当作身份标记的问题，检查通过，等待维护者合并
