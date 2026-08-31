@@ -302,6 +302,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — 已加入 self-hosted sandbox 条目并完成 v0.3.8 来源核验，等待维护者审核
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — 已加入容器 sandbox 条目并核验依赖后端的隔离边界，等待维护者审核
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — 已加入 Runtime & execution backends，完成 v0.3.8 来源核验，等待维护者审核
+- [Awesome Terminal Agents PR #5](https://github.com/EnigmaYYYY/awesome-terminal-agents/pull/5) — 已加入 Engineering-Practice-Tool runtime 参考，完成 v0.3.8 核验，等待维护者审核
+- [Awesome AI Agents 2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) — 已加入 agent runtimes/platforms，完成 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — 已加入 Runtime and Control Plane，完成 v0.3.8 来源核验；GitHub 当前为 `UNSTABLE`，等待维护者审核
 - [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — 已加入 Developer Tools & Infrastructure，并完成 v0.3.8 来源核验，等待维护者审核
 - [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1) — 已加入 runtime 对比表，补充 v0.3.8 与依赖后端的隔离边界核验，等待维护者审核

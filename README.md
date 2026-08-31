@@ -301,6 +301,8 @@ Pending community review:
 - [Awesome Agent Sandbox PR #2](https://github.com/vivy-yi/awesome-agent-sandbox/pull/2) — self-hosted sandbox entry with v0.3.8 source verification; maintainer review pending
 - [Awesome Agent Sandbox PR #4](https://github.com/fishman/awesome-agent-sandbox/pull/4) — container sandbox entry with backend-dependent isolation verification; maintainer review pending
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — Runtime & execution backends entry with v0.3.8 source verification; maintainer review pending
+- [Awesome Terminal Agents PR #5](https://github.com/EnigmaYYYY/awesome-terminal-agents/pull/5) — Engineering-Practice-Tool runtime reference with v0.3.8 verification; maintainer review pending
+- [Awesome AI Agents 2026 PR #16](https://github.com/Supersynergy/awesome-ai-agents-2026/pull/16) — agent runtimes/platforms entry with v0.3.8 and backend-boundary verification; maintainer review pending
 - [Awesome Agent Infra PR #6](https://github.com/shenli/awesome-agent-infra/pull/6) — Runtime and Control Plane entry with v0.3.8 source verification; GitHub reports `UNSTABLE`, maintainer review pending
 - [Curated MCP Servers PR #9](https://github.com/oxbshw/curated_mcp_servers/pull/9) — Developer Tools & Infrastructure entry with v0.3.8 source verification; maintainer review pending
 - [Awesome Agent Runtimes PR #1](https://github.com/dz3ai/awesome-agent-runtimes/pull/1) — runtime comparison entry with v0.3.8 and backend-boundary verification; maintainer review pending
