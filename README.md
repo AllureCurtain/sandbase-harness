@@ -251,7 +251,7 @@ Pending community review:
 - [Awesome AI Agents — Agent Playbook PR #1](https://github.com/agentplaybook-io/awesome-ai-agents/pull/1) — added SandBase Harness to the self-hosted frameworks list; PR is clean and maintainer review pending
 - [Discussion #116](https://github.com/sandbaseai/sandbase-harness/discussions/116) — official DevOps runtime and MCP bridge discovery post
 - [DeepSeek Harness Showcase update](https://github.com/deepseek-ai/deepseek-harness/discussions/1918#discussioncomment-18212204) — bilingual update covering the gVisor integration path and corrected Hugging Face attribution review
-- [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364)
+- [Cline MCP Marketplace issue #2364](https://github.com/cline/mcp-marketplace/issues/2364) — v0.3.8 MCP bridge submission under review; see the [maintainer verification note](https://github.com/cline/mcp-marketplace/issues/2364#issuecomment-5473147267) and [official bilingual update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212395)
 - [MCPSo submission issue #3834](https://github.com/chatmcp/mcpso/issues/3834)
 - [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 - [Agent Sandbox Taxonomy profile proposal #5](https://github.com/kajogo777/the-agent-sandbox-taxonomy/issues/5)
