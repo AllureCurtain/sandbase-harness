@@ -201,7 +201,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agent Infrastructure PR #23](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/23) — 已将 SandBase Harness 加入 Execution Sandboxes，等待维护者审核
 - [Awesome Agent Sandboxing PR #2](https://github.com/IronSecCo/awesome-agent-sandboxing/pull/2) — 已将 SandBase Harness 加入 Self-hosted Agent Runtimes，等待维护者审核
 - [Awesome Sandbox PR #27](https://github.com/restyler/awesome-sandbox/pull/27) — 已新增 SandBase Harness runtime/sandbox 专题章节，等待维护者审核
-- [Awesome AI Agents Security PR #107](https://github.com/ProjectRecon/awesome-ai-agents-security/pull/107) — 已将 SandBase Harness 加入 Sandboxing & Isolation Environments，PR 可合并，等待维护者审核
+- [Awesome AI Agents Security PR #107](https://github.com/ProjectRecon/awesome-ai-agents-security/pull/107) — 已加入 Sandboxing & Isolation Environments，已发布[核验跟进](https://github.com/ProjectRecon/awesome-ai-agents-security/pull/107#issuecomment-5473074958)，PR 可合并，等待维护者审核
 - [UCSB Awesome Agent Security PR #16](https://github.com/ucsb-mlsec/Awesome-Agent-Security/pull/16) — 已将 SandBase Harness 加入 System-level Runtime Defense，PR 可合并，等待维护者审核
 - [Awesome DevOps MCP Servers PR #327](https://github.com/rohitg00/awesome-devops-mcp-servers/pull/327) — 已将 SandBase Harness 加入 Code Execution，PR 可合并，等待维护者审核
 - [EverWorks Awesome MCP Servers PR #161](https://github.com/ever-works/awesome-mcp-servers/pull/161) — 已将 SandBase Harness 加入 Code Execution & Automation，并新增带来源链接的详情页，PR 可合并，等待维护者审核
