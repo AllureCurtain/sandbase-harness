@@ -262,6 +262,7 @@ Pending community review:
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
 - [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — v0.3.8 安装与已合并集成状态（中文更新）；欢迎用户反馈
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
+- [Picrew Awesome Agent Harness issue #82](https://github.com/Picrew/awesome-agent-harness/issues/82) — proposed the DeepSeek Harness Handbook as a Documentation / Learning resource; directory review pending
 
 These listings are independent directories; the repository and its release metadata
 remain the source of truth.
