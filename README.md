@@ -258,7 +258,7 @@ Pending community review:
 - [Yenanjing Awesome Harness Engineering PR #6](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
 - [Awesome Harness Engineering 中文版 PR #6](https://github.com/whobot-ai/awesome-harness-engineering-zh/pull/6)
 - [Awesome Agent Architecture issue #90](https://github.com/hardness1020/awesome-agent-architecture/issues/90)
-- [DeepSeek Harness Handbook PR #291](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291) — refreshed the SandBase bridge guide to v0.3.8; handbook verification is blocked by three pre-existing stale 404 catalog links
+- [DeepSeek Harness Handbook PR #291](https://github.com/sandbaseai/deepseek-harness-handbook/pull/291) — merged the v0.3.8 SandBase bridge guide after catalog cleanup PR #292 restored verification
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — proposed the current SandBase Harness descriptor; checks passed at submission but the PR currently needs a rebase
 - [Discussion #116 update](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18211885) — v0.3.8 installation and integration status update; user feedback is invited
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — proposed for the curated Agent Harness category; curator review pending
