@@ -192,6 +192,7 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome CLI Coding Agents PR #314](https://github.com/bradAGI/awesome-cli-coding-agents/pull/314) — 已将 SandBase Harness 加入 Runtime & execution backends，等待维护者审核
 - [Awesome AI Developer Stack PR #2](https://github.com/masrisystems/awesome-ai-developer-stack/pull/2) — 已将 SandBase Harness 加入 MCP Servers 表格，等待维护者审核
 - [Awesome Agent Cortex PR #74](https://github.com/0xNyk/awesome-agent-cortex/pull/74) — 已将 SandBase Harness 加入 Agent Runtime Infrastructure，等待维护者审核
+- [Awesome Agent Harness PR #29](https://github.com/mahonzhan/awesome-agent-harness/pull/29) — 已将 SandBase Harness 加入 Agent Harness 时间线，PR 状态 clean 且可合并，等待维护者审核（[核验说明](https://github.com/mahonzhan/awesome-agent-harness/pull/29#issuecomment-5473355320)）
 - [Best of Agent Harnesses PR #99](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99) — 已按生成式排行目录规范提交 v0.3.8 Harness 条目，PR 可合并，等待维护者审核（[核验说明](https://github.com/RyanAlberts/best-of-Agent-Harnesses/pull/99#issuecomment-5470293386)）
 - [Awesome Agent Harnesses PR #5](https://github.com/Anandesh-Sharma/awesome-agent-harnesses/pull/5) — 已将 SandBase Harness 加入 coding-agent harness 目录，PR 状态 clean 且可合并，CodeRabbit 检查成功，等待维护者审核（[核验说明](https://github.com/Anandesh-Sharma/awesome-agent-harnesses/pull/5#issuecomment-5473341966)）
 - [Awesome Agentic AI 中文 Stage 7 PR #213](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213) — 已补齐 Track B Harness/Sandbox/Deploy 的英文、繁中、简中条目；本地语言校验通过，等待维护者运行 PR gate 并审核（[跟进说明](https://github.com/WenyuChiou/awesome-agentic-ai-zh/pull/213#issuecomment-5473308460)）
