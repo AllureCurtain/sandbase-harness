@@ -279,6 +279,8 @@ SandBase Harness 提供这层运行时基础设施。它不是可视化工作流
 - [Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9)
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [dsh-index PR #43](https://github.com/Sunrisepeak/dsh-index/pull/43) — 已提交当前 SandBase Harness 描述；提交版本检查通过，但 PR 当前需要 rebase
+- [AgentIndex issue #3](https://github.com/agentidx/agentindex/issues/3) — 提议加入有来源依据的运行时索引，已补充 v0.3.8、安装/MCP、会话治理、审计/回放及依赖后端的隔离范围（[核验说明](https://github.com/agentidx/agentindex/issues/3#issuecomment-5473643330)）
+- [Agent Harness MCP preset issue #47](https://github.com/madebywild/agent-harness/issues/47) — 提议基于已发布 bridge 镜像和六个工具增加 MCP preset，等待项目维护者审核（[核验说明](https://github.com/madebywild/agent-harness/issues/47#issuecomment-5473643364)）
 - [Discussion #116 更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212016) — 发布 v0.3.8 安装与已合并集成状态，邀请用户反馈
 - [Discussion #116 最新更新](https://github.com/sandbaseai/sandbase-harness/discussions/116#discussioncomment-18212677) — 公布 Awesome Coding Agents 已合并收录，并重申当前安装入口与 TensorBlock 元数据问题
 - [AAE Agent Engineering issue #1](https://github.com/Lxcardoza993/AAE/issues/1) — 已提交至精选 Agent Harness 分类，等待策展审核
