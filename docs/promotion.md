@@ -746,6 +746,8 @@ The [Nandanhegde MCP Directory issue #2](https://github.com/Nandanhegde1/mcp-dir
 
 The [Kubernetes SIG Agent Sandbox issue #1500](https://github.com/kubernetes-sigs/agent-sandbox/issues/1500) opens a scope discussion about a source-linked SandBase Harness compatibility or deployment example. It accurately separates Agent Sandbox's Kubernetes workload orchestration from SandBase Harness's agent-session/runtime governance, and explicitly makes no existing-adapter, inclusion, endorsement, or security-certification claim. The issue is awaiting maintainer guidance before any PR or documentation change.
 
+The public [mcpub submission flow](https://mcpub.dev/) was evaluated and intentionally not used: it requires a public MCP endpoint plus `/.well-known/mcp.json`, while the SandBase Harness bridge is configured against a user's own API URL/API key rather than a public hosted endpoint. [MCP Central's submission documentation](https://mcpcentral.io/docs/submit-a-server) describes its catalog as a mirror of the official MCP Registry, which already contains the canonical Harness record; no duplicate submission was created.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
