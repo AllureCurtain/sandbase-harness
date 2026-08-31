@@ -231,6 +231,7 @@ Pending community review:
 - [TensorChord Awesome LLMOps PR #785](https://github.com/tensorchord/Awesome-LLMOps/pull/785) — added SandBase Harness to the LLMOps catalog; DCO now passes and maintainer review is pending
 - [Awesome-LLMSecOps PR #66](https://github.com/wearetyomsmnv/Awesome-LLMSecOps/pull/66) — added a source-linked SandBase Harness entry under Agentic security; PR is clean and mergeable, maintainer review pending
 - [Awesome Agent Runtime Security PR #30](https://github.com/bureado/awesome-agent-runtime-security/pull/30) — added SandBase Harness to Sandboxing & Isolation with explicit deployment/backend limits; PR is clean and mergeable, maintainer review pending
+- [Awesome LLM Security PR #313](https://github.com/corca-ai/awesome-llm-security/pull/313) — added SandBase Harness to Tools as a runtime-governance reference; PR is clean and mergeable, maintainer review pending
 - [Awesome Agent Infrastructure PR #21](https://github.com/backblaze-labs/awesome-agent-infrastructure/pull/21) — added to Execution Sandboxes; entry refreshed to the current MCP installation guide, maintainer review pending
 - [Awesome DevOps PR #30](https://github.com/nirgeier/awesome-devops/pull/30) — added SandBase Harness to the MCP tools catalog; DCO passed, maintainer review pending
 - [Awesome Self-Hosted Agents PR #6](https://github.com/arcane-bear/awesome-self-hosted-agents/pull/6) — added SandBase Harness to the self-hosted agent frameworks list; PR is clean and maintainer review pending
