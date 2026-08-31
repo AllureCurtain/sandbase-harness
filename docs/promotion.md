@@ -736,6 +736,8 @@ The [Awesome Open Source AI scope-check issue #723](https://github.com/alvinreal
 
 The [LuciferForge MCP Directory issue #52](https://github.com/LuciferForge/mcp-directory/issues/52) requests a SandBase Harness listing. A source-correction comment replaces the stale `docs/mcp-server.md` reference with the current installation, runtime, and MCP source paths ([comment](https://github.com/LuciferForge/mcp-directory/issues/52#issuecomment-5475904310)); directory review remains pending. The proposal discloses project affiliation and backend/deployment-dependent isolation, and does not claim inclusion, endorsement, or security certification.
 
+The [MiniMax Awesome Integrations issue #12](https://github.com/MiniMax-AI/awesome-minimax-integrations/issues/12) requests a SandBase Harness integration entry under Developer Tools. A follow-up updates the proposed release from v0.3.7 to v0.3.8 and links the current MiniMax, installation, and MCP guides ([comment](https://github.com/MiniMax-AI/awesome-minimax-integrations/issues/12#issuecomment-5475925962)); maintainer review remains pending. The request documents the public MiniMax endpoints and model IDs, discloses project affiliation, and makes no inclusion, endorsement, or security-certification claim.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
