@@ -2,6 +2,8 @@
 
 Last checked: 2026-08-31
 
+The new [E2B Awesome AI Agents Issue #1468](https://github.com/e2b-dev/awesome-ai-agents/issues/1468) asks the high-traffic directory to evaluate SandBase Harness as a distinct runtime entry from the closed SandBase CLI PR #1457. The request explicitly leaves scope and inclusion to the maintainer; no listing, endorsement, or security certification is claimed. The merged [Daily Ops PR #273](https://github.com/sandbaseai/sandbase-daily-ops/pull/273) queues this scope-review path in the X, LinkedIn, and Discord drafts, which remain `NEEDS REVIEW`.
+
 The new [NipunaRanasinghe Awesome AI Agents PR #184](https://github.com/NipunaRanasinghe/awesome-ai-agents/pull/184) adds SandBase Harness to Core Frameworks using the destination's dynamic GitHub stars badge and concise table format. The directory is actively maintained with CI and accepts maintained AI-agent resources; review is pending and no directory endorsement or security certification is claimed. The merged [Daily Ops PR #272](https://github.com/sandbaseai/sandbase-daily-ops/pull/272) queues this review path in the X, LinkedIn, and Discord drafts, which remain `NEEDS REVIEW`.
 
 The new [Zients Awesome Agent Harness PR #10](https://github.com/zients/awesome-agent-harness/pull/10) adds SandBase Harness to Agent Systems & Harnesses. The entry follows the destination's contribution rules, links the official installation path, and states model-provider requirements plus backend/deployment-dependent isolation. GitHub review is pending; no directory endorsement or security certification is claimed. The merged [Daily Ops PR #271](https://github.com/sandbaseai/sandbase-daily-ops/pull/271) queues this review path in the X, LinkedIn, and Discord drafts, which remain `NEEDS REVIEW`.
