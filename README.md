@@ -310,6 +310,7 @@ Pending community review:
 - [Awesome Agent Frameworks architecture proposal #6](https://github.com/subinium/awesome-agent-frameworks/issues/6)
 - [Agent Sandbox Taxonomy profile proposal #5](https://github.com/kajogo777/the-agent-sandbox-taxonomy/issues/5)
 - [Open-Kairox Awesome Agent Harnesses Issue #1](https://github.com/open-kairox/awesome-agent-harnesses/issues/1) — suggested for the bilingual Agent Harness list; maintainer verification covers v0.3.8, installation/MCP, runtime controls, and backend-dependent isolation ([verification](https://github.com/open-kairox/awesome-agent-harnesses/issues/1#issuecomment-5473624141))
+- [AgentSeal MCP Security Registry issue #36](https://github.com/getagentseal/agentseal/issues/36) — requested the registry's normal MCP security analysis for the v0.3.8 bridge; current source, release, installation, six-tool, and backend-dependent isolation evidence are provided without requesting a preset score or certification ([verification](https://github.com/getagentseal/agentseal/issues/36#issuecomment-5476519347))
 - [Awesome Agent Sandboxes PR #9](https://github.com/arjan/awesome-agent-sandboxes/pull/9)
 - [Mossaka Awesome Agent Sandboxes PR #1](https://github.com/Mossaka/awesome-agent-sandboxes/pull/1)
 - [Yenanjing Awesome Harness Engineering PR #6](https://github.com/yenanjing/awesome-harness-engineering/pull/6)
