@@ -754,6 +754,8 @@ The [KillerSkills marketplace submission](https://killerskills.ai/submit) accept
 
 The [MCP Find community directory PR #171](https://github.com/MCPFind/mcp-find/pull/171) adds the SandBase Harness MCP bridge to `community-servers.yml` using the published `ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8` image. The PR is open and currently mergeable; its entry links the canonical repository and qualifies isolation as dependent on the selected backend and deployment configuration. This is a maintainer-reviewed directory submission, not an endorsement or security certification.
 
+GitHub repository Topics were refreshed to replace the less central `agent-memory` tag with the published `agent-plugin` capability. The current 20-topic set now covers agent runtime, plugin, harness, sandbox, MCP, self-hosting, infrastructure, audit, and deployment discovery terms; this is repository discoverability metadata only and does not imply third-party endorsement.
+
 ## Promotion rules
 
 - Verify the URL and page content before adding an entry.
