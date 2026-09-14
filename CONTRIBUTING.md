@@ -1,102 +1,220 @@
-# Contributing to managed-agents
+# Contributing to SandBase Harness
 
-Thanks for helping make managed-agents better. This project is intentionally a single-package TypeScript runtime, so the local workflow should stay boring and reliable.
+SandBase Harness (`managed-agents`) is a local-first, self-hosted runtime for
+AI agents. It is a single-package TypeScript runtime with a Vite Console. Keep
+contributions focused, reproducible, and safe.
 
-## Development Workflow
+This is the canonical contributor guide. [`AGENTS.md`](./AGENTS.md) is an
+agent-facing index and may repeat brief linked headlines of non-negotiable
+rules; the rationale and procedure belong here.
 
-1. Fork the repository.
-2. Create a feature branch from `main`: `git checkout -b feat/my-feature`.
-3. Install dependencies: `npm ci`.
-4. Make your changes.
-5. Run the release checks locally:
+## Hard rules
+
+- Workspace runtime data — SQLite state, logs, artifacts, and session sandbox
+  directories — defaults to `<workspace>/.managed-agents/`. CLI path options
+  may override those locations. The template cache instead uses
+  `MANAGED_AGENTS_HOME`, or the current user's `.managed-agents/` directory
+  when that variable is absent. Do not write runtime data or secrets to the
+  repository root or an arbitrary current working directory.
+- The local sandbox is not a security boundary. It has path confinement and an
+  environment allowlist but no kernel boundary. Untrusted agent code must run
+  under an isolated provider such as Docker or Kubernetes.
+- Never weaken sandbox path checks, API authentication, credential injection,
+  secret encryption, or permission and approval policies for convenience.
+- Treat the event log as append-only and preserve resumable SSE ordering.
+- Keep one canonical usage record per model request. Projection events must not
+  multiply aggregate token totals.
+- Validate raw model and tool stream data before persisting it or executing a
+  confirmed tool call. Confirmation authority is one-shot.
+- Any schema change ships as a new migration. Migrations are immutable once
+  they land on `main`, and must work on fresh and existing workspaces.
+- Keep credentials, personal paths, host tokens, and sensitive output out of
+  logs, fixtures, screenshots, commits, and public examples.
+
+Before a substantial implementation, refactor, runtime/process change, schema
+or API change, or cross-package behavior change, read this guide. Update it in
+the same branch when the change establishes or changes an architecture rule,
+workflow, ownership boundary, required check, or generated-artifact contract.
+
+## One PR, one verifiable behavior
+
+Each pull request contains one independently verifiable behavior. A feature may
+span several small PRs.
+
+Before implementing, state:
+
+1. **Expected behavior** — what a user or API client can observe afterwards.
+2. **Acceptance criteria** — the concrete scenarios that decide pass or fail.
+3. **Explicit scope exclusions** — what the PR deliberately does not do and
+   the follow-up that owns it.
+
+Keep unrelated refactors, formatting, dependency updates, and capabilities in
+separate PRs. A dependency that serves one feature belongs in that feature's
+PR. A public API and a Console change may be in the same PR only when together
+they deliver the one stated behavior and can be tested as one outcome.
+
+Split a PR when it mixes a bug fix with a new capability, its description needs
+an unrelated “also”, or a reviewer cannot express its acceptance criterion in
+one sentence. If the design does not converge, document the unresolved question
+and defer it rather than expanding the PR.
+
+## Branch and worktree workflow
+
+`main` is the integration baseline. **Do not commit directly to `main`.**
+
+For each new topic, branch from the latest `origin/main` and use a dedicated
+worktree when topics run in parallel:
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+git fetch origin main
+git worktree add .worktrees/<feature-name> -b feat/<feature-name> origin/main
 ```
 
-6. Commit with a conventional commit message.
-7. Push and open a pull request against `main`.
+- Use one branch and, when applicable, one worktree per topic. Do not mix
+  unrelated product work in a branch.
+- Branch names use `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `test/<slug>`,
+  `build/<slug>`, or `chore/<slug>`. Issue-driven work uses
+  `fix/issue-<number>-<slug>` or `feat/issue-<number>-<slug>`.
+- Push the branch and open a PR against `main`; do not bypass review through a
+  local fast-forward or merge.
+- Before review, update from `origin/main`, resolve conflicts in the topic
+  branch, preserve the stated acceptance criteria, and rerun the relevant
+  checks.
+- A migration already landed on `main` is immutable. If parallel unlanded work
+  collides on a migration number, the later branch takes the next available
+  number after updating from `main` and revalidates fresh and existing
+  workspaces.
 
-## Project Structure
+## Review and pull requests
+
+Choose the review method based on scope and risk. Self-review with suitable
+validation is sufficient for low-risk, well-understood work. Use an independent
+review when it materially improves confidence, especially for security-
+sensitive, shared, or uncertain behavior.
+
+For a blind review, provide only requirements, acceptance criteria, project
+rules, scope boundaries, repository location, and comparison baseline. Do not
+provide the implementation narrative, suspected defects, or earlier findings.
+Record the method honestly in the PR.
+
+Use [the PR template](./.github/PULL_REQUEST_TEMPLATE.md). It records the
+observable change, constraints and invariants, explicit exclusions, and actual
+validation evidence. Use `Fixes #<number>` or `Closes #<number>` only when the
+PR fully resolves that Issue. Merge only after required CI checks pass and no
+correctness or security issue remains; prefer squash merges for focused work.
+
+## Required checks
+
+Run the narrowest relevant checks while developing. Before requesting review or
+reporting completion, run the full gate:
+
+```bash
+npm run release:check
+```
+
+The component commands are:
+
+| Command | Covers |
+| --- | --- |
+| `npm run typecheck` | source, tests, and Console TypeScript programs |
+| `npm test` | unit, integration, and property tests |
+| `npm run build` | runtime and Console builds |
+| `npm run package:check` | published-package contents |
+| `npm run smoke:release` | packaged CLI and example startup smoke checks |
+
+`tsconfig.tests.json` must type-check the complete test suite, including tests
+that import Console components. Do not hide errors by excluding a test group;
+repair the fixture, type, or configuration instead.
+
+Some integration suites intentionally skip when their backing service is not
+available: Docker tests require a daemon and image, Kubernetes tests require a
+reachable cluster, and Windows symlink cases require the appropriate privilege.
+A passing run must report those skips accurately. If a check cannot run, record
+the exact blocker rather than claiming full verification.
+
+### Cross-platform expectations
+
+Write tests against platform-neutral behavior:
+
+- Construct filesystem expectations with `join` or `resolve`; do not compare a
+  POSIX literal with a resolved Windows path.
+- Build public logical identifiers with `posix.join`, never the host separator.
+- Poll observable conditions with a deadline instead of using a fixed sleep.
+- Resolve an available shell and skip a shell-dependent test when none exists;
+  do not hardcode `/bin/sh`.
+
+## Manual Console validation
+
+Component and CSS tests do not prove an end-to-end conversation works. For a
+user-visible Console change, run the runtime and Console against a reachable
+model provider and walk the relevant acceptance scenarios. At minimum, consider
+multi-turn conversation, long replies, refresh, reconnect, retry, interrupt,
+repeated send, and tool approval when the change touches those paths. Record
+observed behavior and known limitations without secrets or personal paths.
+
+## Project structure
 
 ```text
-managed-agents/
+sandbase-harness/
 ├── src/
-│   ├── api/        # Hono HTTP routes
-│   ├── core/       # agents, sessions, events, memory, templates
+│   ├── api/        # HTTP routes and protocol adapters
+│   ├── core/       # database, runtime, session, and shared services
 │   ├── model/      # model provider registry
-│   ├── sandbox/    # local, docker, self-hosted sandbox providers
-│   ├── strategy/   # execution strategies
+│   ├── sandbox/    # execution providers and capabilities
+│   ├── sdk/        # TypeScript client SDK
+│   ├── strategy/   # model-loop implementations and stream handling
 │   └── types/      # protocol and runtime types
-├── tests/
-├── examples/
-└── docs/spec/
+├── apps/console/   # React/Vite operator Console
+├── tests/          # unit, integration, and property coverage
+├── docs/           # specifications and guides
+└── examples/       # runnable examples
 ```
 
-## Checks
+The main execution path is:
 
-The current required checks are:
+`API/SDK → SessionManager → ContextBuilder → AgentStrategy → Model/MCP tools → Sandbox`
 
-- `npm run typecheck`
-- `npm test`
-- `npm run build`
+## Generated and derived artifacts
 
-`npm run typecheck` runs two programs: `typecheck:src` for `src/`, and
-`typecheck:tests` for the runtime test suite. They are separate because the root
-config scopes build output to `src`, and vitest transpiles tests without
-checking their types — so a breaking change to an internal interface would
-otherwise type-check clean while every test call site was already wrong. Tests
-that import Console components are excluded for now; `apps/console` has its own
-unchecked type debt, tracked in BACKLOG.md.
+- Migrations live in `src/core/db/migrations.ts` and are embedded in the
+  runtime. Add a new migration; never edit one that has landed on `main`.
+- Distribution is built into `dist/` and is not committed. Changes to entry
+  points, exports, or `bin` require `npm run package:check` and
+  `npm run smoke:release`.
+- Public API contract changes update `docs/api.md` and `docs/api-matrix.md` in
+  the same PR.
+- Update `CHANGELOG.md` whenever public behavior changes.
 
-`npm run lint` currently aliases type checking. ESLint and Prettier are not configured yet; do not add lint-only requirements to CI until the matching dependencies and config are committed.
+## Code standards
 
-## Sandbox Tests That Need External Transports
+- Keep TypeScript strict-mode clean and prefer established project patterns.
+- Extract a source file approaching roughly 500 lines or a React component
+  approaching roughly 400 lines when doing so clarifies ownership.
+- Put shared Console formatting, labels, and rendering helpers under
+  `apps/console/src/lib/`; do not copy them between pages.
+- Keep public APIs stable unless the PR explicitly changes the API contract.
+- Add focused regression coverage when changing runtime behavior, protocol
+  handling, sandboxing, or session lifecycle.
+- Never render model or tool output through uncontrolled HTML injection.
+  Restrict link protocols and disable raw HTML in Markdown rendering.
 
-Some sandbox suites skip unless their backend is reachable, so a green local run
-does not necessarily mean they ran.
+## Documentation and text
 
-- Docker: `tests/integration/docker-sandbox.test.ts` skips without a running
-  daemon and a locally cached image.
-- Kubernetes: `tests/integration/kubernetes-sandbox*.test.ts` skip unless
-  `kubectl` can reach a cluster. They create and delete Pods in the target
-  namespace, so point them at a throwaway cluster.
+- Source comments and documentation are written in English except for
+  user-facing internationalized copy.
+- English is the canonical technical source. Preserve commands, package names,
+  API paths, event names, and configuration keys verbatim when translating.
+- Substantial guides include prerequisites, commands, expected success evidence,
+  failure branches, cleanup or rollback, and a verification date for claims
+  that can go stale.
+- Keep source and documentation in UTF-8 without a BOM and LF line endings, as
+  enforced by `.gitattributes`. Verify file bytes before correcting terminal
+  mojibake.
+- Never commit U+FFFD replacement characters. Restore the original source if
+  an incorrect encoding conversion introduced one.
+- Local planning notes do not belong in the repository or a PR description.
 
-Any cluster works. A single-node one is enough:
-
-```bash
-kind create cluster --name ma-sandbox-test
-
-# busybox has the /bin/sh, find, and tar the provider needs.
-KUBECONFIG=~/.kube/config \
-MANAGED_AGENTS_TEST_K8S_NAMESPACE=default \
-MANAGED_AGENTS_TEST_K8S_IMAGE=busybox:stable \
-  npx vitest run tests/integration/kubernetes-sandbox
-
-kind delete cluster --name ma-sandbox-test
-```
-
-If the cluster cannot reach Docker Hub, preload the image into the node's
-container runtime and pass its local tag through
-`MANAGED_AGENTS_TEST_K8S_IMAGE`. Session Pods are labeled
-`app.kubernetes.io/managed-by=managed-agents`, so an interrupted run can be
-reaped with:
-
-```bash
-kubectl delete pods -l app.kubernetes.io/managed-by=managed-agents
-```
-
-## Code Standards
-
-- Keep TypeScript strict-mode clean.
-- Prefer existing project patterns over new abstractions.
-- Keep public APIs stable unless the change is explicitly API work.
-- Add focused tests when changing runtime behavior, protocol handling, sandboxing, or session lifecycle.
-- Public documentation should be written in English and stay focused on release-facing project behavior.
-
-## Commit Message Format
+## Commit messages
 
 ```text
 <type>(<scope>): <description>
@@ -105,10 +223,11 @@ kubectl delete pods -l app.kubernetes.io/managed-by=managed-agents
 [optional footer]
 ```
 
-Common types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
+Use `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`,
+or `chore`; use the owning area as scope. Prefer one commit per focused PR, and
+make the commit subject match the PR title.
 
-## Pull Request Requirements
+## Roadmap
 
-- All CI checks must pass.
-- PR title should follow conventional commit format.
-- Keep PRs focused. Large refactors are welcome when they are motivated by a clear boundary or testability improvement.
+[`BACKLOG.md`](./BACKLOG.md) is the public product roadmap. Read it before
+proposing roadmap work, and update it when a product gap is confirmed or closes.

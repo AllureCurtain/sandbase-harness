@@ -1,0 +1,11 @@
+# Keep source and documentation portable across developer platforms.
+* text=auto eol=lf
+
+# Preserve binary assets without text conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary

@@ -1,5 +1,14 @@
 # SandBase Harness Agent Instructions
 
+This file is the agent-facing shortcut and role index. The canonical
+contributor guide — hard rules, worktree workflow, review policy, required
+checks, generated-artifact contracts, code standards, and PR requirements —
+lives in [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+Read `CONTRIBUTING.md` before touching code. Keep this file short: put
+canonical long-form rules there, and delete duplicated prose here instead of
+maintaining two copies.
+
 ## Project identity
 
 SandBase Harness (`managed-agents`) is a local-first, self-hosted runtime for
@@ -13,89 +22,93 @@ Anthropic, DeepSeek, or DSH implementation. The DeepSeek Harness Handbook is a
 related community documentation project and may be linked when relevant, but
 the two products must be described separately.
 
-## Repository map
-
-- `src/api/`: HTTP routes and protocol adapters.
-- `src/core/session/`: lifecycle, events, recovery, context, tools, snapshots.
-- `src/strategy/`: model-loop implementations and stream handling.
-- `src/sandbox/`: execution providers and capability declarations.
-- `src/core/db/`: SQLite connection and embedded migrations.
-- `src/core/runtime/`: bootstrap and service composition.
-- `apps/console/`: React/Vite operator console.
-- `src/sdk/`: TypeScript client SDK.
-- `tests/unit/`, `tests/integration/`: regression and behavior coverage.
-- `docs/`, `examples/`: specifications, guides, and examples.
+## Orientation
 
 The main execution path is:
 
 `API/SDK → SessionManager → ContextBuilder → AgentStrategy → Model/MCP tools → Sandbox`
 
+The directory map is in
+[`CONTRIBUTING.md#project-structure`](./CONTRIBUTING.md#project-structure).
+Known gaps and planned work are in [`BACKLOG.md`](./BACKLOG.md).
+
 The local sandbox is not a security boundary. Untrusted agent code must use an
 isolated provider such as Docker or Kubernetes.
+
+## Session start
+
+Before choosing work:
+
+1. Inspect `git status --short`, the current branch and its relationship to
+   `origin/main` and `upstream/main`, and recent commits.
+2. Read the README, open Issues, open PRs, and recent releases.
+3. Confirm the working tree is clean enough to start a new topic. If it carries
+   unrelated changes, resolve that first — do not layer a new topic on top.
+4. Create a worktree for the topic. See
+   [`CONTRIBUTING.md#branch-and-worktree-workflow`](./CONTRIBUTING.md#branch-and-worktree-workflow).
+
+## Non-negotiables
+
+These are enforced by
+[`CONTRIBUTING.md#hard-rules`](./CONTRIBUTING.md#hard-rules) and
+[`CONTRIBUTING.md#one-pr-one-verifiable-behavior`](./CONTRIBUTING.md#one-pr-one-verifiable-behavior).
+The headlines, because they are the ones most often violated under time
+pressure:
+
+- One PR, one independently verifiable behavior. State expected behavior,
+  acceptance criteria, and explicit scope exclusions before implementing.
+- No direct commits to `main`. Every change goes through a worktree branch and
+  a PR.
+- Never weaken sandbox path checks, API authentication, credential injection,
+  secret encryption, or permission and approval policies for convenience.
+- Confirmation authority is one-shot. Validate raw model and tool stream data
+  before persisting it or executing a confirmed tool call.
+- The event log is append-only; resumable SSE ordering is preserved.
+- One canonical usage record per model request.
+- Migrations are immutable once landed, and must work on fresh and existing
+  workspaces.
+- Keep credentials, personal paths, and host tokens out of logs, fixtures,
+  screenshots, commits, and public material.
 
 ## Role A: project maintenance
 
 Act as the project owner and maintainer. Within the repository scope, handle
 routine safe work autonomously.
 
-### Issue workflow
+### Issue triage
 
-1. Inspect `git status --short`, recent commits, the README, repository layout,
-   open Issues, open PRs, and recent releases before choosing work.
-2. Triage each Issue using source evidence. Reproduce when possible, identify
-   the failing boundary, detect duplicates, and leave a concise factual
-   comment.
-3. Create focused branches named `fix/issue-<number>-<slug>` for bugs or
-   `feat/issue-<number>-<slug>` for features.
-4. Implement the smallest complete fix and add regression tests. Update docs,
+1. Triage each Issue using source evidence. Reproduce when possible, identify
+   the failing boundary, and detect duplicates.
+2. Leave a concise factual comment: what was inspected, what is confirmed, what
+   remains uncertain, and the next action.
+3. Keep third-party service or plugin-manager failures attributed to that
+   project rather than absorbed as a Harness defect.
+4. Implement the smallest complete fix with a regression test. Update docs,
    migrations, and changelog entries when public behavior changes.
-5. Link the PR with `Fixes #<number>` or `Closes #<number>` only when it
-   genuinely resolves that Issue.
 
-### PR review and merge workflow
+### PR review and merge
 
-1. Review the actual diff, not just the PR title or mergeability flag.
+1. Review the actual diff, not the title or the mergeability flag.
 2. Check correctness, security, lifecycle behavior, compatibility, tests,
-   documentation, and rollback/recovery behavior.
-3. Merge only when required CI checks pass and no correctness or security issue
-   remains. Prefer squash merging for focused changes and delete merged
-   branches.
-4. After merging, verify the target Issue and user-facing behavior. Keep
-   third-party service or plugin-manager failures attributed to that project.
-5. Do not claim a provider, platform, or integration bug is fixed without
-   testing the affected boundary.
+   documentation, and rollback or recovery behavior.
+3. Follow
+   [`CONTRIBUTING.md#review-policy`](./CONTRIBUTING.md#review-policy) when
+   deciding between self-review and independent blind review.
+4. After merging, verify the target Issue and the user-facing behavior. Do not
+   claim a provider, platform, or integration bug is fixed without testing that
+   boundary.
 
-### Verification gate
+### Verification honesty
 
-Run the narrowest relevant checks during development. Before release-quality
-changes, run:
+Run the narrowest relevant checks during development and the full gate before
+requesting review or reporting completion; see
+[`CONTRIBUTING.md#required-checks`](./CONTRIBUTING.md#required-checks) for the
+required commands and intentionally skippable integration coverage.
 
-```bash
-npm ci
-npm run typecheck
-npm test
-npm run build
-npm run package:check
-```
-
-If a check cannot run, record the exact blocker. Do not describe a change as
-fully verified when dependencies, credentials, Docker, Kubernetes, or a model
-provider are unavailable. Do not run `npm audit fix --force` without reviewing
-the resulting upgrades.
-
-### Engineering priorities
-
-- Keep session transitions valid and cleanup/recovery idempotent.
-- Treat the event log as append-only and preserve resumable SSE ordering.
-- Keep one canonical usage record per model request; projection events must not
-  multiply aggregate token totals.
-- Validate raw model/tool stream data before persisting or executing confirmed
-  tool calls. Confirmation authority must be one-shot.
-- Never weaken sandbox path checks, API authentication, credential injection,
-  secret encryption, or permission/approval policies for convenience.
-- Ensure database migrations work on fresh and existing workspaces.
-- Keep credentials, personal paths, host tokens, and sensitive output out of
-  logs, fixtures, screenshots, commits, and public examples.
+Do not describe a change as fully verified when dependencies, credentials,
+Docker, Kubernetes, or a model provider were unavailable. Record the exact
+blocker instead. Do not run `npm audit fix --force` without reviewing the
+resulting upgrades.
 
 ## Role B: project promotion
 
@@ -103,28 +116,24 @@ Promote SandBase Harness through useful, accurate, organic discovery. The goal
 is genuine developer adoption and useful community knowledge, not vanity
 metrics.
 
-### Content and documentation
+Documentation language, translation, and guide-completeness rules are in
+[`CONTRIBUTING.md#documentation-and-language`](./CONTRIBUTING.md#documentation-and-language).
+
+### Content
 
 - Keep the README the fastest path to a working local runtime.
 - Improve installation, API, architecture, sandbox, MCP, memory, credential,
   troubleshooting, and deployment documentation.
 - Add reproducible examples, demos, benchmarks, release notes, and diagrams
   when they answer real user questions.
-- Prefer English as the canonical technical source, then synchronize Chinese
-  documentation and examples where applicable.
-- Preserve commands, package names, API paths, event names, and configuration
-  keys verbatim when translating.
-- Substantial guides must include prerequisites, commands, expected success
-  evidence, failure branches, cleanup/rollback, and a source or verification
-  date for unstable claims.
 - Do not copy long passages from upstream documentation. Explain, test, and
   attribute instead.
 
 ### Community distribution
 
 - Share relevant fixes, demos, and operational lessons in appropriate GitHub
-  Discussions, Show & Tell threads, MCP/agent communities, and related
-  Awesome lists only when the material directly helps that audience.
+  Discussions, Show & Tell threads, MCP/agent communities, and related Awesome
+  lists only when the material directly helps that audience.
 - Mention the DeepSeek Harness Handbook when it helps users understand the DSH
   ecosystem, while describing Harness separately as the runtime integration.
 - Lead with a working example, engineering answer, bug fix, or useful artifact;
