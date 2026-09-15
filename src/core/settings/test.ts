@@ -1,3 +1,4 @@
+import { probePiCli, type PiCliProbeResult } from '@/strategy/pi-launcher.js';
 import type { Database } from '@/core/db/database.js';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,22 +50,21 @@ export function mergeRuntimeSettingsArea(
   }
 }
 
-export function testRuntimeSettingsArea(params: {
+export interface RuntimeSettingsTestParams {
   db: Database;
   dataDir?: string;
   area: RuntimeSettingsTestArea;
   config: RuntimeSettings;
-}): Promise<RuntimeSettingsTestResult> {
+  /** Injectable only for deterministic settings-test coverage. */
+  piProbe?: () => Promise<PiCliProbeResult>;
+}
+
+export function testRuntimeSettingsArea(params: RuntimeSettingsTestParams): Promise<RuntimeSettingsTestResult> {
   return testRuntimeSettingsAreaWithFetch(params);
 }
 
 export async function testRuntimeSettingsAreaWithFetch(
-  params: {
-    db: Database;
-    dataDir?: string;
-    area: RuntimeSettingsTestArea;
-    config: RuntimeSettings;
-  },
+  params: RuntimeSettingsTestParams,
   fetchImpl: typeof fetch = fetch,
   kubernetesProbe: typeof probeKubernetesCluster = probeKubernetesCluster,
 ): Promise<RuntimeSettingsTestResult> {
@@ -79,28 +79,17 @@ export async function testRuntimeSettingsAreaWithFetch(
   };
 }
 
-function runChecks(
-  params: {
-    db: Database;
-    dataDir?: string;
-    area: RuntimeSettingsTestArea;
-    config: RuntimeSettings;
-  },
+async function runChecks(
+  params: RuntimeSettingsTestParams,
   fetchImpl: typeof fetch,
   kubernetesProbe: typeof probeKubernetesCluster,
-): RuntimeSettingsTestCheck[] | Promise<RuntimeSettingsTestCheck[]> {
+): Promise<RuntimeSettingsTestCheck[]> {
   const { db, dataDir, area, config } = params;
   switch (area) {
     case 'model':
       return testModel(db, config);
     case 'loop_engine':
-      return [{
-        name: 'engine_available',
-        status: config.loop_engine.provider === 'builtin' ? 'ok' : 'failed',
-        message: config.loop_engine.provider === 'builtin'
-          ? 'Built-in loop engine is available.'
-          : `Loop engine "${config.loop_engine.provider}" is not installed.`,
-      }];
+      return testLoopEngine(config, params.piProbe);
     case 'storage.metadata':
       return testMetadataStorage(db, config);
     case 'storage.artifacts':
@@ -110,6 +99,35 @@ function runChecks(
     case 'sandbox':
       return testSandbox(dataDir, config, fetchImpl, kubernetesProbe);
   }
+}
+
+async function testLoopEngine(
+  config: RuntimeSettings,
+  piProbe?: () => Promise<PiCliProbeResult>,
+): Promise<RuntimeSettingsTestCheck[]> {
+  if (config.loop_engine.provider === 'builtin') {
+    return [{ name: 'engine_available', status: 'ok', message: 'Built-in loop engine is available.' }];
+  }
+  if (config.loop_engine.provider === 'pi') {
+    if (config.sandbox.provider !== 'local') {
+      return [{
+        name: 'pi_host_workdir',
+        status: 'failed',
+        message: 'Pi loop engine requires the local sandbox provider because it needs a host-accessible work directory.',
+      }];
+    }
+    const result = await (piProbe ?? probePiCli)();
+    return [{
+      name: 'pi_cli',
+      status: result.available ? 'ok' : 'failed',
+      message: result.message,
+    }];
+  }
+  return [{
+    name: 'engine_available',
+    status: 'failed',
+    message: `Loop engine "${config.loop_engine.provider}" is not installed.`,
+  }];
 }
 
 function testModel(db: Database, config: RuntimeSettings): RuntimeSettingsTestCheck[] {

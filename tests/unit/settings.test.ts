@@ -52,6 +52,54 @@ describe('Settings V2 schema', () => {
     ]));
   });
 
+  it('resolves only complete model base URL references and validates their host values', () => {
+    const config: RuntimeSettings = {
+      ...validConfig,
+      loop_engine: { provider: 'pi', options: { default_max_steps: 25 } },
+      model: {
+        vendor: 'openai_compatible',
+        base_url: '${PI_MODEL_BASE_URL}',
+        api_key: '${OPENAI_API_KEY}',
+        options: {},
+      },
+    };
+
+    expect(validateRuntimeSettings(config, undefined, {
+      PI_MODEL_BASE_URL: 'https://models.example.test/v1',
+    }).valid).toBe(true);
+
+    const missing = validateRuntimeSettings(config, undefined, {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContainEqual(expect.objectContaining({
+      path: 'model.base_url',
+      code: 'missing_env',
+    }));
+
+    const invalidResolved = validateRuntimeSettings(config, undefined, {
+      PI_MODEL_BASE_URL: 'not a URL',
+    });
+    expect(invalidResolved.valid).toBe(false);
+    expect(invalidResolved.errors).toContainEqual(expect.objectContaining({
+      path: 'model.base_url',
+      code: 'invalid_url',
+    }));
+
+    const nestedUnresolved = validateRuntimeSettings(config, undefined, {
+      PI_MODEL_BASE_URL: '${UNRESOLVED_NESTED_BASE_URL}',
+    });
+    expect(nestedUnresolved.valid).toBe(false);
+    expect(nestedUnresolved.errors).toContainEqual(expect.objectContaining({
+      path: 'model.base_url',
+      code: 'unresolved_env_reference',
+    }));
+
+    const partialReference = validateRuntimeSettings({
+      ...config,
+      model: { ...config.model, base_url: 'https://${PI_MODEL_BASE_URL}/v1' },
+    });
+    expect(partialReference.valid).toBe(false);
+  });
+
   it('requires http or https base URLs and openai-compatible base_url', () => {
     const missing = validateRuntimeSettings({
       ...validConfig,
@@ -256,7 +304,7 @@ describe('Settings V2 schema', () => {
     const descriptors = describeSettingsAdapters();
     const availability = availabilityFromDescriptors(descriptors);
 
-    expect([...availability.loopEngines]).toEqual(['builtin']);
+    expect([...availability.loopEngines]).toEqual(['builtin', 'pi']);
     expect([...availability.metadataStorage]).toEqual(['sqlite']);
     expect([...availability.artifactStorage]).toEqual(['local']);
     expect([...availability.memoryProviders]).toEqual(['sqlite']);
@@ -559,6 +607,42 @@ describe('Settings V2 activation', () => {
     db.close();
   });
 
+  it('refuses to activate a model API key that retains nested environment references', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-nested-api-key-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    const initial = getOrSeedRuntimeSettings(db);
+    const previousOuterKey = process.env.SETTINGS_V2_NESTED_MODEL_API_KEY;
+    process.env.SETTINGS_V2_NESTED_MODEL_API_KEY = '${SETTINGS_V2_UNRESOLVED_MODEL_API_KEY}';
+    try {
+      const invalidSaved = {
+        ...initial.saved_config,
+        model: { ...initial.saved_config.model, api_key: '${SETTINGS_V2_NESTED_MODEL_API_KEY}' },
+      };
+      db.prepare(`
+        UPDATE runtime_settings
+        SET config = ?, revision = 2, restart_required = 1
+        WHERE id = 'default'
+      `).run(JSON.stringify(invalidSaved));
+
+      const activated = activateRuntimeSettings(db);
+
+      expect(activated.restart_required).toBe(true);
+      expect(activated.activation_status).toBe('failed');
+      expect(activated.activation_errors).toContainEqual(expect.objectContaining({
+        path: 'model.api_key',
+        code: 'unresolved_env_reference',
+      }));
+      expect(activated.effective_revision).toBe(1);
+      expect(activated.effective_config.model.api_key).toBeUndefined();
+    } finally {
+      if (previousOuterKey === undefined) delete process.env.SETTINGS_V2_NESTED_MODEL_API_KEY;
+      else process.env.SETTINGS_V2_NESTED_MODEL_API_KEY = previousOuterKey;
+      db.close();
+    }
+  });
+
   it('encrypts sensitive adapter options and preserves masked values', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-settings-options-secret-'));
     directories.push(directory);
@@ -856,10 +940,9 @@ describe('Settings V2 activation', () => {
   });
 
   it('resolves local artifact storage beneath the runtime data directory', () => {
-    // Resolved path, so build the expectation with the platform's own joiner.
-    // The traversal rejection below is the real contract.
-    expect(localArtifactStorageDir('/tmp/runtime', validConfig)).toBe(join(resolve('/tmp/runtime'), 'files'));
-    expect(() => localArtifactStorageDir('/tmp/runtime', {
+    const dataDir = join(tmpdir(), 'runtime');
+    expect(localArtifactStorageDir(dataDir, validConfig)).toBe(join(resolve(dataDir), 'files'));
+    expect(() => localArtifactStorageDir(dataDir, {
       ...validConfig,
       storage: { ...validConfig.storage, artifacts: { provider: 'local' as const, options: { base_path: '../escape' } } },
     })).toThrow(/inside the runtime data directory/);

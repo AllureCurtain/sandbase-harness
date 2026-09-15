@@ -3,17 +3,23 @@ import { MINIMAX_PROVIDER } from '@/core/model/minimax.js';
 
 const optionsSchema = z.record(z.string(), z.unknown()).default({});
 const STORED_SECRET_PREFIX = '__managed_secret__:';
+const COMPLETE_ENV_REFERENCE = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 
 export const runtimeSettingsSchema = z.object({
   schema_version: z.literal(1),
   model: z.object({
     vendor: z.enum(['openai', 'anthropic', 'openai_compatible', MINIMAX_PROVIDER]),
-    base_url: z.string().url().optional(),
+    base_url: z.union([
+      z.string().url().refine((value) => !value.includes('${'), {
+        message: 'Model base URL must not contain partial environment references',
+      }),
+      z.string().regex(COMPLETE_ENV_REFERENCE),
+    ]).optional(),
     api_key: z.string().min(1).optional(),
     options: optionsSchema,
   }).strict(),
   loop_engine: z.object({
-    provider: z.enum(['builtin', 'harness', 'codex', 'claude']),
+    provider: z.enum(['builtin', 'pi', 'harness', 'codex', 'claude']),
     options: z.object({
       default_max_steps: z.number().int().min(1).max(1_000).default(25),
     }).catchall(z.unknown()),
@@ -71,6 +77,7 @@ export type SettingsAvailability = {
 export function validateRuntimeSettings(
   input: unknown,
   availability: SettingsAvailability = defaultSettingsAvailability(),
+  environment: NodeJS.ProcessEnv = process.env,
 ): SettingsValidationResult {
   const parsed = runtimeSettingsSchema.safeParse(input);
   if (!parsed.success) {
@@ -87,8 +94,9 @@ export function validateRuntimeSettings(
 
   const config = parsed.data;
   const errors: SettingsValidationIssue[] = [];
-  validateModelSettings(errors, config);
+  validateModelSettings(errors, config, environment);
   validateSandboxSettings(errors, config);
+  validatePiSandboxCompatibility(errors, config);
   requireAvailable(errors, 'model.vendor', config.model.vendor, availability.modelVendors);
   requireAvailable(errors, 'loop_engine.provider', config.loop_engine.provider, availability.loopEngines);
   requireAvailable(errors, 'storage.metadata.provider', config.storage.metadata.provider, availability.metadataStorage);
@@ -106,7 +114,11 @@ export function validateRuntimeSettings(
   };
 }
 
-function validateModelSettings(errors: SettingsValidationIssue[], config: RuntimeSettings): void {
+function validateModelSettings(
+  errors: SettingsValidationIssue[],
+  config: RuntimeSettings,
+  environment: NodeJS.ProcessEnv,
+): void {
   const baseUrl = config.model.base_url;
   if (config.model.vendor === 'openai_compatible' && !baseUrl) {
     errors.push({
@@ -117,12 +129,40 @@ function validateModelSettings(errors: SettingsValidationIssue[], config: Runtim
     return;
   }
   if (!baseUrl) return;
-  const protocol = new URL(baseUrl).protocol;
-  if (protocol !== 'http:' && protocol !== 'https:') {
+
+  const envReference = COMPLETE_ENV_REFERENCE.exec(baseUrl);
+  const resolvedBaseUrl = envReference ? environment[envReference[1]] : baseUrl;
+  if (resolvedBaseUrl === undefined) {
     errors.push({
       path: 'model.base_url',
-      code: 'invalid_protocol',
-      message: 'Model base URL must use http or https',
+      code: 'missing_env',
+      message: `${envReference![1]} is not set`,
+    });
+    return;
+  }
+  if (resolvedBaseUrl.includes('${')) {
+    errors.push({
+      path: 'model.base_url',
+      code: 'unresolved_env_reference',
+      message: 'Model base URL contains unresolved environment references',
+    });
+    return;
+  }
+
+  try {
+    const protocol = new URL(resolvedBaseUrl).protocol;
+    if (protocol !== 'http:' && protocol !== 'https:') {
+      errors.push({
+        path: 'model.base_url',
+        code: 'invalid_protocol',
+        message: 'Model base URL must use http or https',
+      });
+    }
+  } catch {
+    errors.push({
+      path: 'model.base_url',
+      code: 'invalid_url',
+      message: 'Model base URL must be a valid URL',
     });
   }
 }
@@ -156,6 +196,15 @@ function validateSandboxSettings(errors: SettingsValidationIssue[], config: Runt
   }
 }
 
+function validatePiSandboxCompatibility(errors: SettingsValidationIssue[], config: RuntimeSettings): void {
+  if (config.loop_engine.provider !== 'pi' || config.sandbox.provider === 'local') return;
+  errors.push({
+    path: 'sandbox.provider',
+    code: 'incompatible_adapter',
+    message: 'Pi loop engine requires the local sandbox provider because it needs a host-accessible work directory',
+  });
+}
+
 export function validateRuntimeSettingsCredentials(
   config: RuntimeSettings,
   hasStoredSecret: (path: string) => boolean = () => false,
@@ -178,7 +227,7 @@ export function validateRuntimeSettingsCredentials(
 export function defaultSettingsAvailability(): SettingsAvailability {
   return {
     modelVendors: new Set(['openai', 'anthropic', 'openai_compatible', MINIMAX_PROVIDER]),
-    loopEngines: new Set(['builtin']),
+    loopEngines: new Set(['builtin', 'pi']),
     metadataStorage: new Set(['sqlite']),
     artifactStorage: new Set(['local']),
     memoryProviders: new Set(['sqlite']),
@@ -227,9 +276,18 @@ function collectSecretCredentialIssues(
       });
       return;
     }
-    const environment = /^\$\{([^}]+)\}$/.exec(value);
-    if (environment && !process.env[environment[1]]) {
-      errors.push({ path, code: 'missing_env', message: `${environment[1]} is not set` });
+    const environment = COMPLETE_ENV_REFERENCE.exec(value);
+    if (environment) {
+      const resolved = process.env[environment[1]];
+      if (!resolved) {
+        errors.push({ path, code: 'missing_env', message: `${environment[1]} is not set` });
+      } else if (resolved.includes('${')) {
+        errors.push({
+          path,
+          code: 'unresolved_env_reference',
+          message: `${path} contains unresolved environment references`,
+        });
+      }
     }
     return;
   }

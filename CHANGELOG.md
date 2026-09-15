@@ -9,6 +9,15 @@
   reject enabled `web_fetch` and `web_search` requests with a structured
   `unsupported_capability` error before persistence or model/tool execution.
 
+### Highlights
+
+- Adds the opt-in Pi CLI loop-engine foundation. New Pi sessions persist their
+  selected engine, launch one restricted print-mode subprocess per text user
+  turn, use a safe session file and private `models.json` with
+  `$SANDBASE_PI_API_KEY`, and fail explicitly when the Pi CLI is unavailable.
+  Pi JSON event translation, confirmation, lifecycle, and API work remain out
+  of scope.
+
 ### Fixes
 
 - Makes approval-gated tool calls durable and atomic per model step. Every

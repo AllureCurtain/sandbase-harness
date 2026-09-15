@@ -94,7 +94,7 @@ async function startServer(opts: StartServerOptions) {
   const effectiveSettings = runtimeComposition.settings.effective_config;
   const memory = runtimeComposition.memory;
 
-  const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings);
+  const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings, { dataDir });
   const artifactStore = runtimeComposition.artifactStore;
 
   const {
@@ -109,6 +109,12 @@ async function startServer(opts: StartServerOptions) {
     sandboxRegistry,
     runtimeComposition,
     strategy: loopEngine.strategy,
+    loopEngine: loopEngine.provider,
+    resolveStrategy: (provider) => {
+      const strategy = loopEngine.strategies[provider];
+      if (!strategy) throw new Error(`Persisted loop engine "${provider}" is not available`);
+      return strategy;
+    },
     skills,
     memory,
     artifactStore,

@@ -57,7 +57,7 @@ describe('Managed Agents API', () => {
       }),
     );
 
-    const sessionManager = new SessionManager(db);
+    const sessionManager = new SessionManager(db, 'pi');
     sessionManager.setExecutor({
       async *execute(session: Session, event: UserEvent): AsyncIterable<SessionEvent> {
         // UserEvent is a discriminated union and only some members carry
@@ -364,6 +364,162 @@ describe('Managed Agents API', () => {
       });
       expect(missingMemoryStore.res.status).toBe(400);
       expect(missingMemoryStore.body.error.message).toContain('Memory store not found');
+    });
+
+    it('rejects Pi named non-local Environments before session persistence with a stable client error', async () => {
+      db.prepare('INSERT INTO environments (id, name, config) VALUES (?, ?, ?)').run(
+        'env_pi_docker',
+        'Pi Docker',
+        JSON.stringify({ sandbox_provider: 'docker' }),
+      );
+
+      const { res, body } = await postJson('/v1/sessions', {
+        agent: 'agent_echo-agent',
+        environment_id: 'env_pi_docker',
+      });
+
+      expect(res.status).toBe(400);
+      expect(body).toEqual({
+        error: {
+          type: 'invalid_request',
+          code: 'pi_sandbox_provider_not_supported',
+          message: 'Pi loop engine requires the local sandbox provider because it needs a host-accessible work directory.',
+        },
+      });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE environment_id = ?').get('env_pi_docker'))
+        .toEqual({ count: 0 });
+      db.prepare('DELETE FROM environments WHERE id = ?').run('env_pi_docker');
+    });
+
+    it('rejects Pi sessions for agents requesting always_ask with a stable client error', async () => {
+      db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+        'agent_pi_always_ask',
+        'pi-always-ask',
+        JSON.stringify({
+          name: 'pi-always-ask',
+          model: 'gpt-4o',
+          system: 'Ask first.',
+          tools: [{
+            type: 'agent_toolset_20260401',
+            configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
+          }],
+        }),
+      );
+
+      const { res, body } = await postJson('/v1/sessions', { agent: 'agent_pi_always_ask' });
+
+      expect(res.status).toBe(400);
+      expect(body).toEqual({
+        error: {
+          type: 'invalid_request',
+          code: 'pi_always_ask_not_supported',
+          message: 'Pi loop engine does not support agents requesting always_ask tool confirmation.',
+        },
+      });
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_pi_always_ask'))
+        .toEqual({ count: 0 });
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_always_ask');
+    });
+
+    it('maps legacy Pi always_ask resumes to the stable client error before event persistence', async () => {
+      db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+        'agent_pi_legacy_always_ask',
+        'pi-legacy-always-ask',
+        JSON.stringify({
+          name: 'pi-legacy-always-ask',
+          model: 'gpt-4o',
+          system: 'Ask first.',
+          tools: [{
+            type: 'agent_toolset_20260401',
+            configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
+          }],
+        }),
+      );
+      // Model a PI row created before the creation-time policy gate landed.
+      const legacy = new SessionManager(db, 'builtin').create({ agent: 'agent_pi_legacy_always_ask' });
+      db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
+      const expected = {
+        error: {
+          type: 'invalid_request',
+          code: 'pi_always_ask_not_supported',
+          message: 'Pi loop engine does not support agents requesting always_ask tool confirmation.',
+        },
+      };
+
+      const eventResult = await postJson(`/v1/sessions/${legacy.id}/events`, {
+        events: [{ type: 'user.message', content: [{ type: 'text', text: 'resume' }] }],
+      });
+      expect(eventResult.res.status).toBe(400);
+      expect(eventResult.body).toEqual(expected);
+
+      const messageResult = await postJson(`/v1/sessions/${legacy.id}/messages`, {
+        content: 'resume',
+        stream: false,
+      });
+      expect(messageResult.res.status).toBe(400);
+      expect(messageResult.body).toEqual(expected);
+
+      // Streaming is the default; preflight must reject before committing an
+      // SSE response so clients receive the same stable HTTP error.
+      const streamedMessageResult = await postJson(`/v1/sessions/${legacy.id}/messages`, {
+        content: 'resume',
+      });
+      expect(streamedMessageResult.res.status).toBe(400);
+      expect(streamedMessageResult.body).toEqual(expected);
+
+      const history = await getJson(`/v1/sessions/${legacy.id}/events`);
+      expect(history.res.status).toBe(200);
+      expect(history.body.data).toEqual([]);
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(legacy.id);
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_legacy_always_ask');
+    });
+
+    it('rejects unsupported Pi user events before persisting an event batch', async () => {
+      const created = await postJson('/v1/sessions', { agent: 'agent_echo-agent' });
+      expect(created.res.status).toBe(201);
+      const expected = {
+        error: {
+          type: 'invalid_request',
+          code: 'pi_user_event_not_supported',
+          message: 'Pi loop engine supports only user.message and user.interrupt events.',
+        },
+      };
+      const unsupportedEvents = [
+        { type: 'user.tool_confirmation', tool_use_id: 'tool_1', result: 'allow' },
+        {
+          type: 'user.custom_tool_result',
+          custom_tool_use_id: 'tool_1',
+          content: [{ type: 'text', text: 'result' }],
+        },
+      ];
+
+      for (const event of unsupportedEvents) {
+        const result = await postJson(`/v1/sessions/${created.body.id}/events`, { events: [event] });
+        expect(result.res.status).toBe(400);
+        expect(result.body).toEqual(expected);
+      }
+
+      // Preflight every element before calling sendEvent so no valid prefix is
+      // logged when a later event is unsupported by the persisted Pi engine.
+      const mixed = await postJson(`/v1/sessions/${created.body.id}/events`, {
+        events: [
+          { type: 'user.message', content: [{ type: 'text', text: 'do not persist' }] },
+          unsupportedEvents[0],
+        ],
+      });
+      expect(mixed.res.status).toBe(400);
+      expect(mixed.body).toEqual(expected);
+
+      const history = await getJson(`/v1/sessions/${created.body.id}/events`);
+      expect(history.res.status).toBe(200);
+      expect(history.body.data).toEqual([]);
+
+      const interrupted = await postJson(`/v1/sessions/${created.body.id}/events`, {
+        events: [{ type: 'user.interrupt' }],
+      });
+      expect(interrupted.res.status).toBe(200);
+      const interruptedHistory = await getJson(`/v1/sessions/${created.body.id}/events`);
+      expect(interruptedHistory.body.data.map((event: { type: string }) => event.type)).toEqual(['user.interrupt']);
     });
 
     it('rejects without agent field', async () => {

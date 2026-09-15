@@ -19,6 +19,7 @@ import { rowToSession, type SessionRow } from './session-records.js';
 import { canTransition, isTerminal } from './state-machine.js';
 import type {
   Session,
+  SessionLoopEngine,
   SessionStatus,
   SessionEvent,
   CreateSessionParams,
@@ -31,6 +32,11 @@ import {
   runtimeCapabilityRegistry,
   type RuntimeCapabilityRegistry,
 } from '@/core/capabilities/registry.js';
+import {
+  assertPiAgentCanExecute,
+  assertPiEnvironmentCanExecute,
+  assertPiUserEventCanExecute,
+} from './pi-policy.js';
 
 // ============================================================
 // Types
@@ -53,6 +59,7 @@ export interface SessionExecutor {
 }
 
 type Subscriber = (event: SessionEvent) => void;
+type EnvironmentSandboxProviderResolver = (environmentId: string) => string | undefined;
 
 // ============================================================
 // Session Manager
@@ -60,6 +67,7 @@ type Subscriber = (event: SessionEvent) => void;
 
 export class SessionManager {
   private readonly eventLogger: EventLogger;
+  private readonly resolveEnvironmentSandboxProvider: EnvironmentSandboxProviderResolver;
   private subscribers = new Map<string, Set<Subscriber>>();
   private executor?: SessionExecutor;
   /** Per-session execution chain — serializes turns so they never overlap. */
@@ -70,8 +78,16 @@ export class SessionManager {
   constructor(
     private readonly db: Database,
     private readonly capabilityRegistry: RuntimeCapabilityRegistry = runtimeCapabilityRegistry,
+    /** Captured into each newly created session; persisted sessions retain their own value. */
+    private readonly defaultLoopEngine: SessionLoopEngine = 'builtin',
+    environmentSandboxProviderResolver?: EnvironmentSandboxProviderResolver,
   ) {
     this.eventLogger = new EventLogger(db);
+    // Direct/embedded managers do not have runtime Settings V2 composition.
+    // Retain their declared-Environment lookup, but let composed runtimes make
+    // the authoritative effective-provider decision (including env_default).
+    this.resolveEnvironmentSandboxProvider = environmentSandboxProviderResolver
+      ?? ((environmentId) => this.declaredEnvironmentSandboxProvider(environmentId));
   }
 
   getCapabilityRegistry(): RuntimeCapabilityRegistry {
@@ -112,13 +128,17 @@ export class SessionManager {
       throw new Error(`Agent not found: ${params.agent}`);
     }
     this.assertAgentCapabilities(agentSnapshot.definition);
+    if (this.defaultLoopEngine === 'pi') {
+      assertPiAgentCanExecute(agentSnapshot.definition);
+      assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default'));
+    }
 
     const stmt = this.db.prepare(`
       INSERT INTO sessions (
-        id, agent_id, agent_name, agent_version, agent_definition,
+        id, agent_id, agent_name, agent_version, agent_definition, loop_engine,
         environment_id, status, title, context_id, resources, vault_ids, metadata
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -127,6 +147,7 @@ export class SessionManager {
       agentSnapshot.name,
       agentSnapshot.version,
       params.agentVersion !== undefined ? JSON.stringify(agentSnapshot.definition) : null,
+      this.defaultLoopEngine,
       params.environmentId ?? 'env_default',
       params.title ?? null,
       params.contextId ?? null,
@@ -141,6 +162,7 @@ export class SessionManager {
       agentName: agentSnapshot.name,
       agentVersion: agentSnapshot.version,
       agentDefinition: params.agentVersion !== undefined ? agentSnapshot.definition : undefined,
+      loopEngine: this.defaultLoopEngine,
       environmentId: params.environmentId ?? 'env_default',
       status: 'queued',
       title: params.title,
@@ -199,6 +221,58 @@ export class SessionManager {
     `).get(agentId) as { id: string; name: string; definition: string; version?: number } | undefined;
   }
 
+  private assertPiSessionCanExecute(session: Session, event?: UserEvent): void {
+    if (session.loopEngine !== 'pi') return;
+    const agent = session.agentDefinition
+      ?? this.resolveAgentSnapshot(session.agentId, session.agentVersion)?.definition;
+    if (agent) assertPiAgentCanExecute(agent);
+    assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(session.environmentId));
+    if (event) assertPiUserEventCanExecute(event);
+  }
+
+  /**
+   * Session admission also runs in embedded/direct manager use, where runtime
+   * composition is not available. Read only the declared Environment backend
+   * here; Settings V2 separately validates the workspace default backend.
+   */
+  private declaredEnvironmentSandboxProvider(environmentId: string): string | undefined {
+    // The workspace default is overlaid from active Settings V2 at runtime and
+    // validated there. Only named Environments are explicit session overrides.
+    if (environmentId === 'env_default') return undefined;
+    const row = this.db.prepare(
+      'SELECT config FROM environments WHERE id = ? AND archived_at IS NULL',
+    ).get(environmentId) as { config: string } | undefined;
+    if (!row) return undefined;
+    try {
+      const config = JSON.parse(row.config) as Record<string, unknown>;
+      if (typeof config.sandbox_provider === 'string' && config.sandbox_provider.trim()) {
+        return config.sandbox_provider;
+      }
+      return config.hosting_type === 'self_hosted' ? 'self_hosted' : 'local';
+    } catch {
+      return 'local';
+    }
+  }
+
+  /**
+   * Validate that a session may accept a new event without mutating its log or
+   * scheduling execution. HTTP streaming routes use this before committing an
+   * SSE response so policy failures retain their stable client error.
+   */
+  assertSessionCanAcceptEvent(sessionId: string, event?: UserEvent): Session {
+    const session = this.get(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (isTerminal(session.status)) {
+      throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
+    }
+    // Existing Pi rows can predate the creation guard. Reject them before
+    // repair/persistence or queuing so a resumed turn cannot bypass policy.
+    this.assertPiSessionCanExecute(session, event);
+    return session;
+  }
+
   /**
    * Send a user event to a session.
    * Returns synchronous acknowledgment; actual execution is async via SSE.
@@ -208,13 +282,7 @@ export class SessionManager {
       throw new Error('Invalid event: missing required string "type" field');
     }
 
-    const session = this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    if (isTerminal(session.status)) {
-      throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
-    }
+    const session = this.assertSessionCanAcceptEvent(sessionId, event);
 
     // Revalidate the snapshot-first/current-durable effective definition before
     // mutating the append-only log or queuing any model, sandbox, or tool work.

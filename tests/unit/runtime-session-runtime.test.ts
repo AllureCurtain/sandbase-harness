@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,14 @@ import { getOrSeedRuntimeSettings, saveRuntimeSettings } from '@/core/settings/s
 import { LocalArtifactStore } from '@/core/storage/artifact-store.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { DefaultStrategy } from '@/strategy/default-strategy.js';
+import { DefaultSessionExecutor } from '@/core/session/executor.js';
+import { EventLogger } from '@/core/session/event-logger.js';
+import {
+  PI_SANDBOX_UNSUPPORTED_CODE,
+  PI_SANDBOX_UNSUPPORTED_MESSAGE,
+  PI_USER_EVENT_UNSUPPORTED_CODE,
+} from '@/core/session/pi-policy.js';
+import { sandboxCapabilities, type SandboxProvider } from '@/types/sandbox.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { Session } from '@/types/session.js';
 
@@ -212,6 +220,291 @@ describe('runtime session services', () => {
     }
 
     expect(captured).toEqual([42]);
+    db.close();
+  });
+
+  it('resolves a strategy from each session engine without changing builtin routing', async () => {
+    const calls: string[] = [];
+    const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime();
+    const builtin: AgentStrategy = {
+      name: 'builtin-capture',
+      async *execute() { calls.push('builtin'); },
+    };
+    const pi: AgentStrategy = {
+      name: 'pi-capture',
+      async *execute() { calls.push('pi'); },
+    };
+    const services = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local', timeout: 300 }),
+      },
+      strategy: builtin,
+      resolveStrategy: (engine) => engine === 'pi' ? pi : builtin,
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+    const turn = { type: 'user.message' as const, content: [{ type: 'text' as const, text: 'hello' }] };
+
+    for await (const _event of services.executor.execute({
+      id: 'sess_frozen_pi', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
+      loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+    }, turn)) {
+      // no-op
+    }
+    for await (const _event of services.executor.execute({
+      id: 'sess_builtin', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
+      loopEngine: 'builtin', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+    }, turn)) {
+      // no-op
+    }
+
+    expect(calls).toEqual(['pi', 'builtin']);
+    db.close();
+  });
+
+  it('passes selected PI model config without constructing an AI SDK model', async () => {
+    const captured: Array<{ model?: unknown; modelConfig?: unknown }> = [];
+    const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime({ model: 'openai/gpt-pi-selected' });
+    const builtin = new DefaultStrategy();
+    const pi: AgentStrategy = {
+      name: 'pi-capture',
+      requiresModel: false,
+      async *execute(context: StrategyContext) {
+        captured.push({ model: context.model, modelConfig: context.modelConfig });
+      },
+    };
+    const createModel = vi.spyOn(modelRegistry, 'createModel').mockImplementation(() => {
+      throw new Error('Pi must not construct an AI SDK model');
+    });
+    const services = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local', timeout: 300 }),
+      },
+      strategy: builtin,
+      resolveStrategy: (engine) => engine === 'pi' ? pi : builtin,
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+
+    for await (const _event of services.executor.execute({
+      id: 'sess_pi_model', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
+      loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+    }, { type: 'user.message', content: [{ type: 'text', text: 'hello' }] })) {
+      // no-op
+    }
+
+    expect(createModel).not.toHaveBeenCalled();
+    expect(captured).toEqual([{
+      model: undefined,
+      modelConfig: expect.objectContaining({ provider: 'openai', model: 'gpt-pi-selected' }),
+    }]);
+    db.close();
+  });
+
+  it('rejects direct Pi confirmation execution before model or sandbox work', async () => {
+    const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime();
+    const builtin = new DefaultStrategy();
+    const pi: AgentStrategy = {
+      name: 'pi-capture',
+      requiresModel: false,
+      async *execute() {
+        throw new Error('Pi strategy must not receive unsupported confirmation events');
+      },
+    };
+    const resolveModelConfig = vi.spyOn(modelRegistry, 'resolveModelConfig');
+    const createModel = vi.spyOn(modelRegistry, 'createModel');
+    const provision = vi.spyOn(sandboxes.sandboxProvider, 'provision');
+    const services = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local', timeout: 300 }),
+      },
+      strategy: builtin,
+      resolveStrategy: (engine) => engine === 'pi' ? pi : builtin,
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+    const session: Session = {
+      id: 'sess_pi_direct_confirmation',
+      agentId: 'agent_assistant',
+      agentName: 'assistant',
+      environmentId: 'env_default',
+      loopEngine: 'pi',
+      status: 'running',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const execute = async () => {
+      for await (const _event of services.executor.execute(session, {
+        type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'allow',
+      })) {
+        // PI admission rejects before any executor output.
+      }
+    };
+
+    await expect(execute()).rejects.toMatchObject({ code: PI_USER_EVENT_UNSUPPORTED_CODE });
+    expect(resolveModelConfig).not.toHaveBeenCalled();
+    expect(createModel).not.toHaveBeenCalled();
+    expect(provision).not.toHaveBeenCalled();
+    db.close();
+  });
+
+  it('rejects a Pi-pinned default session before event persistence after a settings restart selects Docker', async () => {
+    const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime();
+    const localRuntimeComposition = {
+      resolveEnvironmentConfig: () => ({ name: 'default', sandbox_provider: 'local', timeout: 300 }),
+    };
+    const initialServices = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: localRuntimeComposition,
+      strategy: new DefaultStrategy(),
+      loopEngine: 'pi',
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+    const existingPiSession = initialServices.sessionManager.create({ agent: 'agent_assistant' });
+
+    // A runtime restart after Settings V2 changes the effective env_default
+    // sandbox. The persisted session stays Pi-pinned even though new sessions
+    // would use the newly selected default engine.
+    const servicesAfterSettingsRestart = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({ name: 'default', sandbox_provider: 'docker', timeout: 300 }),
+      },
+      strategy: new DefaultStrategy(),
+      loopEngine: 'builtin',
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+
+    await expect(servicesAfterSettingsRestart.sessionManager.sendEvent(existingPiSession.id, {
+      type: 'user.message', content: [{ type: 'text', text: 'run' }],
+    })).rejects.toMatchObject({
+      code: PI_SANDBOX_UNSUPPORTED_CODE,
+      message: PI_SANDBOX_UNSUPPORTED_MESSAGE,
+    });
+    expect(servicesAfterSettingsRestart.sessionManager.getEventLogger().getEvents(existingPiSession.id)).toEqual([]);
+    db.close();
+  });
+
+  it('rejects direct Pi execution for non-local Environments before provisioning or child launch', async () => {
+    const { db, agents, modelRegistry } = makeRuntime();
+    let provisioned = false;
+    let launched = false;
+    const dockerProvider: SandboxProvider = {
+      type: 'docker',
+      capabilities: sandboxCapabilities({ isolatedExecution: true }),
+      async provision() {
+        provisioned = true;
+        throw new Error('sandbox provisioning must not run');
+      },
+    };
+    const pi: AgentStrategy = {
+      name: 'pi-capture',
+      requiresModel: false,
+      async *execute() { launched = true; },
+    };
+    const executor = new DefaultSessionExecutor({
+      agents,
+      modelRegistry,
+      sandboxProvider: dockerProvider,
+      resolveEnvironmentConfig: () => ({
+        name: 'named-docker',
+        sandbox_provider: 'docker',
+        timeout: 300,
+      }),
+      strategy: new DefaultStrategy(),
+      resolveStrategy: (engine) => engine === 'pi' ? pi : new DefaultStrategy(),
+      eventLogger: new EventLogger(db),
+    });
+
+    const execute = async () => {
+      for await (const _event of executor.execute({
+        id: 'sess_pi_docker', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_pi_docker',
+        loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+      }, { type: 'user.message', content: [{ type: 'text', text: 'hello' }] })) {
+        // no-op
+      }
+    };
+
+    await expect(execute()).rejects.toMatchObject({
+      code: PI_SANDBOX_UNSUPPORTED_CODE,
+      message: PI_SANDBOX_UNSUPPORTED_MESSAGE,
+    });
+    expect(provisioned).toBe(false);
+    expect(launched).toBe(false);
+    db.close();
+  });
+
+  it('rejects always_ask PI turns before model construction or strategy execution', async () => {
+    const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime({
+      tools: [{
+        type: 'agent_toolset_20260401',
+        configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
+      }],
+    });
+    let launched = false;
+    const pi: AgentStrategy = {
+      name: 'pi-capture',
+      requiresModel: false,
+      async *execute() { launched = true; },
+    };
+    const services = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: sandboxes.sandboxProvider,
+      sandboxRegistry: sandboxes.sandboxRegistry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local', timeout: 300 }),
+      },
+      strategy: new DefaultStrategy(),
+      resolveStrategy: (engine) => engine === 'pi' ? pi : new DefaultStrategy(),
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+    });
+
+    const execute = async () => {
+      for await (const _event of services.executor.execute({
+        id: 'sess_pi_always_ask', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
+        loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+      }, { type: 'user.message', content: [{ type: 'text', text: 'hello' }] })) {
+        // no-op
+      }
+    };
+
+    await expect(execute()).rejects.toThrow('Pi loop engine does not support agents requesting always_ask');
+    expect(launched).toBe(false);
     db.close();
   });
 

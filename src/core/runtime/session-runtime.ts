@@ -12,6 +12,7 @@ import type { SandboxProvider } from '@/types/sandbox.js';
 import type { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { AgentStrategy } from '@/types/strategy.js';
+import type { SessionLoopEngine } from '@/types/session.js';
 import type { SandboxLifecycleLogger } from '../session/sandbox-lifecycle.js';
 import type { RuntimeComposition } from './composition.js';
 
@@ -23,6 +24,10 @@ export interface RuntimeSessionServicesOptions {
   sandboxRegistry: SandboxProviderRegistry;
   runtimeComposition: Pick<RuntimeComposition, 'resolveEnvironmentConfig'>;
   strategy: AgentStrategy;
+  /** Engine copied to each new session. Existing rows retain their own engine. */
+  loopEngine?: SessionLoopEngine;
+  /** Resolve the strategy matching a persisted session engine. */
+  resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
   skills: Skill[];
   memory?: MemoryProvider;
   artifactStore: Pick<ArtifactStore, 'path'>;
@@ -39,7 +44,11 @@ export interface RuntimeSessionServices {
 }
 
 export function createRuntimeSessionServices(options: RuntimeSessionServicesOptions): RuntimeSessionServices {
-  const sessionManager = new SessionManager(options.db);
+  const sessionManager = new SessionManager(
+    options.db,
+    options.loopEngine ?? 'builtin',
+    (environmentId) => options.runtimeComposition.resolveEnvironmentConfig(environmentId)?.sandbox_provider,
+  );
   const eventLogger = sessionManager.getEventLogger();
   const snapshots = new SnapshotManager(options.db, options.artifactStore.path('snapshots'));
 
@@ -51,6 +60,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     resolveEnvironmentConfig: options.runtimeComposition.resolveEnvironmentConfig,
     resolveAgent: (agentId) => loadAgentDefinitionById(options.db, agentId),
     strategy: options.strategy,
+    resolveStrategy: options.resolveStrategy,
     eventLogger,
     compactor: new ContextCompactor(),
     skills: options.skills,

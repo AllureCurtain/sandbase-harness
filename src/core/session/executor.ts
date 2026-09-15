@@ -12,7 +12,7 @@
  */
 
 import type { SessionExecutor, ExecuteOptions } from './session-manager.js';
-import type { Session, SessionEvent } from '@/types/session.js';
+import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxProvider, EnvironmentConfig } from '@/types/sandbox.js';
@@ -30,6 +30,11 @@ import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver } from './tool-resolver.js';
 import { getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import {
+  assertPiAgentCanExecute,
+  assertPiEnvironmentCanExecute,
+  assertPiUserEventCanExecute,
+} from './pi-policy.js';
 
 export interface ExecutorDeps {
   agents: AgentDefinition[];
@@ -43,6 +48,8 @@ export interface ExecutorDeps {
   /** Resolve an agent id from durable storage. */
   resolveAgent?: (agentId: string) => AgentDefinition | undefined;
   strategy: AgentStrategy;
+  /** Resolve a strategy for the engine frozen on a persisted session. */
+  resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
   eventLogger: EventLogger;
   /** Optional context compactor. If provided, long histories are summarized. */
   compactor?: ContextCompactor;
@@ -76,6 +83,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
       agents: deps.agents,
       modelRegistry: deps.modelRegistry,
       strategy: deps.strategy,
+      resolveStrategy: deps.resolveStrategy,
       // Route sub-agent sandboxes through the lifecycle so they resolve to the
       // parent session's backend instead of always landing on local.
       provisionSandbox: (session, sandboxId) => this.sandboxLifecycle.provisionDetached(session, sandboxId),
@@ -90,7 +98,8 @@ export class DefaultSessionExecutor implements SessionExecutor {
     event: UserEvent,
     options?: ExecuteOptions,
   ): AsyncIterable<SessionEvent> {
-    const { agents, modelRegistry, strategy, eventLogger } = this.deps;
+    const { agents, modelRegistry, eventLogger } = this.deps;
+    const strategy = this.deps.resolveStrategy?.(session.loopEngine ?? 'builtin') ?? this.deps.strategy;
 
     // 1. Load agent definition
     const agent = session.agentDefinition
@@ -99,9 +108,19 @@ export class DefaultSessionExecutor implements SessionExecutor {
     if (!agent) {
       throw new Error(`Agent not found: ${session.agentId}`);
     }
+    if (session.loopEngine === 'pi') {
+      // A direct executor caller must fail closed before any model construction,
+      // sandbox provisioning, confirmation handling, event persistence, or child launch.
+      assertPiAgentCanExecute(agent);
+      const environment = this.deps.resolveEnvironmentConfig?.(session.environmentId);
+      assertPiEnvironmentCanExecute(environment?.sandbox_provider ?? this.deps.sandboxProvider.type);
+      assertPiUserEventCanExecute(event);
+    }
 
-    // 2. Create model
-    const model = modelRegistry.createModel(agent.model);
+    // Pi owns model transport, but it still receives the selected concrete
+    // model configuration. Builtin strategies retain AI SDK construction.
+    const modelConfig = modelRegistry.resolveModelConfig(agent.model);
+    const model = strategy.requiresModel === false ? undefined : modelRegistry.createModel(agent.model);
 
     // 3. Provision sandbox (or reuse the one bound to this session)
     const sandbox = await this.sandboxLifecycle.getOrProvision(session);
@@ -148,8 +167,10 @@ export class DefaultSessionExecutor implements SessionExecutor {
     // 6. Execute strategy
     const context: StrategyContext = {
       session,
+      userEvent: event,
       systemPrompt,
       messages: messages as any,
+      modelConfig,
       model,
       tools,
       sandbox,

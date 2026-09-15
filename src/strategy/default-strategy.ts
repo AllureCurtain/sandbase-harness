@@ -121,9 +121,11 @@ function transientEvent(
 
 export class DefaultStrategy implements AgentStrategy {
   readonly name = 'default';
+  readonly requiresModel = true;
 
   async *execute(context: StrategyContext): AsyncIterable<SessionEvent> {
     const { session, systemPrompt, messages, model, tools, sandbox: _sandbox, eventLog, broadcast, config, abortSignal } = context;
+    if (!model) throw new Error('Default strategy requires an AI SDK model');
     const maxSteps = config.maxSteps ?? 25;
 
     // beforeTurn hook
