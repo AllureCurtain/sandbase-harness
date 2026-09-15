@@ -1,3 +1,4 @@
+import type { Database } from '@/core/db/database.js';
 import { DefaultStrategy } from '@/strategy/default-strategy.js';
 import { PiStrategy } from '@/strategy/pi-strategy.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
@@ -17,6 +18,7 @@ export interface RuntimeLoopEngine {
 
 export interface RuntimeLoopEngineBootstrapOptions {
   dataDir?: string;
+  database?: Database;
 }
 
 export function bootstrapRuntimeLoopEngine(
@@ -26,7 +28,16 @@ export function bootstrapRuntimeLoopEngine(
   const builtin = new DefaultStrategy();
   const strategies: Partial<Record<SessionLoopEngine, AgentStrategy>> = { builtin };
   if (options.dataDir) {
-    strategies.pi = new PiStrategy(new PiLauncher({ dataDir: options.dataDir }));
+    const timeoutSeconds = settings.loop_engine.options.timeout_seconds;
+    const timeoutMs = typeof timeoutSeconds === 'number' && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+      ? Math.trunc(timeoutSeconds * 1000)
+      : undefined;
+    const launcher = new PiLauncher({
+      dataDir: options.dataDir,
+      database: options.database,
+      ...(timeoutMs ? { timeoutMs } : {}),
+    });
+    strategies.pi = new PiStrategy(launcher, options.database);
   }
 
   const provider = settings.loop_engine.provider;

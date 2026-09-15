@@ -19,7 +19,12 @@
   log used by the builtin engine. Final text, native tool trajectory, spans,
   usage, retry/error state, and terminal completion are durable; text deltas
   remain transient and bounded stderr is redacted diagnostics only. Pi native
-  tools do not receive Harness approval or path-confinement authority.
+- Adds Pi session-file lease and SQLite-backed continuity proof. Live owners
+  receive retryable busy responses; stale owners are recovered explicitly;
+  mismatched/corrupt/refused resumes are visible errors. Pi cancellation,
+  timeout, and unknown process-tree cleanup are distinct `cancelled`,
+  `timed_out`, and `cleanup_pending` states, and retained workspaces are never
+  released on uncertain cleanup.
 
 ### Fixes
 

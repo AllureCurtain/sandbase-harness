@@ -17,7 +17,10 @@ export type SessionStatus =
   | 'paused'
   | 'requires_action'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'cleanup_pending';
 
 /**
  * Valid state transitions for the Session state machine.
@@ -28,16 +31,15 @@ export type SessionStatus =
  * at any point in its life — including while queued or idle (paused).
  */
 export const SESSION_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
-  queued: ['running', 'completed', 'failed'],
-  running: ['paused', 'requires_action', 'completed', 'failed'],
-  paused: ['running', 'completed', 'failed'],
-  requires_action: ['running', 'completed', 'failed'],
+  queued: ['running', 'completed', 'failed', 'cancelled', 'timed_out', 'cleanup_pending'],
+  running: ['paused', 'requires_action', 'completed', 'failed', 'cancelled', 'timed_out', 'cleanup_pending'],
+  paused: ['running', 'completed', 'failed', 'cancelled'],
+  requires_action: ['running', 'completed', 'failed', 'cancelled'],
   completed: [],
-  // A failed session is recoverable: a new user message resumes it (failed →
-  // running), preserving the full event log. It can also be stopped/deleted,
-  // which drives it to the completed terminal state. Only completed is truly
-  // terminal (no outbound edges).
-  failed: ['running', 'completed'],
+  failed: ['running', 'completed', 'cancelled'],
+  cancelled: [],
+  timed_out: [],
+  cleanup_pending: [],
 };
 
 // ============================================================

@@ -30,6 +30,7 @@ export interface RuntimeSessionServicesOptions {
   /** Resolve the strategy matching a persisted session engine. */
   resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
   skills: Skill[];
+  skillsDir?: string;
   memory?: MemoryProvider;
   artifactStore: Pick<ArtifactStore, 'path'>;
   defaultMaxSteps: number;
@@ -66,6 +67,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     eventLogger,
     compactor: new ContextCompactor(),
     skills: options.skills,
+    skillsDir: options.skillsDir,
     memory: options.memory,
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,

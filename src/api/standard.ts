@@ -43,7 +43,7 @@ export interface ApiSession {
   title: string | null;
   agent: ApiAgent | { id: string; type: 'agent'; name: string };
   environment_id: string;
-  status: 'idle' | 'running' | 'requires_action' | 'terminated' | 'failed';
+  status: 'idle' | 'running' | 'requires_action' | 'terminated' | 'failed' | 'cancelled' | 'timed_out' | 'cleanup_pending';
   resources: ApiSessionResource[];
   vault_ids: string[];
   usage: {
@@ -184,6 +184,12 @@ export function toApiSessionStatus(status: string): ApiSession['status'] {
       return 'terminated';
     case 'failed':
       return 'failed';
+    case 'cancelled':
+      return 'cancelled';
+    case 'timed_out':
+      return 'timed_out';
+    case 'cleanup_pending':
+      return 'cleanup_pending';
     default:
       return 'idle';
   }

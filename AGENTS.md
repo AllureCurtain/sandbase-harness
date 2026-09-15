@@ -57,6 +57,9 @@ pressure:
 
 - One PR, one independently verifiable behavior. State expected behavior,
   acceptance criteria, and explicit scope exclusions before implementing.
+- Public topic branches use functional slugs; a GitHub Issue remains linked in
+  the Issue/PR metadata, and internal split identifiers never enter branch or
+  commit names.
 - No direct commits to `main`. Every change goes through a worktree branch and
   a PR.
 - Never weaken sandbox path checks, API authentication, credential injection,

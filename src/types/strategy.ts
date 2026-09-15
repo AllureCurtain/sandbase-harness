@@ -40,6 +40,8 @@ export interface StrategyContext {
   messages: CoreMessage[];
   /** Resolved selected model configuration, including no AI SDK construction. */
   modelConfig?: ModelConfig;
+  /** Explicit skill directories for engines that support managed skill loading. */
+  skillDirs?: string[];
   /** Constructed only for strategies that require the AI SDK model transport. */
   model?: LanguageModel;
   tools: Record<string, CoreTool>;

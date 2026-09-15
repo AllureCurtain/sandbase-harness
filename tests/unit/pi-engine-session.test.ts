@@ -91,6 +91,7 @@ function createWindowsPiTerminationHarness(treeTermination: Promise<void>): Wind
       queueMicrotask(() => piChild.emit('close', 0));
       return treeTermination;
     },
+    cleanupTimeoutMs: 25,
   });
   const manager = new SessionManager(db, undefined, 'pi');
   const cleanupCalls: string[] = [];
@@ -155,10 +156,9 @@ describe('Pi Windows termination cleanup', () => {
     void stop.then(() => { stopSettled = true; }, () => { stopSettled = true; });
     await parentClosed;
     rejectTreeTermination?.(new Error('taskkill failed'));
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(stopSettled).toBe(false);
+    await waitFor(() => stopSettled);
+    expect(stopSettled).toBe(true);
+    expect(manager.get(sessionId)?.status).toBe('cleanup_pending');
     expect(cleanupCalls).toEqual([]);
     db.close();
   });

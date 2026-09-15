@@ -94,7 +94,7 @@ async function startServer(opts: StartServerOptions) {
   const effectiveSettings = runtimeComposition.settings.effective_config;
   const memory = runtimeComposition.memory;
 
-  const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings, { dataDir });
+  const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings, { dataDir, database: db });
   const artifactStore = runtimeComposition.artifactStore;
 
   const {
@@ -116,6 +116,7 @@ async function startServer(opts: StartServerOptions) {
       return strategy;
     },
     skills,
+    skillsDir,
     memory,
     artifactStore,
     defaultMaxSteps: loopEngine.defaultMaxSteps,

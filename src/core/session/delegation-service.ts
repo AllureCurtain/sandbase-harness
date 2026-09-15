@@ -34,7 +34,7 @@ export interface DelegationServiceDeps {
   provisionSandbox: (session: Session, sandboxId: string) => Promise<SandboxInstance>;
   composeSystemPrompt: (agent: AgentDefinition) => string;
   buildSandboxTools: (agent: AgentDefinition, sandbox: SandboxInstance) => Record<string, any>;
-}
+  resolveSkillDirs?: (agent: AgentDefinition) => string[];}
 
 export class DelegationService {
   constructor(private readonly deps: DelegationServiceDeps) {}
@@ -165,6 +165,7 @@ export class DelegationService {
           id: subSessionId,
           agentId: target.name,
           agentName: target.name,
+          agentDefinition: target,
           loopEngine: session.loopEngine ?? 'builtin',
           // Inherit the parent's environment so anything downstream that
           // resolves configuration from it sees the same backend the
@@ -179,6 +180,7 @@ export class DelegationService {
         messages: [{ role: 'user', content: [{ type: 'text', text: task }] }] as any,
         modelConfig,
         model,
+        skillDirs: this.deps.resolveSkillDirs?.(target) ?? [],
         tools,
         sandbox,
         eventLog: memLog,
