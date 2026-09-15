@@ -15,8 +15,11 @@
   selected engine, launch one restricted print-mode subprocess per text user
   turn, use a safe session file and private `models.json` with
   `$SANDBASE_PI_API_KEY`, and fail explicitly when the Pi CLI is unavailable.
-  Pi JSON event translation, confirmation, lifecycle, and API work remain out
-  of scope.
+- Translates validated Pi stdout JSONL into the same SQLite-backed CMA event
+  log used by the builtin engine. Final text, native tool trajectory, spans,
+  usage, retry/error state, and terminal completion are durable; text deltas
+  remain transient and bounded stderr is redacted diagnostics only. Pi native
+  tools do not receive Harness approval or path-confinement authority.
 
 ### Fixes
 

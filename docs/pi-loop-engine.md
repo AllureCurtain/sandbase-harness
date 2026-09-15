@@ -1,4 +1,4 @@
-# Pi Loop Engine Foundation
+# Pi Loop Engine (print/JSON)
 
 Set `loop_engine.provider` to `pi` to select the external Pi CLI for **new**
 sessions. The selected provider is persisted on each session: later global
@@ -28,8 +28,15 @@ arguments. Pi's `models.json` is written under the session's private Pi config
 directory with restrictive file permissions where supported. It defines a
 managed `sandbase` provider with the selected model and matching OpenAI or
 Anthropic API kind, and contains only the `$SANDBASE_PI_API_KEY` credential
-reference. The resolved model key is passed in a restricted child environment;
-telemetry is disabled with `PI_TELEMETRY=0`.
+reference. Pi stdout is consumed as bounded LF-delimited JSONL without `readline`. The
+adapter validates documented event shapes, strips structured tool markup across
+chunk boundaries, and appends final text, thinking, native tool use/result,
+model spans, and terminal events to the same SQLite EventLogger used by the
+builtin engine. Every durable event is appended before it is broadcast. Text
+deltas have `seq: 0` and are live-only; the final `agent.message` is the replay
+authority. Each Pi model request records usage exactly once. Unknown events are
+inert, malformed authority-bearing events fail the turn, and stderr is limited
+to a redacted 64 KiB diagnostic tail.
 
 Pi must be installed and discoverable as `pi`; the Settings test reports a
 missing CLI and a turn fails explicitly if it cannot be launched. On Windows,
@@ -42,21 +49,16 @@ session work directory can be released; on POSIX the child runs in its own
 process group, and on Windows the session waits for `taskkill` to finish
 terminating the process tree.
 
-## Foundation scope
+## Current scope and boundaries
 
-This is deliberately a process-launch foundation, not a Pi protocol adapter.
-Pi JSON output is not translated into Harness events yet. It does not implement
-Pi session resume locking/continuity, skills CLI arguments, markup filtering,
-usage aggregation, turn timeouts, Docker Pi images, RPC, or a Pi
-tool-confirmation protocol adapter. CMA supports richer user content and event
-forms, but this print-mode foundation admits only text `user.message` turns and
-`user.interrupt` control events; image/document messages, custom-tool results,
-and tool confirmations are rejected before persistence or child execution. Use
-the built-in engine when an integration requires those CMA features. Because
-print mode has no verified Harness tool-policy bridge, agents that declare
-`always_ask`, `never_allow`, or disabled tools are rejected at Pi session
-creation and before execution or resume; none of those restrictions can
-silently bypass Harness policy. It also adds no OpenAI API surface.
+The current print-mode adapter produces durable CMA events and visible Pi-native
+tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
+not receive Harness `always_ask` approval, local file path confinement, or a
+fake Allow/Deny card. Foundation policy still rejects agents declaring
+`always_ask`, `never_allow`, or disabled tools. Pi session-file leases,
+resume/recovery continuity, turn deadlines, and stronger cleanup states remain
+the next continuity work package. Docker/Kubernetes Pi transport, RPC, and a
+Pi→Harness approval bridge remain excluded. It also adds no OpenAI API surface.
 
 Pi recognizes `models.json` provider settings and resolves `$ENV_VAR` values
 at request time; this is why the per-session config references

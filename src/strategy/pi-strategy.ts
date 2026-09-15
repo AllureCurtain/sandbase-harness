@@ -1,15 +1,19 @@
 import type { TextBlock } from '@/types/cma-protocol.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
-import type { PiLaunchRequest } from './pi-launcher.js';
+import type { PiLaunchRequest, PiProcessHandle } from './pi-launcher.js';
+import { PiStderrTail } from './pi/stderr-tail.js';
+import { PiTranslator } from './pi/translator.js';
 
 export interface PiTurnLauncher {
+  /** Foundation compatibility path; adapter-aware launchers also implement start. */
   launch(request: PiLaunchRequest): Promise<void>;
+  start?(request: PiLaunchRequest): Promise<PiProcessHandle>;
 }
 
 /**
- * Minimal Pi print-mode bridge. Pi output remains opaque in this foundation:
- * event translation, tool calls, confirmations, resume continuity, and usage
- * accounting are intentionally not implemented here.
+ * Pi print-mode strategy. The foundation's opaque launch() fallback remains
+ * available for isolated process tests; the real runtime uses start() so this
+ * strategy owns validated JSONL translation and canonical event persistence.
  */
 export class PiStrategy implements AgentStrategy {
   readonly name = 'pi';
@@ -32,16 +36,84 @@ export class PiStrategy implements AgentStrategy {
       throw new Error('Pi loop engine requires a selected model configuration');
     }
 
-    const prompt = context.userEvent.content
-      .map((block) => block.text)
-      .join('\n');
-    await this.launcher.launch({
+    const selectedModel = context.modelConfig.model;
+    if (!selectedModel) {
+      throw new Error('Pi loop engine requires a selected model id');
+    }
+    const request: PiLaunchRequest = {
       sessionId: context.session.id,
       workDir: context.sandbox.hostWorkDir,
-      prompt,
+      prompt: context.userEvent.content.map((block) => block.text).join('\n'),
       systemPrompt: context.systemPrompt,
       model: context.modelConfig,
       ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+    };
+
+    // Keep the foundation behavior for a launcher test double that has not yet
+    // opted into stdout consumption. No canonical event is fabricated here.
+    if (!this.launcher.start) {
+      await this.launcher.launch(request);
+      return;
+    }
+
+    const handle = await this.launcher.start(request);
+    if (!handle.stdout) throw new Error('Pi process did not expose stdout for JSONL adapter');
+    if (!handle.stderr) throw new Error('Pi process did not expose stderr for diagnostics');
+
+    const stderr = new PiStderrTail();
+    const stderrDrain = drainStderr(handle.stderr, stderr);
+    const translator = new PiTranslator({
+      sessionId: context.session.id,
+      model: selectedModel,
+      eventLog: context.eventLog,
+      broadcast: context.broadcast,
+      recordUsage: (sessionId, inputTokens, outputTokens) => {
+        context.eventLog.recordUsage(sessionId, inputTokens, outputTokens);
+      },
     });
+
+    let parserFinished = false;
+    try {
+      const parsePromise = translator.consume(handle.stdout);
+      const exit = await Promise.all([parsePromise, handle.wait()]).then(([, result]) => result);
+      parserFinished = true;
+      const summary = translator.finish();
+      await stderrDrain;
+
+      if (!summary.sawSessionHeader) {
+        throw new Error('Pi stdout ended without a session header');
+      }
+      if (exit.code !== 0 || exit.signal) {
+        throw new Error(withStderr(
+          `Pi process exited with code ${exit.code ?? 'unknown'}${exit.signal ? ` (${exit.signal})` : ''}`,
+          stderr.text(),
+        ));
+      }
+      if (summary.lastTurnError) {
+        throw new Error(withStderr(summary.lastTurnError, stderr.text()));
+      }
+
+      // `turn_complete` is the durable adapter terminal marker. It is appended
+      // before strategy completion and never yielded separately.
+      const terminal = context.eventLog.append(context.session.id, { type: 'turn_complete' });
+      context.broadcast(terminal);
+    } catch (error) {
+      if (!parserFinished && error instanceof Error && error.name !== 'AbortError') {
+        await handle.terminate(true).catch(() => {});
+        await handle.wait().catch(() => {});
+      }
+      await stderrDrain.catch(() => {});
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(withStderr(message, stderr.text()));
+    }
   }
+}
+
+async function drainStderr(stream: AsyncIterable<Uint8Array | string>, tail: PiStderrTail): Promise<void> {
+  for await (const chunk of stream) tail.append(chunk);
+}
+
+function withStderr(message: string, tail: string): string {
+  return tail ? `${message}; Pi stderr: ${tail}` : message;
 }

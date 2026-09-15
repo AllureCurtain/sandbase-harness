@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join, resolve, sep, win32 } from 'node:path';
@@ -24,6 +25,20 @@ export interface PiLaunchRequest {
   model: PiModelConfig;
   /** Cancels the in-flight child only after it has exited and released its workdir. */
   abortSignal?: AbortSignal;
+}
+
+export interface PiProcessExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+/** A started Pi child whose stdout/stderr can be consumed by the adapter. */
+export interface PiProcessHandle {
+  readonly child: ChildProcess;
+  readonly stdout: Readable | null;
+  readonly stderr: Readable | null;
+  wait(): Promise<PiProcessExit>;
+  terminate(force?: boolean): Promise<void>;
 }
 
 export type PiProcessTerminator = (
@@ -135,7 +150,19 @@ export class PiLauncher {
     this.processGroupAlive = options.processGroupAlive ?? isProcessGroupAlive;
   }
 
+  /** Compatibility wrapper used by the foundation: drain output and wait. */
   async launch(request: PiLaunchRequest): Promise<void> {
+    const handle = await this.start(request);
+    handle.stdout?.resume();
+    handle.stderr?.resume();
+    const exit = await handle.wait();
+    if (exit.code !== 0) {
+      throw piLaunchError(new Error(`Pi process exited with code ${exit.code ?? 'unknown'}`));
+    }
+  }
+
+  /** Start a Pi child for a protocol adapter to consume incrementally. */
+  async start(request: PiLaunchRequest): Promise<PiProcessHandle> {
     // Resolve against the host Settings environment before materializing either
     // the per-session config or Pi's credential alias. The original host names
     // are then explicitly removed from the restricted child environment.
@@ -162,10 +189,10 @@ export class PiLauncher {
       PI_TELEMETRY: '0',
       SANDBASE_PI_API_KEY: model.api_key,
     }, modelEnvironmentKeys);
-    await spawnPiProcess(this.spawnImpl, invocation.file, invocation.args, {
+    return spawnPiProcess(this.spawnImpl, invocation.file, invocation.args, {
       cwd: request.workDir,
       env,
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       // Detached POSIX children let an interrupt address the entire Pi process
       // group, including any CLI descendants that retain the workspace.
@@ -249,7 +276,7 @@ export async function probePiCli(options: PiCliProbeOptions = {}): Promise<PiCli
     return { available: false, message: 'Pi CLI is not available.' };
   }
   try {
-    await spawnPiProcess(
+    const handle = await spawnPiProcess(
       options.spawnImpl ?? spawn,
       invocation.file,
       invocation.args,
@@ -259,6 +286,8 @@ export async function probePiCli(options: PiCliProbeOptions = {}): Promise<PiCli
         windowsHide: true,
       },
     );
+    const exit = await handle.wait();
+    if (exit.code !== 0) throw new Error(`Pi process exited with code ${exit.code ?? 'unknown'}`);
     return { available: true, message: 'Pi CLI is available.' };
   } catch {
     return { available: false, message: 'Pi CLI is not available.' };
@@ -299,7 +328,7 @@ async function spawnPiProcess(
     terminationGraceMs: 1_000,
     processGroupAlive: isProcessGroupAlive,
   },
-): Promise<void> {
+): Promise<PiProcessHandle> {
   if (abortSignal?.aborted) throw abortError();
 
   let child: ChildProcess;
@@ -309,120 +338,139 @@ async function spawnPiProcess(
     throw piLaunchError(error);
   }
 
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    let settled = false;
-    let abortRequested = false;
-    let childClosed = false;
-    let windowsTreeTerminationComplete = false;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
-    const processGroupStillAlive = () => (
-      abortOptions.platform !== 'win32'
-      && child.pid !== undefined
-      && abortOptions.processGroupAlive(child.pid)
-    );
-    const requestTermination = (force: boolean): Promise<void> => {
-      try {
-        return Promise.resolve(abortOptions.terminateProcess(child, abortOptions.platform, force));
-      } catch {
-        try {
-          child.kill(force ? 'SIGKILL' : 'SIGTERM');
-        } catch {
-          // The child may already have exited; close/error will settle below.
-        }
-        return Promise.resolve();
-      }
-    };
-    const onAbort = () => {
-      if (abortRequested) return;
-      abortRequested = true;
-      const termination = requestTermination(false);
-      if (abortOptions.platform === 'win32') {
-        void termination.then(
-          () => {
-            windowsTreeTerminationComplete = true;
-            if (childClosed) rejectOnce(abortError());
-          },
-          () => {
-            // Do not settle: without confirmed task-tree completion, draining
-            // the turn could release a workspace still held by a descendant.
-          },
-        );
-      }
-      if (abortOptions.platform !== 'win32' && abortOptions.terminationGraceMs > 0) {
-        forceTimer = setTimeout(() => {
-          void requestTermination(true);
-          if (child.pid === undefined) return;
-          void waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive).then(() => {
-            if (childClosed) rejectOnce(abortError());
-          });
-        }, abortOptions.terminationGraceMs);
-      }
-    };
-    const cleanup = () => {
-      if (forceTimer) clearTimeout(forceTimer);
-      abortSignal?.removeEventListener('abort', onAbort);
-    };
-    const resolveOnce = () => {
+  const stdout = child.stdout ?? null;
+  const stderr = child.stderr ?? null;
+  let abortRequested = false;
+  let childClosed = false;
+  let windowsTreeTerminationComplete = false;
+  let forceTimer: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  let resolveWait: (exit: PiProcessExit) => void = () => {};
+  let rejectWait: (error: unknown) => void = () => {};
+  const waitPromise = new Promise<PiProcessExit>((resolvePromise, rejectPromise) => {
+    resolveWait = (exit) => {
       if (settled) return;
       settled = true;
-      cleanup();
-      resolvePromise();
+      resolvePromise(exit);
     };
-    const rejectOnce = (error: unknown) => {
+    rejectWait = (error) => {
       if (settled) return;
       settled = true;
-      cleanup();
       rejectPromise(piLaunchError(error));
     };
+  });
 
-    child.once('error', (error) => {
-      if (!abortRequested) {
-        rejectOnce(error);
-        return;
+  const processGroupStillAlive = () => (
+    abortOptions.platform !== 'win32'
+      && child.pid !== undefined
+      && abortOptions.processGroupAlive(child.pid)
+  );
+  const requestTermination = (force: boolean): Promise<void> => {
+    try {
+      return Promise.resolve(abortOptions.terminateProcess(child, abortOptions.platform, force));
+    } catch {
+      try {
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      } catch {
+        // The child may already have exited; close/error will settle below.
       }
-      childClosed = true;
-      if (abortOptions.platform === 'win32') {
-        if (windowsTreeTerminationComplete) rejectOnce(abortError());
-      } else if (!processGroupStillAlive()) {
-        rejectOnce(abortError());
-      }
-    });
-    child.once('close', (code) => {
-      childClosed = true;
-      if (abortRequested) {
-        // Parent close is insufficient on POSIX: a child can retain the Pi
-        // process group and workspace after its wrapper exits. Windows waits
-        // for taskkill's tree-termination result for the same reason.
-        if (abortOptions.platform === 'win32') {
-          if (windowsTreeTerminationComplete) rejectOnce(abortError());
-        } else if (!processGroupStillAlive()) {
-          rejectOnce(abortError());
-        }
-      } else if (code === 0) {
-        resolveOnce();
-      } else {
-        rejectOnce(new Error(`Pi process exited with code ${code ?? 'unknown'}`));
-      }
-    });
-
-    if (abortSignal) {
-      if (abortSignal.aborted) onAbort();
-      else abortSignal.addEventListener('abort', onAbort, { once: true });
+      return Promise.resolve();
     }
-    if (abortRequested || prompt === undefined) return;
-    if (!child.stdin) {
-      rejectOnce(new Error('Pi process did not expose stdin'));
+  };
+  const rejectAbortIfSafe = () => {
+    if (!childClosed) return;
+    if (abortOptions.platform === 'win32') {
+      if (windowsTreeTerminationComplete) rejectWait(abortError());
+    } else if (!processGroupStillAlive()) {
+      rejectWait(abortError());
+    }
+  };
+  const onAbort = () => {
+    if (abortRequested) return;
+    abortRequested = true;
+    const termination = requestTermination(false);
+    if (abortOptions.platform === 'win32') {
+      void termination.then(
+        () => {
+          windowsTreeTerminationComplete = true;
+          rejectAbortIfSafe();
+        },
+        () => {
+          // Do not settle: without confirmed task-tree completion, draining
+          // the turn must not release a workspace held by an unknown child.
+        },
+      );
+    }
+    if (abortOptions.platform !== 'win32' && abortOptions.terminationGraceMs > 0) {
+      forceTimer = setTimeout(() => {
+        void requestTermination(true);
+        if (child.pid === undefined) {
+          rejectAbortIfSafe();
+          return;
+        }
+        void waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive).then(() => {
+          rejectAbortIfSafe();
+        });
+      }, abortOptions.terminationGraceMs);
+    }
+    rejectAbortIfSafe();
+  };
+  const cleanup = () => {
+    if (forceTimer) clearTimeout(forceTimer);
+    abortSignal?.removeEventListener('abort', onAbort);
+  };
+
+  child.once('error', (error) => {
+    if (!abortRequested) {
+      cleanup();
+      rejectWait(error);
       return;
     }
-    child.stdin.once('error', (error) => {
-      if (!abortRequested) rejectOnce(error);
-    });
-    try {
-      child.stdin.end(prompt);
-    } catch (error) {
-      if (!abortRequested) rejectOnce(error);
-    }
+    childClosed = true;
+    rejectAbortIfSafe();
   });
+  child.once('close', (code, signal) => {
+    childClosed = true;
+    if (abortRequested) {
+      rejectAbortIfSafe();
+      return;
+    }
+    cleanup();
+    resolveWait({ code, signal });
+  });
+
+  if (abortSignal) {
+    if (abortSignal.aborted) onAbort();
+    else abortSignal.addEventListener('abort', onAbort, { once: true });
+  }
+  if (!abortRequested && prompt !== undefined) {
+    if (!child.stdin) {
+      cleanup();
+      rejectWait(new Error('Pi process did not expose stdin'));
+    } else {
+      child.stdin.once('error', (error) => {
+        if (!abortRequested) rejectWait(error);
+      });
+      try {
+        child.stdin.end(prompt);
+      } catch (error) {
+        if (!abortRequested) rejectWait(error);
+      }
+    }
+  }
+
+  return {
+    child,
+    stdout,
+    stderr,
+    wait: () => waitPromise,
+    terminate: async (force = false) => {
+      await requestTermination(force);
+      if (force && abortOptions.platform !== 'win32' && child.pid !== undefined) {
+        await waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive);
+      }
+    },
+  };
 }
 
 /** Terminate Pi and any descendants that could retain the session workdir. */

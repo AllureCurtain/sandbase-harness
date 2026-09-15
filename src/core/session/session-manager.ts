@@ -610,10 +610,11 @@ export class SessionManager {
         }
       } else {
         // Turn failed unrecoverably — terminal. Log error + release sandbox.
-        this.eventLogger.append(sessionId, {
+        const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
         });
+        this.broadcast(sessionId, errorEvent);
         const current = this.get(sessionId);
         if (current && !isTerminal(current.status)) {
           this.updateStatus(sessionId, 'failed');
