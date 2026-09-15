@@ -18,6 +18,7 @@ import { apiKeysRoutes } from './routes/api-keys.js';
 import { extendedRoutes } from './routes/extended.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
+import { createCmaRequestAdmissionMiddleware } from './cma-admission.js';
 import type { SessionManager } from '@/core/session/session-manager.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { workerRoutes } from './routes/worker.js';
@@ -139,6 +140,7 @@ export function createServer(deps: ServerDeps) {
     hasApiKeys: deps.hasApiKeys,
     validateApiKey: deps.validateApiKey,
   }));
+  app.use('/v1/*', createCmaRequestAdmissionMiddleware());
 
   // Managed Agents API endpoints
   app.route('/v1/sessions', sessionsRoutes(deps));

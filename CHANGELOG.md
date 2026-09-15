@@ -17,6 +17,14 @@
 
 ### Security
 
+- Admits CMA `/v1` requests that use `x-api-key` or Anthropic compatibility
+  headers before route business logic: required version/beta headers are
+  validated with stable structured errors, memory-store routes require their
+  own memory beta, and existing `Authorization: Bearer` requests without CMA
+  headers retain their behavior. Authentication accepts exactly one credential
+  source per request; dual `Authorization` and `x-api-key` inputs are rejected.
+  Memory-store requests reject combined managed-agents and agent-memory betas,
+  while the documented memory listing accepts either beta.
 - Updates `prefix-safe-json` `0.4.2` -> `0.4.3`, a security release fixing
   GHSA-3xpw-9694-2xxp: the AI SDK adapter used to silently drop raw stream
   events once it had already observed a call's own terminal, and
