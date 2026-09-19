@@ -402,7 +402,9 @@ describe('kubernetes sandbox settings check', () => {
   function makeDb() {
     const directory = mkdtempSync(join(tmpdir(), 'ma-k8s-settings-test-'));
     directories.push(directory);
-    const db = new Database(join(directory, 'settings.db'));
+    // The Kubernetes settings probe does not read metadata; use an in-memory
+    // database so Windows file-handle cleanup cannot mask the probe result.
+    const db = new Database(':memory:');
     db.runMigrations();
     return { db, directory };
   }
