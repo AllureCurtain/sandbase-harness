@@ -19,6 +19,21 @@ import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { LanguageModel } from 'ai';
 
+/** Wait for queued session work instead of assuming a scheduler duration. */
+async function waitFor<T>(
+  probe: () => T | undefined | null,
+  description: string,
+  timeoutMs = 2_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = probe();
+    if (value !== undefined && value !== null) return value;
+    if (Date.now() >= deadline) throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function fakeModel(): LanguageModel {
   return {
     specificationVersion: 'v4', provider: 'test', modelId: 't',
@@ -42,7 +57,8 @@ describe('Tool confirmation — requires_action transition', () => {
     manager = new SessionManager(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await manager.shutdown();
     db.close();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -59,9 +75,12 @@ describe('Tool confirmation — requires_action transition', () => {
 
     const session = manager.create({ agent: 'agent_x' });
     await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'go' }] } as any);
-    await new Promise((r) => setTimeout(r, 60));
 
-    expect(manager.get(session.id)!.status).toBe('requires_action');
+    const status = await waitFor(
+      () => (manager.get(session.id)?.status === 'requires_action' ? 'requires_action' : undefined),
+      'session status requires_action',
+    );
+    expect(status).toBe('requires_action');
   });
 
   it('accepts a follow-up event after requires_action', async () => {
@@ -78,14 +97,19 @@ describe('Tool confirmation — requires_action transition', () => {
 
     const session = manager.create({ agent: 'agent_x' });
     await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'go' }] } as any);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(manager.get(session.id)!.status).toBe('requires_action');
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'requires_action' ? true : undefined),
+      'session status requires_action',
+    );
 
-    // Confirm — a second turn runs and completes (idle)
+    // Confirm — a second turn runs and completes (idle).
     await manager.sendEvent(session.id, { type: 'user.tool_confirmation', tool_use_id: 'c1', result: 'allow' } as any);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(turns).toBe(2);
-    expect(manager.get(session.id)!.status).toBe('paused');
+    await waitFor(() => (turns === 2 ? turns : undefined), 'the confirmation turn to run');
+    const status = await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused',
+    );
+    expect(status).toBe('paused');
   });
 });
 
@@ -139,7 +163,8 @@ describe('Tool confirmation — execute/deny pending tool', () => {
     manager.setExecutor(executor);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await manager.shutdown();
     db.close();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -151,20 +176,24 @@ describe('Tool confirmation — execute/deny pending tool', () => {
     });
   }
 
+  function findToolResult(sessionId: string, toolUseId: string) {
+    return manager
+      .getEventLogger()
+      .getEvents(sessionId)
+      .find((event) => event.type === 'agent.tool_result' && (event.content?.[0] as any)?.tool_use_id === toolUseId);
+  }
+
   it('executes the pending tool on allow and appends the result', async () => {
     const session = manager.create({ agent: 'agent_bash' });
-    // Simulate the prior turn left it awaiting confirmation
+    // Simulate the prior turn left it awaiting confirmation.
     db.prepare(`UPDATE sessions SET status='requires_action' WHERE id=?`).run(session.id);
     seedPendingToolUse(session.id);
 
     await manager.sendEvent(session.id, { type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'allow' } as any);
-    await new Promise((r) => setTimeout(r, 80));
 
-    const events = manager.getEventLogger().getEvents(session.id);
-    const result = events.find((e) => e.type === 'agent.tool_result' && (e.content?.[0] as any)?.tool_use_id === 'call_1');
-    expect(result).toBeDefined();
-    expect((result!.content![0] as any).content).toContain('confirmed');
-    expect((result!.content![0] as any).is_error).toBeFalsy();
+    const result = await waitFor(() => findToolResult(session.id, 'call_1'), 'the tool result for call_1');
+    expect((result.content![0] as any).content).toContain('confirmed');
+    expect((result.content![0] as any).is_error).toBeFalsy();
   });
 
   it('appends an error result on deny', async () => {
@@ -173,12 +202,9 @@ describe('Tool confirmation — execute/deny pending tool', () => {
     seedPendingToolUse(session.id);
 
     await manager.sendEvent(session.id, { type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'deny', deny_message: 'nope' } as any);
-    await new Promise((r) => setTimeout(r, 80));
 
-    const events = manager.getEventLogger().getEvents(session.id);
-    const result = events.find((e) => e.type === 'agent.tool_result' && (e.content?.[0] as any)?.tool_use_id === 'call_1');
-    expect(result).toBeDefined();
-    expect((result!.content![0] as any).is_error).toBe(true);
-    expect((result!.content![0] as any).content).toContain('nope');
+    const result = await waitFor(() => findToolResult(session.id, 'call_1'), 'the deny result for call_1');
+    expect((result.content![0] as any).is_error).toBe(true);
+    expect((result.content![0] as any).content).toContain('nope');
   });
 });

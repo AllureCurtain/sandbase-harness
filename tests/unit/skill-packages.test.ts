@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { join, resolve } from 'node:path';
 import { normalizeSkillPackage, safeJoin, isManagedSkillStoragePath } from '@/api/routes/skill-packages.js';
 
 const skillContent = Buffer.from('---\nname: demo\ndescription: Demo skill\n---\nBody', 'utf8');
@@ -33,7 +34,10 @@ describe('skill package helpers', () => {
   it('guards skill storage paths', () => {
     const root = '/tmp/workspace/skills/skill_abc';
 
-    expect(safeJoin(root, 'resources/file.txt')).toBe('/tmp/workspace/skills/skill_abc/resources/file.txt');
+    // `safeJoin` returns a resolved path, so build the expectation the same way
+    // rather than hardcoding POSIX separators. The escape rejection below is
+    // what this test actually guards.
+    expect(safeJoin(root, 'resources/file.txt')).toBe(join(resolve(root), 'resources', 'file.txt'));
     expect(() => safeJoin(root, '../escape.txt')).toThrow('Path escapes the skills directory.');
     expect(isManagedSkillStoragePath('/tmp/workspace/skills/skill_abc', '/tmp/workspace')).toBe(true);
     expect(isManagedSkillStoragePath('/tmp/other/skill_abc', '/tmp/workspace')).toBe(false);

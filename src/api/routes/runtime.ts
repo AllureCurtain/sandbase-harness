@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import type { LogLevel } from '@/core/observability/logger.js';
 import {
   listMemoryProviders,
@@ -178,7 +178,11 @@ export function runtimeRoutes(deps: ServerDeps) {
     const configDir = workspace?.configPath ? dirname(workspace.configPath) : workspace?.root;
     return c.json({
       type: 'workspace',
-      name: workspace?.root.split('/').filter(Boolean).at(-1) ?? 'local workspace',
+      // Splitting on `/` alone returned the whole path on Windows, where the
+      // root has no forward slashes — so the response leaked the operator's
+      // absolute host path as the workspace name. `basename` matches how
+      // core/workspace/registry.ts derives the same name.
+      name: workspace ? basename(workspace.root) || 'local workspace' : 'local workspace',
       ...workspace,
       configDir,
       directories: workspace

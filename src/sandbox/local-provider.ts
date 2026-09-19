@@ -15,7 +15,7 @@
  * Reference: OMA local-subprocess.ts
  */
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import {
   mkdirSync,
   writeFileSync,
@@ -58,6 +58,41 @@ function sandboxEnvironment(extra: Record<string, string> | undefined): Record<s
     }),
   );
   return { ...inherited, ...withAgentIdentity(extra) };
+}
+
+function shellInvocation(command: string): { file: string; args: string[] } {
+  return shellInvocationFor(command, process.platform, process.env, existsSync);
+}
+
+/** Resolve the local command shell; parameters make platform fallback testable. */
+export function shellInvocationFor(
+  command: string,
+  platform: NodeJS.Platform,
+  environment: NodeJS.ProcessEnv,
+  fileExists: (path: string) => boolean,
+): { file: string; args: string[] } {
+  if (platform !== 'win32') return { file: '/bin/sh', args: ['-c', command] };
+
+  // `/bin/sh` is not present on a normal Windows installation. Allow local
+  // developers to opt into Git Bash or another POSIX shell, while keeping a
+  // dependency-free cmd.exe fallback that reports command failures normally.
+  const configuredShell = environment.SANDBASE_SHELL?.trim();
+  if (configuredShell) return { file: configuredShell, args: ['-c', command] };
+  const gitBashCandidates = [
+    environment.ProgramFiles ? join(environment.ProgramFiles, 'Git', 'bin', 'bash.exe') : undefined,
+    environment['ProgramFiles(x86)'] ? join(environment['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe') : undefined,
+    // Sandboxed service managers and trimmed launch environments sometimes
+    // strip ProgramFiles from the process environment; probe the standard
+    // install locations directly before giving up on a POSIX shell.
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const gitBash = gitBashCandidates.find((candidate) => fileExists(candidate));
+  if (gitBash) return { file: gitBash, args: ['-c', command] };
+  return {
+    file: environment.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', command],
+  };
 }
 
 export class LocalSandboxProvider implements SandboxProvider {
@@ -131,7 +166,8 @@ class LocalSandboxInstance implements SandboxInstance {
       let timedOut = false;
       let resolved = false;
 
-      const proc = spawn('/bin/sh', ['-c', command], {
+      const shell = shellInvocation(command);
+      const proc = spawn(shell.file, shell.args, {
         cwd,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -148,6 +184,11 @@ class LocalSandboxInstance implements SandboxInstance {
           } catch {
             proc.kill('SIGKILL');
           }
+        } else if (process.platform === 'win32' && proc.pid) {
+          // `proc.kill()` only terminates the shell on Windows; taskkill's
+          // tree flag also stops sleep/bash children left behind by a timed
+          // out tool call.
+          execFile('taskkill', ['/pid', String(proc.pid), '/t', '/f'], () => undefined);
         } else {
           proc.kill('SIGKILL');
         }
@@ -159,6 +200,29 @@ class LocalSandboxInstance implements SandboxInstance {
 
       proc.stderr.on('data', (chunk: Buffer) => {
         stderr += chunk.toString();
+      });
+
+      // The shell exiting is the real end of a command. Foreground output is
+      // already collected by the time the shell exits; `close` alone is not a
+      // reliable completion signal because grandchildren (e.g. a background
+      // dev server started with `&`) can inherit the stdio pipes and keep
+      // them open indefinitely. Wait briefly so the streams can flush, then
+      // return instead of stalling until the timeout.
+      proc.on('exit', (code) => {
+        if (resolved) return;
+        clearTimeout(timer);
+        setTimeout(() => {
+          if (resolved) return;
+          resolved = true;
+          proc.stdout?.destroy();
+          proc.stderr?.destroy();
+          resolve({
+            exitCode: code ?? 1,
+            stdout,
+            stderr,
+            timedOut,
+          });
+        }, 100);
       });
 
       proc.on('close', (code) => {
@@ -217,7 +281,7 @@ class LocalSandboxInstance implements SandboxInstance {
         if (entry.isDirectory()) {
           walk(entryPath);
         } else {
-          results.push(relative(this.workDir, entryPath));
+          results.push(relative(this.workDir, entryPath).split(sep).join('/'));
         }
       }
     };

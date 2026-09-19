@@ -22,7 +22,7 @@ import {
   copyFileSync,
   rmSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { defaultTemplateCacheDir } from '@/core/config/paths.js';
@@ -160,14 +160,19 @@ function collectTemplateFiles(
       if (!entry.isDirectory()) continue;
       const skillPath = join(dir, entry.name, 'SKILL.md');
       if (!existsSync(skillPath)) {
-        errors.push({ path: join(relativeRoot, entry.name), message: 'Skill directory must contain SKILL.md' });
+        errors.push({ path: posix.join(relativeRoot, entry.name), message: 'Skill directory must contain SKILL.md' });
       }
     }
   }
 
   for (const entry of entries) {
     const child = join(dir, entry.name);
-    const relativePath = join(relativeRoot, entry.name);
+    // Manifest-relative paths are logical identifiers, not filesystem paths:
+    // they are matched against `agents/` and reported through the public
+    // validation and install results. Keep them POSIX on every platform so a
+    // Windows run does not emit `agents\name.yaml` and fail its own prefix
+    // checks.
+    const relativePath = posix.join(relativeRoot, entry.name);
     if (entry.isDirectory()) {
       collectTemplateFiles(child, relativePath, files, errors);
       continue;
@@ -204,7 +209,9 @@ function copyTree(
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     const src = join(srcDir, entry.name);
     const dest = join(destDir, entry.name);
-    const relativePath = join(relativeRoot, entry.name);
+    // Reported through InstallResult.installed / .skipped and
+    // createTemplate().files, so it stays POSIX regardless of host platform.
+    const relativePath = posix.join(relativeRoot, entry.name);
 
     if (entry.isDirectory()) {
       mkdirSync(dest, { recursive: true });

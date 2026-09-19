@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
@@ -269,9 +269,29 @@ describe('buildExecArgv', () => {
   });
 });
 
-describe('buildExecArgv shell string against a real shell', () => {
+/**
+ * Locate a POSIX shell to verify the generated string against. Hardcoding
+ * `/bin/sh` made these cases report `status: null` on Windows, which looks like
+ * a quoting failure but only means the shell was missing. Git Bash is a POSIX
+ * shell and provides `/tmp`, so the same assertions hold there; the resolution
+ * order mirrors the local sandbox provider.
+ */
+function posixShellPath(): string | undefined {
+  if (process.platform !== 'win32') return '/bin/sh';
+  const candidates = [
+    process.env.SANDBASE_SHELL?.trim(),
+    process.env.ProgramFiles ? join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : undefined,
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+const posixShell = posixShellPath();
+
+describe.skipIf(!posixShell)('buildExecArgv shell string against a real shell', () => {
   // The argv assertions above pin the string's shape; these run it through an
-  // actual /bin/sh so the quoting is verified by a shell rather than by the
+  // actual POSIX shell so the quoting is verified by a shell rather than by the
   // test's own expectation. The container runs the identical string.
   function runBuiltCommand(command: string, options?: { cwd?: string; env?: Record<string, string> }) {
     const argv = buildExecArgv({
@@ -284,7 +304,7 @@ describe('buildExecArgv shell string against a real shell', () => {
       options: { cwd: '/tmp', ...options },
     });
     const shellString = argv.at(-1)!;
-    return spawnSync('/bin/sh', ['-c', shellString], { encoding: 'utf-8', timeout: 10_000 });
+    return spawnSync(posixShell!, ['-c', shellString], { encoding: 'utf-8', timeout: 10_000 });
   }
 
   it('produces a runnable command that lands in the requested directory', () => {
