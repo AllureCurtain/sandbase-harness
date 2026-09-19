@@ -270,7 +270,7 @@ Resume a live event stream:
 
 ```bash
 curl -N http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream \
-  -H "Last-Event-ID: EVENT_ID"
+  -H "Last-Event-ID: 42"
 ```
 
 Stop a session:
