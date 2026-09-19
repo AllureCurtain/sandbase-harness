@@ -1,4 +1,4 @@
-import { FileText, Info, Plus, Search, Shield } from 'lucide-react';
+import { Eye, EyeOff, FileText, Info, Plus, Search, Shield } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { postJson } from '../../api';
 import { RequiredMark } from '../Common';
@@ -86,12 +86,12 @@ export function ResourceModal({ kind, onClose, onSaved }: { kind: 'environment' 
 
   if (kind === 'credential_vault') {
     return (
-      <Modal title="Create vault" onClose={onClose} size="medium">
+      <Modal title="Create vault" subtitle="Create a shared boundary for credentials used by your sessions." onClose={onClose} size="default">
         <form className="vaultCreateForm" onSubmit={submit}>
-          {error ? <div className="banner error inlineBanner">{error}</div> : null}
+          {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
           <div className="warningNotice">
             <Info size={18} />
-            <span>Vaults are shared across this workspace. Credentials added to this vault will be usable by anyone with API key access. Learn more <a href="#settings">here</a>.</span>
+            <span>Vaults are shared across this workspace. Anyone with API key access can use credentials added here. <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">Read credential vault guidance</a>.</span>
           </div>
           <label className="editField">
             Name
@@ -99,7 +99,8 @@ export function ResourceModal({ kind, onClose, onSaved }: { kind: 'environment' 
             <small>50 characters or fewer.</small>
           </label>
           <div className="modalActions">
-            <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>Continue</button>
+            <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
+            <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Creating…' : 'Create vault'}</button>
           </div>
         </form>
       </Modal>
@@ -154,17 +155,19 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [registryQuery, setRegistryQuery] = useState('');
+  const [showValue, setShowValue] = useState(false);
 
   const filteredRegistry = MCP_REGISTRY_OPTIONS.filter((option) => {
     const q = registryQuery.toLowerCase();
     return option.name.toLowerCase().includes(q) || option.url.toLowerCase().includes(q);
   });
   const needsSecretAcknowledgement = authType !== 'mcp_oauth';
+  const hasInjectionLocation = injectHeaders || injectBody;
   const canSubmit = authType === 'mcp_oauth'
     ? Boolean(mcpServerUrl.trim())
     : authType === 'bearer_token'
-      ? Boolean(value.trim() && acknowledged)
-      : Boolean(variableName.trim() && value.trim() && acknowledged);
+      ? Boolean(value.trim() && acknowledged && hasInjectionLocation)
+      : Boolean(variableName.trim() && value.trim() && acknowledged && hasInjectionLocation);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -179,7 +182,10 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         ...(authType === 'environment_variable' ? { variable_name: variableName } : {}),
         ...(authType !== 'mcp_oauth' ? {
           value,
-          network: { type: networkType, allowed_hosts: splitCsv(allowedHosts) },
+          network: {
+            type: networkType,
+            ...(networkType === 'limited' ? { allowed_hosts: splitCsv(allowedHosts) } : {}),
+          },
           injection_locations: [
             ...(injectHeaders ? ['request_headers'] : []),
             ...(injectBody ? ['request_body'] : []),
@@ -197,31 +203,42 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
   return (
     <Modal title="Add credential" subtitle="Add a credential to this vault for agents to use." onClose={onClose} size="medium">
       <form className="credentialForm" onSubmit={submit}>
-        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
         <label className="editField">
           <span>Name <small className="optionalPill">Optional</small></span>
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example credential" />
         </label>
-        <label className="editField">
-          Type
-          <select value={authType} onChange={(event) => setAuthType(event.target.value as CredentialAuthType)}>
-            <option value="mcp_oauth">MCP OAuth</option>
-            <option value="bearer_token">Bearer token</option>
-            <option value="environment_variable">Environment variable</option>
-          </select>
-        </label>
+        <fieldset className="credentialTypeField">
+          <legend>Credential type</legend>
+          <div className="credentialTypeGrid" role="radiogroup" aria-label="Credential type">
+            <label className={`credentialTypeOption ${authType === 'mcp_oauth' ? 'selected' : ''}`}>
+              <input type="radio" name="credential-auth-type" value="mcp_oauth" checked={authType === 'mcp_oauth'} onChange={() => setAuthType('mcp_oauth')} />
+              <span><strong>MCP OAuth</strong><small>Connect to an MCP server without storing a raw token.</small></span>
+            </label>
+            <label className={`credentialTypeOption ${authType === 'bearer_token' ? 'selected' : ''}`}>
+              <input type="radio" name="credential-auth-type" value="bearer_token" checked={authType === 'bearer_token'} onChange={() => setAuthType('bearer_token')} />
+              <span><strong>Bearer token</strong><small>Send one token with each request.</small></span>
+            </label>
+            <label className={`credentialTypeOption ${authType === 'environment_variable' ? 'selected' : ''}`}>
+              <input type="radio" name="credential-auth-type" value="environment_variable" checked={authType === 'environment_variable'} onChange={() => setAuthType('environment_variable')} />
+              <span><strong>Environment variable</strong><small>Expose a named secret to the runtime.</small></span>
+            </label>
+          </div>
+        </fieldset>
 
         {authType === 'mcp_oauth' ? (
           <div className="mcpRegistryPanel">
             <div className="pickerSearch registrySearch">
               <Search size={18} />
-              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder="Search Anthropic's MCP registry or enter a custom URL" />
+              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder="Filter curated MCP servers" />
             </div>
             <div className="registryList">
               {filteredRegistry.map((option) => (
                 <button
                   type="button"
                   key={option.url}
+                  className={mcpServerUrl === option.url ? 'selected' : ''}
+                  aria-pressed={mcpServerUrl === option.url}
                   onClick={() => {
                     setMcpServerUrl(option.url);
                     if (!name.trim()) setName(option.name);
@@ -232,11 +249,13 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
                     <strong>{option.name}</strong>
                     <small>{option.url}</small>
                   </span>
+                  <span className="registrySelectionMark" aria-hidden="true">✓</span>
                 </button>
               ))}
+              {filteredRegistry.length === 0 ? <p className="registryEmpty">No curated servers match. Enter a custom URL below.</p> : null}
             </div>
             <label className="editField compactField">
-              MCP server URL <RequiredMark />
+              Custom MCP server URL <RequiredMark />
               <input value={mcpServerUrl} onChange={(event) => setMcpServerUrl(event.target.value)} placeholder="https://mcp.example.com" required />
             </label>
           </div>
@@ -245,7 +264,12 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         {authType === 'bearer_token' ? (
           <label className="editField">
             Token <RequiredMark />
-            <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Bearer or personal access token" required />
+            <span className="secretField">
+              <input type={showValue ? 'text' : 'password'} autoComplete="new-password" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Bearer or personal access token" required />
+              <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? 'Hide token' : 'Show token'} title={showValue ? 'Hide token' : 'Show token'}>
+                {showValue ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </span>
           </label>
         ) : null}
 
@@ -257,7 +281,12 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
             </label>
             <label className="editField">
               Value <RequiredMark />
-              <input value={value} onChange={(event) => setValue(event.target.value)} required />
+              <span className="secretField">
+                <input type={showValue ? 'text' : 'password'} autoComplete="new-password" value={value} onChange={(event) => setValue(event.target.value)} required />
+                <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? 'Hide value' : 'Show value'} title={showValue ? 'Hide value' : 'Show value'}>
+                  {showValue ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </span>
             </label>
           </div>
         ) : null}
@@ -267,14 +296,16 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
             <div className="credentialSection">
               <h3>Networking</h3>
               <div className="segment credentialSegment">
-                <button type="button" className={networkType === 'limited' ? 'active' : ''} onClick={() => setNetworkType('limited')}>Limited</button>
-                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} onClick={() => setNetworkType('unrestricted')}>Unrestricted</button>
+                <button type="button" className={networkType === 'limited' ? 'active' : ''} aria-pressed={networkType === 'limited'} onClick={() => setNetworkType('limited')}>Limited</button>
+                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} aria-pressed={networkType === 'unrestricted'} onClick={() => setNetworkType('unrestricted')}>Unrestricted</button>
               </div>
-              <label className="editField">
-                Allowed hosts
-                <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder="api.example.com, *.example.com" />
-                <small>Separate hosts with commas or newlines.</small>
-              </label>
+              {networkType === 'limited' ? (
+                <label className="editField">
+                  Allowed hosts
+                  <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder="api.example.com, *.example.com" />
+                  <small>Separate hosts with commas or newlines.</small>
+                </label>
+              ) : <p className="fieldHint">Requests may reach any host. Use this only when the service requires it.</p>}
             </div>
             <div className="credentialSection">
               <h3>Injection location</h3>
@@ -286,11 +317,12 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
                 <input type="checkbox" checked={injectBody} onChange={(event) => setInjectBody(event.target.checked)} />
                 Request body
               </label>
+              {!hasInjectionLocation ? <p className="fieldError" role="alert">Select at least one injection location.</p> : null}
               <p>Limiting to request headers is recommended unless the service reads the secret from the request body.</p>
             </div>
             <div className="warningNotice">
               <Info size={18} />
-              <span>This credential will be shared across this workspace. Anyone with API key access can use this credential in an agent session to access the service associated with the credential, including reading data and taking actions on behalf of the credential owner. Learn more <a href="#settings">here</a>.</span>
+              <span>This credential will be shared across this workspace. Anyone with API key access can use it in an agent session. <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">Read credential vault guidance</a>.</span>
             </div>
             <label className="checkboxLine acknowledgement">
               <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
@@ -300,7 +332,8 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         ) : null}
 
         <div className="modalActions stickyActions">
-          <button className="darkButton largeAction" type="submit" disabled={saving || !canSubmit}>Add credential</button>
+          <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
+          <button className="darkButton largeAction" type="submit" disabled={saving || !canSubmit}>{saving ? 'Adding…' : 'Add credential'}</button>
         </div>
       </form>
     </Modal>

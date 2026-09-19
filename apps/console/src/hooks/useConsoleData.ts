@@ -91,8 +91,11 @@ export function useConsoleData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    // Only the initial bootstrap should replace the whole Console with a
+    // loading state. In-page actions (especially Session SSE/message updates)
+    // refresh data in the background so the current view stays mounted.
+    if (!silent) setLoading(true);
     setError('');
     try {
       const [build, resources, access, operations, runtime] = await Promise.all([

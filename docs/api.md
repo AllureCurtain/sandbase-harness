@@ -345,6 +345,11 @@ curl -N http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream \
   -H "Last-Event-ID: EVENT_ID"
 ```
 
+Session event records may include optional execution metadata when available:
+`model_used`, `tokens_in`, `tokens_out`, `stop_reason`, and `duration_ms`.
+Clients should treat absent fields as unknown and preserve the event's existing
+append-only ordering and SSE resume semantics.
+
 ## Files
 
 Files can be uploaded once and mounted into sessions.

@@ -23,6 +23,12 @@
   second add runs `prepare`, builds `dist/`, creates both bins, and joins the
   bundle layer. Verified end to end on Windows with DSH `0.1.1-rc.2`.
 
+### Console
+
+- Improves the staged conversation experience with streaming message
+  projection, resource selection, safe Markdown rendering, tool confirmation
+  states, and event metadata needed by the Console.
+
 ## 0.3.8 - 2026-08-30
 
 ### Fixes

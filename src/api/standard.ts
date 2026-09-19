@@ -66,6 +66,11 @@ export interface ApiEvent {
   id: string;
   type: string;
   content: unknown[] | null;
+  model_used?: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  stop_reason?: string;
+  duration_ms?: number;
   delta?: string;
   message_id?: string;
   created_at: string | null;
@@ -148,6 +153,11 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     id: event.id,
     type: event.type,
     content: event.content ?? null,
+    ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
+    ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
+    ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
+    ...(event.stopReason !== undefined ? { stop_reason: event.stopReason } : {}),
+    ...(event.durationMs !== undefined ? { duration_ms: event.durationMs } : {}),
     ...(streamEvent.delta !== undefined ? { delta: streamEvent.delta } : {}),
     ...(streamEvent.message_id !== undefined ? { message_id: streamEvent.message_id } : {}),
     created_at: event.createdAt ? toIsoString(event.createdAt) : null,

@@ -100,7 +100,7 @@ export function App() {
         </aside>
       ) : null}
 
-      <main className="main">
+      <main className={`main ${view === 'session-detail' ? 'mainSessionDetail' : ''}`}>
         {error ? <div className="banner error">{error}</div> : null}
         {loading ? <LoadingState /> : (
           <ConsoleErrorBoundary resetKey={`${view}:${selectedAgentId ?? ''}:${selectedSessionId ?? ''}:${selectedEnvironmentId ?? ''}:${selectedVaultId ?? ''}:${selectedMemoryStoreId ?? ''}`}>
@@ -142,7 +142,7 @@ export function App() {
               onNewCredential={(vaultId) => setCredentialModalVaultId(vaultId)}
               onNewMemory={(storeId) => setMemoryModalStoreId(storeId)}
               onNewResource={(kind) => setResourceModal(kind)}
-              onRefresh={() => void refresh()}
+              onRefresh={() => void refresh({ silent: true })}
             />
           </ConsoleErrorBoundary>
         )}
@@ -155,7 +155,7 @@ export function App() {
           onClose={() => setAgentModal(null)}
           onSaved={() => {
             setAgentModal(null);
-            void refresh();
+            void refresh({ silent: true });
             setRoute('agents');
           }}
         />
@@ -167,7 +167,7 @@ export function App() {
           onClose={() => setAgentEditModal(null)}
           onSaved={() => {
             setAgentEditModal(null);
-            void refresh();
+            void refresh({ silent: true });
           }}
         />
       ) : null}
@@ -179,7 +179,7 @@ export function App() {
           onClose={() => setSessionModal(null)}
           onSaved={() => {
             setSessionModal(null);
-            void refresh();
+            void refresh({ silent: true });
             setRoute('sessions');
           }}
           onNavigate={(next) => {
@@ -195,7 +195,7 @@ export function App() {
           onClose={() => setResourceModal(null)}
           onSaved={() => {
             setResourceModal(null);
-            void refresh();
+            void refresh({ silent: true });
             setRoute(resourceModal === 'credential_vault' ? 'credential-vaults' : resourceModal === 'memory_store' ? 'memory-stores' : 'environments');
           }}
         />
@@ -207,7 +207,7 @@ export function App() {
           onClose={() => setCredentialModalVaultId(null)}
           onSaved={() => {
             setCredentialModalVaultId(null);
-            void refresh();
+            void refresh({ silent: true });
           }}
         />
       ) : null}
@@ -218,7 +218,7 @@ export function App() {
           onClose={() => setMemoryModalStoreId(null)}
           onSaved={() => {
             setMemoryModalStoreId(null);
-            void refresh();
+            void refresh({ silent: true });
           }}
         />
       ) : null}
