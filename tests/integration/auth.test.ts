@@ -66,6 +66,35 @@ describe('API authentication', () => {
       const res = await ctx.app.request('/v1/agents');
       expect(res.status).toBe(200);
     });
+
+    it('rejects duplicate credential sources even when auth is disabled or the path is public', async () => {
+      const duplicateHeaders = {
+        Authorization: 'Bearer secret-key-1',
+        'x-api-key': 'secret-key-1',
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'managed-agents-2026-04-01',
+      };
+      const expected = {
+        error: {
+          type: 'authentication_error',
+          message: 'Missing or invalid API key. Provide exactly one of "Authorization: Bearer <key>" or "x-api-key: <key>".',
+        },
+      };
+
+      const disabled = await ctx.app.request('/v1/agents', { headers: duplicateHeaders });
+      expect(disabled.status).toBe(401);
+      expect(await disabled.json()).toEqual(expected);
+
+      const protectedCtx = makeApp(['secret-key-1']);
+      try {
+        const publicPath = await protectedCtx.app.request('/v1/x/health', { headers: duplicateHeaders });
+        expect(publicPath.status).toBe(401);
+        expect(await publicPath.json()).toEqual(expected);
+      } finally {
+        protectedCtx.db.close();
+        rmSync(protectedCtx.tmpDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('CORS policy', () => {
@@ -114,11 +143,177 @@ describe('API authentication', () => {
       expect(res.status).toBe(401);
     });
 
-    it('accepts a valid token', async () => {
+    it('preserves Bearer authentication without CMA compatibility headers', async () => {
       const res = await ctx.app.request('/v1/agents', {
         headers: { Authorization: 'Bearer secret-key-1' },
       });
       expect(res.status).toBe(200);
+    });
+
+    it('authenticates CMA requests with x-api-key and the managed-agents headers', async () => {
+      const res = await ctx.app.request('/v1/agents', {
+        headers: {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2026-04-01',
+        },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it.each([
+      [
+        'an invalid Bearer credential with a valid x-api-key',
+        { Authorization: 'Bearer wrong-key', 'x-api-key': 'secret-key-1' },
+      ],
+      [
+        'a valid Bearer credential with an invalid x-api-key',
+        { Authorization: 'Bearer secret-key-1', 'x-api-key': 'wrong-key' },
+      ],
+      [
+        'different valid Bearer and x-api-key credentials',
+        { Authorization: 'Bearer secret-key-1', 'x-api-key': 'secret-key-2' },
+      ],
+      [
+        'matching valid Bearer and x-api-key credentials',
+        { Authorization: 'Bearer secret-key-1', 'x-api-key': 'secret-key-1' },
+      ],
+    ])('rejects %s', async (_caseName, credentials) => {
+      const res = await ctx.app.request('/v1/agents', {
+        headers: {
+          ...credentials,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2026-04-01',
+        },
+      });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        error: {
+          type: 'authentication_error',
+          message: 'Missing or invalid API key. Provide exactly one of "Authorization: Bearer <key>" or "x-api-key: <key>".',
+        },
+      });
+    });
+
+    it('accepts a comma-separated beta header containing the required CMA beta', async () => {
+      const res = await ctx.app.request('/v1/agents', {
+        headers: {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'another-compatible-beta, managed-agents-2026-04-01',
+        },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it.each([
+      [
+        'missing anthropic-version',
+        { 'x-api-key': 'secret-key-1', 'anthropic-beta': 'managed-agents-2026-04-01' },
+        'Missing required header: anthropic-version.',
+      ],
+      [
+        'missing anthropic-beta',
+        { 'x-api-key': 'secret-key-1', 'anthropic-version': '2023-06-01' },
+        'Missing required header: anthropic-beta.',
+      ],
+      [
+        'unsupported anthropic-version',
+        {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2024-01-01',
+          'anthropic-beta': 'managed-agents-2026-04-01',
+        },
+        'Unsupported anthropic-version. Expected "2023-06-01".',
+      ],
+      [
+        'unsupported anthropic-beta',
+        {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2025-01-01',
+        },
+        'Unsupported anthropic-beta. Expected "managed-agents-2026-04-01".',
+      ],
+      [
+        'malformed comma-separated anthropic-beta',
+        {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2026-04-01,,another-compatible-beta',
+        },
+        'Malformed anthropic-beta header. Provide comma-separated beta identifiers.',
+      ],
+    ])('rejects %s before CMA business logic', async (_caseName, headers, message) => {
+      const res = await ctx.app.request('/v1/agents', { headers });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: { type: 'invalid_request', message },
+      });
+    });
+
+    it('requires the agent-memory beta for memory-store routes before writes', async () => {
+      const rejected = await ctx.app.request('/v1/memory_stores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2026-04-01',
+        },
+        body: JSON.stringify({ name: 'blocked-store' }),
+      });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({
+        error: {
+          type: 'invalid_request',
+          message: 'Unsupported anthropic-beta. Expected "agent-memory-2026-07-22".',
+        },
+      });
+      expect(ctx.db.prepare('SELECT id FROM memory_stores').all()).toHaveLength(0);
+
+      const accepted = await ctx.app.request('/v1/memory_stores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'another-compatible-beta, agent-memory-2026-07-22',
+        },
+        body: JSON.stringify({ name: 'admitted-store' }),
+      });
+      expect(accepted.status).toBe(201);
+      const store = await accepted.json() as { id: string };
+
+      const combinedBetas = await ctx.app.request('/v1/memory_stores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'managed-agents-2026-04-01, agent-memory-2026-07-22',
+        },
+        body: JSON.stringify({ name: 'combined-betas' }),
+      });
+      expect(combinedBetas.status).toBe(400);
+      expect(await combinedBetas.json()).toEqual({
+        error: {
+          type: 'invalid_request',
+          message: 'Do not combine managed-agents and agent-memory beta headers for memory-store requests.',
+        },
+      });
+      expect(ctx.db.prepare('SELECT id FROM memory_stores').all()).toHaveLength(1);
+
+      for (const beta of ['managed-agents-2026-04-01', 'agent-memory-2026-07-22']) {
+        const listing = await ctx.app.request(`/v1/memory_stores/${store.id}/memories`, {
+          headers: {
+            'x-api-key': 'secret-key-1',
+            'anthropic-version': '2023-06-01',
+            'anthropic-beta': beta,
+          },
+        });
+        expect(listing.status).toBe(200);
+      }
     });
 
     it('accepts any of the configured keys', async () => {
@@ -150,6 +345,17 @@ describe('API authentication', () => {
     it('keeps /v1/x/health public', async () => {
       const res = await ctx.app.request('/v1/x/health');
       expect(res.status).toBe(200);
+    });
+
+    it('keeps the exact /v1/x extension root outside CMA admission', async () => {
+      const res = await ctx.app.request('/v1/x', {
+        headers: {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'malformed,,beta',
+        },
+      });
+      expect(res.status).toBe(404);
     });
 
     it('keeps root (/) public', async () => {

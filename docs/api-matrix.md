@@ -10,8 +10,14 @@ that every Claude hosted capability exists locally.
 - Resource ids are opaque.
 - Collection responses use `{ data, has_more, first_id, last_id }`.
 - Errors use `{ error: { type, message } }`.
-- Optional Claude-style beta headers are accepted locally for compatibility
-  tests, but local behavior is controlled by this repository.
+- CMA requests using `x-api-key`, `anthropic-version`, or `anthropic-beta` are
+  admitted before `/v1` CMA handlers: version `2023-06-01` and beta
+  `managed-agents-2026-04-01` are required, except `/v1/memory_stores` routes
+  require `agent-memory-2026-07-22`. Memory-store requests reject a combined
+  managed-agents and agent-memory beta; `GET /v1/memory_stores/{id}/memories`
+  accepts either beta. A request must carry exactly one of `Authorization` or
+  `x-api-key`; existing bearer requests without CMA compatibility headers remain
+  supported.
 
 ## `/v1` Resource Matrix
 

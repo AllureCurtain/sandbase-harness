@@ -1,10 +1,12 @@
 /**
  * API Authentication Middleware
  *
- * Optional bearer-token auth. Local-first by default: if no API key is
- * configured, the server runs unauthenticated (suitable for localhost dev).
- * When one or more keys are configured (via MANAGED_AGENTS_API_KEY or managed keys),
- * all /v1 routes require `Authorization: Bearer <key>`.
+ * Optional API-key auth. Local-first by default: if no API key is configured,
+ * the server runs unauthenticated (suitable for localhost dev). When one or
+ * more keys are configured (via MANAGED_AGENTS_API_KEY or managed keys), all
+ * protected /v1 routes require exactly one of `Authorization: Bearer <key>` or
+ * `x-api-key: <key>`. Supplying both credential sources is always rejected,
+ * including while optional auth is disabled and on public paths.
  *
  * Health check (/v1/x/health), metrics, and the dashboard shell (/dashboard and its
  * static assets) are public so liveness probes and the browser app can load
@@ -23,9 +25,28 @@ export interface AuthConfig {
 }
 
 const PUBLIC_PATHS = new Set(['/', '/dashboard', '/ui', '/v1/x/health', '/v1/x/metrics']);
+const INVALID_CREDENTIAL_MESSAGE = 'Missing or invalid API key. Provide exactly one of "Authorization: Bearer <key>" or "x-api-key: <key>".';
 
 export function createAuthMiddleware(config: AuthConfig): MiddlewareHandler {
   return async (c, next) => {
+    const authorization = c.req.header('Authorization');
+    const xApiKeyHeader = c.req.header('x-api-key');
+
+    // Credential-source ambiguity must fail closed before optional-auth and
+    // public-route exemptions. Those exemptions make a credential optional,
+    // but never make two competing credential sources valid.
+    if (authorization !== undefined && xApiKeyHeader !== undefined) {
+      return c.json(
+        {
+          error: {
+            type: 'authentication_error',
+            message: INVALID_CREDENTIAL_MESSAGE,
+          },
+        },
+        401,
+      );
+    }
+
     const keys = new Set((config.apiKeys ?? []).filter((k) => k && k.length > 0));
     const enabled = keys.size > 0 || Boolean(config.hasApiKeys?.());
     if (!enabled) {
@@ -37,17 +58,23 @@ export function createAuthMiddleware(config: AuthConfig): MiddlewareHandler {
       return next();
     }
 
-    const header = c.req.header('Authorization') ?? '';
-    const match = /^Bearer\s+(.+)$/i.exec(header);
-    const token = match?.[1]?.trim();
+    const bearerToken = authorization === undefined
+      ? undefined
+      : /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+    const xApiKey = xApiKeyHeader?.trim();
 
-    const valid = token ? keys.has(token) || Boolean(config.validateApiKey?.(token)) : false;
+    const hasInvalidCredential = (authorization !== undefined && !bearerToken)
+      || (xApiKeyHeader !== undefined && !xApiKey);
+    const token = bearerToken ?? xApiKey;
+    const valid = !hasInvalidCredential && token !== undefined
+      ? keys.has(token) || Boolean(config.validateApiKey?.(token))
+      : false;
     if (!valid) {
       return c.json(
         {
           error: {
             type: 'authentication_error',
-            message: 'Missing or invalid API key. Provide "Authorization: Bearer <key>".',
+            message: INVALID_CREDENTIAL_MESSAGE,
           },
         },
         401,

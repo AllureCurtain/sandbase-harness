@@ -38,31 +38,59 @@ All timestamps are RFC 3339 strings. Identifiers are opaque tagged ids such as
 `agent_...`, `sess_...`, `env_...`, `skill_...`, and `memstore_...`; clients
 should not infer meaning from their length or suffix.
 
-## Compatibility Headers
-
-The local runtime accepts requests with the same beta headers used by Claude
-Managed Agents clients. They are optional locally, but useful when testing SDK
-code intended to run against the hosted API:
-
-```text
-anthropic-beta: managed-agents-2026-04-01
-anthropic-beta: agent-memory-2026-07-22
-```
-
-## Authentication
+## CMA Compatibility Headers and Authentication
 
 Authentication is disabled by default for local development. It is enabled when
 at least one API key exists. Keys can be supplied through
 `MANAGED_AGENTS_API_KEY` or created through `/v1/api-keys`.
 
-Send a bearer token with every request once authentication is enabled:
+CMA clients may authenticate with either header when authentication is enabled:
 
 ```text
+x-api-key: ma_local_example
 Authorization: Bearer ma_local_example
 ```
 
-Raw API keys are never returned from list or retrieve responses. A newly created
-managed key returns `secret_key` once; store it before discarding the response.
+Use exactly one credential scheme per request. A request carrying both
+`Authorization` and `x-api-key` is rejected with `401 authentication_error`,
+even if the values match; this prevents credential-source ambiguity at proxy
+and middleware boundaries.
+
+Requests using `x-api-key`, or either Anthropic compatibility header, are
+admitted before CMA route handlers run. They must include:
+
+```text
+anthropic-version: 2023-06-01
+```
+
+Normal CMA resources require the managed-agents beta:
+
+```text
+anthropic-beta: managed-agents-2026-04-01
+```
+
+Memory-store resources (`/v1/memory_stores` and descendants) instead require:
+
+```text
+anthropic-beta: agent-memory-2026-07-22
+```
+
+Do not combine that beta with `managed-agents-2026-04-01` on a memory-store
+request: admission rejects the pair with `400 invalid_request`. The documented
+read-only exception, `GET /v1/memory_stores/{id}/memories`, accepts either of
+those two betas when sent alone.
+
+`anthropic-beta` accepts comma-separated identifiers; the required identifier
+must appear in the list. Missing, malformed, or unsupported compatibility
+headers return `400` with the standard `invalid_request` error envelope before
+route business logic executes. Runtime extension endpoints under `/v1/x` do not
+use CMA header admission.
+
+Existing bearer callers that omit the CMA compatibility headers remain supported
+unchanged. A bearer request that sends either compatibility header is validated
+by the same CMA policy. Raw API keys are never returned from list or retrieve
+responses. A newly created managed key returns `secret_key` once; store it
+before discarding the response.
 
 ## Pagination and Errors
 
