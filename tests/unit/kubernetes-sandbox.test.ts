@@ -459,10 +459,11 @@ describe('kubernetes sandbox settings check', () => {
     }
   }, 30_000);
 
-  it('fails an invalid namespace without needing a cluster', async () => {
+  it('fails an invalid namespace without probing the cluster', async () => {
     const { db, directory } = makeDb();
+    let probeCalls = 0;
     try {
-      const result = await testRuntimeSettingsArea({
+      const result = await testRuntimeSettingsAreaWithFetch({
         db,
         dataDir: directory,
         area: 'sandbox',
@@ -473,15 +474,24 @@ describe('kubernetes sandbox settings check', () => {
             options: { timeout_seconds: 300, namespace: 'Not_Valid', kubeconfig: '/nonexistent/kubeconfig' },
           },
         } as never,
+      }, fetch, async () => {
+        probeCalls += 1;
+        throw new Error('The cluster probe should not run for an invalid namespace.');
       });
 
+      expect(probeCalls).toBe(0);
       expect(result.checks).toContainEqual(expect.objectContaining({
         name: 'namespace',
         status: 'failed',
         message: expect.stringContaining('Invalid Kubernetes namespace'),
       }));
+      expect(result.checks).toContainEqual({
+        name: 'cluster_reachable',
+        status: 'skipped',
+        message: 'Skipped Kubernetes cluster probe because the namespace is invalid.',
+      });
     } finally {
       db.close();
     }
-  }, 30_000);
+  });
 });
