@@ -190,11 +190,17 @@ export class SessionManager {
       throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
     }
 
-    // Resuming a failed session: the previous turn may have failed mid-tool,
-    // leaving an agent.tool_use with no paired result. Inject placeholder
-    // results before the new user event so the next eventsToMessages
-    // projection has a valid, paired sequence (mirrors reconcileOrphans).
-    if (session.status === 'failed') {
+    const confirmationMetadata = event.type === 'user.tool_confirmation'
+      ? getConfirmationMetadata(event, this.eventLogger.getEvents(sessionId))
+      : undefined;
+
+    // Resuming after failure, or sending a fresh message while a tool call is
+    // still awaiting approval: the log may hold an agent.tool_use with no
+    // paired result. Inject placeholder results before the new user event so
+    // the next eventsToMessages projection has a valid, paired sequence
+    // (mirrors reconcileOrphans). Legit user.tool_confirmation events are
+    // exempt — the executor pairs their referenced call itself.
+    if (session.status === 'failed' || event.type === 'user.message') {
       this.resolveOrphanedToolUses(sessionId, '(previous turn failed before this tool returned)');
     }
 
@@ -202,6 +208,7 @@ export class SessionManager {
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as any).content : undefined,
+      metadata: confirmationMetadata,
     });
     this.broadcast(sessionId, logged);
 
@@ -449,7 +456,10 @@ export class SessionManager {
     // Broadcast the corresponding CMA lifecycle event
     const eventType = eventTypeForStatus(newStatus);
     if (eventType) {
-      const statusEvent = this.eventLogger.append(sessionId, { type: eventType });
+      const statusEvent = this.eventLogger.append(sessionId, {
+        type: eventType,
+        metadata: lifecycleMetadataFor(newStatus, this.eventLogger.getEvents(sessionId)),
+      });
       this.broadcast(sessionId, statusEvent);
     }
   }
@@ -542,4 +552,87 @@ export class SessionManager {
       });
     }
   }
+}
+
+function getConfirmationMetadata(
+  event: Extract<UserEvent, { type: 'user.tool_confirmation' }>,
+  events: SessionEvent[],
+): Record<string, unknown> {
+  if (typeof event.tool_use_id !== 'string' || event.tool_use_id.length === 0) {
+    throw new Error('Invalid tool confirmation: tool_use_id must be a non-empty string');
+  }
+  if (event.result !== 'allow' && event.result !== 'deny') {
+    throw new Error('Invalid tool confirmation: result must be "allow" or "deny"');
+  }
+  if (event.deny_message !== undefined && typeof event.deny_message !== 'string') {
+    throw new Error('Invalid tool confirmation: deny_message must be a string');
+  }
+
+  const resolved = new Set<string>();
+  let confirmationGroupId: string | undefined;
+  let pending = false;
+  for (const loggedEvent of events) {
+    if (loggedEvent.type === 'user.tool_confirmation'
+      && loggedEvent.metadata?.tool_use_id === event.tool_use_id) {
+      throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
+    }
+    if (loggedEvent.type === 'agent.tool_result' || loggedEvent.type === 'agent.mcp_tool_result') {
+      const block = loggedEvent.content?.find((item) => item.type === 'tool_result') as
+        | { type: 'tool_result'; tool_use_id: string }
+        | undefined;
+      if (block) resolved.add(block.tool_use_id);
+      continue;
+    }
+    if (loggedEvent.type !== 'agent.tool_use' && loggedEvent.type !== 'agent.mcp_tool_use') continue;
+    const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
+      | { type: 'tool_use'; id: string; requires_confirmation?: boolean; confirmation_group_id?: string }
+      | undefined;
+    if (block?.id !== event.tool_use_id || !block.requires_confirmation) continue;
+    pending = true;
+    confirmationGroupId = block.confirmation_group_id
+      ?? (typeof loggedEvent.metadata?.confirmation_group_id === 'string'
+        ? loggedEvent.metadata.confirmation_group_id
+        : undefined);
+  }
+
+  if (!pending || resolved.has(event.tool_use_id)) {
+    throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
+  }
+
+  return {
+    tool_use_id: event.tool_use_id,
+    result: event.result,
+    ...(event.deny_message !== undefined ? { deny_message: event.deny_message } : {}),
+    ...(confirmationGroupId ? { confirmation_group_id: confirmationGroupId } : {}),
+  };
+}
+
+function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Record<string, unknown> | undefined {
+  if (status === 'paused') return { stop_reason: { type: 'end_turn' } };
+  if (status !== 'requires_action') return undefined;
+
+  const resolved = new Set<string>();
+  const pendingIds: string[] = [];
+  for (const event of events) {
+    if (event.type === 'agent.tool_result' || event.type === 'agent.mcp_tool_result') {
+      const block = event.content?.find((item) => item.type === 'tool_result') as
+        | { type: 'tool_result'; tool_use_id: string }
+        | undefined;
+      if (block) resolved.add(block.tool_use_id);
+      continue;
+    }
+    if (event.type !== 'agent.tool_use' && event.type !== 'agent.mcp_tool_use') continue;
+    const block = event.content?.find((item) => item.type === 'tool_use') as
+      | { type: 'tool_use'; id: string; requires_confirmation?: boolean }
+      | undefined;
+    if (block?.requires_confirmation) pendingIds.push(block.id);
+  }
+
+  return {
+    stop_reason: {
+      type: 'requires_action',
+      event_ids: pendingIds.filter((id) => !resolved.has(id)),
+      action_type: 'tool_confirmation',
+    },
+  };
 }

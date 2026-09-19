@@ -43,7 +43,7 @@ export interface ApiSession {
   title: string | null;
   agent: ApiAgent | { id: string; type: 'agent'; name: string };
   environment_id: string;
-  status: 'idle' | 'running' | 'terminated' | 'failed';
+  status: 'idle' | 'running' | 'requires_action' | 'terminated' | 'failed';
   resources: ApiSessionResource[];
   vault_ids: string[];
   usage: {
@@ -64,8 +64,11 @@ export type ApiSessionResource =
 
 export interface ApiEvent {
   id: string;
+  seq: number;
   type: string;
   content: unknown[] | null;
+  metadata?: Record<string, unknown>;
+  tool_use_id?: string;
   model_used?: string;
   tokens_in?: number;
   tokens_out?: number;
@@ -151,8 +154,13 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   const streamEvent = event as SessionEvent & { delta?: string; message_id?: string };
   return {
     id: event.id,
+    seq: event.seq,
     type: event.type,
     content: event.content ?? null,
+    ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
+    ...(event.type === 'user.tool_confirmation' && typeof event.metadata?.tool_use_id === 'string'
+      ? { tool_use_id: event.metadata.tool_use_id }
+      : {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
@@ -170,6 +178,8 @@ export function toApiSessionStatus(status: string): ApiSession['status'] {
   switch (status) {
     case 'running':
       return 'running';
+    case 'requires_action':
+      return 'requires_action';
     case 'completed':
       return 'terminated';
     case 'failed':

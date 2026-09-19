@@ -108,8 +108,13 @@ export class DefaultSessionExecutor implements SessionExecutor {
 
     // 3a. Handle a tool confirmation (A5): run or deny the pending tool, append
     // its result so the model turn below continues with a paired sequence.
+    // A stale confirmation (the referenced call already resolved — e.g. a
+    // double-click or a queued click on an older card) must not start a model
+    // turn: the log may hold other unpaired tool calls awaiting their own
+    // confirmation, and the request would carry an unpaired tool call that
+    // providers reject with "Tool result is missing".
     if (event.type === 'user.tool_confirmation') {
-      await this.toolResolver.handleToolConfirmation(
+      const resolution = await this.toolResolver.handleToolConfirmation(
         session,
         agent,
         sandbox,
@@ -117,6 +122,11 @@ export class DefaultSessionExecutor implements SessionExecutor {
         eventLogger,
         options?.broadcast ?? (() => {}),
       );
+      if (!resolution.handled) return;
+      if (!resolution.groupComplete) {
+        options?.onRequiresAction?.();
+        return;
+      }
     }
 
     const broadcast = options?.broadcast ?? (() => {});

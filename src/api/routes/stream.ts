@@ -13,6 +13,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { SessionEvent } from '@/types/session.js';
+import { toApiEvent } from '@/api/standard.js';
 import type { ServerDeps } from '../server.js';
 
 export function streamRoutes(deps: ServerDeps) {
@@ -53,17 +54,7 @@ export function streamRoutes(deps: ServerDeps) {
         await stream.writeSSE({
           ...(transient ? {} : { id: String(event.seq) }),
           event: event.type,
-          data: JSON.stringify({
-            id: event.id,
-            seq: event.seq,
-            type: event.type,
-            content: event.content ?? null,
-            // pass through streaming fields (delta / message_id) when present
-            ...(('delta' in event) ? { delta: (event as any).delta } : {}),
-            ...(('message_id' in event) ? { message_id: (event as any).message_id } : {}),
-            processed_at: event.processedAt?.toISOString() ?? null,
-            parent_event_id: event.parentEventId ?? null,
-          }),
+          data: JSON.stringify(toApiEvent(event)),
         });
       };
 

@@ -12,6 +12,20 @@ export interface ToolResolverDeps {
   delegationService: DelegationService;
 }
 
+export interface ToolConfirmationResolution {
+  /** Whether the referenced tool call was pending and has been resolved. */
+  handled: boolean;
+  /** Whether every approval-gated call from the model step now has a result. */
+  groupComplete: boolean;
+}
+
+interface PendingToolUse {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  confirmationGroupId?: string;
+}
+
 export class ToolResolver {
   private readonly mcpManagers = new Map<string, McpManager>();
   private readonly mcpToolCache = new Map<string, Record<string, unknown>>();
@@ -37,6 +51,12 @@ export class ToolResolver {
     return tools;
   }
 
+  /**
+   * Execute or deny the pending tool call referenced by a confirmation event.
+   * Returns the resolved state for the referenced call. The caller may resume
+   * the model only after every tool call in its confirmation group has a paired
+   * result; otherwise the session remains in requires_action.
+   */
   async handleToolConfirmation(
     session: Session,
     agent: AgentDefinition,
@@ -44,16 +64,36 @@ export class ToolResolver {
     event: Extract<UserEvent, { type: 'user.tool_confirmation' }>,
     eventLogger: EventLogger,
     broadcast: (event: SessionEvent) => void,
-  ): Promise<void> {
+  ): Promise<ToolConfirmationResolution> {
     const events = eventLogger.getEvents(session.id);
 
     const resolved = new Set<string>();
-    let pendingUse: { id: string; name: string; input: Record<string, unknown> } | undefined;
+    const pendingUses: PendingToolUse[] = [];
+    let pendingUse: PendingToolUse | undefined;
     for (const loggedEvent of events) {
       if (loggedEvent.type === 'agent.tool_use' || loggedEvent.type === 'agent.mcp_tool_use') {
         const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
-          | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } | undefined;
-        if (block && block.id === event.tool_use_id) pendingUse = block;
+          | {
+            type: 'tool_use';
+            id: string;
+            name: string;
+            input: Record<string, unknown>;
+            requires_confirmation?: boolean;
+            confirmation_group_id?: string;
+          }
+          | undefined;
+        if (!block?.requires_confirmation) continue;
+        const candidate: PendingToolUse = {
+          id: block.id,
+          name: block.name,
+          input: block.input,
+          confirmationGroupId: block.confirmation_group_id
+            ?? (typeof loggedEvent.metadata?.confirmation_group_id === 'string'
+              ? loggedEvent.metadata.confirmation_group_id
+              : undefined),
+        };
+        pendingUses.push(candidate);
+        if (candidate.id === event.tool_use_id) pendingUse = candidate;
       } else if (loggedEvent.type === 'agent.tool_result' || loggedEvent.type === 'agent.mcp_tool_result') {
         const block = loggedEvent.content?.find((item) => item.type === 'tool_result') as
           | { type: 'tool_result'; tool_use_id: string } | undefined;
@@ -61,7 +101,9 @@ export class ToolResolver {
       }
     }
 
-    if (!pendingUse || resolved.has(event.tool_use_id)) return;
+    if (!pendingUse || resolved.has(event.tool_use_id)) {
+      return { handled: false, groupComplete: false };
+    }
 
     let resultText: string;
     let isError = false;
@@ -96,11 +138,18 @@ export class ToolResolver {
       isError = true;
     }
 
+    const groupId = pendingUse.confirmationGroupId ?? pendingUse.id;
     const resultEvent = eventLogger.append(session.id, {
       type: 'agent.tool_result',
       content: [{ type: 'tool_result', tool_use_id: event.tool_use_id, content: resultText, is_error: isError }],
+      metadata: { confirmation_group_id: groupId },
     });
     broadcast(resultEvent);
+
+    const groupComplete = pendingUses
+      .filter((toolUse) => (toolUse.confirmationGroupId ?? toolUse.id) === groupId)
+      .every((toolUse) => resolved.has(toolUse.id) || toolUse.id === event.tool_use_id);
+    return { handled: true, groupComplete };
   }
 
   async cleanupSession(sessionId: string): Promise<void> {
