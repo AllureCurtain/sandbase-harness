@@ -67,7 +67,7 @@ export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
 }
 
 function isCmaResourcePath(path: string): boolean {
-  return path.startsWith('/v1/') && !path.startsWith('/v1/x/');
+  return path.startsWith('/v1/') && !/^\/v1\/x(?:\/|$)/.test(path);
 }
 
 function hasCmaCompatibilityHeaders(c: Context): boolean {

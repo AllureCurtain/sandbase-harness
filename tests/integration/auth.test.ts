@@ -347,6 +347,17 @@ describe('API authentication', () => {
       expect(res.status).toBe(200);
     });
 
+    it('keeps the exact /v1/x extension root outside CMA admission', async () => {
+      const res = await ctx.app.request('/v1/x', {
+        headers: {
+          'x-api-key': 'secret-key-1',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'malformed,,beta',
+        },
+      });
+      expect(res.status).toBe(404);
+    });
+
     it('keeps root (/) public', async () => {
       const res = await ctx.app.request('/');
       expect(res.status).toBe(200);
