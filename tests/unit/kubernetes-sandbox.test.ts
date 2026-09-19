@@ -378,8 +378,25 @@ describe('buildPodManifest label keys', () => {
 describe('kubernetes sandbox settings check', () => {
   const directories: string[] = [];
 
-  afterEach(() => {
-    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  async function removeDirectoryWithRetry(directory: string, timeoutMs = 3_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code ?? '') || Date.now() >= deadline) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  }
+
+  afterEach(async () => {
+    const pending = directories.splice(0);
+    await Promise.all(pending.map((directory) => removeDirectoryWithRetry(directory)));
   });
 
   function makeDb() {
