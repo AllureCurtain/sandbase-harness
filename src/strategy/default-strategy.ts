@@ -14,6 +14,7 @@
  * Reference: OMA default-loop.ts
  */
 
+import { nanoid } from 'nanoid';
 import { jsonSchema, stepCountIs, streamText } from 'ai';
 import { createAiSdkExecutionLock, type JsonSchemaLike } from 'prefix-safe-json';
 import type { LanguageModel } from 'ai';
@@ -140,7 +141,9 @@ export class DefaultStrategy implements AgentStrategy {
       toolName: string;
       tokensIn: number;
       tokensOut: number;
+      confirmationGroupId: string;
     }> = [];
+    const modelUsed = modelIdentifier(model, '');
     const startTime = Date.now();
 
     try {
@@ -181,6 +184,7 @@ export class DefaultStrategy implements AgentStrategy {
 
           const tokensIn = step.usage?.inputTokens ?? 0;
           const tokensOut = step.usage?.outputTokens ?? 0;
+          const stopReason = modelStopReason(step.finishReason);
           totalTokensIn += tokensIn;
           totalTokensOut += tokensOut;
 
@@ -189,6 +193,8 @@ export class DefaultStrategy implements AgentStrategy {
             type: 'span.model_request_end',
             tokensIn,
             tokensOut,
+            modelUsed,
+            stopReason,
             durationMs: Date.now() - startTime,
           });
           broadcast(spanEvent);
@@ -203,6 +209,8 @@ export class DefaultStrategy implements AgentStrategy {
             const thinkingEvent = eventLog.append(session.id, {
               type: 'agent.thinking',
               content: [{ type: 'text', text: reasoning }] as ContentBlock[],
+              modelUsed,
+              stopReason,
             });
             broadcast(thinkingEvent);
           }
@@ -214,6 +222,8 @@ export class DefaultStrategy implements AgentStrategy {
               content: [{ type: 'text', text: step.text }] as ContentBlock[],
               tokensIn,
               tokensOut,
+              modelUsed,
+              stopReason,
               durationMs: Date.now() - startTime,
             });
             broadcast(agentMsgEvent);
@@ -222,14 +232,17 @@ export class DefaultStrategy implements AgentStrategy {
           // Emit events for tool calls (MCP tools get the mcp_* event type)
           if (step.toolCalls && step.toolCalls.length > 0) {
             const resultIds = new Set((step.toolResults ?? []).map((result) => result.toolCallId));
+            let confirmationGroupId: string | undefined;
             for (const toolCall of step.toolCalls) {
               const awaitsConfirmation = confirmTools.has(toolCall.toolName) && !resultIds.has(toolCall.toolCallId);
               if (awaitsConfirmation) {
+                confirmationGroupId ??= `confirm_${nanoid(16)}`;
                 pendingConfirmationCalls.push({
                   toolCallId: toolCall.toolCallId,
                   toolName: toolCall.toolName,
                   tokensIn,
                   tokensOut,
+                  confirmationGroupId,
                 });
                 continue;
               }
@@ -245,6 +258,8 @@ export class DefaultStrategy implements AgentStrategy {
                 }] as ContentBlock[],
                 tokensIn,
                 tokensOut,
+                modelUsed,
+                stopReason,
               });
               broadcast(toolUseEvent);
             }
@@ -267,6 +282,8 @@ export class DefaultStrategy implements AgentStrategy {
                   tool_use_id: toolResult.toolCallId,
                   content: capped,
                 }] as ContentBlock[],
+                modelUsed,
+                stopReason,
               });
               broadcast(toolResultEvent);
             }
@@ -347,9 +364,17 @@ export class DefaultStrategy implements AgentStrategy {
             id: pendingCall.toolCallId,
             name: pendingCall.toolName,
             input: authority.value as Record<string, unknown>,
+            // The Console renders the approval card only when the tool_use
+            // block (or event metadata) carries this flag. Without it the
+            // session sits in requires_action with no actionable UI.
+            requires_confirmation: true,
+            confirmation_group_id: pendingCall.confirmationGroupId,
           }] as ContentBlock[],
           tokensIn: pendingCall.tokensIn,
           tokensOut: pendingCall.tokensOut,
+          modelUsed,
+          stopReason: 'tool_confirmation',
+          metadata: { confirmation_group_id: pendingCall.confirmationGroupId },
         });
         broadcast(toolUseEvent);
       }
@@ -397,6 +422,23 @@ export class DefaultStrategy implements AgentStrategy {
  * A tool left on `parameters` is not rejected — it reaches the model with an
  * empty argument schema — so this conversion cannot be skipped.
  */
+function modelIdentifier(model: LanguageModel, configuredModel: string): string {
+  const modelId = (model as unknown as { modelId?: unknown }).modelId;
+  return typeof modelId === 'string' && modelId.length > 0
+    ? modelId
+    : configuredModel;
+}
+
+function modelStopReason(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.unified === 'string' && record.unified.length > 0) return record.unified;
+    if (typeof record.raw === 'string' && record.raw.length > 0) return record.raw;
+  }
+  return undefined;
+}
+
 function toAiTool(tool: any): any {
   if (!tool || typeof tool !== 'object') return tool;
   if (tool.inputSchema) return tool;
