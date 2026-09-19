@@ -2,15 +2,16 @@ import { Archive, ChevronDown, Clock, Cloud, Copy, Download, Keyboard, MessageSq
 import { type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { deleteJson, getPage, postEventStream, postJson, readEventStream } from '../../api';
+import { deleteJson, getPage, postJson, readEventStream } from '../../api';
 import { EmptyState, FilterSelect, LoadingState, ResourceBadge, StatusPill, Toolbar } from '../Common';
 import { downloadJson, formatDateShort, formatDuration, formatUsage, relativeDate, shortId, titleCase, truncateMiddle } from '../../lib/format';
 import { safeMarkdownUrl } from '../../lib/markdown';
+import { contiguousSessionSequence, mergeOrderedSessionEvents } from '../../lib/ordered-session-events';
 import type { Agent, ConsoleData, Session, SessionEvent, ToolPermission } from '../../types';
 
 const SESSION_EVENT_KINDS = ['user', 'agent', 'tool', 'error', 'system'] as const;
 type SessionEventKind = (typeof SESSION_EVENT_KINDS)[number];
-type SessionDisplayStatus = Session['status'] | 'queued' | 'completed';
+type SessionDisplayStatus = Session['status'] | 'queued' | 'completed' | 'requires_action';
 
 /**
  * Markdown renderer used for assistant messages.  Keep code blocks as a
@@ -213,15 +214,22 @@ export function SessionDetail({
   const [messageError, setMessageError] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [confirmingToolIds, setConfirmingToolIds] = useState<Set<string>>(new Set());
+  // Confirmations accepted by the API. Kept forever so a card stays collapsed
+  // while the backend is still writing the tool_result (it would otherwise
+  // flash back open until the next poll pairs the result).
+  const [confirmedToolIds, setConfirmedToolIds] = useState<Set<string>>(new Set());
   // A ref closes the small gap before React commits the state update. This
   // makes Allow/Deny one-shot even when a user double-clicks the button.
   const confirmingToolIdsRef = useRef(new Set<string>());
   const [streamingText, setStreamingText] = useState<Record<string, string>>({});
   const [streamConnection, setStreamConnection] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
-  const lastStreamEventId = useRef('');
-  const seenStreamEventIds = useRef(new Set<string>());
+  // Only the durable tail stream owns this cursor. Transient chunks are never
+  // used for Last-Event-ID because their seq is 0 and they are not replayable.
+  const lastDurableSequence = useRef(0);
+  const eventsRef = useRef<SessionEvent[]>([]);
   const conversationListRef = useRef<HTMLDivElement>(null);
   const shouldFollowConversation = useRef(true);
+  const initialScrollDoneRef = useRef(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const agent = data.agents.find((item) => item.id === session.agent.id);
@@ -240,9 +248,12 @@ export function SessionDetail({
     setEventError('');
     try {
       const page = await getPage<SessionEvent>(`/v1/sessions/${encodeURIComponent(session.id)}/events?limit=1000`);
-      setEvents(page.data);
-      setSelectedEventId((current) => current && page.data.some((event) => event.id === current) ? current : page.data.at(-1)?.id ?? null);
-      return page.data;
+      const merged = mergeOrderedSessionEvents(eventsRef.current, page.data);
+      eventsRef.current = merged;
+      lastDurableSequence.current = contiguousSessionSequence(merged);
+      setEvents(merged);
+      setSelectedEventId((current) => current && merged.some((item) => item.id === current) ? current : merged.at(-1)?.id ?? null);
+      return merged;
     } catch (err) {
       setEventError(err instanceof Error ? err.message : String(err));
       return [];
@@ -252,44 +263,57 @@ export function SessionDetail({
   };
 
   useEffect(() => {
+    // Session IDs have independent append-only sequences. Reset every replay
+    // reference before opening the new stream so a previous session cannot
+    // suppress or skip events from this session.
+    eventsRef.current = [];
+    lastDurableSequence.current = 0;
+    setEvents([]);
+    setStreamingText({});
     void loadEvents();
   }, [session.id]);
 
   const applyStreamEvent = (streamEvent: { event: string; data: unknown; id?: string }) => {
-      if (streamEvent.id) {
-        if (seenStreamEventIds.current.has(streamEvent.id)) return;
-        seenStreamEventIds.current.add(streamEvent.id);
-        lastStreamEventId.current = streamEvent.id;
-      }
-      if (streamEvent.event === 'heartbeat') return;
-      const payload = streamEvent.data && typeof streamEvent.data === 'object'
-        ? streamEvent.data as Partial<SessionEvent> & { message_id?: string; delta?: string }
-        : null;
-      if (!payload) return;
-      if (streamEvent.event === 'agent.message_stream_start' && payload.message_id) {
-        setStreamingText((current) => ({ ...current, [payload.message_id as string]: '' }));
-        return;
-      }
-      if (streamEvent.event === 'agent.message_chunk' && payload.message_id) {
-        setStreamingText((current) => ({
-          ...current,
-          [payload.message_id as string]: `${current[payload.message_id as string] ?? ''}${payload.delta ?? ''}`,
-        }));
-        return;
-      }
-      if (streamEvent.event === 'agent.message_stream_end' && payload.message_id) {
-        setStreamingText((current) => {
-          const next = { ...current };
-          delete next[payload.message_id as string];
-          return next;
-        });
-      }
-      if (payload.id && payload.type && payload.type !== 'heartbeat') {
-        setEvents((current) => current.some((event) => event.id === payload.id)
-          ? current
-          : [...current, payload as SessionEvent]);
-      }
-      if (payload.type?.startsWith('session.') || payload.type === 'agent.message') void onRefresh();
+    if (streamEvent.event === 'heartbeat') return;
+    const payload = streamEvent.data && typeof streamEvent.data === 'object'
+      ? streamEvent.data as Partial<SessionEvent> & { message_id?: string; delta?: string }
+      : null;
+    if (!payload) return;
+
+    // seq 0 is live-only text rendering. The durable agent.message appended at
+    // step completion is the canonical transcript record and tail replay source.
+    if (streamEvent.event === 'agent.message_stream_start' && payload.message_id) {
+      setStreamingText((current) => ({ ...current, [payload.message_id as string]: '' }));
+      return;
+    }
+    if (streamEvent.event === 'agent.message_chunk' && payload.message_id) {
+      setStreamingText((current) => ({
+        ...current,
+        [payload.message_id as string]: `${current[payload.message_id as string] ?? ''}${payload.delta ?? ''}`,
+      }));
+      return;
+    }
+    if (streamEvent.event === 'agent.message_stream_end' && payload.message_id) {
+      setStreamingText((current) => {
+        const next = { ...current };
+        delete next[payload.message_id as string];
+        return next;
+      });
+      return;
+    }
+
+    if (!payload.id || !payload.type || typeof payload.seq !== 'number' || payload.seq <= 0) return;
+    const merged = mergeOrderedSessionEvents(eventsRef.current, [payload as SessionEvent]);
+    eventsRef.current = merged;
+    lastDurableSequence.current = contiguousSessionSequence(merged);
+    setEvents(merged);
+    setSelectedEventId((current) => current ?? payload.id ?? null);
+
+    if ((payload.type === 'agent.tool_use' || payload.type === 'agent.mcp_tool_use')
+      && toolAwaitingConfirmation(toolUseDetails(payload as SessionEvent), false)) {
+      setSendingMessage(false);
+    }
+    if (payload.type.startsWith('session.') || payload.type === 'agent.message') void onRefresh();
   };
 
   useEffect(() => {
@@ -304,7 +328,7 @@ export function SessionDetail({
           await readEventStream(
             `/v1/sessions/${encodeURIComponent(session.id)}/events/stream`,
             applyStreamEvent,
-            { signal: controller.signal, lastEventId: lastStreamEventId.current || undefined },
+            { signal: controller.signal, lastEventId: lastDurableSequence.current > 0 ? String(lastDurableSequence.current) : undefined },
           );
           retry = 0;
         } catch (err) {
@@ -324,7 +348,7 @@ export function SessionDetail({
   }, [session.id]);
 
   useEffect(() => {
-    if (!['queued', 'running'].includes(displayStatus)) return undefined;
+    if (!['queued', 'running', 'requires_action'].includes(displayStatus)) return undefined;
     const timer = window.setInterval(() => {
       void loadEvents({ silent: true });
       void onRefresh();
@@ -333,14 +357,28 @@ export function SessionDetail({
   }, [displayStatus, session.id, onRefresh]);
 
   useEffect(() => {
+    // Entering a session always starts pinned to the latest message.
+    initialScrollDoneRef.current = false;
+    shouldFollowConversation.current = true;
+  }, [session.id]);
+
+  useEffect(() => {
+    if (loadingEvents) return;
     const list = conversationListRef.current;
     if (!list || !shouldFollowConversation.current) return;
     const frame = window.requestAnimationFrame(() => {
-      list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
-      setShowJumpToLatest(false);
+      // The first scroll after entering a session jumps instantly instead of
+      // animating from the top, and waits one extra frame so the freshly
+      // rendered transcript has its full height before measuring.
+      const instant = !initialScrollDoneRef.current;
+      initialScrollDoneRef.current = true;
+      window.requestAnimationFrame(() => {
+        list.scrollTo({ top: list.scrollHeight, behavior: instant ? 'auto' : 'smooth' });
+        setShowJumpToLatest(false);
+      });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [events, streamingText]);
+  }, [events, streamingText, loadingEvents]);
 
   const visibleEvents = events.filter((event) => {
     const kind = eventKind(event);
@@ -367,17 +405,15 @@ export function SessionDetail({
     setSendingMessage(true);
     setMessageError('');
     try {
-      const previousLastEventId = events.at(-1)?.id ?? null;
-      await postEventStream(
+      // The tail stream is the sole durable replay authority. This request is
+      // an acknowledgment only; the append-only user event and all outcomes
+      // arrive on the sequence-numbered tail stream (or its REST backfill).
+      await postJson(
         `/v1/sessions/${encodeURIComponent(session.id)}/messages`,
-        { content, stream: true },
-        applyStreamEvent,
+        { content, stream: false },
       );
       setMessageDraft('');
-      const nextEvents = await loadEvents({ silent: true });
-      const newEvents = eventsAfter(nextEvents, previousLastEventId);
-      const errorEvent = [...newEvents].reverse().find((item) => eventKind(item) === 'error');
-      if (errorEvent) setMessageError(eventText(errorEvent) || eventTitle(errorEvent));
+      await loadEvents({ silent: true });
       onRefresh();
     } catch (err) {
       setMessageError(err instanceof Error ? err.message : String(err));
@@ -392,6 +428,7 @@ export function SessionDetail({
     setMessageError('');
     try {
       await postJson(`/v1/sessions/${encodeURIComponent(session.id)}/events`, toolConfirmationPayload(toolUseId, result));
+      setConfirmedToolIds((current) => new Set(current).add(toolUseId));
       await loadEvents({ silent: true });
       onRefresh();
     } catch (err) {
@@ -570,60 +607,13 @@ export function SessionDetail({
                 }}
               >
                 {conversationEntries(events).map((entry) => entry.role === 'tool' ? (
-                  <article key={entry.id} className="conversationMessage tool">
-                    <details className="conversationToolCard">
-                      <summary>
-                        <span className="conversationToolSummaryMain">
-                          <span className="conversationToolChevron" aria-hidden="true">›</span>
-                          <strong>{entry.operation}</strong>
-                          <span className="conversationToolName">{entry.toolName}</span>
-                        </span>
-                        <span className={`conversationToolStatus ${entry.status}`}>
-                          {entry.status === 'running' ? 'Running' : entry.status === 'awaiting' ? 'Waiting' : entry.status === 'failed' ? 'Failed' : 'Completed'}
-                        </span>
-                        <time>{eventTime(entry.event)}</time>
-                      </summary>
-                      <div className="conversationToolDetails">
-                        <div className="conversationToolField">
-                          <span>Tool</span>
-                          <code>{entry.toolName}</code>
-                        </div>
-                        <div className="conversationToolField">
-                          <span>Tool use ID</span>
-                          <code>{entry.toolUseId ?? 'Unknown'}</code>
-                        </div>
-                        <div className="conversationToolField">
-                          <span>Parameters</span>
-                          <pre className="conversationToolValue conversationToolParameters">{formatToolValue(entry.input)}</pre>
-                        </div>
-                        <div className="conversationToolField">
-                          <span>Result</span>
-                          <pre className="conversationToolValue conversationToolResult">{entry.result || 'No result yet.'}</pre>
-                        </div>
-                      </div>
-                      {entry.awaitingConfirmation && entry.toolUseId ? (
-                        <div className="conversationToolApproval">
-                          <span>Waiting for your approval</span>
-                          <button
-                            type="button"
-                            className="secondaryButton"
-                            disabled={confirmingToolIds.has(entry.toolUseId)}
-                            onClick={() => void confirmTool(entry.toolUseId!, 'deny')}
-                          >
-                            {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Deny'}
-                          </button>
-                          <button
-                            type="button"
-                            className="primaryButton"
-                            disabled={confirmingToolIds.has(entry.toolUseId)}
-                            onClick={() => void confirmTool(entry.toolUseId!, 'allow')}
-                          >
-                            {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Allow'}
-                          </button>
-                        </div>
-                      ) : null}
-                    </details>
-                  </article>
+                  <ConversationToolCard
+                    key={entry.id}
+                    entry={entry}
+                    confirmingToolIds={confirmingToolIds}
+                    confirmedToolIds={confirmedToolIds}
+                    onConfirm={(toolUseId, result) => void confirmTool(toolUseId, result)}
+                  />
                 ) : (
                   <article key={entry.id} className={`conversationMessage ${entry.role}`}>
                     <div className="conversationMessageMeta">
@@ -824,6 +814,105 @@ type ConversationMessage = {
   event: SessionEvent;
 };
 
+/**
+ * Tool card for the conversation transcript.
+ *
+ * While the tool call is awaiting user approval the card opens automatically
+ * so the Allow/Deny buttons are visible without a manual click. Once the
+ * confirmation is submitted (or a result arrives) the card collapses again.
+ * A manual toggle by the user is respected until the awaiting state changes.
+ */
+function ConversationToolCard({
+  entry,
+  confirmingToolIds,
+  confirmedToolIds,
+  onConfirm,
+}: {
+  entry: Extract<ConversationEntry, { role: 'tool' }>;
+  confirmingToolIds: Set<string>;
+  confirmedToolIds: Set<string>;
+  onConfirm: (toolUseId: string, result: 'allow' | 'deny') => void;
+}) {
+  const awaiting = Boolean(
+    entry.awaitingConfirmation
+      && entry.toolUseId
+      && !confirmingToolIds.has(entry.toolUseId)
+      && !confirmedToolIds.has(entry.toolUseId),
+  );
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const prevAwaitingRef = useRef(awaiting);
+  useEffect(() => {
+    if (prevAwaitingRef.current !== awaiting) {
+      prevAwaitingRef.current = awaiting;
+      setUserOpen(null);
+    }
+  }, [awaiting]);
+  const open = userOpen ?? awaiting;
+  return (
+    <article className="conversationMessage tool">
+      <details
+        className="conversationToolCard"
+        open={open}
+        onToggle={(event) => {
+          const next = (event.target as HTMLDetailsElement).open;
+          if (next !== awaiting) setUserOpen(next);
+        }}
+      >
+        <summary>
+          <span className="conversationToolSummaryMain">
+            <span className="conversationToolChevron" aria-hidden="true">›</span>
+            <strong>{entry.operation}</strong>
+            <span className="conversationToolName">{entry.toolName}</span>
+          </span>
+          <span className={`conversationToolStatus ${entry.status}`}>
+            {entry.status === 'running' ? 'Running' : entry.status === 'awaiting' ? 'Waiting' : entry.status === 'failed' ? 'Failed' : 'Completed'}
+          </span>
+          <time>{eventTime(entry.event)}</time>
+        </summary>
+        <div className="conversationToolDetails">
+          <div className="conversationToolField">
+            <span>Tool</span>
+            <code>{entry.toolName}</code>
+          </div>
+          <div className="conversationToolField">
+            <span>Tool use ID</span>
+            <code>{entry.toolUseId ?? 'Unknown'}</code>
+          </div>
+          <div className="conversationToolField">
+            <span>Parameters</span>
+            <pre className="conversationToolValue conversationToolParameters">{formatToolValue(entry.input)}</pre>
+          </div>
+          <div className="conversationToolField">
+            <span>Result</span>
+            <pre className="conversationToolValue conversationToolResult">{entry.result || 'No result yet.'}</pre>
+          </div>
+        </div>
+        {entry.awaitingConfirmation && entry.toolUseId ? (
+          <div className="conversationToolApproval">
+            <span>Waiting for your approval</span>
+            <button
+              type="button"
+              className="secondaryButton"
+              disabled={confirmingToolIds.has(entry.toolUseId)}
+              onClick={() => onConfirm(entry.toolUseId!, 'deny')}
+            >
+              {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Deny'}
+            </button>
+            <button
+              type="button"
+              className="primaryButton"
+              disabled={confirmingToolIds.has(entry.toolUseId)}
+              onClick={() => onConfirm(entry.toolUseId!, 'allow')}
+            >
+              {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Allow'}
+            </button>
+          </div>
+        ) : null}
+      </details>
+    </article>
+  );
+}
+
 type ConversationEntry = ConversationMessage | {
   id: string;
   role: 'tool';
@@ -873,7 +962,14 @@ function normalizeMarkdownText(value: string): string {
 
 export function conversationEntries(events: SessionEvent[]): ConversationEntry[] {
   const resultByToolId = new Map<string, { event: SessionEvent; text: string; failed: boolean }>();
+  // Confirmation events are append-only even when the backend ignores a stale
+  // one, so they are the durable record that a tool id was already confirmed —
+  // unlike component state, this survives refreshes and remounts.
+  const confirmedToolUseIds = new Set<string>();
   for (const event of events) {
+    if (event.type === 'user.tool_confirmation' && event.tool_use_id) {
+      confirmedToolUseIds.add(event.tool_use_id);
+    }
     const id = toolResultId(event);
     if (!id) continue;
     resultByToolId.set(id, {
@@ -920,9 +1016,10 @@ export function conversationEntries(events: SessionEvent[]): ConversationEntry[]
     const toolUseId = details.toolUseId;
     const result = toolUseId ? resultByToolId.get(toolUseId) : undefined;
     // Tool Runtime is the authority. A result-less tool use is actionable only
-    // when the event carries explicit confirmation metadata. This also works
-    // when the API maps `requires_action` to `idle` in the session status.
-    const awaitingConfirmation = toolAwaitingConfirmation(details, Boolean(result));
+    // when the event carries explicit confirmation metadata and no
+    // confirmation has been recorded yet. This also works when the API maps
+    // `requires_action` to `idle` in the session status.
+    const awaitingConfirmation = toolAwaitingConfirmation(details, Boolean(result), confirmedToolUseIds.has(details.toolUseId ?? ''));
     entries.push({
       id: event.id,
       role: 'tool',
@@ -943,10 +1040,12 @@ export function conversationEntries(events: SessionEvent[]): ConversationEntry[]
 export function toolAwaitingConfirmation(
   details: Pick<ReturnType<typeof toolUseDetails>, 'requiresConfirmation' | 'permission' | 'toolUseId'>,
   hasResult: boolean,
+  alreadyConfirmed = false,
 ): boolean {
   return Boolean(
     details.toolUseId
       && !hasResult
+      && !alreadyConfirmed
       && (details.requiresConfirmation === true || details.permission === 'always_ask'),
   );
 }
@@ -1085,29 +1184,20 @@ export function toolResultId(event: SessionEvent): string | undefined {
   return event.tool_use_id ?? event.mcp_tool_use_id;
 }
 
-function eventsAfter(events: SessionEvent[], previousLastEventId: string | null): SessionEvent[] {
-  if (!previousLastEventId) return events;
-  const index = events.findIndex((event) => event.id === previousLastEventId);
-  return index >= 0 ? events.slice(index + 1) : events;
-}
-
 function sessionDisplayStatus(session: Session, events: SessionEvent[]): SessionDisplayStatus {
-  // The persisted session.status is authoritative (the backend state machine
-  // owns it). Trust it directly so a resumed failed session — which the
-  // backend moves back to running/idle — stops rendering as failed. The API
-  // maps the backend's completed status to 'terminated' on the wire.
+  // Session status is an authoritative server-side state-machine field. The
+  // event log is used only to refine fresh lifecycle progress while a snapshot
+  // is pending; tool cards never decide whether a session requires action.
+  if (session.status === 'requires_action') return 'requires_action';
   if (session.status === 'terminated') return 'terminated';
   if (session.status === 'failed') return 'failed';
   if (session.status === 'running') return 'running';
 
-  // For a session at rest (idle/paused/queued) refine from the last lifecycle
-  // signal in the log, which reflects finer live progress than the row.
   const lastStatus = [...events].reverse().find((event) => event.type.startsWith('session.status_'));
   if (!lastStatus) return session.status;
   if (lastStatus.type === 'session.status_running') return 'running';
-  if (lastStatus.type === 'session.status_idle') return 'idle';
   if (lastStatus.type === 'session.status_terminated') return 'terminated';
-  return session.status;
+  return 'idle';
 }
 
 function eventTime(event: SessionEvent) {

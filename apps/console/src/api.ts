@@ -114,6 +114,31 @@ async function readEventStreamResponse(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const parser = createEventStreamParser(onEvent);
+  try {
+    while (true) {
+      const result = await reader.read();
+      parser.push(decoder.decode(result.value ?? new Uint8Array(), { stream: !result.done }));
+      if (result.done) {
+        parser.push(decoder.decode());
+        parser.finish();
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Incrementally parses an SSE response. `finish` handles a final event that
+ * ends at EOF without an empty-line delimiter, which is valid for a completed
+ * HTTP response and common with proxy buffering.
+ */
+export function createEventStreamParser(onEvent: (event: ServerSentEvent) => void): {
+  push(chunk: string): void;
+  finish(): void;
+} {
   let buffer = '';
   let eventName = 'message';
   let eventId: string | undefined;
@@ -134,35 +159,33 @@ async function readEventStreamResponse(
     dataLines = [];
   };
 
-  try {
-    while (true) {
-      const result = await reader.read();
-      buffer += decoder.decode(result.value ?? new Uint8Array(), { stream: !result.done });
+  const consumeLine = (line: string) => {
+    if (line === '') {
+      dispatch();
+      return;
+    }
+    if (line.startsWith(':')) return;
+    const separator = line.indexOf(':');
+    const field = separator >= 0 ? line.slice(0, separator) : line;
+    const value = separator >= 0 ? line.slice(separator + 1).replace(/^ /, '') : '';
+    if (field === 'event') eventName = value;
+    else if (field === 'id') eventId = value;
+    else if (field === 'data') dataLines.push(value);
+  };
+
+  return {
+    push(chunk) {
+      buffer += chunk;
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line === '') {
-          dispatch();
-          continue;
-        }
-        if (line.startsWith(':')) continue;
-        const separator = line.indexOf(':');
-        const field = separator >= 0 ? line.slice(0, separator) : line;
-        const value = separator >= 0 ? line.slice(separator + 1).replace(/^ /, '') : '';
-        if (field === 'event') eventName = value;
-        else if (field === 'id') eventId = value;
-        else if (field === 'data') dataLines.push(value);
-      }
-      if (result.done) {
-        buffer += decoder.decode();
-        if (buffer) dataLines.push(buffer);
-        dispatch();
-        break;
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
+      for (const line of lines) consumeLine(line);
+    },
+    finish() {
+      if (buffer) consumeLine(buffer.replace(/\r$/, ''));
+      buffer = '';
+      dispatch();
+    },
+  };
 }
 
 async function requestJson<T>(path: string, method: 'POST' | 'PUT', body: unknown): Promise<T> {

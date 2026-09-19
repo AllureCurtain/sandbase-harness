@@ -81,7 +81,8 @@ export function LoadingState({ label }: { label?: string } = {}) {
 }
 
 export function StatusPill({ status }: { status: string }) {
-  return <span className={`status ${status}`}>{status}</span>;
+  const label = status === 'requires_action' ? 'Needs approval' : status;
+  return <span className={`status ${status}`}>{label}</span>;
 }
 
 export function RequiredMark() {

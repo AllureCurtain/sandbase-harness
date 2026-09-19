@@ -1305,6 +1305,11 @@ tr[role="button"]:hover td,
   color: var(--info);
 }
 
+.status.requires_action {
+  background: var(--warning-soft, #fff7d6);
+  color: var(--warning, #9a6700);
+}
+
 .status.failed {
   background: var(--danger-soft);
   color: var(--danger);
