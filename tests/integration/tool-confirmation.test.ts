@@ -19,18 +19,20 @@ import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { LanguageModel } from 'ai';
 
-/** Wait for queued session work instead of assuming a scheduler duration. */
-async function waitFor<T>(
-  probe: () => T | undefined | null,
-  description: string,
-  timeoutMs = 2_000,
-): Promise<T> {
+/**
+ * Poll until `probe` returns a value, instead of sleeping for a guessed
+ * duration. Confirmation runs the tool in the local sandbox, which spawns a
+ * real shell — on Windows that is Git Bash, and the provider also waits for
+ * the streams to flush after `exit`, so a fixed 80ms sleep expires before the
+ * result is appended. A deadline keeps a genuine hang from stalling the suite.
+ */
+async function waitFor<T>(probe: () => T | undefined | null, what: string, timeoutMs = 5000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = probe();
     if (value !== undefined && value !== null) return value;
-    if (Date.now() >= deadline) throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (Date.now() >= deadline) throw new Error(`Timed out after ${timeoutMs}ms waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 10));
   }
 }
 
@@ -57,8 +59,7 @@ describe('Tool confirmation — requires_action transition', () => {
     manager = new SessionManager(db);
   });
 
-  afterEach(async () => {
-    await manager.shutdown();
+  afterEach(() => {
     db.close();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -77,7 +78,7 @@ describe('Tool confirmation — requires_action transition', () => {
     await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'go' }] } as any);
 
     const status = await waitFor(
-      () => (manager.get(session.id)?.status === 'requires_action' ? 'requires_action' : undefined),
+      () => (manager.get(session.id)!.status === 'requires_action' ? 'requires_action' : undefined),
       'session status requires_action',
     );
     expect(status).toBe('requires_action');
@@ -98,18 +99,26 @@ describe('Tool confirmation — requires_action transition', () => {
     const session = manager.create({ agent: 'agent_x' });
     await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'go' }] } as any);
     await waitFor(
-      () => (manager.get(session.id)?.status === 'requires_action' ? true : undefined),
+      () => (manager.get(session.id)!.status === 'requires_action' ? 'requires_action' : undefined),
       'session status requires_action',
     );
 
-    // Confirm — a second turn runs and completes (idle).
+    manager.getEventLogger().append(session.id, {
+      type: 'agent.tool_use',
+      content: [{
+        type: 'tool_use', id: 'c1', name: 'bash', input: {}, requires_confirmation: true,
+        confirmation_group_id: 'confirm_test',
+      }],
+      metadata: { confirmation_group_id: 'confirm_test' },
+    });
+
+    // Confirm — a second turn runs and completes (idle)
     await manager.sendEvent(session.id, { type: 'user.tool_confirmation', tool_use_id: 'c1', result: 'allow' } as any);
     await waitFor(() => (turns === 2 ? turns : undefined), 'the confirmation turn to run');
-    const status = await waitFor(
-      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+    await waitFor(
+      () => (manager.get(session.id)!.status === 'paused' ? 'paused' : undefined),
       'session status paused',
     );
-    expect(status).toBe('paused');
   });
 });
 
@@ -163,8 +172,7 @@ describe('Tool confirmation — execute/deny pending tool', () => {
     manager.setExecutor(executor);
   });
 
-  afterEach(async () => {
-    await manager.shutdown();
+  afterEach(() => {
     db.close();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -172,7 +180,15 @@ describe('Tool confirmation — execute/deny pending tool', () => {
   function seedPendingToolUse(sessionId: string) {
     manager.getEventLogger().append(sessionId, {
       type: 'agent.tool_use',
-      content: [{ type: 'tool_use', id: 'call_1', name: 'bash', input: { command: 'echo confirmed' } }],
+      content: [{
+        type: 'tool_use',
+        id: 'call_1',
+        name: 'bash',
+        input: { command: 'echo confirmed' },
+        requires_confirmation: true,
+        confirmation_group_id: 'confirm_seed',
+      }],
+      metadata: { confirmation_group_id: 'confirm_seed' },
     });
   }
 
@@ -180,12 +196,12 @@ describe('Tool confirmation — execute/deny pending tool', () => {
     return manager
       .getEventLogger()
       .getEvents(sessionId)
-      .find((event) => event.type === 'agent.tool_result' && (event.content?.[0] as any)?.tool_use_id === toolUseId);
+      .find((e) => e.type === 'agent.tool_result' && (e.content?.[0] as any)?.tool_use_id === toolUseId);
   }
 
   it('executes the pending tool on allow and appends the result', async () => {
     const session = manager.create({ agent: 'agent_bash' });
-    // Simulate the prior turn left it awaiting confirmation.
+    // Simulate the prior turn left it awaiting confirmation
     db.prepare(`UPDATE sessions SET status='requires_action' WHERE id=?`).run(session.id);
     seedPendingToolUse(session.id);
 

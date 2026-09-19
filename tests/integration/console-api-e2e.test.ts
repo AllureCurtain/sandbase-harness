@@ -40,7 +40,8 @@ describe('Console/API no-port E2E flow', () => {
     const sessionManager = new SessionManager(db);
     const executor: SessionExecutor = {
       async *execute(session, event) {
-        const text = event.content?.find((block: any) => block.type === 'text')?.text ?? 'message';
+        const message = ('content' in event ? event.content : undefined)?.find((block) => block.type === 'text');
+        const text = message?.type === 'text' ? message.text : 'message';
         yield {
           id: `sevt_${session.id}_reply`,
           sessionId: session.id,

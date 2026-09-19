@@ -18,6 +18,13 @@ type ToolStream = {
   args: string;
   rawArgs?: string;
   rawLifecycle?: boolean;
+  calls?: Array<{
+    id: string;
+    toolName?: string;
+    args: string;
+    rawArgs?: string;
+    rawLifecycle?: boolean;
+  }>;
 };
 
 const USAGE = { inputTokens: { total: 1 }, outputTokens: { total: 1 } };
@@ -39,23 +46,32 @@ function scriptedToolModel(script: ToolStream): LanguageModel {
         stream: new ReadableStream({
           start(controller) {
             if (turn === 1) {
-              const toolName = script.toolName ?? 'write';
-              // Raw argument bytes now arrive as the tool-input lifecycle.
-              if (script.rawLifecycle !== false) {
-                controller.enqueue({ type: 'tool-input-start', id: 'call_write_1', toolName });
+              const calls = script.calls ?? [{
+                id: 'call_write_1',
+                toolName: script.toolName ?? 'write',
+                args: script.args,
+                rawArgs: script.rawArgs,
+                rawLifecycle: script.rawLifecycle,
+              }];
+              for (const call of calls) {
+                const toolName = call.toolName ?? 'write';
+                // Raw argument bytes now arrive as the tool-input lifecycle.
+                if (call.rawLifecycle !== false) {
+                  controller.enqueue({ type: 'tool-input-start', id: call.id, toolName });
+                  controller.enqueue({
+                    type: 'tool-input-delta',
+                    id: call.id,
+                    delta: call.rawArgs ?? call.args,
+                  });
+                  controller.enqueue({ type: 'tool-input-end', id: call.id });
+                }
                 controller.enqueue({
-                  type: 'tool-input-delta',
-                  id: 'call_write_1',
-                  delta: script.rawArgs ?? script.args,
+                  type: 'tool-call',
+                  toolCallId: call.id,
+                  toolName,
+                  input: call.args,
                 });
-                controller.enqueue({ type: 'tool-input-end', id: 'call_write_1' });
               }
-              controller.enqueue({
-                type: 'tool-call',
-                toolCallId: 'call_write_1',
-                toolName,
-                input: script.args,
-              });
               controller.enqueue({
                 type: 'finish',
                 finishReason: { unified: script.finishReason, raw: script.finishReason },
@@ -188,6 +204,10 @@ describe('tool confirmation stream reliability', () => {
     const projectedCalls = harness.manager.getEventLogger().getEvents(sessionId)
       .filter((event) => event.type === 'agent.tool_use');
     expect(projectedCalls).toHaveLength(1);
+    expect(harness.manager.getEventLogger().getEvents(sessionId)
+      .find((event) => event.type === 'span.model_request_end')).toMatchObject({
+        modelUsed: 'scripted-tool-call', stopReason: 'tool-calls', tokensIn: 1, tokensOut: 1,
+      });
     expect(harness.sandboxProvider.writeCount).toBe(0);
 
     const confirmation = {
@@ -199,9 +219,77 @@ describe('tool confirmation stream reliability', () => {
     await waitFor(() => harness.sandboxProvider.writeCount === 1);
     await waitFor(() => harness.manager.get(sessionId)?.status === 'paused');
 
-    await harness.manager.sendEvent(sessionId, confirmation as any);
+    await expect(harness.manager.sendEvent(sessionId, confirmation as any)).rejects.toThrow('not awaiting approval');
     await waitFor(() => harness.manager.get(sessionId)?.status === 'paused');
     expect(harness.sandboxProvider.writeCount).toBe(1);
+  });
+
+  it('rejects a duplicate confirmation queued before the first turn resolves', async () => {
+    const harness = createHarness({
+      finishReason: 'tool-calls',
+      args: JSON.stringify({ path: 'race.txt', content: 'race' }),
+    });
+    const sessionId = await requestToolCall(harness);
+    await waitFor(() => harness.manager.get(sessionId)?.status === 'requires_action');
+
+    const confirmation = {
+      type: 'user.tool_confirmation',
+      tool_use_id: 'call_write_1',
+      result: 'allow',
+    } as const;
+    const first = harness.manager.sendEvent(sessionId, confirmation as any);
+    const duplicate = harness.manager.sendEvent(sessionId, confirmation as any);
+    await expect(duplicate).rejects.toThrow('not awaiting approval');
+    await first;
+    await waitFor(() => harness.sandboxProvider.writeCount === 1);
+
+    const decisions = harness.manager.getEventLogger().getEvents(sessionId)
+      .filter((event) => event.type === 'user.tool_confirmation');
+    expect(decisions).toHaveLength(1);
+    expect(harness.sandboxProvider.writeCount).toBe(1);
+  });
+
+  it('waits for every confirmation in a model-step group before continuing the model', async () => {
+    const harness = createHarness({
+      finishReason: 'tool-calls',
+      args: '{}',
+      calls: [
+        { id: 'call_write_1', args: JSON.stringify({ path: 'first.txt', content: 'first' }) },
+        { id: 'call_write_2', args: JSON.stringify({ path: 'second.txt', content: 'second' }) },
+      ],
+    });
+    const sessionId = await requestToolCall(harness);
+    await waitFor(() => harness.manager.get(sessionId)?.status === 'requires_action');
+
+    const initialEvents = harness.manager.getEventLogger().getEvents(sessionId);
+    const pendingCalls = initialEvents.filter((event) => event.type === 'agent.tool_use');
+    expect(pendingCalls).toHaveLength(2);
+    const groupIds = pendingCalls.map((event) => (event.content?.[0] as any).confirmation_group_id);
+    expect(groupIds[0]).toBeTruthy();
+    expect(groupIds[0]).toBe(groupIds[1]);
+
+    await harness.manager.sendEvent(sessionId, {
+      type: 'user.tool_confirmation', tool_use_id: 'call_write_1', result: 'allow',
+    } as any);
+    await waitFor(() => harness.sandboxProvider.writeCount === 1);
+    await waitFor(() => harness.manager.get(sessionId)?.status === 'requires_action');
+    expect(harness.manager.getEventLogger().getEvents(sessionId)
+      .filter((event) => event.type === 'agent.message')).toHaveLength(0);
+
+    const persistedDecision = harness.manager.getEventLogger().getEvents(sessionId)
+      .find((event) => event.type === 'user.tool_confirmation');
+    expect(persistedDecision?.metadata).toMatchObject({
+      tool_use_id: 'call_write_1', result: 'allow', confirmation_group_id: groupIds[0],
+    });
+
+    await harness.manager.sendEvent(sessionId, {
+      type: 'user.tool_confirmation', tool_use_id: 'call_write_2', result: 'deny', deny_message: 'skip second file',
+    } as any);
+    await waitFor(() => harness.manager.get(sessionId)?.status === 'paused');
+    expect(harness.sandboxProvider.writeCount).toBe(1);
+    expect(harness.manager.getEventLogger().getEvents(sessionId)
+      .filter((event) => event.type === 'agent.message')
+      .some((event) => (event.content?.[0] as any)?.text === 'continued')).toBe(true);
   });
 
   it('does not persist or execute a call from a length-limited stream', async () => {
