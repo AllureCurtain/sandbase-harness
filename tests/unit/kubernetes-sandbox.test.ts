@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
-import { testRuntimeSettingsArea } from '@/core/settings/test.js';
+import { testRuntimeSettingsArea, testRuntimeSettingsAreaWithFetch } from '@/core/settings/test.js';
 import {
   KubernetesSandboxProvider,
   buildConnectionArgs,
@@ -425,7 +425,7 @@ describe('kubernetes sandbox settings check', () => {
     // Console's Test action told an operator nothing at all about it.
     const { db, directory } = makeDb();
     try {
-      const result = await testRuntimeSettingsArea({
+      const result = await testRuntimeSettingsAreaWithFetch({
         db,
         dataDir: directory,
         area: 'sandbox',
@@ -436,7 +436,10 @@ describe('kubernetes sandbox settings check', () => {
             options: { timeout_seconds: 300, namespace: 'agents', kubeconfig: '/nonexistent/kubeconfig' },
           },
         } as never,
-      });
+      }, fetch, async () => ({
+        ok: false,
+        message: 'kubectl could not reach a cluster: test probe unavailable',
+      }));
 
       expect(result.checks).toContainEqual(expect.objectContaining({
         name: 'namespace',

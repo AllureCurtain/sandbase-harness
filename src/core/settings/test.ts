@@ -66,8 +66,9 @@ export async function testRuntimeSettingsAreaWithFetch(
     config: RuntimeSettings;
   },
   fetchImpl: typeof fetch = fetch,
+  kubernetesProbe: typeof probeKubernetesCluster = probeKubernetesCluster,
 ): Promise<RuntimeSettingsTestResult> {
-  const checks = await runChecks(params, fetchImpl);
+  const checks = await runChecks(params, fetchImpl, kubernetesProbe);
   const failed = checks.some((check) => check.status === 'failed');
   const skipped = checks.length > 0 && checks.every((check) => check.status === 'skipped');
   return {
@@ -78,12 +79,16 @@ export async function testRuntimeSettingsAreaWithFetch(
   };
 }
 
-function runChecks(params: {
-  db: Database;
-  dataDir?: string;
-  area: RuntimeSettingsTestArea;
-  config: RuntimeSettings;
-}, fetchImpl: typeof fetch): RuntimeSettingsTestCheck[] | Promise<RuntimeSettingsTestCheck[]> {
+function runChecks(
+  params: {
+    db: Database;
+    dataDir?: string;
+    area: RuntimeSettingsTestArea;
+    config: RuntimeSettings;
+  },
+  fetchImpl: typeof fetch,
+  kubernetesProbe: typeof probeKubernetesCluster,
+): RuntimeSettingsTestCheck[] | Promise<RuntimeSettingsTestCheck[]> {
   const { db, dataDir, area, config } = params;
   switch (area) {
     case 'model':
@@ -103,7 +108,7 @@ function runChecks(params: {
     case 'memory':
       return testMemory(db, config);
     case 'sandbox':
-      return testSandbox(dataDir, config, fetchImpl);
+      return testSandbox(dataDir, config, fetchImpl, kubernetesProbe);
   }
 }
 
@@ -189,12 +194,17 @@ function testMemory(db: Database, config: RuntimeSettings): RuntimeSettingsTestC
   }
 }
 
-async function testSandbox(dataDir: string | undefined, config: RuntimeSettings, fetchImpl: typeof fetch): Promise<RuntimeSettingsTestCheck[]> {
+async function testSandbox(
+  dataDir: string | undefined,
+  config: RuntimeSettings,
+  fetchImpl: typeof fetch,
+  kubernetesProbe: typeof probeKubernetesCluster,
+): Promise<RuntimeSettingsTestCheck[]> {
   if (config.sandbox.provider === 'remote') {
     return testRemoteSandbox(config, fetchImpl);
   }
   if (config.sandbox.provider === 'kubernetes') {
-    return testKubernetesSandbox(config);
+    return testKubernetesSandbox(config, kubernetesProbe);
   }
   if (config.sandbox.provider !== 'local') {
     return [{
@@ -228,7 +238,10 @@ async function testSandbox(dataDir: string | undefined, config: RuntimeSettings,
  * gave no signal at all for this backend, so the first failure an operator saw
  * was a session that would not start.
  */
-async function testKubernetesSandbox(config: RuntimeSettings): Promise<RuntimeSettingsTestCheck[]> {
+async function testKubernetesSandbox(
+  config: RuntimeSettings,
+  kubernetesProbe: typeof probeKubernetesCluster,
+): Promise<RuntimeSettingsTestCheck[]> {
   const options = config.sandbox.options;
   const namespace = typeof options.namespace === 'string' && options.namespace.trim()
     ? options.namespace.trim()
@@ -254,7 +267,7 @@ async function testKubernetesSandbox(config: RuntimeSettings): Promise<RuntimeSe
     checks.push({ name: 'namespace', status: 'ok', message: `Session Pods will be created in namespace "${namespace}".` });
   }
 
-  const probe = await probeKubernetesCluster({
+  const probe = await kubernetesProbe({
     kubeconfig: typeof options.kubeconfig === 'string' ? options.kubeconfig : undefined,
     context: typeof options.context === 'string' ? options.context : undefined,
   });
