@@ -819,7 +819,7 @@ metadata:
 
 ```bash
 npm ci
-npm run typecheck    # src + tests
+npm run typecheck    # src + tests + Console
 npm test             # vitest
 npm run build        # runtime + console + SDK
 npm run release:check  # full local release gate
