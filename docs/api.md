@@ -342,8 +342,31 @@ Resume the event stream:
 
 ```bash
 curl -N http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream \
-  -H "Last-Event-ID: EVENT_ID"
+  -H "Last-Event-ID: 42"
 ```
+
+### Event ordering and metadata
+
+Persisted event responses include an append-only per-session `seq` and optional
+`metadata`. The same envelope is used by `GET /events` and the resumable event
+tail. SSE uses the numeric `seq` as its `id`; send the highest contiguous value
+received as `Last-Event-ID` to replay only later durable events. Transient
+`agent.message_stream_*` events have `seq: 0`, are not replayed, and must not
+advance that cursor.
+
+Model-derived events may include `model_used`, `tokens_in`, `tokens_out`,
+`stop_reason`, and `duration_ms`. Token fields on event projections provide
+local attribution only; session usage is recorded once per model request and
+is the source for aggregate token totals.
+
+Approval-gated `tool_use` blocks include `requires_confirmation: true` and a
+`confirmation_group_id`. The corresponding `user.tool_confirmation` event
+stores its target and decision in event metadata. The session stays in
+`requires_action` until every tool use in that group has a paired result. The
+session response exposes that state as `status: "requires_action"`; the
+matching `session.status_idle` event carries metadata with
+`stop_reason.type: "requires_action"`, pending `event_ids`, and
+`action_type: "tool_confirmation"` for protocol compatibility.
 
 Session event records may include optional execution metadata when available:
 `model_used`, `tokens_in`, `tokens_out`, `stop_reason`, and `duration_ms`.

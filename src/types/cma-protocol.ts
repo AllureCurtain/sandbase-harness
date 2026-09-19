@@ -94,6 +94,15 @@ export interface ToolUseBlock {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /**
+   * Set on tool_use blocks emitted for calls awaiting human approval
+   * (permission policy `always_ask`). The Console reads this flag to render
+   * the approval card; without it a session stuck in `requires_action` has
+   * no actionable UI.
+   */
+  requires_confirmation?: boolean;
+  /** Identifies all approval-gated tool calls emitted in the same model step. */
+  confirmation_group_id?: string;
 }
 
 export interface ToolResultBlock {

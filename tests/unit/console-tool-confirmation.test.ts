@@ -9,6 +9,12 @@ import {
 } from '../../apps/console/src/components/pages/SessionPages.js';
 import type { SessionEvent } from '../../apps/console/src/types.js';
 
+function firstToolEntry(events: SessionEvent[]) {
+  const entry = conversationEntries(events).find((value) => value.role === 'tool');
+  if (!entry) throw new Error('Expected a tool conversation entry');
+  return entry;
+}
+
 const base = (content: unknown[], extras: Partial<SessionEvent> = {}): SessionEvent => ({
   id: `evt_${Math.random().toString(36).slice(2)}`,
   type: 'agent.tool_use',
@@ -23,9 +29,9 @@ describe('Console Tool Runtime confirmation adapter', () => {
   it('shows confirmation for bash always_ask without inspecting its name', () => {
     const event = base([{
       type: 'tool_use', id: 'bash_1', name: 'bash', input: { command: 'rm -i file' },
-      permission: 'always_ask',
+      requires_confirmation: true,
     }], { requires_action: true });
-    const entry = conversationEntries([event])[0];
+    const entry = firstToolEntry([event]);
     expect(entry.role).toBe('tool');
     expect(entry.status).toBe('awaiting');
     expect(entry.toolUseId).toBe('bash_1');
@@ -35,16 +41,15 @@ describe('Console Tool Runtime confirmation adapter', () => {
   it('shows confirmation for MCP always_ask and pairs mcp results', () => {
     const use = base([{
       type: 'tool_use', id: 'mcp_1', name: 'mcp_github.search', input: { query: 'sandbase' },
-      permission: 'always_ask',
+      requires_confirmation: true,
     }], { type: 'agent.mcp_tool_use', requires_action: true });
     const result = base([{
       type: 'tool_result', tool_use_id: 'mcp_1', content: 'ok', is_error: false,
     }], { type: 'agent.mcp_tool_result' });
-    const entries = conversationEntries([use, result]);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].status).toBe('completed');
-    expect(entries[0].awaitingConfirmation).toBe(false);
-    expect(entries[0].result).toBe('ok');
+    const entry = firstToolEntry([use, result]);
+    expect(entry.status).toBe('completed');
+    expect(entry.awaitingConfirmation).toBe(false);
+    expect(entry.result).toBe('ok');
   });
 
   it('uses explicit permission fields and never falls back to tool-name guessing', () => {
@@ -78,8 +83,8 @@ describe('Console Tool Runtime confirmation adapter', () => {
   it('maps tool results to Completed/Failed cards', () => {
     const use = base([{ type: 'tool_use', id: 'call_8', name: 'mcp_echo', input: {} }]);
     const ok = base([{ type: 'tool_result', tool_use_id: 'call_8', content: 'done' }], { type: 'agent.tool_result' });
-    expect(conversationEntries([use, ok])[0].status).toBe('completed');
+    expect(firstToolEntry([use, ok]).status).toBe('completed');
     const failed = base([{ type: 'tool_result', tool_use_id: 'call_8', content: 'boom', is_error: true }], { type: 'agent.tool_result' });
-    expect(conversationEntries([use, failed])[0].status).toBe('failed');
+    expect(firstToolEntry([use, failed]).status).toBe('failed');
   });
 });

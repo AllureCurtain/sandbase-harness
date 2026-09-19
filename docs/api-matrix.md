@@ -18,7 +18,7 @@ that every Claude hosted capability exists locally.
 | Area | Endpoint group | Status | Notes |
 | --- | --- | --- | --- |
 | Agents | `/v1/agents` | Supported | Create, list, retrieve, update, archive, and list versions. |
-| Sessions | `/v1/sessions` | Supported | Create, list, retrieve, stop, delete/archive, event ingestion, event listing, SSE stream, and message convenience endpoint. Event records may include optional model, token, stop-reason, and duration metadata. |
+| Sessions | `/v1/sessions` | Supported | Create, list, retrieve, stop, delete/archive, durable event ingestion/listing, sequence-resumable SSE, and message convenience endpoint. Session status includes `requires_action` while an approval group is pending. Event envelopes include `seq`, immutable metadata, and optional model/token/stop-reason/duration metadata. |
 | Session artifacts | `/v1/sessions/{id}/artifacts` | Supported | Create/list artifact records and fetch content. |
 | Files | `/v1/files` | Supported | Upload/list/retrieve/delete workspace files and fetch content. |
 | Environments | `/v1/environments` | Supported | Create/list/retrieve/update/archive environment templates. |

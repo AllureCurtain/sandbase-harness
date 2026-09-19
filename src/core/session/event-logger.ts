@@ -28,6 +28,7 @@ export class EventLogger {
       durationMs?: number;
       parentEventId?: string;
       delegationDepth?: number;
+      metadata?: Record<string, unknown>;
     },
   ): SessionEvent {
     const id = `sevt_${nanoid(16)}`;
@@ -35,8 +36,8 @@ export class EventLogger {
     const now = new Date();
 
     const stmt = this.db.prepare(`
-      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, stop_reason, duration_ms, parent_event_id, delegation_depth, processed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, stop_reason, duration_ms, parent_event_id, delegation_depth, metadata, processed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -52,6 +53,7 @@ export class EventLogger {
       event.durationMs ?? null,
       event.parentEventId ?? null,
       event.delegationDepth ?? 0,
+      JSON.stringify(event.metadata ?? {}),
       now.toISOString(),
     );
 
@@ -68,6 +70,7 @@ export class EventLogger {
       durationMs: event.durationMs,
       parentEventId: event.parentEventId,
       delegationDepth: event.delegationDepth,
+      metadata: event.metadata,
       createdAt: now,
       processedAt: now,
     };
@@ -129,8 +132,21 @@ interface EventRow {
   duration_ms: number | null;
   parent_event_id: string | null;
   delegation_depth: number;
+  metadata: string | null;
   created_at: string;
   processed_at: string | null;
+}
+
+function parseMetadata(value: string | null): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function rowToEvent(row: EventRow): SessionEvent {
@@ -147,6 +163,7 @@ function rowToEvent(row: EventRow): SessionEvent {
     durationMs: row.duration_ms ?? undefined,
     parentEventId: row.parent_event_id ?? undefined,
     delegationDepth: row.delegation_depth,
+    metadata: parseMetadata(row.metadata),
     createdAt: new Date(row.created_at),
     processedAt: row.processed_at ? new Date(row.processed_at) : undefined,
   };

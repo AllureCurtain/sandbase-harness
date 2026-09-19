@@ -236,6 +236,9 @@ export function sessionsRoutes(deps: ServerDeps) {
       if (err.message?.includes('terminal state')) {
         return c.json({ error: { type: 'conflict', message: err.message } }, 409);
       }
+      if (err.message?.startsWith('Invalid ')) {
+        return c.json({ error: { type: 'invalid_request', message: err.message } }, 400);
+      }
       return c.json({ error: { type: 'internal_error', message: err.message } }, 500);
     }
   });
@@ -306,7 +309,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       const writeEvent = async (sessionEvent: SessionEvent) => {
         const transient = sessionEvent.seq === 0;
         await stream.writeSSE({
-          ...(transient ? {} : { id: sessionEvent.id }),
+          ...(transient ? {} : { id: String(sessionEvent.seq) }),
           event: sessionEvent.type,
           data: JSON.stringify(toApiEvent(sessionEvent)),
         });

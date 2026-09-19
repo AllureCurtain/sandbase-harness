@@ -726,6 +726,11 @@ CREATE INDEX idx_webhook_deliveries_next_retry
   ON webhook_deliveries(status, next_retry_at);
 `;
 
+/** Preserves immutable confirmation and lifecycle metadata with each event. */
+const M030_EVENT_METADATA = `
+ALTER TABLE events ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -756,4 +761,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 27, name: '027_environment_workers', sql: M027_ENVIRONMENT_WORKERS },
   { version: 28, name: '028_credential_audit', sql: M028_CREDENTIAL_AUDIT },
   { version: 29, name: '029_webhook_retries', sql: M029_WEBHOOK_RETRIES },
+  { version: 30, name: '030_event_metadata', sql: M030_EVENT_METADATA },
 ];

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixes
+
+- Makes approval-gated tool calls durable and atomic per model step. Every
+  confirmation decision, group identifier, and paired tool result is stored in
+  the append-only event log; a model continuation begins only after the full
+  group is resolved. Sessions expose `requires_action` directly while pending.
+- Makes Console session replay sequence-aware. The Console now treats the
+  resumable event tail as the single durable source, merges REST snapshots by
+  sequence, and never advances a replay cursor for transient text chunks.
+- Adds `seq` and immutable `metadata` to public event responses and aligns SSE
+  envelopes with REST. Model-attributed event projections include the selected
+  model and provider stop reason when available.
+
 ### Security
 
 - Updates `prefix-safe-json` `0.4.2` -> `0.4.3`, a security release fixing

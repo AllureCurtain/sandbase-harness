@@ -85,6 +85,8 @@ export interface SessionEvent {
   durationMs?: number;
   parentEventId?: string;
   delegationDepth?: number;
+  /** Immutable event-specific data that does not belong in content blocks. */
+  metadata?: Record<string, unknown>;
   createdAt: Date;
   processedAt?: Date;
 }
