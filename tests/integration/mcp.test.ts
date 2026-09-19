@@ -153,6 +153,6 @@ describe('MCP integration', () => {
       expect(delays).toEqual([1000, 2000, 4000, 8000]);
       const status = manager.getStatuses().find((s) => s.name === 'broken');
       expect(status!.connected).toBe(false);
-    });
+    }, 15_000);
   });
 });

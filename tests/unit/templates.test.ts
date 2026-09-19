@@ -58,7 +58,9 @@ describe('Templates', () => {
       const result = validateTemplate(tpl);
       expect(result.valid).toBe(true);
       expect(result.files).toContain('manifest.yaml');
-      expect(result.files).toContain(join('agents', 'a.yaml'));
+      // Manifest-relative identifiers are POSIX on every platform, so they are
+      // written as literals here rather than joined with the host separator.
+      expect(result.files).toContain('agents/a.yaml');
     });
 
     it('rejects invalid agent definitions', () => {
@@ -69,7 +71,7 @@ describe('Templates', () => {
 
       const result = validateTemplate(tpl);
       expect(result.valid).toBe(false);
-      expect(result.errors.map((error) => error.path)).toContain(join('agents', 'bad.yaml'));
+      expect(result.errors.map((error) => error.path)).toContain('agents/bad.yaml');
     });
 
     it('rejects skill directories without SKILL.md', () => {
@@ -80,7 +82,7 @@ describe('Templates', () => {
 
       const result = validateTemplate(tpl);
       expect(result.valid).toBe(false);
-      expect(result.errors).toContainEqual(expect.objectContaining({ path: join('skills', 'missing') }));
+      expect(result.errors).toContainEqual(expect.objectContaining({ path: 'skills/missing' }));
     });
 
     it('rejects manifest-only templates', () => {
@@ -105,8 +107,8 @@ describe('Templates', () => {
       mkdirSync(target, { recursive: true });
       const result = installTemplate(tpl, target);
 
-      expect(result.installed).toContain(join('agents', 'a.yaml'));
-      expect(result.installed).toContain(join('skills', 's', 'SKILL.md'));
+      expect(result.installed).toContain('agents/a.yaml');
+      expect(result.installed).toContain('skills/s/SKILL.md');
 
       // Byte-identical
       expect(readFileSync(join(target, 'agents', 'a.yaml'), 'utf-8')).toBe(
@@ -125,11 +127,11 @@ describe('Templates', () => {
       writeFileSync(join(target, 'agents', 'a.yaml'), 'PREEXISTING');
 
       const skip = installTemplate(tpl, target);
-      expect(skip.skipped).toContain(join('agents', 'a.yaml'));
+      expect(skip.skipped).toContain('agents/a.yaml');
       expect(readFileSync(join(target, 'agents', 'a.yaml'), 'utf-8')).toBe('PREEXISTING');
 
       const force = installTemplate(tpl, target, { force: true });
-      expect(force.installed).toContain(join('agents', 'a.yaml'));
+      expect(force.installed).toContain('agents/a.yaml');
       expect(readFileSync(join(target, 'agents', 'a.yaml'), 'utf-8')).not.toBe('PREEXISTING');
     });
 

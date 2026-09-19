@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describeSettingsAdapters, availabilityFromDescriptors } from '@/core/settings/adapters.js';
@@ -856,7 +856,9 @@ describe('Settings V2 activation', () => {
   });
 
   it('resolves local artifact storage beneath the runtime data directory', () => {
-    expect(localArtifactStorageDir('/tmp/runtime', validConfig)).toBe('/tmp/runtime/files');
+    // Resolved path, so build the expectation with the platform's own joiner.
+    // The traversal rejection below is the real contract.
+    expect(localArtifactStorageDir('/tmp/runtime', validConfig)).toBe(join(resolve('/tmp/runtime'), 'files'));
     expect(() => localArtifactStorageDir('/tmp/runtime', {
       ...validConfig,
       storage: { ...validConfig.storage, artifacts: { provider: 'local' as const, options: { base_path: '../escape' } } },

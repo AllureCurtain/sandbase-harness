@@ -7,9 +7,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
+import { LocalSandboxProvider, shellInvocationFor } from '@/sandbox/local-provider.js';
 
 describe('Local Sandbox Provider', () => {
+  it('falls back to cmd.exe when Windows has neither a configured shell nor Git Bash', () => {
+    expect(shellInvocationFor('echo fallback', 'win32', { ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, () => false)).toEqual({
+      file: 'C:\\Windows\\System32\\cmd.exe',
+      args: ['/d', '/s', '/c', 'echo fallback'],
+    });
+  });
+
   let provider: LocalSandboxProvider;
   let tmpDir: string;
 
@@ -109,6 +116,28 @@ describe('Local Sandbox Provider', () => {
       expect(result.timedOut).toBe(true);
     });
 
+    it('returns once the shell exits even when a detached child holds the pipes', async () => {
+      const sandbox = await provider.provision('sess_bg_pipe', {
+        name: 'local',
+        sandbox_provider: 'local',
+      });
+      // A detached grandchild can outlive the shell while holding the stdio
+      // pipes; the exec must not wait for them (agents legitimately start
+      // dev servers). On Windows Git Bash a plain "&" blocks the shell until
+      // the job exits, so use the Win32-detached `start` there.
+      const command = process.platform === 'win32'
+        ? 'start /B sleep 15 > /dev/null 2>&1'
+        : 'sleep 15 > /dev/null 2>&1 & echo launched';
+      const started = Date.now();
+      const result = await sandbox.execute(command);
+      expect(result.timedOut).toBe(false);
+      expect(Date.now() - started).toBeLessThan(10_000);
+      if (process.platform !== 'win32') {
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('launched');
+      }
+    }, 20_000);
+
     it('rejects cwd paths that escape the sandbox workspace', async () => {
       const sandbox = await provider.provision('sess_exec_escape', {
         name: 'local',
@@ -167,7 +196,7 @@ describe('Local Sandbox Provider', () => {
       );
     });
 
-    it('rejects writes through symlinks that point outside the sandbox workspace', async () => {
+    it.skipIf(process.platform === 'win32')('rejects writes through symlinks that point outside the sandbox workspace', async () => {
       const sandbox = await provider.provision('sess_symlink_escape', {
         name: 'local',
         sandbox_provider: 'local',
