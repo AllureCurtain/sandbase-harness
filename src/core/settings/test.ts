@@ -265,17 +265,22 @@ async function testKubernetesSandbox(
   }
   if (namespaceOk) {
     checks.push({ name: 'namespace', status: 'ok', message: `Session Pods will be created in namespace "${namespace}".` });
+    const probe = await kubernetesProbe({
+      kubeconfig: typeof options.kubeconfig === 'string' ? options.kubeconfig : undefined,
+      context: typeof options.context === 'string' ? options.context : undefined,
+    });
+    checks.push({
+      name: 'cluster_reachable',
+      status: probe.ok ? 'ok' : 'failed',
+      message: probe.message,
+    });
+  } else {
+    checks.push({
+      name: 'cluster_reachable',
+      status: 'skipped',
+      message: 'Skipped Kubernetes cluster probe because the namespace is invalid.',
+    });
   }
-
-  const probe = await kubernetesProbe({
-    kubeconfig: typeof options.kubeconfig === 'string' ? options.kubeconfig : undefined,
-    context: typeof options.context === 'string' ? options.context : undefined,
-  });
-  checks.push({
-    name: 'cluster_reachable',
-    status: probe.ok ? 'ok' : 'failed',
-    message: probe.message,
-  });
 
   const serviceAccount = typeof options.service_account === 'string' ? options.service_account.trim() : '';
   checks.push({
