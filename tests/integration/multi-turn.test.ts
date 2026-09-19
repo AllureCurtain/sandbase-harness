@@ -43,6 +43,20 @@ class MockExecutor implements SessionExecutor {
   }
 }
 
+async function waitFor<T>(
+  probe: () => T | undefined | null,
+  description: string,
+  timeoutMs = 2_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = probe();
+    if (value !== undefined && value !== null) return value;
+    if (Date.now() >= deadline) throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe('Multi-turn + sandbox lifecycle', () => {
   let db: Database;
   let manager: SessionManager;
@@ -75,7 +89,10 @@ describe('Multi-turn + sandbox lifecycle', () => {
     await manager.sendEvent(session.id, userMsg('hello'));
 
     // Wait for the async turn to complete
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused after the first turn',
+    );
 
     const after = manager.get(session.id);
     expect(after!.status).toBe('paused'); // idle, awaiting next input — NOT completed
@@ -85,13 +102,19 @@ describe('Multi-turn + sandbox lifecycle', () => {
     const session = manager.create({ agent: 'agent_echo' });
 
     await manager.sendEvent(session.id, userMsg('msg1'));
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused before the second turn',
+    );
 
     // Second message must be accepted (was previously rejected with 409)
     const res = await manager.sendEvent(session.id, userMsg('msg2'));
     expect(res.accepted).toBe(true);
 
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(
+      () => (executor.turnCount === 2 ? executor.turnCount : undefined),
+      'second turn completion',
+    );
     expect(executor.turnCount).toBe(2);
   });
 
@@ -104,7 +127,10 @@ describe('Multi-turn + sandbox lifecycle', () => {
     await manager.sendEvent(session.id, userMsg('c'));
 
     // Wait for all turns to drain
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(
+      () => (executor.turnCount === 3 ? executor.turnCount : undefined),
+      'all serialized turns to complete',
+    );
 
     expect(executor.maxConcurrentTurns).toBe(1); // never ran two turns at once
     expect(executor.turnCount).toBe(3);
@@ -113,7 +139,10 @@ describe('Multi-turn + sandbox lifecycle', () => {
   it('releases the sandbox on stop (terminal)', async () => {
     const session = manager.create({ agent: 'agent_echo' });
     await manager.sendEvent(session.id, userMsg('hi'));
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused before stop',
+    );
 
     await manager.stop(session.id);
     expect(executor.cleanups.get(session.id)).toBe(1);
@@ -156,7 +185,10 @@ describe('Multi-turn + sandbox lifecycle', () => {
   it('releases the sandbox on delete', async () => {
     const session = manager.create({ agent: 'agent_echo' });
     await manager.sendEvent(session.id, userMsg('hi'));
-    await new Promise((r) => setTimeout(r, 60));
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused before delete',
+    );
 
     await manager.delete(session.id);
     expect(executor.cleanups.get(session.id)).toBe(1);
@@ -187,9 +219,10 @@ describe('Multi-turn + sandbox lifecycle', () => {
     manager.subscribe(session.id, (e) => received.push(e.type));
 
     await manager.sendEvent(session.id, userMsg('hi'));
-    await new Promise((r) => setTimeout(r, 60));
-
-    // The agent.message emitted via broadcast() must have reached the subscriber
+    await waitFor(
+      () => (received.includes('agent.message') ? true : undefined),
+      'agent.message broadcast',
+    );
     expect(received).toContain('agent.message');
   });
 });
@@ -242,18 +275,21 @@ describe('Interrupt handling', () => {
       content: [{ type: 'text', text: 'long task' }],
     } as any);
 
-    // Let the turn start
-    await new Promise((r) => setTimeout(r, 30));
+    // Wait for the turn to start
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'running' ? 'running' : undefined),
+      'turn to start',
+    );
     expect(manager.get(session.id)!.status).toBe('running');
 
     // Interrupt it
     await manager.sendEvent(session.id, { type: 'user.interrupt' } as any);
 
     // Wait for the turn to unwind
-    await new Promise((r) => setTimeout(r, 60));
-
-    expect(aborted).toBe(true);
-    // Interrupt is normal control flow — session goes idle, NOT failed
-    expect(manager.get(session.id)!.status).toBe('paused');
+    await waitFor(() => (aborted ? true : undefined), 'turn abort');
+    await waitFor(
+      () => (manager.get(session.id)?.status === 'paused' ? 'paused' : undefined),
+      'session status paused after interrupt',
+    );
   });
 });

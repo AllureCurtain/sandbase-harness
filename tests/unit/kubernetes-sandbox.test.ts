@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
-import { testRuntimeSettingsArea } from '@/core/settings/test.js';
+import { testRuntimeSettingsArea, testRuntimeSettingsAreaWithFetch } from '@/core/settings/test.js';
 import {
   KubernetesSandboxProvider,
   buildConnectionArgs,
@@ -378,14 +378,33 @@ describe('buildPodManifest label keys', () => {
 describe('kubernetes sandbox settings check', () => {
   const directories: string[] = [];
 
-  afterEach(() => {
-    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  async function removeDirectoryWithRetry(directory: string, timeoutMs = 3_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code ?? '') || Date.now() >= deadline) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  }
+
+  afterEach(async () => {
+    const pending = directories.splice(0);
+    await Promise.all(pending.map((directory) => removeDirectoryWithRetry(directory)));
   });
 
   function makeDb() {
     const directory = mkdtempSync(join(tmpdir(), 'ma-k8s-settings-test-'));
     directories.push(directory);
-    const db = new Database(join(directory, 'settings.db'));
+    // The Kubernetes settings probe does not read metadata; use an in-memory
+    // database so Windows file-handle cleanup cannot mask the probe result.
+    const db = new Database(':memory:');
     db.runMigrations();
     return { db, directory };
   }
@@ -406,7 +425,7 @@ describe('kubernetes sandbox settings check', () => {
     // Console's Test action told an operator nothing at all about it.
     const { db, directory } = makeDb();
     try {
-      const result = await testRuntimeSettingsArea({
+      const result = await testRuntimeSettingsAreaWithFetch({
         db,
         dataDir: directory,
         area: 'sandbox',
@@ -417,7 +436,10 @@ describe('kubernetes sandbox settings check', () => {
             options: { timeout_seconds: 300, namespace: 'agents', kubeconfig: '/nonexistent/kubeconfig' },
           },
         } as never,
-      });
+      }, fetch, async () => ({
+        ok: false,
+        message: 'kubectl could not reach a cluster: test probe unavailable',
+      }));
 
       expect(result.checks).toContainEqual(expect.objectContaining({
         name: 'namespace',
