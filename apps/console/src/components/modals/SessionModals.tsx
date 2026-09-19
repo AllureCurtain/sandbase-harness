@@ -1,11 +1,12 @@
-import { ChevronDown, Database, ExternalLink, FileText, Plus, Search, Shield, Trash2 } from 'lucide-react';
+import { ChevronDown, Database, ExternalLink, FileText, Plus, Shield, Trash2 } from 'lucide-react';
 import { type Dispatch, type FormEvent, type SetStateAction, useState } from 'react';
 import { postJson } from '../../api';
 import { EmptyState, RequiredMark } from '../Common';
 import { Modal } from '../Modal';
+import { MultiResourcePicker, ResourcePicker } from '../ResourcePicker';
 import { environmentKind } from '../pages/EnvironmentPageModel';
 import { formatDateShort } from '../../lib/format';
-import type { Agent, ConsoleData, SessionResourceDraft, Vault, ViewId } from '../../types';
+import type { ConsoleData, SessionResourceDraft, ViewId } from '../../types';
 
 export function SessionModal({
   data,
@@ -63,232 +64,95 @@ export function SessionModal({
   };
 
   return (
-    <Modal title="Create session" subtitle="Set up an instance of your agent in its environment." onClose={onClose} size="wide">
-      <form className="sessionForm" onSubmit={submit}>
+    <Modal title="Create session" subtitle="Set up an instance of your agent in its environment." onClose={onClose} size="medium">
+      <form className="sessionForm sessionCreateForm" onSubmit={submit}>
         {error ? <div className="banner error">{error}</div> : null}
-        <label className="sessionField">
-          <span>Title</span>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Optional - name this run" />
-        </label>
-
-        <SelectPicker
-          label="Agent"
-          placeholder="Select an agent"
-          searchPlaceholder="Search agents by name or exact ID"
-          manageLabel="Manage agents"
-          onManage={() => onNavigate('agents')}
-          value={agent}
-          onValue={setAgent}
-          options={data.agents.map((item) => ({
-            id: item.id,
-            title: item.name,
-            subtitle: formatDateShort(item.created_at),
-          }))}
-        />
-
-        <SelectPicker
-          label="Environment"
-          placeholder="Select an environment"
-          searchPlaceholder="Search environments by name or exact ID"
-          manageLabel="Manage environments"
-          onManage={() => onNavigate('environments')}
-          value={environment}
-          onValue={setEnvironment}
-          options={data.environments.map((item) => ({
-            id: item.id,
-            title: item.name,
-            subtitle: formatDateShort(item.created_at),
-            badge: environmentKind(item),
-          }))}
-        />
-
-        <VaultPicker
-          vaults={data.vaults}
-          selected={vaultIds}
-          onSelected={setVaultIds}
-          onManage={() => onNavigate('credential-vaults')}
-        />
-
-        <div className="sessionResources">
-          <div>
-            <h3>Resources</h3>
-            <p>Mount files, GitHub repositories, or memory stores into the session.</p>
-          </div>
-          {resources.map((resource, index) => (
-            <SessionResourceEditor
-              key={`${resource.type}-${index}`}
-              resource={resource}
-              data={data}
-              onChange={(next) => updateResource(index, next)}
-              onRemove={() => removeResource(index)}
-              onNavigate={onNavigate}
-            />
-          ))}
-          <div className="menuWrap resourceAddWrap">
-            <button className="secondaryButton resourceAddButton" type="button" onClick={() => setResourceMenuOpen((open) => !open)}>
-              <Plus size={18} />
-              Resource
-              <ChevronDown size={16} />
-            </button>
-            {resourceMenuOpen ? (
-              <div className="resourceMenu">
-                <button type="button" onClick={() => addResource('github_repository')}>GitHub repository</button>
-                <button type="button" onClick={() => addResource('file')}>File</button>
-                <button type="button" onClick={() => addResource('memory_store')}>Memory store</button>
+        <div className="sessionCreateMain">
+            <section className="sessionSectionCard">
+              <div className="sessionSectionHeader">
+                <span className="sessionSectionNumber">1</span>
+                <div><h3>Session details</h3><p>Choose the agent and environment for this run.</p></div>
               </div>
-            ) : null}
-          </div>
+              <label className="sessionField">
+                <span>Title <small className="optionalPill">Optional</small></span>
+                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Name this run" />
+              </label>
+              <div className="sessionPickerGrid">
+                <ResourcePicker
+                  label="Agent"
+                  placeholder="Select an agent"
+                  searchPlaceholder="Search agents by name or exact ID"
+                  manageLabel="Manage agents"
+                  onManage={() => onNavigate('agents')}
+                  value={agent}
+                  onValue={setAgent}
+                  options={data.agents.map((item) => ({ id: item.id, title: item.name, subtitle: formatDateShort(item.created_at) }))}
+                />
+                <ResourcePicker
+                  label="Environment"
+                  placeholder="Select an environment"
+                  searchPlaceholder="Search environments by name or exact ID"
+                  manageLabel="Manage environments"
+                  onManage={() => onNavigate('environments')}
+                  value={environment}
+                  onValue={setEnvironment}
+                  options={data.environments.map((item) => ({ id: item.id, title: item.name, subtitle: formatDateShort(item.created_at), badge: environmentKind(item) }))}
+                />
+              </div>
+            </section>
+
+            <section className="sessionSectionCard">
+              <div className="sessionSectionHeader">
+                <span className="sessionSectionNumber">2</span>
+                <div><h3>Credential access</h3><p>Attach only the vaults this session needs.</p></div>
+              </div>
+              <MultiResourcePicker
+                label="Credential vaults"
+                searchPlaceholder="Search vaults by name or exact ID"
+                placeholder="Select one or more vaults"
+                manageLabel="Manage credential vaults"
+                onManage={() => onNavigate('credential-vaults')}
+                options={data.vaults.map((vault) => ({ id: vault.id, title: vault.name, subtitle: `Added ${formatDateShort(vault.created_at)}`, icon: <Shield size={16} /> }))}
+                selected={vaultIds}
+                onToggle={(id, checked) => toggleSet(id, checked, setVaultIds)}
+              />
+            </section>
+
+            <section className="sessionSectionCard">
+              <div className="sessionSectionHeader">
+                <span className="sessionSectionNumber">3</span>
+                <div><h3>Resources</h3><p>Mount files, repositories, or memory stores into the session.</p></div>
+              </div>
+              {resources.map((resource, index) => (
+                <SessionResourceEditor
+                  key={`${resource.type}-${index}`}
+                  resource={resource}
+                  data={data}
+                  onChange={(next) => updateResource(index, next)}
+                  onRemove={() => removeResource(index)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+              <div className="menuWrap resourceAddWrap">
+                <button className="secondaryButton resourceAddButton" type="button" onClick={() => setResourceMenuOpen((open) => !open)}>
+                  <Plus size={18} /> Add resource <ChevronDown size={16} />
+                </button>
+                {resourceMenuOpen ? (
+                  <div className="resourceMenu">
+                    <button type="button" onClick={() => addResource('github_repository')}>GitHub repository</button>
+                    <button type="button" onClick={() => addResource('file')}>File</button>
+                    <button type="button" onClick={() => addResource('memory_store')}>Memory store</button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
         </div>
 
         <div className="modalActions stickyActions">
-          <button className="darkButton" type="submit" disabled={saving || !agent || !environment}>
-            Create session
-          </button>
+          <button className="darkButton" type="submit" disabled={saving || !agent || !environment}>{saving ? 'Creating…' : 'Create session'}</button>
         </div>
       </form>
     </Modal>
-  );
-}
-
-type PickerOption = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  badge?: string;
-};
-
-function SelectPicker({
-  label,
-  placeholder,
-  searchPlaceholder,
-  manageLabel,
-  onManage,
-  value,
-  onValue,
-  options,
-}: {
-  label: string;
-  placeholder: string;
-  searchPlaceholder: string;
-  manageLabel: string;
-  onManage: () => void;
-  value: string;
-  onValue: (value: string) => void;
-  options: PickerOption[];
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const selected = options.find((option) => option.id === value);
-  const filtered = options.filter((option) => {
-    const q = query.toLowerCase();
-    return option.id.toLowerCase().includes(q) || option.title.toLowerCase().includes(q) || (option.subtitle ?? '').toLowerCase().includes(q);
-  });
-
-  return (
-    <div className="sessionField pickerWrap">
-      <span className="fieldHeader">
-        {label}
-        <button className="linkButton" type="button" onClick={onManage}>{manageLabel} <ExternalLink size={15} /></button>
-      </span>
-      <button className={`pickerButton ${selected ? 'selected' : ''}`} type="button" onClick={() => setOpen((current) => !current)}>
-        <span>
-          <strong>{selected?.title ?? placeholder}</strong>
-          {selected?.subtitle ? <small>{selected.subtitle}</small> : null}
-        </span>
-        {selected?.badge ? <b>{selected.badge}</b> : null}
-        <ChevronDown size={18} />
-      </button>
-      {open ? (
-        <div className="pickerPopover">
-          <div className="pickerSearch">
-            <Search size={18} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} autoFocus />
-          </div>
-          <div className="pickerOptions">
-            {filtered.map((option) => (
-              <button
-                type="button"
-                className={`pickerOption ${option.id === value ? 'active' : ''}`}
-                key={option.id}
-                onClick={() => {
-                  onValue(option.id);
-                  setOpen(false);
-                  setQuery('');
-                }}
-              >
-                <span>
-                  <strong>{option.title}</strong>
-                  {option.subtitle ? <small>{option.subtitle}</small> : null}
-                </span>
-                {option.badge ? <b>{option.badge}</b> : null}
-              </button>
-            ))}
-            {filtered.length === 0 ? <span className="pickerEmpty">No matches</span> : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function VaultPicker({
-  vaults,
-  selected,
-  onSelected,
-  onManage,
-}: {
-  vaults: Vault[];
-  selected: Set<string>;
-  onSelected: Dispatch<SetStateAction<Set<string>>>;
-  onManage: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const filtered = vaults.filter((vault) => {
-    const q = query.toLowerCase();
-    return vault.id.toLowerCase().includes(q) || vault.name.toLowerCase().includes(q) || vault.description.toLowerCase().includes(q);
-  });
-  const selectedNames = vaults.filter((vault) => selected.has(vault.id)).map((vault) => vault.name);
-
-  return (
-    <div className="sessionField pickerWrap">
-      <span className="fieldHeader">
-        Credential vaults
-        <button className="linkButton" type="button" onClick={onManage}>Manage credential vaults <ExternalLink size={15} /></button>
-      </span>
-      <button className={`pickerButton ${selectedNames.length ? 'selected' : ''}`} type="button" onClick={() => setOpen((current) => !current)}>
-        <span>
-          <strong>{selectedNames.length ? selectedNames.join(', ') : 'Select one or more vaults'}</strong>
-          {selectedNames.length ? <small>{selectedNames.length} selected</small> : null}
-        </span>
-        <ChevronDown size={18} />
-      </button>
-      {open ? (
-        <div className="pickerPopover">
-          <div className="pickerSearch">
-            <Search size={18} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search vaults by name or exact ID" autoFocus />
-          </div>
-          <div className="pickerOptions">
-            {filtered.map((vault) => (
-              <label className="pickerOption vaultOption" key={vault.id}>
-                <input
-                  type="checkbox"
-                  checked={selected.has(vault.id)}
-                  onChange={(event) => toggleSet(vault.id, event.target.checked, onSelected)}
-                />
-                <span>
-                  <strong>{vault.name}</strong>
-                  <small>{formatDateShort(vault.created_at)}</small>
-                </span>
-                <Shield size={17} />
-              </label>
-            ))}
-            {filtered.length === 0 ? <span className="pickerEmpty">No credential vaults</span> : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

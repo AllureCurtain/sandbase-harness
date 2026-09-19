@@ -67,12 +67,33 @@ export type SessionEvent = {
   id: string;
   type: string;
   content: unknown[] | null;
+  /**
+   * Tool Runtime authority. These fields are optional while older API
+   * responses are still in use; the Console must never infer permission from
+   * a tool name.
+   */
+  requires_confirmation?: boolean;
+  permission?: ToolPermission;
+  requires_action?: boolean;
+  metadata?: Record<string, unknown>;
+  /** Some protocol adapters put the result correlation id on the event. */
+  tool_use_id?: string;
+  mcp_tool_use_id?: string;
+  is_error?: boolean;
+  isError?: boolean;
   delta?: string;
   message_id?: string;
+  model_used?: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  stop_reason?: string;
+  duration_ms?: number;
   created_at: string | null;
   processed_at: string | null;
   parent_event_id: string | null;
 };
+
+export type ToolPermission = 'always_allow' | 'always_ask' | 'never_allow';
 
 export type SessionResourceDraft =
   | { type: 'file'; file_id: string; mount_path: string }
