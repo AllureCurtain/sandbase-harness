@@ -38,6 +38,8 @@ export type CMAEventType =
   | 'agent.message_stream_start'
   | 'agent.message_chunk'
   | 'agent.message_stream_end'
+  | 'agent.thinking_stream_start'
+  | 'agent.thinking_chunk'
   // Session events (7)
   | 'session.status_idle'
   | 'session.status_running'

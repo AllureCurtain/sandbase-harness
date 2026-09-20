@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Lets a session event stream opt into token-level previews with a repeated
+  `event_deltas[]` query parameter for `agent.message` and `agent.thinking`. An
+  unsupported value, an empty value, or more than 100 values is rejected with
+  `invalid_request` before the stream opens. Preview frames carry `event_start`
+  and `event_delta`, never carry an `id` or `processed_at`, and are never
+  persisted, so they cannot advance the resume cursor. `agent.thinking` gets an
+  `event_start` only, because the buffered event carries no reasoning text and a
+  delta would have to invent content.
 
 - Adds `POST /v1/runs`, which starts one turn and returns its result without
   driving the session lifecycle. `response_mode` selects `wait` (200 with
