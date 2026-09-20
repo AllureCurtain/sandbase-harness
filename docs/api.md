@@ -636,8 +636,16 @@ curl -X POST http://127.0.0.1:3000/v1/credential-vaults/VAULT_ID/credentials/CRE
 ```
 
 Runtime code can use the internal `resolveSessionCredentialInjections` helper to
-resolve scoped credentials for a session. The helper decrypts only inside the
-runtime process, updates `last_used_at`, and appends a credential audit event.
+resolve scoped credentials for a session. For a `limited` credential, the caller
+must provide a target host and the host must match `allowed_hosts` before the
+secret is decrypted. Exact hosts, `*.example.com` subdomains, and optional
+ports are supported; a bare `*` does not mean unrestricted. Missing or malformed
+policy, an empty allow-list, or an unverified target is denied. Denial happens
+before decryption, produces only non-secret `runtime_denied` audit metadata, and
+does not update `last_used_at`. Explicit `unrestricted` is the only policy that
+can inject without a target host. The helper is an injection-boundary contract;
+production web/MCP/custom-tool callers still need to propagate target-host
+context before universal enforcement can be claimed.
 
 ## Memory Stores
 

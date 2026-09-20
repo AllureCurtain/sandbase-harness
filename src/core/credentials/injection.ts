@@ -1,6 +1,22 @@
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 import { decryptSecret } from '@/core/security/secrets.js';
+import {
+  authorizeCredentialNetwork,
+  parseCredentialNetworkPolicy,
+  type CredentialPolicyDenyReason,
+} from './policy.js';
+
+export type CredentialInjectionDenial = {
+  credential_id: string;
+  vault_id: string;
+  name: string;
+  auth_type: string;
+  host: string | null;
+  reason: CredentialPolicyDenyReason;
+  code: string;
+  message: string;
+};
 
 export type CredentialInjectionBundle = {
   sessionId: string;
@@ -17,12 +33,19 @@ export type CredentialInjectionBundle = {
     injection_locations: string[];
     value_hint: string;
   }>;
+  denied: CredentialInjectionDenial[];
 };
 
+/**
+ * Resolve attached credentials at the injection boundary.
+ *
+ * Network authorization happens before decryptCredential. Limited credentials
+ * without a target host are denied rather than treated as unrestricted.
+ */
 export function resolveSessionCredentialInjections(
   db: Database,
   sessionId: string,
-  opts: { dataDir?: string; actor?: string; metadata?: Record<string, string> } = {},
+  opts: { dataDir?: string; actor?: string; metadata?: Record<string, string>; targetHost?: string | null } = {},
 ): CredentialInjectionBundle {
   const session = db.prepare('SELECT id, vault_ids FROM sessions WHERE id = ?').get(sessionId) as { id: string; vault_ids: string } | undefined;
   if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -34,6 +57,7 @@ export function resolveSessionCredentialInjections(
     request_headers: {},
     request_body: {},
     credentials: [],
+    denied: [],
   };
   if (vaultIds.length === 0) return bundle;
 
@@ -47,18 +71,42 @@ export function resolveSessionCredentialInjections(
   ).all(...vaultIds) as CredentialRecordRow[];
 
   for (const row of rows) {
+    const authorization = authorizeCredentialNetwork(parseCredentialNetworkPolicy(row.network), opts.targetHost);
+    if (!authorization.allowed) {
+      bundle.denied.push({
+        credential_id: row.id,
+        vault_id: row.vault_id,
+        name: row.name,
+        auth_type: row.auth_type,
+        host: authorization.host ?? null,
+        reason: authorization.reason ?? 'host_not_allowed',
+        code: authorization.code ?? 'credential_host_not_allowed',
+        message: authorization.message ?? 'Credential network policy denied injection',
+      });
+      recordCredentialAudit(db, row, {
+        action: 'runtime_denied',
+        actor: opts.actor,
+        metadata: {
+          ...(opts.metadata ?? {}),
+          reason: authorization.reason ?? 'host_not_allowed',
+          code: authorization.code ?? 'credential_host_not_allowed',
+          host: authorization.host ?? null,
+        },
+        updateLastUsed: false,
+      });
+      continue;
+    }
+
+    // This is deliberately below the policy decision: denied credentials never
+    // reach decryption, even when their ciphertext is malformed.
     const secret = decryptCredential(row, opts.dataDir);
     const locations = parseStringArray(row.injection_locations);
     if (row.auth_type === 'environment_variable' && row.variable_name && secret) {
       bundle.environment[row.variable_name] = secret;
     }
     if (row.auth_type === 'bearer_token' && secret) {
-      if (locations.includes('request_headers')) {
-        bundle.request_headers.Authorization = `Bearer ${secret}`;
-      }
-      if (locations.includes('request_body')) {
-        bundle.request_body[row.name || row.id] = secret;
-      }
+      if (locations.includes('request_headers')) bundle.request_headers.Authorization = `Bearer ${secret}`;
+      if (locations.includes('request_body')) bundle.request_body[row.name || row.id] = secret;
     }
     bundle.credentials.push({
       id: row.id,
@@ -69,7 +117,16 @@ export function resolveSessionCredentialInjections(
       injection_locations: locations,
       value_hint: row.value_hint,
     });
-    markUsed(db, row, opts);
+    recordCredentialAudit(db, row, {
+      action: 'runtime_inject',
+      actor: opts.actor,
+      metadata: {
+        ...(opts.metadata ?? {}),
+        ...(authorization.host ? { host: authorization.host } : {}),
+        injection_locations: locations,
+      },
+      updateLastUsed: true,
+    });
   }
 
   return bundle;
@@ -77,29 +134,33 @@ export function resolveSessionCredentialInjections(
 
 function decryptCredential(row: CredentialRecordRow, dataDir?: string): string {
   if (!row.secret_ciphertext || !row.secret_nonce || !row.secret_tag) return '';
-  return decryptSecret({
-    ciphertext: row.secret_ciphertext,
-    nonce: row.secret_nonce,
-    tag: row.secret_tag,
-  }, dataDir);
+  return decryptSecret({ ciphertext: row.secret_ciphertext, nonce: row.secret_nonce, tag: row.secret_tag }, dataDir);
 }
 
-function markUsed(db: Database, row: CredentialRecordRow, opts: { actor?: string; metadata?: Record<string, string> }) {
+function recordCredentialAudit(
+  db: Database,
+  row: CredentialRecordRow,
+  entry: { action: string; actor?: string; metadata: Record<string, unknown>; updateLastUsed: boolean },
+) {
+  const at = new Date().toISOString();
+  if (entry.updateLastUsed) {
+    db.prepare(
+      `UPDATE credential_records
+       SET last_used_at = ?, updated_at = ?
+       WHERE id = ? AND vault_id = ?`,
+    ).run(at, at, row.id, row.vault_id);
+  }
   db.prepare(
-    `UPDATE credential_records
-     SET last_used_at = datetime('now'), updated_at = datetime('now')
-     WHERE id = ? AND vault_id = ?`,
-  ).run(row.id, row.vault_id);
-  db.prepare(
-    `INSERT INTO credential_audit_events (id, vault_id, credential_id, action, actor, metadata)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO credential_audit_events (id, vault_id, credential_id, action, actor, metadata, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     `caud_${nanoid(18)}`,
     row.vault_id,
     row.id,
-    'runtime_inject',
-    opts.actor ?? 'runtime',
-    JSON.stringify(opts.metadata ?? {}),
+    entry.action,
+    entry.actor ?? 'runtime',
+    JSON.stringify(entry.metadata),
+    at,
   );
 }
 
@@ -129,6 +190,7 @@ type CredentialRecordRow = {
   auth_type: string;
   variable_name: string | null;
   value_hint: string;
+  network: string;
   injection_locations: string;
   secret_ciphertext: string;
   secret_nonce: string;
