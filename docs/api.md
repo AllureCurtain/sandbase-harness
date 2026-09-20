@@ -119,6 +119,34 @@ Error responses:
 Common error types are `invalid_request`, `not_found`, `conflict`,
 `not_available`, and `internal_error`.
 
+### Rate limits
+
+Inbound `/v1` throttling is a single-process fixed one-minute window with
+independent credential buckets:
+
+| Request class | Methods | Default budget |
+| --- | --- | --- |
+| Write | `POST`, `PUT`, `PATCH`, `DELETE` | 300 / minute |
+| Read | `GET`, `HEAD` | 1200 / minute |
+
+The limiter runs after authentication and before CMA request admission. An
+exceeded budget returns HTTP `429` with `error.type: "rate_limit_error"`,
+`error.code: "inbound_rate_limited"`, a positive `Retry-After` value, and
+`X-RateLimit-Limit`/`X-RateLimit-Remaining` headers. Invalid credentials remain
+`401` and do not consume a valid credential's bucket. `/v1/x/health` and CORS
+`OPTIONS` preflight requests are exempt; preflight is handled by CORS before
+route middleware and is not counted.
+
+A runtime with no API keys is unlimited by default. Set
+`MANAGED_AGENTS_INBOUND_RATE_LIMIT=on` to force the limiter, or `off` to
+suppress the default on a key-protected runtime. Use
+`MANAGED_AGENTS_INBOUND_RATE_LIMIT_READ` and
+`MANAGED_AGENTS_INBOUND_RATE_LIMIT_WRITE` for positive per-minute overrides.
+Managed API key creation/removal updates the default auth-linked posture after
+startup. The limiter is in-process and fixed-window; it is best-effort
+throttling, not distributed state or DDoS protection. Forwarded IP fallback is
+not a trusted proxy security boundary.
+
 ## API Keys
 
 API keys control bearer-token authentication for the local runtime. Managed keys
