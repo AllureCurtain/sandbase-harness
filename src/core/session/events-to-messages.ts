@@ -212,6 +212,22 @@ export function eventsToMessages(
       case 'agent.message_stream_start':
       case 'agent.message_chunk':
       case 'agent.message_stream_end':
+      case 'system.message': {
+        // Privileged system-level context, distinct from the agent's `system`
+        // field: it applies to this turn and every later turn, so it projects
+        // as its own `system` role turn rather than folding into the prompt.
+        flushAssistant();
+        flushTools();
+        const systemText = contentBlocksToText(event.content);
+        // A whitespace-only block is not usable context. Emitting it would put
+        // an empty `system` turn in front of the model and, because the turn
+        // is permanent, would do so on every later turn too.
+        if (systemText && systemText.trim()) {
+          messages.push({ role: 'system', content: systemText.trim() });
+        }
+        break;
+      }
+
       case 'user.interrupt':
       case 'user.tool_confirmation':
       case 'user.custom_tool_result':
@@ -271,5 +287,31 @@ function extractText(content?: ContentBlock[]): string {
   return content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
+    .join('\n');
+}
+
+/** Flatten content blocks to the text a model reads, for non-text carriers. */
+function contentBlocksToText(content?: ContentBlock[]): string {
+  if (!content) return '';
+  return content
+    .map((block) => {
+      switch (block.type) {
+        case 'text':
+          return block.text;
+        case 'image': {
+          const source = block.source;
+          const locator = source.url ?? source.file_id ?? (source.data ? '[embedded data]' : '[image]');
+          return `[Image: ${locator}]`;
+        }
+        case 'document': {
+          const source = block.source;
+          const locator = source.url ?? source.file_id ?? source.data ?? '';
+          return [block.title, block.context, locator].filter(Boolean).join('\n');
+        }
+        default:
+          return JSON.stringify(block);
+      }
+    })
+    .filter(Boolean)
     .join('\n');
 }

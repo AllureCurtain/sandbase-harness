@@ -474,6 +474,31 @@ draft.
 `event_start` only, because the buffered `agent.thinking` event carries no
 reasoning text and a delta would have to invent content.
 
+### system.message
+
+A session accepts `system.message` as an inbound event alongside the `user.*`
+family. The payload uses the same content-block vocabulary as `user.message`:
+
+```bash
+curl -X POST http://127.0.0.1:3000/v1/sessions/SESSION_ID/events \
+
+  -H "Content-Type: application/json" \
+
+  -d '{"events": [{"type": "system.message", "content": [{"type": "text", "text": "Answer in Japanese."}]}]}'
+```
+
+`content` must be a non-empty array of at most 1000 valid blocks. An empty array,
+a bare string, a block whose text is empty or whitespace-only, and a batch over
+the ceiling each return `400 invalid_request`. A size violation is reported as a
+size violation, naming the ceiling, rather than as a generic shape error.
+
+`system.message` is privileged system-level context, not a user turn. It applies to
+the accompanying turn and every later turn, in contrast to the agent's `system`
+field, which sets the top-level prompt. In the model context it projects as its own
+`system` role turn; a `system.message` that arrives while an assistant turn is
+pending flushes that turn first, and one whose blocks carry no usable text is
+dropped rather than projected as an empty turn.
+
 ### Event ordering and metadata
 
 Persisted event responses include an append-only per-session `seq` and optional

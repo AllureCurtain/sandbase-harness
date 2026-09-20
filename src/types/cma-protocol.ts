@@ -21,6 +21,7 @@
  */
 export type CMAEventType =
   // User events (4)
+  | 'system.message'
   | 'user.message'
   | 'user.interrupt'
   | 'user.tool_confirmation'
