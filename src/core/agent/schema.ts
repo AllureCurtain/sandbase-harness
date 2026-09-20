@@ -7,6 +7,10 @@
 
 import { z } from 'zod';
 import { BUILTIN_TOOL_NAMES } from '@/core/capabilities/registry.js';
+import {
+  validateWebToolConfigs,
+  webToolPolicyFieldsSchema,
+} from '@/core/agent/web-tool-policy.js';
 import type { AgentDefinition } from '@/types/agent.js';
 
 // ============================================================
@@ -41,6 +45,11 @@ const agentToolConfigSchema = z.object({
 
 const builtinToolConfigSchema = agentToolConfigSchema.extend({
   name: z.enum(BUILTIN_TOOL_NAMES),
+  // Web-tool domain lists are typed here so they survive parsing, but the
+  // grammar itself is enforced structurally in web-tool-policy.ts: a Zod
+  // string[] would emit a generic message that loses the list and index the
+  // published contract makes normative.
+  ...webToolPolicyFieldsSchema,
 });
 
 const mcpToolConfigSchema = agentToolConfigSchema.extend({
@@ -133,16 +142,23 @@ export interface ValidationResult {
 export function validateAgentDefinition(input: unknown): ValidationResult {
   const result = agentDefinitionSchema.safeParse(input);
 
-  if (result.success) {
-    return { valid: true, data: normalizeAgentDefinition(result.data) };
+  if (!result.success) {
+    const errors: ValidationError[] = result.error.issues.map((issue) => ({
+      path: issue.path.join('.') || '(root)',
+      message: issue.message,
+    }));
+
+    return { valid: false, errors };
   }
 
-  const errors: ValidationError[] = result.error.issues.map((issue) => ({
-    path: issue.path.join('.') || '(root)',
-    message: issue.message,
-  }));
+  // Domain-list rules the schema cannot express without losing the exact
+  // list and index the published contract requires in the message.
+  const webToolErrors = validateWebToolConfigs(result.data.tools);
+  if (webToolErrors.length > 0) {
+    return { valid: false, errors: webToolErrors };
+  }
 
-  return { valid: false, errors };
+  return { valid: true, data: normalizeAgentDefinition(result.data) };
 }
 
 function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): AgentDefinition {

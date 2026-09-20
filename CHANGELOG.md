@@ -42,6 +42,17 @@
   reject enabled `web_fetch` and `web_search` requests with a structured
   `unsupported_capability` error before persistence or model/tool execution.
 
+### Changed
+
+- Validates `web_fetch` and `web_search` domain lists against the published
+  grammar on agent create/update and session creation. One list per entry, a
+  non-empty list of at most 64 hostnames, no IP or internal host, no scheme,
+  port, credentials, wildcard, or path on a `web_fetch` domain, no duplicates,
+  and `max_content_tokens` or `user_location` only on the tool that accepts it.
+  A rejected list answers `400 invalid_request_error` naming the list and
+  zero-based index. Whether a web tool can execute is unchanged and still
+  refused by capability admission.
+
 ### Highlights
 
 - Adds the opt-in Pi CLI loop-engine foundation. New Pi sessions persist their
