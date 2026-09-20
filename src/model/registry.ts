@@ -315,6 +315,7 @@ function createModelInstance(
       const openai = createOpenAI({
         apiKey: apiKey ?? 'ollama', // Ollama doesn't need a key
         baseURL: baseUrl,
+        fetch: createSseCompatFetch(),
       });
       return openai.chat(model);
     }
@@ -322,6 +323,7 @@ function createModelInstance(
       const minimax = createOpenAI({
         apiKey: apiKey ?? '',
         baseURL: miniMaxOpenAiBaseUrl({}, baseUrl),
+        fetch: createSseCompatFetch(),
       });
       return minimax.chat(model);
     }
@@ -337,10 +339,87 @@ function createModelInstance(
       const openaiCompat = createOpenAI({
         apiKey: apiKey ?? '',
         baseURL: baseUrl,
+        fetch: createSseCompatFetch(),
       });
       return openaiCompat.chat(model);
     }
   }
+}
+
+// ============================================================
+// OpenAI-compatible SSE compatibility layer
+// ============================================================
+
+/**
+ * Some OpenAI-compatible gateways fragment a single tool call across many
+ * SSE deltas and emit `type: ""` (or omit `type`) on most of them, carrying
+ * only argument fragments. The AI SDK validates every chunk against the
+ * OpenAI wire schema, so the first empty `type` aborts the stream and
+ * terminates the session.
+ *
+ * This fetch wrapper rewrites only that field on the wire (`""`/missing ->
+ * `"function"`), leaving every other byte — including argument fragments
+ * split across deltas — untouched, so nothing else can be corrupted.
+ * Non-SSE responses and already-compliant streams pass through unchanged.
+ */
+export function createSseCompatFetch(underlying: typeof fetch = fetch): typeof fetch {
+  return async (input, init) => {
+    const response = await underlying(input, init);
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!response.ok || !contentType.includes('text/event-stream') || !response.body) {
+      return response;
+    }
+    const body = response.body.pipeThrough(createToolCallTypeSanitizer());
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
+/**
+ * Rewrite `tool_calls[].type` from `""`/missing to `"function"` in each SSE
+ * `data:` line. Lines that fail to parse or need no change are passed
+ * through byte-for-byte.
+ */
+export function sanitizeSseLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') return line;
+  const payload = trimmed.slice(5).trim();
+  let parsed: unknown;
+  try { parsed = JSON.parse(payload); } catch { return line; }
+  let changed = false;
+  for (const choice of (parsed as { choices?: Array<{ delta?: { tool_calls?: Array<{ type?: string }> } }> }).choices ?? []) {
+    for (const toolCall of choice.delta?.tool_calls ?? []) {
+      if (toolCall.type === '' || toolCall.type === undefined) {
+        toolCall.type = 'function';
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return line;
+  return 'data: ' + JSON.stringify(parsed) + '\n';
+}
+
+function createToolCallTypeSanitizer(): TransformStream<Uint8Array, Uint8Array> {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = '';
+  return new TransformStream({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newlineIndex + 1);
+        buffer = buffer.slice(newlineIndex + 1);
+        controller.enqueue(encoder.encode(sanitizeSseLine(line)));
+      }
+    },
+    flush(controller) {
+      if (buffer) controller.enqueue(encoder.encode(sanitizeSseLine(buffer)));
+    },
+  });
 }
 
 // ============================================================
