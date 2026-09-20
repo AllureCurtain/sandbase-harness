@@ -6,7 +6,7 @@
  * open local runtimes are unlimited by default unless explicitly enabled.
  */
 
-import { createHmac, randomBytes } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
 
 const BUCKET_SECRET = randomBytes(32);
@@ -130,10 +130,10 @@ export function requestKind(method: string): 'read' | 'write' {
   return upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS' ? 'read' : 'write';
 }
 
-/** HMAC credential identity with a process secret; raw keys never enter bucket identifiers. */
+/** Derive credential identity with a process-random salt; raw keys never enter bucket identifiers. */
 export function callerIdentity(c: Context): string {
   const token = bearerToken(c.req.header('Authorization')) ?? c.req.header('x-api-key')?.trim();
-  if (token) return `key:${createHmac('sha256', BUCKET_SECRET).update(token).digest('hex').slice(0, 16)}`;
+  if (token) return `key:${scryptSync(token, BUCKET_SECRET, 16).toString('hex')}`;
   const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
   return `ip:${forwarded || c.req.header('x-real-ip')?.trim() || 'local'}`;
 }
