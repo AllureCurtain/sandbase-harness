@@ -43,6 +43,14 @@
   `unsupported_capability` error before persistence or model/tool execution.
 
 ### Changed
+- Accepts the canonical agent `model` object form and carries `effort` through
+  to the stored agent instead of dropping it. `speed` keeps its `standard`
+  default and also accepts the `extended` local value. An unrecognized key and a
+  well-formed `inference_geo` pin are both refused with
+  `unsupported_model_field`, the latter because a local runtime has no
+  inference-geography control to honour, so accepting the pin would misrepresent
+  the agent's data-residency property. A malformed `speed` or `effort` is
+  refused with its own code and the accepted value set rather than defaulted.
 
 - Validates `web_fetch` and `web_search` domain lists against the published
   grammar on agent create/update and session creation. One list per entry, a

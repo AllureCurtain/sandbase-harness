@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BUILTIN_TOOL_NAMES } from '@/core/capabilities/registry.js';
+import { normalizeModelField } from '@/core/agent/model-object.js';
 import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
@@ -78,17 +79,42 @@ const skillRefSchema = z.object({
 
 const modelSpeedSchema = z.enum(['fast', 'standard', 'extended']);
 
+/**
+ * Reasoning effort accepted by the published contract.
+ *
+ * Parsed and validated so an unsupported level fails loudly, then carried
+ * through so the value survives a read-back instead of being dropped on the
+ * way in. Nothing yet varies model behaviour by it.
+ */
+export const modelEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+
 const agentModelConfigSchema = z.object({
   id: z.string().min(1, 'Model id is required').optional(),
   speed: modelSpeedSchema.default('standard'),
 });
 
+/**
+ * Canonical `model` object.
+ *
+ * `inference_geo` is deliberately absent: the parser in `model-object.ts`
+ * rejects a well-formed pin with `unsupported_model_field` rather than
+ * silently accepting a data-residency claim this runtime cannot honour. A
+ * schema here would have to either admit the field (and lie) or produce a
+ * generic validation error that does not name the problem.
+ */
+export const agentModelObjectSchema = z.object({
+  id: z.string().min(1, 'Model id is required'),
+  speed: modelSpeedSchema.optional(),
+  effort: modelEffortSchema.optional(),
+});
+
+// The canonical object form is tried before the bare string so a definition
+// that carries `effort` is parsed by the schema that knows the field. Reversing
+// the order would let the string arm never see it and the legacy object arm
+// strip it, which is exactly the silent loss this parser exists to prevent.
 const agentModelInputSchema = z.union([
+  agentModelObjectSchema,
   z.string().min(1, 'Model id is required'),
-  z.object({
-    id: z.string().min(1, 'Model id is required'),
-    speed: modelSpeedSchema.default('standard'),
-  }),
 ]);
 
 // ============================================================
@@ -158,6 +184,27 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     return { valid: false, errors: webToolErrors };
   }
 
+  // A field the runtime cannot honour is refused by name rather than accepted
+  // and quietly dropped. The schema strips what it does not know, so this runs
+  // against the caller's own value; a shape error has already been reported
+  // above and is left untouched.
+  const modelProfile = normalizeModelField(
+    input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>).model
+      : undefined,
+  );
+  if (!modelProfile.ok) {
+    return {
+      valid: false,
+      errors: [{
+        path: modelProfile.field && modelProfile.field !== 'model'
+          ? `model.${modelProfile.field}`
+          : 'model',
+        message: modelProfile.message ?? 'model is invalid',
+      }],
+    };
+  }
+
   return { valid: true, data: normalizeAgentDefinition(result.data) };
 }
 
@@ -175,7 +222,10 @@ function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): 
     model: data.model.id,
     model_config: {
       id: data.model.id,
-      speed: data.model.speed,
+      speed: data.model.speed ?? 'standard',
     },
+    // Parsed and validated above so an unsupported level fails loudly, then
+    // carried through so the value survives a read-back.
+    ...(data.model.effort ? { effort: data.model.effort } : {}),
   } as AgentDefinition;
 }
