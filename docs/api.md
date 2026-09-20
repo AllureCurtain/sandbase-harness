@@ -272,6 +272,26 @@ When `expected_version` is present and does not match the current agent
 version, the API returns `409 conflict`. Each successful create/update writes an
 immutable snapshot returned by `/v1/agents/{agent_id}/versions`.
 
+### Agent model object
+
+`model` accepts either the bare model id string or the canonical object form.
+
+```json
+{ "id": "claude-opus-5", "speed": "standard", "effort": "high" }
+```
+
+| Field | Accepted values | Behaviour |
+| --- | --- | --- |
+| `id` | non-empty string | Required. |
+| `speed` | `standard` \| `fast` \| `extended` | Optional; defaults to `standard`. `extended` is a local extension, not a published value. |
+| `effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max`, or `{ "type": <level> }` | Optional. Parsed, validated, and carried through to the stored agent; nothing yet varies model behaviour by it. |
+| `inference_geo` | `us` \| `global` | Refused with `unsupported_model_field`. A local runtime has no inference-geography control, so honouring the pin is not possible. |
+
+An unrecognized key is also refused with `unsupported_model_field`, and the error
+lists every known field so the request can be corrected. A malformed `speed`
+or `effort` is refused with its own stable code and the accepted value set
+rather than being silently defaulted.
+
 ## Sessions
 
 Sessions run an agent in an environment and persist a resumable event log.
