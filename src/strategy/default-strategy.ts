@@ -205,14 +205,18 @@ export class DefaultStrategy implements AgentStrategy {
           // attribution, so metrics must not sum those projections.
           eventLog.recordUsage(session.id, tokensIn, tokensOut);
 
-          // Emit agent.thinking for reasoning output (extended-thinking models)
+          // Emit agent.thinking as a progress signal only. CMA defines this
+          // event as "thinking started/stopped" and explicitly not as a carrier
+          // for reasoning content, so the raw `step.reasoningText` is
+          // deliberately not persisted here: the public event log is readable
+          // over the API and reasoning traces routinely echo tool output.
           const reasoning = step.reasoningText;
           if (reasoning && reasoning.trim()) {
             const thinkingEvent = eventLog.append(session.id, {
               type: 'agent.thinking',
-              content: [{ type: 'text', text: reasoning }] as ContentBlock[],
               modelUsed,
               stopReason,
+              metadata: { signal: 'reasoning' },
             });
             broadcast(thinkingEvent);
           }

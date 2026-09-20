@@ -61,6 +61,10 @@
 
 ### Security
 
+- Stops persisting raw model reasoning in the public event log. `agent.thinking`
+  is now emitted as a content-free progress signal carrying
+  `metadata.signal = "reasoning"`, so reasoning traces that echo tool output are
+  no longer readable through the REST event listing or the SSE stream.
 - Adds credential-scoped, in-process inbound rate limiting after authentication.
   Protected runtimes use independent read/write fixed windows, structured 429
   responses, health/preflight exemptions, dynamic managed-key posture, and
