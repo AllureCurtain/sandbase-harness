@@ -13,6 +13,7 @@ import {
 import { PiCleanupPendingError, PiTimeoutError } from './pi-launcher.js';
 import { PiStderrTail } from './pi/stderr-tail.js';
 import { PiTranslator } from './pi/translator.js';
+import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
 
 export interface PiTurnLauncher {
   /** Foundation compatibility path; adapter-aware launchers also implement start. */
@@ -86,6 +87,13 @@ export class PiStrategy implements AgentStrategy {
       broadcast: context.broadcast,
       recordUsage: (sessionId, inputTokens, outputTokens) => {
         context.eventLog.recordUsage(sessionId, inputTokens, outputTokens);
+      },
+      // Oversized Pi tool results go through the same spill contract as the
+      // built-in strategy. `hostWorkDir` is required above, so the sandbox is
+      // real here and the reported path is one the agent can read back.
+      spillToolOutput: async (output) => {
+        const spill = await spillToolOutput(output, { sessionId: context.session.id, sandbox: context.sandbox });
+        return spill.preview;
       },
     });
 

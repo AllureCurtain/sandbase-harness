@@ -24,8 +24,14 @@ import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
-/** Max characters retained per tool result (OMA parity). */
-const MAX_TOOL_RESULT_CHARS = 50_000;
+/**
+ * Local tool-result ceiling, re-exported from the overflow contract.
+ *
+ * Kept as a named export because existing callers and tests read it from this
+ * module; the value itself has one definition.
+ */
+export { LOCAL_TOOL_RESULT_MAX_CHARS as MAX_TOOL_RESULT_CHARS } from '@/core/session/tool-output-overflow.js';
+import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
 
 /**
  * Turn a model/provider error into a diagnostic message. AI SDK errors
@@ -295,19 +301,30 @@ export class DefaultStrategy implements AgentStrategy {
               const raw = typeof toolResult.output === 'string'
                 ? toolResult.output
                 : JSON.stringify(toolResult.output);
-              const capped = raw.length > MAX_TOOL_RESULT_CHARS
-                ? raw.slice(0, MAX_TOOL_RESULT_CHARS) + `\n\n[truncated: ${raw.length - MAX_TOOL_RESULT_CHARS} more chars]`
-                : raw;
+              // Oversize results go through the shared overflow contract: the
+              // full text is written into the sandbox and the model keeps a
+              // short preview plus the path it can read back from. Slicing
+              // inline here is what the contract forbids — one spill format, in
+              // one module, for every tool.
+              const overflow = await spillToolOutput(raw, { sessionId: session.id, sandbox: context.sandbox });
               const toolResultEvent = eventLog.append(session.id, {
                 type: isMcp ? 'agent.mcp_tool_result' : 'agent.tool_result',
                 content: [{
                   type: 'tool_result',
                   tool_use_id: toolResult.toolCallId,
-                  content: capped,
+                  content: overflow.preview,
                 }] as ContentBlock[],
                 modelUsed,
                 stopReason,
-                ...(mcpServerName ? { metadata: { mcp_server_name: mcpServerName } } : {}),
+                // The path is recorded only when a file was actually written, so
+                // a sandbox that could not be written never hands the model a
+                // path that does not exist.
+                ...(overflow.file
+                  ? { metadata: {
+                    ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
+                    tool_output_overflow: overflow.file,
+                  } }
+                  : mcpServerName ? { metadata: { mcp_server_name: mcpServerName } } : {}),
               });
               broadcast(toolResultEvent);
             }

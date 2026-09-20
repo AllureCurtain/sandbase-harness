@@ -4,7 +4,6 @@ import type { SessionEvent } from '@/types/session.js';
 import { readPiJsonl, PiJsonlProtocolError } from './jsonl-reader.js';
 import { PiMarkupBuffer, stripPiToolCallMarkup } from './text-markup.js';
 
-const MAX_TOOL_RESULT_CHARS = 50_000;
 
 type RawPiEvent = Record<string, unknown>;
 
@@ -25,6 +24,12 @@ export interface PiTranslatorOptions {
   eventLog: EventLogWriter;
   broadcast: (event: SessionEvent) => void;
   recordUsage: (sessionId: string, inputTokens: number, outputTokens: number) => void;
+  /**
+   * Shared overflow contract. Injected rather than imported so the translator
+   * stays a pure stdout reader and the spill decision, including whether a
+   * file was really written, stays in one module.
+   */
+  spillToolOutput: (output: string) => Promise<string>;
 }
 
 export interface PiTranslationSummary {
@@ -98,7 +103,7 @@ export class PiTranslator {
       if (typeof event.type !== 'string' || event.type.length === 0) {
         throw this.protocolError('Pi event is missing a string type');
       }
-      this.consumeEvent(event);
+      await this.consumeEvent(event);
     }
   }
 
@@ -119,7 +124,7 @@ export class PiTranslator {
     return { ...this.summary };
   }
 
-  private consumeEvent(event: RawPiEvent): void {
+  private async consumeEvent(event: RawPiEvent): Promise<void> {
     switch (event.type) {
       case 'session':
         if (event.id !== undefined && typeof event.id !== 'string') {
@@ -148,7 +153,7 @@ export class PiTranslator {
         this.consumeToolStart(event);
         return;
       case 'tool_execution_end':
-        this.consumeToolEnd(event);
+        await this.consumeToolEnd(event);
         return;
       case 'turn_end':
         this.consumeTurnEnd(event);
@@ -214,11 +219,13 @@ export class PiTranslator {
     this.summary.nativeToolCount += 1;
   }
 
-  private consumeToolEnd(event: RawPiEvent): void {
+  private async consumeToolEnd(event: RawPiEvent): Promise<void> {
     const id = stringValue(event.toolCallId ?? event.tool_call_id);
     if (!id) throw this.protocolError('tool_execution_end requires toolCallId');
     const rawResult = event.result ?? event.output ?? event.content ?? '';
-    const result = capToolResult(extractResult(rawResult));
+    // Same spill contract as the built-in strategy: one marker, one
+    // retained-size accounting, and a path only when a file was written.
+    const result = await this.options.spillToolOutput(extractResult(rawResult));
     const isError = event.isError === true || event.is_error === true;
     this.appendDurable({
       type: id.startsWith('mcp_') ? 'agent.mcp_tool_result' : 'agent.tool_result',
@@ -405,11 +412,6 @@ function extractResult(value: unknown): string {
   return value === undefined || value === null ? '' : JSON.stringify(value);
 }
 
-function capToolResult(value: string): string {
-  return value.length <= MAX_TOOL_RESULT_CHARS
-    ? value
-    : `${value.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n[truncated: ${value.length - MAX_TOOL_RESULT_CHARS} more chars]`;
-}
 
 function extractText(value: unknown): string {
   if (typeof value === 'string') return value;
