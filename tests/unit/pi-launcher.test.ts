@@ -168,7 +168,10 @@ describe('Pi launcher', () => {
         terminationCalls.push(force);
         child.kill(force ? 'SIGKILL' : 'SIGTERM');
       },
-      terminationGraceMs: 10,
+      // Use the production grace, not a 10 ms budget: the fake CLI writes its
+      // result inside the SIGTERM handler, so a runner scheduling delay can
+      // otherwise turn a graceful cancel into a forced one.
+      terminationGraceMs: 1_000,
     });
 
     const launch = launcher.launch({
