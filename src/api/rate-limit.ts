@@ -6,8 +6,10 @@
  * open local runtimes are unlimited by default unless explicitly enabled.
  */
 
-import { createHash } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
+
+const BUCKET_SECRET = randomBytes(32);
 
 export interface InboundRateLimitOverrides {
   enabled?: boolean;
@@ -128,10 +130,10 @@ export function requestKind(method: string): 'read' | 'write' {
   return upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS' ? 'read' : 'write';
 }
 
-/** Hash credential identity; raw keys never enter bucket identifiers. */
+/** HMAC credential identity with a process secret; raw keys never enter bucket identifiers. */
 export function callerIdentity(c: Context): string {
   const token = bearerToken(c.req.header('Authorization')) ?? c.req.header('x-api-key')?.trim();
-  if (token) return `key:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  if (token) return `key:${createHmac('sha256', BUCKET_SECRET).update(token).digest('hex').slice(0, 16)}`;
   const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
   return `ip:${forwarded || c.req.header('x-real-ip')?.trim() || 'local'}`;
 }
