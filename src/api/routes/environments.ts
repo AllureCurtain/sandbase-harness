@@ -14,6 +14,11 @@ import {
   stringRecordField,
 } from './resource-utils.js';
 import { SHIPPED_SANDBOX_PROVIDER_TYPES } from '@/types/sandbox.js';
+import {
+  createEnvironmentWorkerKey,
+  listEnvironmentWorkerKeys,
+  revokeEnvironmentWorkerKey,
+} from '@/core/auth/environment-worker-keys.js';
 
 type ResourceKind = 'environment';
 
@@ -83,7 +88,59 @@ export function environmentRoutes(deps: ServerDeps) {
 
   app.post('/environments/:id/archive', (c) => archiveResource(c, deps, 'environments', toEnvironment));
 
+  // --- Self-hosted worker keys (R9.14) -------------------------------------
+  //
+  // The issuing side of the worker-key contract whose consuming side is
+  // `POST /v1/x/worker/claim`. Only the SHA-256 hash of a key is stored, so
+  // `secret_key` is present in the creation response and can never be read
+  // back; list and revoke responses carry `key_prefix` instead. Both routes are
+  // published in `docs/api.md` and `docs/api-matrix.md`.
+
+  app.get('/environments/:id/worker-keys', (c) => {
+    const environmentId = activeEnvironmentId(c, deps);
+    if (!environmentId) return notFound(c, 'Environment not found');
+    return c.json(pageOf(listEnvironmentWorkerKeys(deps.db, environmentId)));
+  });
+
+  app.post('/environments/:id/worker-keys', async (c) => {
+    const environmentId = activeEnvironmentId(c, deps);
+    if (!environmentId) return notFound(c, 'Environment not found');
+    const body = await readObjectBody(c);
+    if (!body.ok) return body.response;
+    const name = stringField(body.value.name);
+    if (!name) return invalid(c, 'name is required');
+    if (name.length > 80) return invalid(c, 'name must be 80 characters or fewer');
+    const expiresAt = stringField(body.value.expires_at);
+    if (body.value.expires_at !== undefined && body.value.expires_at !== null && !expiresAt) {
+      return invalid(c, 'expires_at must be an ISO 8601 timestamp');
+    }
+    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
+      return invalid(c, 'expires_at must be an ISO 8601 timestamp');
+    }
+    const created = createEnvironmentWorkerKey(deps.db, environmentId, {
+      name,
+      expires_at: expiresAt ?? null,
+      metadata: stringRecordField(body.value.metadata),
+    });
+    return c.json(created, 201);
+  });
+
+  app.post('/environments/:id/worker-keys/:keyId/revoke', (c) => {
+    const environmentId = activeEnvironmentId(c, deps);
+    if (!environmentId) return notFound(c, 'Environment not found');
+    const revoked = revokeEnvironmentWorkerKey(deps.db, environmentId, c.req.param('keyId'));
+    if (!revoked) return notFound(c, 'Worker key not found');
+    return c.json(revoked);
+  });
+
   return app;
+}
+
+/** The environment id when it names a live (non-archived) environment. */
+function activeEnvironmentId(c: any, deps: ServerDeps): string | undefined {
+  const id = c.req.param('id');
+  const row = deps.db.prepare('SELECT id FROM environments WHERE id = ? AND archived_at IS NULL').get(id);
+  return row ? id : undefined;
 }
 
 function toEnvironment(row: EnvironmentRow) {

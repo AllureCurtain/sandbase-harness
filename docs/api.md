@@ -900,6 +900,29 @@ managed-agents worker poll \
 Worker polling is scoped by the environment key when supplied. The worker can
 execute `exec`, `read`, `write`, and `list` work items inside `--workdir`.
 
+### Self-hosted worker keys
+
+A self-hosted environment's worker keys are issued, listed, and revoked over the
+API:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/environments/{id}/worker-keys` | Issue a key. Returns `secret_key` exactly once. |
+| `GET` | `/v1/environments/{id}/worker-keys` | List keys with `key_prefix`, status, and last-seen metadata. |
+| `POST` | `/v1/environments/{id}/worker-keys/{key_id}/revoke` | Revoke a key. |
+
+Only the SHA-256 hash of a key is stored, so `secret_key` is present in the
+creation response and can never be read back; list and revoke responses carry
+`key_prefix` instead. A create body accepts `name` (required, at most 80
+characters), an optional `expires_at` ISO 8601 timestamp, and optional `metadata`.
+
+A claim on `POST /v1/x/worker/claim` may present the key as `environment_key`,
+which scopes the worker to that environment for both the claim filter and the
+key's expiry and revocation rules. A claim naming a different environment than the
+key's scope is refused, and a claim presenting a revoked, expired, or unknown key
+is refused before any work item changes hands. A claim without a key is unscoped,
+which is what a runtime that has not issued any worker keys expects.
+
 ## Credential Vaults
 
 Credential vaults group secrets that sessions can attach by id.

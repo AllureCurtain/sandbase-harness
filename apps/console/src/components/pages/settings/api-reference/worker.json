@@ -66,4 +66,101 @@
       }
     ]
   }
+  ,
+  {
+    "id": "environment-worker-keys-list",
+    "group": "Worker",
+    "title": "List environment worker keys",
+    "method": "GET",
+    "path": "/v1/environments/{id}/worker-keys",
+    "summary": "Lists a self-hosted environment's worker keys with key_prefix, status, and last-seen metadata. The secret is never listed.",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "required": true,
+        "description": "Environment id."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "array",
+        "description": "Worker keys, each carrying key_prefix rather than the secret."
+      }
+    ]
+  },
+  {
+    "id": "environment-worker-keys-create",
+    "group": "Worker",
+    "title": "Issue environment worker key",
+    "method": "POST",
+    "path": "/v1/environments/{id}/worker-keys",
+    "summary": "Issues a worker key and returns the raw secret exactly once. Only the SHA-256 hash is stored, so the secret can never be read back.",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "required": true,
+        "description": "Environment id."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "description": "Display name, at most 80 characters."
+      },
+      {
+        "name": "expires_at",
+        "type": "string",
+        "description": "Optional ISO 8601 expiry timestamp."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Optional string metadata."
+      }
+    ],
+    "response": [
+      {
+        "name": "secret_key",
+        "type": "string",
+        "description": "Raw secret, returned only by this response."
+      },
+      {
+        "name": "key_prefix",
+        "type": "string",
+        "description": "Non-secret prefix shown by every later response."
+      }
+    ]
+  },
+  {
+    "id": "environment-worker-keys-revoke",
+    "group": "Worker",
+    "title": "Revoke environment worker key",
+    "method": "POST",
+    "path": "/v1/environments/{id}/worker-keys/{key_id}/revoke",
+    "summary": "Revokes a worker key. A claim presenting a revoked key is refused before any work item changes hands.",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "required": true,
+        "description": "Environment id."
+      },
+      {
+        "name": "key_id",
+        "type": "string",
+        "required": true,
+        "description": "Worker key id."
+      }
+    ],
+    "response": [
+      {
+        "name": "key",
+        "type": "object",
+        "description": "The revoked key, carrying key_prefix and status."
+      }
+    ]
+  }
 ]

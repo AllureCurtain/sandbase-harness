@@ -34,7 +34,7 @@ that every Claude hosted capability exists locally.
 | Session artifacts | `/v1/sessions/{id}/artifacts` | Supported | Create/list artifact records and fetch content. |
 | Files | `/v1/files` | Supported | Upload/list/retrieve/delete workspace files and fetch content. A file attached to a session takes a logical `mount_path` that the runtime maps under its own mount root, so the sandbox layout is never part of the public field. | Files an agent writes under `/mnt/session/outputs/` are published as session-scoped records after the turn, idempotently per (session, sandbox path). |
 | Environments | `/v1/environments` | Supported | Create/list/retrieve/update/archive environment templates. |
-| Environment worker keys | `/v1/environments/{id}/worker-keys` | Advanced | Create/list/revoke scoped self-hosted worker keys; not needed for the default local runtime. |
+| Environment worker keys | `/v1/environments/{id}/worker-keys` | Advanced | Create/list/revoke scoped self-hosted worker keys. Only the SHA-256 hash is stored, so `secret_key` is returned exactly once and list and revoke carry `key_prefix`; a claim presenting the key is scoped to the issuing environment and a revoked, expired, or unknown key is refused before any work item changes hands. Not needed for the default local runtime. |
 | Environment work queue | `/v1/environments/{id}/work-items` | Advanced | Inspect recent queued self-hosted work and queue stats; not needed for the default local runtime. |
 | Credential vaults | `/v1/credential_vaults` | Supported | Create/list/retrieve/update/archive/delete vaults. |
 | Vault credentials | `/v1/credential_vaults/{id}/credentials` | Supported | Create/list/update/delete credentials with secret redaction. |

@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Adds `POST`, `GET`, and revoke routes for a self-hosted environment's worker
+  keys. Only the SHA-256 hash is stored, so `secret_key` is returned exactly once
+  and list and revoke responses carry `key_prefix` instead. A claim on
+  `POST /v1/x/worker/claim` may present the key as `environment_key`, which scopes
+  the worker to the issuing environment; a claim naming a different environment,
+  or presenting a revoked, expired, or unknown key, is refused before any work item
+  changes hands. The issuing side and the consuming side now share one definition
+  of the hash scheme and the status rules.
 - Enforces the published memory rules on the routes that own them: content is
   capped at 100 kB measured in bytes rather than characters, a store holds at most
   10,000 memories, a store's session-level `instructions` field is capped at 4,096
