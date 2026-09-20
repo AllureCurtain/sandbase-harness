@@ -860,7 +860,100 @@ describe('Managed Agents API', () => {
       expect(usage).not.toHaveProperty('server_tool_use');
     });
 
-    it('returns 404 for messages on non-existent sessions', async () => {
+    describe('POST /v1/runs', () => {
+    async function postRun(body: Record<string, unknown>) {
+      return app.request('/v1/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('runs one turn and returns its output and usage', async () => {
+      const res = await postRun({ agent: 'agent_echo-agent', input: 'hello' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.run_id).toMatch(/^sess_/);
+      expect(body.session_id).toBe(body.run_id);
+      expect(body.status).toBe('completed');
+      expect(JSON.stringify(body.output)).toContain('echo: hello');
+      expect(body.usage).toMatchObject({ input_tokens: expect.any(Number), output_tokens: expect.any(Number) });
+
+      // The input is durable, so the turn replays from the session log.
+      const events = ((await (await app.request(`/v1/sessions/${body.run_id}/events`)).json()) as any).data as any[];
+      expect(events.some((event) => event.type === 'user.message')).toBe(true);
+      expect(events.some((event) => event.type === 'session.status_idle')).toBe(true);
+    });
+
+    it('accepts an async run with a query handle', async () => {
+      const res = await postRun({
+        agent: 'agent_echo-agent',
+        input: 'hello',
+        response_mode: 'async',
+      });
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.run_id).toMatch(/^sess_/);
+      expect(body.status).toBe('running');
+      expect(body.events_url).toBe(`/v1/sessions/${body.run_id}/events`);
+      expect(body.stream_url).toBe(`/v1/sessions/${body.run_id}/events/stream`);
+    });
+
+    it('streams the session events in sse mode', async () => {
+      const res = await postRun({
+        agent: 'agent_echo-agent',
+        input: 'hello',
+        response_mode: 'sse',
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      const text = await res.text();
+      expect(text).toContain('event: user.message');
+      expect(text).toContain('event: agent.message');
+      expect(text).toContain('event: session.status_idle');
+    });
+
+    it('answers 202 with a deadline marker when the wait budget elapses', async () => {
+      const res = await postRun({
+        agent: 'agent_echo-agent',
+        input: 'hello',
+        max_wait_seconds: 0,
+      });
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.wait_deadline_reached).toBe(true);
+      expect(body.status).toBe('running');
+      // The transport deadline did not stop the turn.
+      const session = await (await app.request(`/v1/sessions/${body.run_id}`)).json();
+      expect(session.id).toBe(body.run_id);
+    });
+
+    it('rejects an unusable request before a session exists', async () => {
+      const before = ((await (await app.request('/v1/sessions')).json()) as any).data.length;
+
+      const unknownEngine = await postRun({ agent: 'agent_echo-agent', input: 'hi', loop_engine: 'harness' });
+      expect(unknownEngine.status).toBe(400);
+      expect((await unknownEngine.json()).error.code).toBe('loop_engine_not_supported');
+
+      const bogusEngine = await postRun({ agent: 'agent_echo-agent', input: 'hi', loop_engine: 'nope' });
+      expect(bogusEngine.status).toBe(400);
+      expect((await bogusEngine.json()).error.code).toBe('loop_engine_invalid');
+
+      const emptyArray = await postRun({ agent: 'agent_echo-agent', input: [] });
+      expect(emptyArray.status).toBe(400);
+
+      const wrongType = await postRun({ agent: 'agent_echo-agent', input: 42 });
+      expect(wrongType.status).toBe(400);
+
+      const badMode = await postRun({ agent: 'agent_echo-agent', input: 'hi', response_mode: 'later' });
+      expect(badMode.status).toBe(400);
+
+      const after = ((await (await app.request('/v1/sessions')).json()) as any).data.length;
+      expect(after).toBe(before);
+    });
+  });
+
+  it('returns 404 for messages on non-existent sessions', async () => {
       const res = await app.request('/v1/sessions/sess_nope/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
