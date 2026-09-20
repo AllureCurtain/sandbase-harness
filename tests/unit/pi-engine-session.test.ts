@@ -92,7 +92,7 @@ function createWindowsPiTerminationHarness(treeTermination: Promise<void>): Wind
       return treeTermination;
     },
   });
-  const manager = new SessionManager(db, 'pi');
+  const manager = new SessionManager(db, undefined, 'pi');
   const cleanupCalls: string[] = [];
   manager.setExecutor({
     async *execute(session, _event, options) {
@@ -173,9 +173,9 @@ describe('session loop engine persistence', () => {
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
 
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
     const piSession = piManager.create({ agent: 'agent_test' });
-    const builtinManagerAfterSettingsChange = new SessionManager(db, 'builtin');
+    const builtinManagerAfterSettingsChange = new SessionManager(db, undefined, 'builtin');
     const builtinSession = builtinManagerAfterSettingsChange.create({ agent: 'agent_test' });
 
     expect(piSession.loopEngine).toBe('pi');
@@ -215,7 +215,7 @@ describe('session loop engine persistence', () => {
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
     const cleanupCalls: string[] = [];
     let notifyTurnStarted: (() => void) | undefined;
     piManager.setExecutor({
@@ -286,7 +286,7 @@ describe('session loop engine persistence', () => {
         }],
       }),
     );
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
 
     expect(() => piManager.create({ agent: 'agent_ask' })).toThrow(PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE);
     expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_ask'))
@@ -314,7 +314,7 @@ describe('session loop engine persistence', () => {
     const db = new Database(join(directory, 'data.db'));
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
     let executorCalled = false;
     piManager.setExecutor({
       async *execute() { executorCalled = true; },
@@ -391,7 +391,7 @@ describe('session loop engine persistence', () => {
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
     let executorCalled = false;
     piManager.setExecutor({
       async *execute() { executorCalled = true; },
@@ -439,7 +439,7 @@ describe('session loop engine persistence', () => {
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
-    const piManager = new SessionManager(db, 'pi');
+    const piManager = new SessionManager(db, undefined, 'pi');
 
     for (const provider of ['docker', 'kubernetes', 'self_hosted']) {
       const environmentId = `env_pi_${provider}`;

@@ -57,7 +57,7 @@ describe('Managed Agents API', () => {
       }),
     );
 
-    const sessionManager = new SessionManager(db, 'pi');
+    const sessionManager = new SessionManager(db, undefined, 'pi');
     sessionManager.setExecutor({
       async *execute(session: Session, event: UserEvent): AsyncIterable<SessionEvent> {
         // UserEvent is a discriminated union and only some members carry
@@ -436,7 +436,7 @@ describe('Managed Agents API', () => {
         }),
       );
       // Model a PI row created before the creation-time policy gate landed.
-      const legacy = new SessionManager(db, 'builtin').create({ agent: 'agent_pi_legacy_always_ask' });
+      const legacy = new SessionManager(db, undefined, 'builtin').create({ agent: 'agent_pi_legacy_always_ask' });
       db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
       const expected = {
         error: {

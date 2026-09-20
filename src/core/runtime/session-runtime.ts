@@ -1,4 +1,5 @@
 import type { Database } from '../db/database.js';
+import { runtimeCapabilityRegistry } from '../capabilities/registry.js';
 import { loadAgentDefinitionById } from '../agent/store.js';
 import { SessionManager } from '../session/session-manager.js';
 import { DefaultSessionExecutor } from '../session/executor.js';
@@ -46,8 +47,9 @@ export interface RuntimeSessionServices {
 export function createRuntimeSessionServices(options: RuntimeSessionServicesOptions): RuntimeSessionServices {
   const sessionManager = new SessionManager(
     options.db,
+    runtimeCapabilityRegistry,
     options.loopEngine ?? 'builtin',
-    (environmentId) => options.runtimeComposition.resolveEnvironmentConfig(environmentId)?.sandbox_provider,
+    (environmentId: string) => options.runtimeComposition.resolveEnvironmentConfig(environmentId)?.sandbox_provider,
   );
   const eventLogger = sessionManager.getEventLogger();
   const snapshots = new SnapshotManager(options.db, options.artifactStore.path('snapshots'));
