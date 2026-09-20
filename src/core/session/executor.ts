@@ -16,7 +16,7 @@ import type { SessionExecutor, ExecuteOptions } from './session-manager.js';
 import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
-import type { SandboxProvider, EnvironmentConfig } from '@/types/sandbox.js';
+import type { SandboxInstance, SandboxProvider, EnvironmentConfig } from '@/types/sandbox.js';
 import type { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import { ModelRegistry } from '@/model/registry.js';
@@ -26,6 +26,7 @@ import { ContextCompactor } from './context-compactor.js';
 import type { Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
 import type { SnapshotManager } from './snapshot-manager.js';
+import { collectSessionOutputs, type SessionOutputFile } from './session-outputs.js';
 import { SandboxLifecycle, type SandboxLifecycleLogger } from './sandbox-lifecycle.js';
 import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
@@ -66,6 +67,13 @@ export interface ExecutorDeps {
   defaultMaxSteps?: number;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
+  /**
+   * Publish the files an agent wrote under the session output directory.
+   *
+   * Optional because an embedder with no Files API has nowhere to put them.
+   * Called after every turn, with whatever the sandbox currently holds.
+   */
+  sessionOutputSink?: (sessionId: string, files: SessionOutputFile[]) => void | Promise<void>;
 }
 
 export class DefaultSessionExecutor implements SessionExecutor {
@@ -202,8 +210,31 @@ export class DefaultSessionExecutor implements SessionExecutor {
 
     // 8. Snapshot the workspace after the turn if enabled (R9.11).
     this.sandboxLifecycle.snapshotAfterTurn(session, sandbox);
+
+    // 9. Publish the files the agent wrote under the session output root.
+    await this.publishSessionOutputs(session, sandbox);
     // NOTE: no sandbox/MCP cleanup here — they persist for the session
     // lifetime and are destroyed via cleanupSession() on terminal states.
+  }
+
+  /**
+   * Publish the files an agent wrote under `/mnt/session/outputs`.
+   *
+   * Only meaningful when a sink is wired: an embedder with no Files API has
+   * nowhere to put them. Failures are swallowed because the turn itself has
+   * already completed — a collection error must not turn a successful agent run
+   * into a failed session, and the next turn re-reads the same directory.
+   */
+  private async publishSessionOutputs(session: Session, sandbox: SandboxInstance): Promise<void> {
+    const sink = this.deps.sessionOutputSink;
+    if (!sink) return;
+    try {
+      const outputs = await collectSessionOutputs(sandbox);
+      if (outputs.length === 0) return;
+      await sink(session.id, outputs);
+    } catch {
+      // best-effort: the output directory is re-read on the next turn
+    }
   }
 
   private skillDirsFor(agent: AgentDefinition): string[] {

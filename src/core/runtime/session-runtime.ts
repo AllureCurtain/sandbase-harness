@@ -4,6 +4,7 @@ import { loadAgentDefinitionById } from '../agent/store.js';
 import { SessionManager } from '../session/session-manager.js';
 import { DefaultSessionExecutor } from '../session/executor.js';
 import { ContextCompactor } from '../session/context-compactor.js';
+import { recordSessionOutputs } from '@/core/session/session-outputs.js';
 import { SnapshotManager } from '../session/snapshot-manager.js';
 import type { ArtifactStore } from '../storage/artifact-store.js';
 import type { Skill } from '../skills/loader.js';
@@ -34,7 +35,7 @@ export interface RuntimeSessionServicesOptions {
   skills: Skill[];
   skillsDir?: string;
   memory?: MemoryProvider;
-  artifactStore: Pick<ArtifactStore, 'path'>;
+  artifactStore: ArtifactStore;
   defaultMaxSteps: number;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
@@ -75,6 +76,14 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,
     logger: options.logger,
+    sessionOutputSink: (sessionId, files) => {
+      recordSessionOutputs({
+        db: options.db,
+        artifactStore: options.artifactStore,
+        sessionId,
+        files,
+      });
+    },
   });
   sessionManager.setExecutor(executor);
 
