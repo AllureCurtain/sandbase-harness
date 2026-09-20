@@ -22,4 +22,10 @@ describe('Pi structured markup filtering', () => {
     expect(safePiTextEmitLength('respons')).toBe(0);
     expect(safePiTextEmitLength('ordinary text')).toBe('ordinary text'.length);
   });
+
+  it('escapes raw HTML text after removing Pi markup', () => {
+    expect(stripPiToolCallMarkup('<script>alert("x")</script> & \'quoted\'')).toBe(
+      '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;quoted&#39;',
+    );
+  });
 });

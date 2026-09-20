@@ -135,6 +135,16 @@ function looksLikeControlPrefix(value: string): boolean {
   return true;
 }
 
+const HTML_ESCAPE_RE = /[&<>"']/g;
+const HTML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
 function stripControlTokens(value: string): string {
-  return value.replace(PI_CONTROL_TOKEN_RE, '');
+  const withoutControlTokens = value.replace(PI_CONTROL_TOKEN_RE, '');
+  return withoutControlTokens.replace(HTML_ESCAPE_RE, (character) => HTML_ENTITIES[character]);
 }
