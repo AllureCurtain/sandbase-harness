@@ -733,6 +733,24 @@ curl -X POST http://127.0.0.1:3000/v1/files \
 
 The per-file upload limit is 10 MB.
 
+### Session outputs
+
+An agent's deliverables are the files it writes under `/mnt/session/outputs/`
+inside its sandbox. After a turn finishes the runtime walks that directory and
+publishes what it finds as session-scoped file records, so the deliverables become
+retrievable through the Files API. The directory is walked rather than reported
+through a side channel, because the agent writes with ordinary shell and file
+tools that record nothing.
+
+Publishing is idempotent per (session, sandbox path). A second pass over an
+unchanged output root refreshes the same records instead of minting duplicates, so
+the same deliverable keeps one file id, and a file the agent rewrote keeps the id a
+caller already holds. The number of new files recorded in one pass is capped, which
+guards against a runaway agent filling the artifact store in a single turn.
+
+Collection is best-effort: a failure is swallowed because the turn has already
+completed, and the next turn re-reads the same directory.
+
 ### Mounting a file into a session
 
 A file attached to a session carries a `mount_path` that is a logical path inside

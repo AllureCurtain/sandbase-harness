@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- Publishes the files an agent writes under `/mnt/session/outputs/` as
+  session-scoped file records after each turn, so the deliverables become
+  retrievable through the Files API. The output directory is walked rather than
+  reported through a side channel, recording is idempotent per (session, sandbox
+  path) so a deliverable keeps one file id across passes, the number of new files
+  per pass is capped, and a collection failure is swallowed because the turn has
+  already completed.
 - Sends the canonical Anthropic compatibility header pair from the first-party
   SDK on every `/v1/...` request: `anthropic-version: 2023-06-01` plus
   `managed-agents-2026-04-01`, or `agent-memory-2026-07-22` for a memory-store
