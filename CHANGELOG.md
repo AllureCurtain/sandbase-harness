@@ -41,6 +41,13 @@
 
 ### Fixes
 
+- Keeps OpenAI-compatible streaming sessions alive when a gateway fragments a
+  tool call across many SSE deltas and emits an empty or missing
+  `tool_calls[].type`. The runtime rewrites only that field on the wire, so
+  argument fragments and every other byte are preserved and the stream no
+  longer aborts with a schema validation failure. Non-SSE and error responses
+  are passed through untouched.
+
 - Makes approval-gated tool calls durable and atomic per model step. Every
   confirmation decision, group identifier, and paired tool result is stored in
   the append-only event log; a model continuation begins only after the full
