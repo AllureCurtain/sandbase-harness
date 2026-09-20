@@ -72,6 +72,16 @@ export interface ApiEvent {
   metadata?: Record<string, unknown>;
   tool_use_id?: string;
   /**
+   * Structured payload of a `session.error`, projected from the metadata
+   * carrier. Always carries all three keys; a client must treat an
+   * unrecognized `retry_status` value as `unknown`.
+   */
+  error?: {
+    type: string;
+    message: string;
+    retry_status: string;
+  };
+  /**
    * Server that produced an `agent.mcp_tool_use` / `agent.mcp_tool_result`.
    * Without it, two MCP servers exposing the same tool name are
    * indistinguishable in the event log.
@@ -180,6 +190,12 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   const usage = event.type === 'session.usage'
     ? metadataObject(event, 'usage') as ApiEvent['usage']
     : undefined;
+  // `session.error` is persisted through the generic metadata carrier (the
+  // events table has no per-type payload column) and projected to its
+  // documented top-level field here, on the same route as `session.usage`.
+  const error = event.type === 'session.error'
+    ? metadataObject(event, 'error') as ApiEvent['error']
+    : undefined;
   const mcpServerName = metadataString(event, 'mcp_server_name');
   const mcpToolUseId = event.type === 'agent.mcp_tool_result' ? contentToolUseId(event) : undefined;
   return {
@@ -192,6 +208,7 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
       ? { tool_use_id: event.metadata.tool_use_id }
       : {}),
     ...(usage ? { usage } : {}),
+    ...(error ? { error } : {}),
     ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
     ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),

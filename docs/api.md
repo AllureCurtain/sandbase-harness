@@ -467,6 +467,43 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### session.error
+
+Every failed turn appends one `session.error` carrying a structured payload in a
+top-level `error` field:
+
+```json
+{
+  "id": "sevt_01J...",
+  "seq": 12,
+  "type": "session.error",
+  "content": [{ "type": "text", "text": "401 unauthorized" }],
+  "error": {
+    "type": "model_error",
+    "message": "401 unauthorized",
+    "retry_status": "unknown"
+  }
+}
+```
+
+`type` is the stable code the runtime attached to the failure, or
+`internal_error` when the failure carries none. `content` still carries the
+message as a text block, so a client that only renders content keeps working.
+
+`retry_status` is derived from `type`, never guessed from the message:
+
+| Value | Meaning | Codes |
+| --- | --- | --- |
+| `retryable` | Transient; the same request may succeed. | `pi_session_busy` |
+| `not_retryable` | The runtime will refuse this request again. | `pi_cleanup_pending`, `pi_timed_out`, `pi_always_ask_not_supported`, `pi_tool_policy_not_supported`, `pi_sandbox_provider_not_supported`, `pi_user_event_not_supported`, `pi_message_content_not_supported`, `loop_engine_not_supported`, `loop_engine_invalid`, `unsupported_capability` |
+| `unknown` | Not classified. Treat as possibly retryable. | any other code, including a failure with no code |
+
+These three values are a SandBase profile: the published contract documents the
+`retry_status` field but does not enumerate its values, so a client must treat an
+unrecognized value as `unknown`.
+
+A turn aborted by the caller is not a failure and records no `session.error`.
+
 ### Runs
 
 `POST /v1/runs` starts one turn and returns its result, so a client does not have to

@@ -43,6 +43,13 @@
   `unsupported_capability` error before persistence or model/tool execution.
 
 ### Changed
+- Carries a structured `{ type, message, retry_status }` payload in a top-level
+  `error` field on every `session.error`. `type` is the stable code the runtime
+  attached, or `internal_error` when the failure carries none, and `retry_status`
+  is derived from that code rather than guessed: `pi_session_busy` is `retryable`,
+  the Pi admission codes, the loop-engine codes, `pi_timed_out`,
+  `pi_cleanup_pending`, and `unsupported_capability` are `not_retryable`, and any
+  other code is `unknown`. An aborted turn still records no `session.error`.
 - Treats a session file resource's `mount_path` as a logical path inside the
   session instead of an internal sandbox path. `/data.csv` is accepted and maps
   under the runtime's own mount root, the full relative path is preserved rather
