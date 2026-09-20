@@ -33,6 +33,7 @@ import {
   normalizeVaultIds,
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
+import { normalizeInitialEvents } from './initial-events.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
 import {
   isLoopEngineAdmissionError,
@@ -77,8 +78,15 @@ export function sessionsRoutes(deps: ServerDeps) {
     if (!resources.ok) return invalid(c, resources.message);
     if (!vaultIds.ok) return invalid(c, vaultIds.message);
 
+    // Validate `initial_events` before any session row, event, or sandbox
+    // exists, so a rejected batch leaves nothing behind.
+    const initialEvents = normalizeInitialEvents(body.initial_events);
+    if (!initialEvents.ok) {
+      return invalidWithCode(c, initialEvents.code ?? 'invalid_initial_events', initialEvents.message ?? 'initial_events is invalid');
+    }
+
     try {
-      const session = sessionManager.create({
+      const session = sessionManager.createWithInitialEvents({
         agent: agentRef.id,
         agentVersion: agentRef.version,
         ...(loopEngine ? { loopEngine } : {}),
@@ -88,7 +96,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         vaultIds: vaultIds.value,
         contextId: memoryScopeFromResources(resources.value),
         metadata,
-      });
+      }, initialEvents.events ?? []);
       return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)), 201);
     } catch (err) {
       if (err instanceof UnsupportedCapabilityError) {

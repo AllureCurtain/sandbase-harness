@@ -447,6 +447,37 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### Starting a session with initial events
+
+`POST /v1/sessions` accepts an optional `initial_events` array so a client can
+start the agent loop in the same call that creates the session:
+
+```json
+{
+  "agent": "agent_echo-agent",
+  "initial_events": [{ "type": "user.message", "content": "Summarize this repo." }]
+}
+```
+
+A non-empty list produces a session whose status is `running` and whose event
+log already contains every supplied event, in order. An absent field and an
+empty array behave the same way: the session is created idle.
+
+Validation runs before any session row, event, or sandbox exists, and creation
+and the events commit together, so a rejected batch leaves no session and no
+partial history behind:
+
+| Rejection | Error code |
+| --- | --- |
+| `initial_events` is not an array | `invalid_initial_events` |
+| More than 50 events | `too_many_initial_events` |
+| An element is not an object | `invalid_initial_events` |
+| An element's `type` is not `user.message` | `invalid_initial_event_type` |
+| A message `content` is neither a string nor an array of content blocks | `invalid_initial_events` |
+
+The creation response does not echo `initial_events`; list the session's events
+to confirm what was written.
+
 ### MCP tool identity
 
 `agent.mcp_tool_use` and `agent.mcp_tool_result` events carry the MCP server

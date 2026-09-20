@@ -210,6 +210,85 @@ describe('Managed Agents API', () => {
       expect(body.agent.name).toBe('echo-agent');
       expect(body.loop_engine).toBe('pi');
     });
+    it('creates a session with initial events in one call', async () => {
+      const res = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent: 'agent_echo-agent',
+          initial_events: [{ type: 'user.message', content: 'hello' }],
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.id).toMatch(/^sess_/);
+      // A non-empty list starts the loop in the same call.
+      expect(body.status).toBe('running');
+      // The creation response does not echo the batch.
+      expect(body).not.toHaveProperty('initial_events');
+
+      const events = ((await (await app.request(`/v1/sessions/${body.id}/events`)).json()) as any).data as any[];
+      const userMessages = events.filter((event) => event.type === 'user.message');
+      expect(userMessages).toHaveLength(1);
+      expect(JSON.stringify(userMessages[0])).toContain('hello');
+    });
+
+    it('treats an empty initial_events array like an omitted field', async () => {
+      const res = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'agent_echo-agent', initial_events: [] }),
+      });
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.status).toBe('idle');
+
+      const events = ((await (await app.request(`/v1/sessions/${body.id}/events`)).json()) as any).data as any[];
+      expect(events.filter((event) => event.type === 'user.message')).toHaveLength(0);
+    });
+
+    it('rejects an invalid initial_events batch without creating a session', async () => {
+      const before = ((await (await app.request('/v1/sessions')).json()) as any).data.length;
+
+      const notAnArray = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'agent_echo-agent', initial_events: 'nope' }),
+      });
+      expect(notAnArray.status).toBe(400);
+      expect((await notAnArray.json()).error.code).toBe('invalid_initial_events');
+
+      const tooMany = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent: 'agent_echo-agent',
+          initial_events: Array.from({ length: 51 }, () => ({ type: 'user.message', content: 'x' })),
+        }),
+      });
+      expect(tooMany.status).toBe(400);
+      expect((await tooMany.json()).error.code).toBe('too_many_initial_events');
+
+      const wrongType = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'agent_echo-agent', initial_events: [{ type: 'user.interrupt' }] }),
+      });
+      expect(wrongType.status).toBe(400);
+      expect((await wrongType.json()).error.code).toBe('invalid_initial_event_type');
+
+      const badContent = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'agent_echo-agent', initial_events: [{ type: 'user.message', content: 42 }] }),
+      });
+      expect(badContent.status).toBe(400);
+      expect((await badContent.json()).error.code).toBe('invalid_initial_events');
+
+      const after = ((await (await app.request('/v1/sessions')).json()) as any).data.length;
+      expect(after).toBe(before);
+    });
+
 
     it('freezes an explicit executable loop engine in create, detail, and list responses', async () => {
       const created = await postJson('/v1/sessions', { agent: 'agent_echo-agent', loop_engine: 'builtin' });
