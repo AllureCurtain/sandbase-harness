@@ -736,6 +736,19 @@ const M031_SESSION_LOOP_ENGINE = `
 ALTER TABLE sessions ADD COLUMN loop_engine TEXT NOT NULL DEFAULT 'builtin';
 `;
 
+const M032_PI_SESSION_STATE = `
+CREATE TABLE pi_session_state (
+  session_id TEXT PRIMARY KEY,
+  session_file TEXT NOT NULL,
+  pi_session_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  continuity_notice TEXT,
+  last_turn_at TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -768,4 +781,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 29, name: '029_webhook_retries', sql: M029_WEBHOOK_RETRIES },
   { version: 30, name: '030_event_metadata', sql: M030_EVENT_METADATA },
   { version: 31, name: '031_session_loop_engine', sql: M031_SESSION_LOOP_ENGINE },
+  { version: 32, name: '032_pi_session_state', sql: M032_PI_SESSION_STATE },
 ];

@@ -1021,3 +1021,20 @@ Embedded test servers or custom hosts that do not provide a restart hook return
 `501 unsupported`. When available, restart stops accepting requests, drains the
 session manager, closes SQLite, and starts a new process with the same command
 line arguments.
+
+## Pi lifecycle status boundary
+
+When `loop_engine.provider` is `pi`, the API may expose `cancelled`,
+`timed_out`, or `cleanup_pending` rather than collapsing every child-process
+outcome into `failed` or `terminated`. `cleanup_pending` is fail-closed: the
+runtime has not proved that the process tree released the workspace, so it does
+not clean up or accept a new turn. A live cross-runtime Pi session-file owner
+returns a retryable `pi_session_busy` error. Resume refusal, corrupt headers,
+path/schema mismatch, and missing SQLite continuity proof are visible errors;
+they never silently start a second Pi history.
+
+Pi-native tool events are trajectory records only. They do not carry Harness
+`requires_confirmation`, do not run through the builtin `ToolResolver`, and do
+not receive Harness local path confinement or an Allow/Deny card. Docker and
+Kubernetes Pi transport, RPC, and a Pi-to-Harness approval bridge are not part
+of this local demo.

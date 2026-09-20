@@ -73,8 +73,12 @@ git worktree add .worktrees/<feature-name> -b feat/<feature-name> origin/main
 - Use one branch and, when applicable, one worktree per topic. Do not mix
   unrelated product work in a branch.
 - Branch names use `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `test/<slug>`,
-  `build/<slug>`, or `chore/<slug>`. Issue-driven work uses
-  `fix/issue-<number>-<slug>` or `feat/issue-<number>-<slug>`.
+  `build/<slug>`, or `chore/<slug>`. Issue-driven work may use a public
+  `fix/issue-<number>-<slug>` or `feat/issue-<number>-<slug>` name, or a
+  functional slug-only name such as `feat/pi-session-continuity` when the
+  Issue number should remain in Issue/PR metadata rather than the branch.
+  Never put internal split identifiers such as `PR-07` in public names or
+  commit subjects.
 - Push the branch and open a PR against `main`; do not bypass review through a
   local fast-forward or merge.
 - Before review, update from `origin/main`, resolve conflicts in the topic

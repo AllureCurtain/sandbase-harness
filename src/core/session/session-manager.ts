@@ -426,7 +426,9 @@ export class SessionManager {
     if (!isTerminal(this.get(sessionId)?.status ?? session.status)) {
       this.updateStatus(sessionId, 'completed');
     }
-    await this.releaseSandbox(sessionId);
+    if (this.get(sessionId)?.status !== 'cleanup_pending') {
+      await this.releaseSandbox(sessionId);
+    }
   }
 
   /**
@@ -444,7 +446,9 @@ export class SessionManager {
     if (!isTerminal(this.get(sessionId)?.status ?? session.status)) {
       this.updateStatus(sessionId, 'completed');
     }
-    await this.releaseSandbox(sessionId);
+    if (this.get(sessionId)?.status !== 'cleanup_pending') {
+      await this.releaseSandbox(sessionId);
+    }
     const deletedEvent = this.eventLogger.append(sessionId, { type: 'session.deleted' });
     this.broadcast(sessionId, deletedEvent);
   }
@@ -546,7 +550,9 @@ export class SessionManager {
       }
     }
 
-    const completedAt = isTerminal(newStatus) ? new Date().toISOString() : null;
+    const completedAt = new Set<SessionStatus>(['completed', 'cancelled', 'timed_out']).has(newStatus)
+      ? new Date().toISOString()
+      : null;
     this.db.prepare(
       `UPDATE sessions SET status = ?, updated_at = datetime('now'), completed_at = ? WHERE id = ?`,
     ).run(newStatus, completedAt, sessionId);
@@ -601,15 +607,20 @@ export class SessionManager {
         this.updateStatus(sessionId, requiresAction ? 'requires_action' : 'paused');
       }
     } catch (err) {
-      // An abort (user.interrupt) is normal control flow, not a failure:
-      // the session returns to idle so the user can send a follow-up.
-      if (abortController.signal.aborted || isAbortError(err)) {
+      const errorCode = errorCodeOf(err);
+      if (errorCode === 'pi_cleanup_pending') {
+        const errorEvent = this.eventLogger.append(sessionId, {
+          type: 'session.error',
+          content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+        });
+        this.broadcast(sessionId, errorEvent);
+        if (this.get(sessionId)?.status === 'running') this.updateStatus(sessionId, 'cleanup_pending');
+      } else if (abortController.signal.aborted || isAbortError(err)) {
         const current = this.get(sessionId);
         if (current && current.status === 'running') {
-          this.updateStatus(sessionId, 'paused');
+          this.updateStatus(sessionId, current.loopEngine === 'pi' ? 'cancelled' : 'paused');
         }
       } else {
-        // Turn failed unrecoverably — terminal. Log error + release sandbox.
         const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
@@ -617,9 +628,14 @@ export class SessionManager {
         this.broadcast(sessionId, errorEvent);
         const current = this.get(sessionId);
         if (current && !isTerminal(current.status)) {
-          this.updateStatus(sessionId, 'failed');
+          if (errorCode === 'pi_cleanup_pending') this.updateStatus(sessionId, 'cleanup_pending');
+          else if (errorCode === 'pi_timed_out') this.updateStatus(sessionId, 'timed_out');
+          else if (errorCode === 'pi_session_busy') this.updateStatus(sessionId, 'paused');
+          else this.updateStatus(sessionId, 'failed');
         }
-        await this.releaseSandbox(sessionId);
+        // A cleanup_pending child may still own the workspace. Never release it
+        // based on parent close or a failed taskkill result.
+        if (errorCode !== 'pi_cleanup_pending') await this.releaseSandbox(sessionId);
       }
     } finally {
       this.abortControllers.delete(sessionId);
@@ -734,4 +750,10 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
       action_type: 'tool_confirmation',
     },
   };
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
 }

@@ -4,7 +4,14 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeF
 import { randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join, resolve, sep, win32 } from 'node:path';
 import { referencedEnvVars, resolveEnvVarsFrom } from '@/core/config/env-resolver.js';
+import type { Database } from '@/core/db/database.js';
 import type { ModelConfig } from '@/types/model.js';
+import { acquirePiSessionFileLease, type PiSessionFileLease } from './pi/session-lease.js';
+import {
+  assertPiSessionContinuity,
+  markPiSessionContinuityFailure,
+  type PiContinuityError,
+} from './pi/session-continuity.js';
 
 const INHERITED_ENVIRONMENT_KEYS = [
   'HOME', 'LANG', 'LC_ALL', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'TMPDIR',
@@ -23,8 +30,29 @@ export interface PiLaunchRequest {
   systemPrompt: string;
   /** Concrete configuration selected for this agent turn. */
   model: PiModelConfig;
+  /** Explicit Pi skill directories, one `--skill` flag per directory. */
+  skillDirs?: string[];
+  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Cancels the in-flight child only after it has exited and released its workdir. */
   abortSignal?: AbortSignal;
+}
+
+export class PiCleanupPendingError extends Error {
+  readonly code = 'pi_cleanup_pending';
+
+  constructor(message = 'Pi process tree cleanup is pending; the workspace remains retained') {
+    super(message);
+    this.name = 'PiCleanupPendingError';
+  }
+}
+
+export class PiTimeoutError extends Error {
+  readonly code = 'pi_timed_out';
+
+  constructor(readonly timeoutMs: number) {
+    super(`Pi turn timed out after ${timeoutMs}ms`);
+    this.name = 'PiTimeoutError';
+  }
 }
 
 export interface PiProcessExit {
@@ -37,6 +65,8 @@ export interface PiProcessHandle {
   readonly child: ChildProcess;
   readonly stdout: Readable | null;
   readonly stderr: Readable | null;
+  readonly sessionFile?: string;
+  readonly leaseRecovered?: boolean;
   wait(): Promise<PiProcessExit>;
   terminate(force?: boolean): Promise<void>;
 }
@@ -59,6 +89,14 @@ export interface PiLauncherOptions {
   /** Host Settings environment used for resolving model placeholders. */
   environment?: NodeJS.ProcessEnv;
   fileExists?: (path: string) => boolean;
+  /** Host database used to validate the Pi session header against continuity state. */
+  database?: Database;
+  /** Stale lease expiry; the default is deliberately short and observable. */
+  leaseStaleAfterMs?: number;
+  /** Maximum time to wait for a child tree after abort before cleanup_pending. */
+  cleanupTimeoutMs?: number;
+  /** Per-turn timeout; defaults to five minutes. */
+  timeoutMs?: number;
   /** Test seam for terminating an in-flight Pi child process tree. */
   terminateProcess?: PiProcessTerminator;
   /** Bounded grace period before a POSIX process-group kill is escalated. */
@@ -137,6 +175,10 @@ export class PiLauncher {
   private readonly terminateProcess: PiProcessTerminator;
   private readonly terminationGraceMs: number;
   private readonly processGroupAlive: PiProcessGroupInspector;
+  private readonly database?: Database;
+  private readonly leaseStaleAfterMs: number;
+  private readonly cleanupTimeoutMs: number;
+  private readonly timeoutMs: number;
 
   constructor(private readonly options: PiLauncherOptions) {
     this.command = options.command ?? 'pi';
@@ -148,6 +190,10 @@ export class PiLauncher {
     this.terminateProcess = options.terminateProcess ?? terminatePiProcess;
     this.terminationGraceMs = options.terminationGraceMs ?? 1_000;
     this.processGroupAlive = options.processGroupAlive ?? isProcessGroupAlive;
+    this.database = options.database;
+    this.leaseStaleAfterMs = options.leaseStaleAfterMs ?? 30_000;
+    this.cleanupTimeoutMs = options.cleanupTimeoutMs ?? 10_000;
+    this.timeoutMs = options.timeoutMs ?? 300_000;
   }
 
   /** Compatibility wrapper used by the foundation: drain output and wait. */
@@ -163,46 +209,105 @@ export class PiLauncher {
 
   /** Start a Pi child for a protocol adapter to consume incrementally. */
   async start(request: PiLaunchRequest): Promise<PiProcessHandle> {
-    // Resolve against the host Settings environment before materializing either
-    // the per-session config or Pi's credential alias. The original host names
-    // are then explicitly removed from the restricted child environment.
     const model = this.resolveModel(request.model);
     const modelEnvironmentKeys = new Set([
       ...referencedEnvVars(request.model.api_key),
       ...referencedEnvVars(request.model.base_url),
     ]);
     const paths = this.prepareSessionPaths(request.sessionId);
-    this.materializeModelsConfig(paths.configDir, model);
-    this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
-    const invocation = piInvocationFor([
-      '-p', '--mode', 'json', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
-    ], {
-      command: this.command,
-      commandArgs: this.commandArgs,
-      platform: this.platform,
-      environment: this.environment,
-      fileExists: this.fileExists,
+    const lease = await acquirePiSessionFileLease(paths.sessionFile, {
+      staleAfterMs: this.leaseStaleAfterMs,
     });
 
-    const env = restrictedPiEnvironment(this.environment, {
-      PI_CODING_AGENT_DIR: paths.configDir,
-      PI_TELEMETRY: '0',
-      SANDBASE_PI_API_KEY: model.api_key,
-    }, modelEnvironmentKeys);
-    return spawnPiProcess(this.spawnImpl, invocation.file, invocation.args, {
-      cwd: request.workDir,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-      // Detached POSIX children let an interrupt address the entire Pi process
-      // group, including any CLI descendants that retain the workspace.
-      detached: this.platform !== 'win32',
-    }, request.prompt, request.abortSignal, {
-      platform: this.platform,
-      terminateProcess: this.terminateProcess,
-      terminationGraceMs: this.terminationGraceMs,
-      processGroupAlive: this.processGroupAlive,
-    });
+    try {
+      if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
+      this.materializeModelsConfig(paths.configDir, model);
+      this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
+      const invocation = piInvocationFor([
+        '-p', '--mode', 'json', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
+        ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
+        ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
+      ], {
+        command: this.command,
+        commandArgs: this.commandArgs,
+        platform: this.platform,
+        environment: this.environment,
+        fileExists: this.fileExists,
+      });
+
+      const env = restrictedPiEnvironment(this.environment, {
+        PI_CODING_AGENT_DIR: paths.configDir,
+        PI_TELEMETRY: '0',
+        SANDBASE_PI_API_KEY: model.api_key,
+      }, modelEnvironmentKeys);
+      const abortController = new AbortController();
+      let timedOut = false;
+      const onRequestAbort = () => abortController.abort();
+      if (request.abortSignal) {
+        if (request.abortSignal.aborted) abortController.abort();
+        else request.abortSignal.addEventListener('abort', onRequestAbort, { once: true });
+      }
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        abortController.abort();
+      }, this.timeoutMs);
+
+      let raw: PiProcessHandle;
+      try {
+        raw = await spawnPiProcess(this.spawnImpl, invocation.file, invocation.args, {
+          cwd: request.workDir,
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          detached: this.platform !== 'win32',
+        }, request.prompt, abortController.signal, {
+          platform: this.platform,
+          terminateProcess: this.terminateProcess,
+          terminationGraceMs: this.terminationGraceMs,
+          cleanupTimeoutMs: this.cleanupTimeoutMs,
+          processGroupAlive: this.processGroupAlive,
+        });
+      } catch (error) {
+        clearTimeout(timeout);
+        request.abortSignal?.removeEventListener('abort', onRequestAbort);
+        throw error;
+      }
+
+      const wait = async (): Promise<PiProcessExit> => {
+        let failure: unknown;
+        try {
+          const exit = await raw.wait();
+          if (timedOut) throw new PiTimeoutError(this.timeoutMs);
+          return exit;
+        } catch (error) {
+          failure = error;
+          if (timedOut && !(error instanceof PiCleanupPendingError)) {
+            throw new PiTimeoutError(this.timeoutMs);
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+          request.abortSignal?.removeEventListener('abort', onRequestAbort);
+          if (isCleanupPendingError(failure)) lease.suspendHeartbeat();
+          else await lease.release().catch(() => {});
+        }
+      };
+
+      return {
+        ...raw,
+        sessionFile: paths.sessionFile,
+        leaseRecovered: lease.recoveredStale,
+        wait,
+      };
+    } catch (error) {
+      if (this.database && isPiContinuityError(error)) {
+        // Persist the reason so a later retry cannot silently fork a new file.
+        const message = error instanceof Error ? error.message : String(error);
+        markPiSessionContinuityFailure(this.database, request.sessionId, paths.sessionFile, error.code, message);
+      }
+      await lease.release().catch(() => {});
+      throw error;
+    }
   }
 
   private prepareSessionPaths(sessionId: string): { sessionFile: string; configDir: string } {
@@ -312,8 +417,20 @@ type PiProcessAbortOptions = {
   platform: NodeJS.Platform;
   terminateProcess: PiProcessTerminator;
   terminationGraceMs: number;
+  cleanupTimeoutMs: number;
   processGroupAlive: PiProcessGroupInspector;
 };
+
+function isCleanupPendingError(error: unknown): error is PiCleanupPendingError {
+  return error instanceof PiCleanupPendingError || (
+    error instanceof Error && (error as Error & { code?: unknown }).code === 'pi_cleanup_pending'
+  );
+}
+
+function isPiContinuityError(error: unknown): error is PiContinuityError {
+  return error instanceof Error && error.name === 'PiContinuityError'
+    && typeof (error as Error & { code?: unknown }).code === 'string';
+}
 
 async function spawnPiProcess(
   spawnImpl: typeof spawn,
@@ -326,6 +443,7 @@ async function spawnPiProcess(
     platform: process.platform,
     terminateProcess: terminatePiProcess,
     terminationGraceMs: 1_000,
+    cleanupTimeoutMs: 10_000,
     processGroupAlive: isProcessGroupAlive,
   },
 ): Promise<PiProcessHandle> {
@@ -344,6 +462,7 @@ async function spawnPiProcess(
   let childClosed = false;
   let windowsTreeTerminationComplete = false;
   let forceTimer: ReturnType<typeof setTimeout> | undefined;
+  let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
   let resolveWait: (exit: PiProcessExit) => void = () => {};
   let rejectWait: (error: unknown) => void = () => {};
@@ -388,6 +507,11 @@ async function spawnPiProcess(
   const onAbort = () => {
     if (abortRequested) return;
     abortRequested = true;
+    cleanupTimer = setTimeout(() => {
+      rejectWait(new PiCleanupPendingError(
+        `Pi process tree cleanup did not complete within ${abortOptions.cleanupTimeoutMs}ms; workspace retained`,
+      ));
+    }, abortOptions.cleanupTimeoutMs);
     const termination = requestTermination(false);
     if (abortOptions.platform === 'win32') {
       void termination.then(
@@ -408,15 +532,18 @@ async function spawnPiProcess(
           rejectAbortIfSafe();
           return;
         }
-        void waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive).then(() => {
-          rejectAbortIfSafe();
-        });
+        void waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive, abortOptions.cleanupTimeoutMs)
+          .then(() => {
+            rejectAbortIfSafe();
+          })
+          .catch(() => {});
       }, abortOptions.terminationGraceMs);
     }
     rejectAbortIfSafe();
   };
   const cleanup = () => {
     if (forceTimer) clearTimeout(forceTimer);
+    if (cleanupTimer) clearTimeout(cleanupTimer);
     abortSignal?.removeEventListener('abort', onAbort);
   };
 
@@ -467,7 +594,7 @@ async function spawnPiProcess(
     terminate: async (force = false) => {
       await requestTermination(force);
       if (force && abortOptions.platform !== 'win32' && child.pid !== undefined) {
-        await waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive);
+        await waitForProcessGroupExit(child.pid, abortOptions.processGroupAlive, abortOptions.cleanupTimeoutMs);
       }
     },
   };
@@ -548,8 +675,13 @@ function isProcessGroupAlive(pid: number): boolean {
 async function waitForProcessGroupExit(
   pid: number,
   processGroupAlive: PiProcessGroupInspector,
+  timeoutMs = Number.POSITIVE_INFINITY,
 ): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (processGroupAlive(pid)) {
+    if (Date.now() >= deadline) {
+      throw new PiCleanupPendingError(`Pi process group did not exit within ${timeoutMs}ms`);
+    }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
   }
 }
@@ -561,6 +693,7 @@ function abortError(): Error {
 }
 
 function piLaunchError(error: unknown): Error {
+  if (error instanceof PiCleanupPendingError || error instanceof PiTimeoutError) return error;
   if (error instanceof Error && error.name === 'AbortError') return error;
   const code = typeof error === 'object' && error !== null && 'code' in error
     ? (error as { code?: unknown }).code

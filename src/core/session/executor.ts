@@ -11,6 +11,7 @@
  * terminal state (stop/delete/failed).
  */
 
+import { dirname, resolve, sep } from 'node:path';
 import type { SessionExecutor, ExecuteOptions } from './session-manager.js';
 import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
@@ -55,6 +56,8 @@ export interface ExecutorDeps {
   compactor?: ContextCompactor;
   /** Loaded skills, injected into agent system prompts by name (R4). */
   skills?: Skill[];
+  /** Root directory containing explicit skill packages for Pi --skill flags. */
+  skillsDir?: string;
   /** Optional long-term memory provider, scoped by context_id (R9.16–18). */
   memory?: MemoryProvider;
   /** Optional workspace snapshot manager (R9.11). */
@@ -89,6 +92,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
       provisionSandbox: (session, sandboxId) => this.sandboxLifecycle.provisionDetached(session, sandboxId),
       composeSystemPrompt: (agent) => this.contextBuilder.composeSystemPrompt(agent),
       buildSandboxTools: (agent, sandbox) => this.toolResolver.buildSandboxTools(agent, sandbox),
+      resolveSkillDirs: (agent) => this.skillDirsFor(agent),
     });
     this.toolResolver = new ToolResolver({ delegationService: this.delegationService });
   }
@@ -169,12 +173,13 @@ export class DefaultSessionExecutor implements SessionExecutor {
 
     // 6. Execute strategy
     const context: StrategyContext = {
-      session,
+      session: { ...session, agentDefinition: agent },
       userEvent: event,
       systemPrompt,
       messages: messages as any,
       modelConfig,
       model,
+      ...(this.deps.skillsDir ? { skillDirs: this.skillDirsFor(agent) } : {}),
       tools,
       sandbox,
       eventLog: eventLogger,
@@ -199,6 +204,20 @@ export class DefaultSessionExecutor implements SessionExecutor {
     this.sandboxLifecycle.snapshotAfterTurn(session, sandbox);
     // NOTE: no sandbox/MCP cleanup here — they persist for the session
     // lifetime and are destroyed via cleanupSession() on terminal states.
+  }
+
+  private skillDirsFor(agent: AgentDefinition): string[] {
+    const root = this.deps.skillsDir;
+    if (!root) return [];
+    const resolvedRoot = resolve(root);
+    const byId = new Map((this.deps.skills ?? []).map((skill) => [skill.id, skill]));
+    return (agent.skills ?? []).flatMap((reference) => {
+      const skill = byId.get(reference.skill_id);
+      if (!skill?.file) return [];
+      const file = resolve(resolvedRoot, skill.file);
+      if (file !== resolvedRoot && !file.startsWith(`${resolvedRoot}${sep}`)) return [];
+      return [dirname(file)];
+    });
   }
 
   /**

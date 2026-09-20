@@ -24,7 +24,7 @@ that every Claude hosted capability exists locally.
 | Area | Endpoint group | Status | Notes |
 | --- | --- | --- | --- |
 | Agents | `/v1/agents` | Supported | Create, list, retrieve, update, archive, and list versions. |
-| Sessions | `/v1/sessions` | Supported | Create, list, retrieve, stop, delete/archive, durable event ingestion/listing, sequence-resumable SSE, and message convenience endpoint. Session status includes `requires_action` while an approval group is pending. Event envelopes include `seq`, immutable metadata, and optional model/token/stop-reason/duration metadata. Pi stdout final replies and native tool trajectories use the same event history; transient deltas are not replayed. |
+| Sessions | `/v1/sessions` | Supported | Create, list, retrieve, stop, delete/archive, durable event ingestion/listing, sequence-resumable SSE, and message convenience endpoint. Session status includes `requires_action` while an approval group is pending. Event envelopes include `seq`, immutable metadata, and optional model/token/stop-reason/duration metadata. Pi stdout final replies and native tool trajectories use the same event history; transient deltas are not replayed. Pi cleanup may surface `cancelled`, `timed_out`, or `cleanup_pending` rather than fabricated success. |
 | Session artifacts | `/v1/sessions/{id}/artifacts` | Supported | Create/list artifact records and fetch content. |
 | Files | `/v1/files` | Supported | Upload/list/retrieve/delete workspace files and fetch content. |
 | Environments | `/v1/environments` | Supported | Create/list/retrieve/update/archive environment templates. |

@@ -9,7 +9,9 @@
  *   requires_action → running
  *   failed → running (resume) | completed (stopped/deleted)
  *
- * Terminal state: completed only (no transitions out). `failed` is recoverable.
+ * Terminal states are completed, cancelled, timed_out, and cleanup_pending.
+ * cleanup_pending deliberately has no outbound transition: the workspace
+ * remains retained until an operator can prove child-tree cleanup.
  */
 
 import { type SessionStatus, SESSION_TRANSITIONS } from '@/types/session.js';

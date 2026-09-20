@@ -5,6 +5,9 @@ const STATUS_TO_EVENT: Partial<Record<SessionStatus, SessionEvent['type']>> = {
   paused: 'session.status_idle',
   requires_action: 'session.status_idle',
   completed: 'session.status_terminated',
+  cancelled: 'session.status_terminated',
+  timed_out: 'session.status_terminated',
+  cleanup_pending: 'session.status_terminated',
   // 'failed' is terminal → status_terminated. The detailed session.error event
   // is appended separately by SessionManager.runTurn's catch block.
   failed: 'session.status_terminated',
