@@ -19,6 +19,11 @@ import { extendedRoutes } from './routes/extended.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
 import { createCmaRequestAdmissionMiddleware } from './cma-admission.js';
+import {
+  createInboundRateLimiter,
+  resolveInboundRateLimitPolicy,
+  type InboundRateLimitOverrides,
+} from './rate-limit.js';
 import type { SessionManager } from '@/core/session/session-manager.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { workerRoutes } from './routes/worker.js';
@@ -43,6 +48,8 @@ export interface ServerDeps {
   hasApiKeys?: () => boolean;
   /** Dynamic API key validator for database-managed API keys. */
   validateApiKey?: (key: string) => boolean;
+  /** Optional inbound fixed-window throttling overrides. */
+  inboundRateLimit?: InboundRateLimitOverrides;
   /** MCP connection status for a session (for /v1/x/mcp/status). */
   getMcpStatus?: (sessionId: string) => Array<{
     name: string;
@@ -140,6 +147,22 @@ export function createServer(deps: ServerDeps) {
     hasApiKeys: deps.hasApiKeys,
     validateApiKey: deps.validateApiKey,
   }));
+
+  // Throttling follows authentication. The callback is evaluated per request
+  // so managed keys created after startup change the default posture together
+  // with authentication. CORS preflight is intentionally not counted by the
+  // limiter itself because CORS may terminate OPTIONS before route middleware.
+  const authPosture = () => deps.hasApiKeys
+    ? Boolean(deps.apiKeys?.length || deps.hasApiKeys())
+    : Boolean(deps.runtime?.authEnabled || deps.apiKeys?.length);
+  const rateLimitPolicy = resolveInboundRateLimitPolicy({
+    ...(deps.inboundRateLimit ?? {}),
+    authEnabled: authPosture,
+  });
+  if (rateLimitPolicy.enabled || deps.hasApiKeys || (deps.apiKeys?.length ?? 0) > 0) {
+    app.use('/v1/*', createInboundRateLimiter(rateLimitPolicy).middleware);
+  }
+
   app.use('/v1/*', createCmaRequestAdmissionMiddleware());
 
   // Managed Agents API endpoints

@@ -47,6 +47,11 @@
 
 ### Security
 
+- Adds credential-scoped, in-process inbound rate limiting after authentication.
+  Protected runtimes use independent read/write fixed windows, structured 429
+  responses, health/preflight exemptions, dynamic managed-key posture, and
+  environment overrides; open local runtimes remain unlimited by default.
+
 - Enforces credential vault network policy at the injection boundary. Limited
   credentials require a verified matching target host before decryption; denied
   credentials are omitted from injection outputs, audited without secret values,

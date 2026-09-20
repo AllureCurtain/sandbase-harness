@@ -19,6 +19,8 @@ that every Claude hosted capability exists locally.
   `x-api-key`; existing bearer requests without CMA compatibility headers remain
   supported.
 
+- A protected runtime applies best-effort in-process fixed-window inbound throttling after authentication: 300 write requests/minute and 1200 read requests/minute by default, credential-scoped buckets, structured `429` responses, and no counting for `/v1/x/health` or CORS `OPTIONS` preflight. Open local runtimes are unlimited by default; environment overrides are documented in `docs/api.md`.
+
 ## `/v1` Resource Matrix
 
 | Area | Endpoint group | Status | Notes |
