@@ -4,6 +4,14 @@ import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
 import {
+  applyMemoryListScope,
+  checkMemorySize,
+  checkStoreCapacity,
+  memoryContentHash,
+  evaluateContentPrecondition,
+  validateMemoryListScope,
+} from '@/core/memory/semantics.js';
+import {
   archiveResource,
   conflict,
   invalid,
@@ -58,7 +66,18 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   app.get('/memory_stores/:id/memories', (c) => {
     const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!store) return notFound(c, 'Memory store not found');
-    return c.json(pageOf(listMemories(deps, c.req.param('id'))));
+    // `path_prefix` must be an absolute path ending in `/`, and `depth` must be
+    // 0 or 1. Matching is segment-based and depth 1 lists only direct children.
+    const scope = validateMemoryListScope(
+      c.req.query('path_prefix'),
+      c.req.query('depth') === undefined ? undefined : Number(c.req.query('depth')),
+    );
+    if (!scope.ok) return invalid(c, scope.message!);
+    const memories = applyMemoryListScope(listMemories(deps, c.req.param('id')), {
+      prefix: scope.prefix,
+      depth: scope.depth,
+    });
+    return c.json(pageOf(memories));
   });
 
   app.post('/memory_stores/:id/memories', async (c) => {
@@ -70,6 +89,15 @@ export function memoryStoreRoutes(deps: ServerDeps) {
     const path = memoryPath(body.value.path);
     if (!path) return invalid(c, 'path is required and must start with /');
     const content = typeof body.value.content === 'string' ? body.value.content : '';
+    // The published caps are enforced here rather than left to the caller, so a
+    // store cannot be filled past its capacity or its per-memory size budget by
+    // a client that ignores them.
+    const size = checkMemorySize(content);
+    if (!size.ok) return invalid(c, size.message!, size.code);
+    const capacity = checkStoreCapacity(
+      (deps.db.prepare('SELECT COUNT(*) AS count FROM memory_records WHERE store_id = ? AND archived_at IS NULL').get(storeId) as { count: number }).count,
+    );
+    if (!capacity.ok) return conflict(c, capacity.message!, capacity.code);
     const id = `mem_${nanoid(18)}`;
     const now = new Date().toISOString();
     try {
@@ -98,6 +126,28 @@ export function memoryStoreRoutes(deps: ServerDeps) {
     const path = body.value.path === undefined ? existing.path : memoryPath(body.value.path);
     if (!path) return invalid(c, 'path must start with /');
     const content = typeof body.value.content === 'string' ? body.value.content : existing.content;
+    const size = checkMemorySize(content);
+    if (!size.ok) return invalid(c, size.message!, size.code);
+    // A precondition refuses a write whose content moved underneath the caller.
+    // The refusal reports the current hash so the caller can retry without a
+    // separate re-read.
+    const precondition = evaluateContentPrecondition(body.value.precondition, existing.content);
+    if (!precondition.ok) {
+      // The current hash is surfaced as its own field as well as inside the
+      // message, so a caller can retry without parsing prose.
+      const currentHash = memoryContentHash(existing.content);
+      return c.json(
+        {
+          error: {
+            type: 'conflict',
+            code: precondition.code,
+            message: precondition.message,
+            current_content_sha256: currentHash,
+          },
+        },
+        409,
+      );
+    }
     try {
       deps.db.prepare(
         'UPDATE memory_records SET path = ?, content = ?, metadata = ?, updated_at = datetime(\'now\') WHERE id = ? AND store_id = ?',

@@ -971,6 +971,40 @@ can inject without a target host. The helper is an injection-boundary contract;
 production web/MCP/custom-tool callers still need to propagate target-host
 context before universal enforcement can be claimed.
 
+### Memory limits, scope, and preconditions
+
+Memory writes and lists are bounded by the published rules, enforced on the routes
+that own them:
+
+| Rule | Limit | Behaviour |
+| --- | --- | --- |
+| Content size | 100 kB | Measured in bytes, so multi-byte content is measured in bytes and not in characters. |
+| Per-store capacity | 10,000 memories | A write that would exceed the cap is refused; existing memories stay readable and editable. |
+| Instructions length | 4,096 characters | The session-level `instructions` field on an attached store. An absent field is not capped. |
+
+`GET /v1/memory_stores/{id}/memories` accepts `path_prefix` and `depth`.
+`path_prefix` must be an absolute path ending in `/`. `depth` must be `0` or `1`,
+where `0` lists the whole subtree and `1` lists only direct children. Prefix
+matching is segment-based, so a sibling directory that merely shares a string
+prefix is not selected.
+
+A write may carry a precondition:
+
+```json
+{
+  "precondition": {
+    "type": "content_sha256",
+    "content_sha256": "<hash of the content the caller last read>"
+  }
+}
+```
+
+The write is refused with `409 conflict` and code `precondition_failed` when the
+stored content no longer matches, and the refusal carries
+`current_content_sha256` so a caller can retry without a separate re-read. An
+unknown precondition type, and a precondition with no hash, are each refused with
+code `invalid_precondition` rather than treated as a no-op.
+
 ## Memory Stores
 
 Memory stores persist named memory entries that can be mounted into sessions.

@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Enforces the published memory rules on the routes that own them: content is
+  capped at 100 kB measured in bytes rather than characters, a store holds at most
+  10,000 memories, a store's session-level `instructions` field is capped at 4,096
+  characters, and `GET /v1/memory_stores/{id}/memories` accepts `path_prefix` and
+  `depth` with segment-based prefix matching. A write may carry a
+  `content_sha256` precondition; a stale one is refused with `precondition_failed`
+  and the current hash, and an unknown type or a missing hash is refused with
+  `invalid_precondition` rather than ignored.
 - Executes `web_fetch` behind an SSRF address guard. The guard refuses internal
   host names before DNS, refuses every resolution that is loopback, RFC 1918,
   link-local, or CGNAT (including IPv4-mapped IPv6 forms), and pins the connection

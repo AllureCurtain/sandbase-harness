@@ -49,12 +49,17 @@ export function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()) : [];
 }
 
-export function invalid(c: any, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+/**
+ * `code` is an optional stable identifier a caller can branch on. It is
+ * omitted rather than sent as `undefined`, so an existing envelope is unchanged
+ * when no code applies.
+ */
+export function invalid(c: any, message: string, code?: string): Response {
+  return c.json({ error: { type: 'invalid_request', message, ...(code ? { code } : {}) } }, 400);
 }
 
-export function conflict(c: any, message: string): Response {
-  return c.json({ error: { type: 'conflict', message } }, 409);
+export function conflict(c: any, message: string, code?: string): Response {
+  return c.json({ error: { type: 'conflict', message, ...(code ? { code } : {}) } }, 409);
 }
 
 export function notFound(c: any, message: string): Response {

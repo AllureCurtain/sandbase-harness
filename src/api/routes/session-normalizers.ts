@@ -2,6 +2,7 @@ import type { ServerDeps } from '../server.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { resolveFileMountPath } from '@/core/session/file-mount-path.js';
+import { checkMemoryInstructions } from '@/core/memory/semantics.js';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
@@ -142,6 +143,11 @@ function normalizeMemoryStoreResource(deps: ServerDeps, resource: Record<string,
   const mountPath = readString(resource.mount_path);
   if (mountPath && !mountPath.startsWith('/')) return { ok: false, message: `resources[${index}].mount_path must start with /` };
   const instructions = readString(resource.instructions);
+  // The session-level instructions field is capped, and an absent field is not.
+  const instructionsCheck = checkMemoryInstructions(instructions);
+  if (!instructionsCheck.ok) {
+    return { ok: false, message: `resources[${index}].instructions ${instructionsCheck.message}` };
+  }
   return {
     ok: true,
     value: {
