@@ -3,13 +3,13 @@ import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
+import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
   archiveResource,
   arrayOfStrings,
   conflict,
   invalid,
   notFound,
-  objectField,
   parseObject,
   parseStringArray,
   readObjectBody,
@@ -194,11 +194,7 @@ function isCredentialAuthType(value: unknown): value is 'mcp_oauth' | 'bearer_to
 }
 
 function normalizeCredentialNetwork(value: unknown) {
-  const record = objectField(value);
-  return {
-    type: record.type === 'unrestricted' ? 'unrestricted' : 'limited',
-    allowed_hosts: arrayOfStrings(record.allowed_hosts),
-  };
+  return normalizeCredentialNetworkPolicy(value);
 }
 
 function secretHint(value: string) {

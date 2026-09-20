@@ -47,6 +47,12 @@
 
 ### Security
 
+- Enforces credential vault network policy at the injection boundary. Limited
+  credentials require a verified matching target host before decryption; denied
+  credentials are omitted from injection outputs, audited without secret values,
+  and do not update `last_used_at`. This helper boundary does not yet claim
+  universal web/MCP/custom-tool caller propagation.
+
 - Admits CMA `/v1` requests that use `x-api-key` or Anthropic compatibility
   headers before route business logic: required version/beta headers are
   validated with stable structured errors, memory-store routes require their
