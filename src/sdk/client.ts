@@ -7,6 +7,7 @@
  */
 
 import type { ContentBlock } from '@/types/cma-protocol.js';
+import { withCompatibilityHeaders } from './headers.js';
 
 export interface ClientOptions {
   /** Base URL of the server, e.g. http://localhost:3000 */
@@ -293,7 +294,9 @@ export class ManagedAgentsClient {
 
   /** @internal */
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = withCompatibilityHeaders(path, {
+      'Content-Type': 'application/json',
+    });
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
 
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -319,7 +322,7 @@ export class ManagedAgentsClient {
 
   /** @internal */
   async requestText(method: string, path: string): Promise<string> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = withCompatibilityHeaders(path, {});
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
 
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, { method, headers });
@@ -334,7 +337,9 @@ export class ManagedAgentsClient {
     path: string,
     opts?: { lastEventId?: string; method?: string; body?: unknown },
   ): AsyncIterable<StreamedEvent> {
-    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    const headers: Record<string, string> = withCompatibilityHeaders(path, {
+      Accept: 'text/event-stream',
+    });
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
     if (opts?.lastEventId) headers['Last-Event-ID'] = opts.lastEventId;
     if (opts?.body !== undefined) headers['Content-Type'] = 'application/json';

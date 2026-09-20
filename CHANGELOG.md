@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Sends the canonical Anthropic compatibility header pair from the first-party
+  SDK on every `/v1/...` request: `anthropic-version: 2023-06-01` plus
+  `managed-agents-2026-04-01`, or `agent-memory-2026-07-22` for a memory-store
+  path. `/v1/x/...` receives no compatibility header, and a caller-supplied beta
+  overrides the derived one. The three literals now have one definition shared by
+  the admission middleware and the SDK, so the two cannot drift apart.
 - Accepts `system.message` as an inbound session event alongside the `user.*`
   family. The payload uses the same content-block vocabulary as `user.message` and
   must be a non-empty array of at most 1000 valid blocks; an over-long batch is
