@@ -92,6 +92,27 @@ by the same CMA policy. Raw API keys are never returned from list or retrieve
 responses. A newly created managed key returns `secret_key` once; store it
 before discarding the response.
 
+### Headers sent by the first-party SDK
+
+The published SDK sends the canonical pair on every `/v1/...` request:
+
+```text
+anthropic-version: 2023-06-01
+anthropic-beta: managed-agents-2026-04-01
+```
+
+A memory-store request carries `agent-memory-2026-07-22` instead. The two betas are
+mutually exclusive by contract: a memory-store request is not a managed-agents
+request, and a request carrying both is in neither surface. Which one applies is
+chosen from the request path inside the SDK, so a caller cannot send the wrong
+family by omission.
+
+`/v1/x/...` is the SandBase extension surface. Admission does not gate it and no
+published beta describes it, so the SDK sends no compatibility header there.
+
+A caller-supplied `anthropic-beta` overrides the derived one; unrelated caller
+headers are passed through untouched.
+
 ## Pagination and Errors
 
 Collection responses:

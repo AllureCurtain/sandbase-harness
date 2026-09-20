@@ -8,10 +8,21 @@
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
+import {
+  CMA_AGENT_MEMORY_BETA,
+  CMA_ANTHROPIC_VERSION,
+  CMA_MANAGED_AGENTS_BETA,
+} from '@/core/cma/compatibility.js';
 
-export const CMA_ANTHROPIC_VERSION = '2023-06-01';
-export const CMA_MANAGED_AGENTS_BETA = 'managed-agents-2026-04-01';
-export const CMA_AGENT_MEMORY_BETA = 'agent-memory-2026-07-22';
+// The literals live in one shared home so the admission middleware and the
+// first-party SDK cannot drift into a state where the SDK sends a beta the
+// server no longer recognizes. Re-exported here because callers already read
+// them from this module.
+export {
+  CMA_AGENT_MEMORY_BETA,
+  CMA_ANTHROPIC_VERSION,
+  CMA_MANAGED_AGENTS_BETA,
+} from '@/core/cma/compatibility.js';
 
 export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
   return async (c, next) => {
