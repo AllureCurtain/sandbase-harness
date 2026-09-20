@@ -40,6 +40,7 @@ that every Claude hosted capability exists locally.
 | Webhooks | `/v1/webhooks` | Advanced | Create/list/update/archive, test deliveries, attempts, and retry due deliveries. Not needed for the first local run. |
 | Scheduled deployments | `/v1/scheduled-deployments` | Advanced | Create/list/update/archive/pause/unpause/run/run-due schedules. Not needed for the first local run. |
 | Outcomes | `/v1/outcomes` and `/v1/sessions/{id}/outcomes` | Advanced | Create/list/update/archive outcomes and evaluate sessions. Not needed for the first local run. |
+| Runtime capabilities | `/v1/x/capabilities` | Supported | Canonical executable built-in capability inventory. `web_fetch` and `web_search` are explicitly unavailable and rejected before agent/session persistence. |
 | Runtime settings | `/v1/x/settings` | Supported | Read/patch/validate canonical runtime settings for one active model provider boundary, loop engine, metadata store, artifact store, memory backend, and sandbox backend. |
 | Runtime operations | `/v1/x/health`, `/v1/x/logs`, `/v1/x/metrics`, `/v1/x/metrics/summary`, `/v1/x/restart` | Supported | Health, logs, Prometheus-style metrics, summary cards, and local restart hook. |
 | Worker queue | `/v1/x/worker/claim`, `/v1/x/worker/complete` | Advanced | Used by `managed-agents worker poll` when running a self-hosted worker. |

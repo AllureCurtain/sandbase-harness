@@ -778,6 +778,7 @@ Extension endpoints expose local runtime operations.
 | --- | --- | --- |
 | `GET` | `/v1/x/health` | Health check. |
 | `GET` | `/v1/x/runtime` | Runtime status. |
+| `GET` | `/v1/x/capabilities` | Truthful inventory of locally executable built-in capabilities. |
 | `GET` | `/v1/x/workspace` | Workspace paths and metadata. |
 | `GET` | `/v1/x/settings` | Read the versioned Settings V2 runtime document. |
 | `POST` | `/v1/x/settings/validate` | Validate a complete Settings V2 document without saving. |
@@ -812,6 +813,30 @@ configuration metadata only:
   "auth_enabled": true
 }
 ```
+
+`GET /v1/x/capabilities` is the source of truth for built-in tool availability.
+It returns stable capability records with a `status` and, when unavailable, a
+human-readable `reason`:
+
+```json
+{
+  "type": "capability_inventory",
+  "capabilities": [
+    { "id": "read", "kind": "tool", "status": "available" },
+    {
+      "id": "web_fetch",
+      "kind": "tool",
+      "status": "unavailable",
+      "reason": "No safe executable implementation is available in this runtime."
+    }
+  ]
+}
+```
+
+Agent create/update and session creation reject enabled unavailable capabilities
+with `400 unsupported_capability` before an agent or session is persisted. In
+particular, `web_fetch` and `web_search` cannot reach model or tool execution
+until safe runtime implementations exist.
 
 The runtime never returns raw API keys or resolved secret values to the Console.
 

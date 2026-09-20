@@ -16,7 +16,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { ServerDeps } from '../server.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { AgentDefinition } from '@/types/agent.js';
+import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { pageOf, toApiEvent, toApiSession } from '../standard.js';
+import { unsupportedCapability } from '../capability-errors.js';
 import { isTerminal } from '@/core/session/state-machine.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
 import { encryptSecret } from '@/core/security/secrets.js';
@@ -75,6 +77,9 @@ export function sessionsRoutes(deps: ServerDeps) {
       });
       return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)), 201);
     } catch (err) {
+      if (err instanceof UnsupportedCapabilityError) {
+        return unsupportedCapability(c, err);
+      }
       if (err instanceof Error && err.message.includes('Agent not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
       }
@@ -230,6 +235,9 @@ export function sessionsRoutes(deps: ServerDeps) {
       }
       return c.json({ accepted: true });
     } catch (err: any) {
+      if (err instanceof UnsupportedCapabilityError) {
+        return unsupportedCapability(c, err);
+      }
       if (err.message?.includes('not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
       }
@@ -280,11 +288,24 @@ export function sessionsRoutes(deps: ServerDeps) {
     const event = { type: 'user.message' as const, content };
     const shouldStream = body && typeof body === 'object' ? body.stream !== false : true;
 
+    // A streaming response cannot be converted into the standard JSON error
+    // envelope after it starts. Use the manager's snapshot-first/current-durable
+    // resolution so legacy sessions fail before opening SSE.
+    try {
+      sessionManager.assertSessionCapabilities(session);
+    } catch (err) {
+      if (err instanceof UnsupportedCapabilityError) return unsupportedCapability(c, err);
+      throw err;
+    }
+
     if (!shouldStream) {
       try {
         await sessionManager.sendEvent(sessionId, event);
         return c.json({ accepted: true });
       } catch (err: any) {
+        if (err instanceof UnsupportedCapabilityError) {
+          return unsupportedCapability(c, err);
+        }
         if (err.message?.includes('not found')) {
           return c.json({ error: { type: 'not_found', message: err.message } }, 404);
         }
@@ -371,6 +392,9 @@ export function sessionsRoutes(deps: ServerDeps) {
       await sessionManager.stop(sessionId);
       return c.json({ id: sessionId, status: 'terminated' });
     } catch (err: any) {
+      if (err instanceof UnsupportedCapabilityError) {
+        return unsupportedCapability(c, err);
+      }
       if (err.message?.includes('not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
       }

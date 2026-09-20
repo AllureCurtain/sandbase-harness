@@ -210,6 +210,61 @@ describe('Managed Agents API', () => {
       expect(body.agent.name).toBe('echo-agent');
     });
 
+    it('reports executable capabilities and rejects unavailable web tools before persistence', async () => {
+      const capabilities = await getJson('/v1/x/capabilities');
+      expect(capabilities.res.status).toBe(200);
+      expect(capabilities.body).toMatchObject({ type: 'capability_inventory' });
+      expect(capabilities.body.capabilities).toContainEqual({ id: 'read', kind: 'tool', status: 'available' });
+      expect(capabilities.body.capabilities).toContainEqual({
+        id: 'web_fetch',
+        kind: 'tool',
+        status: 'unavailable',
+        reason: 'No safe executable implementation is available in this runtime.',
+      });
+      expect(capabilities.body.capabilities).toContainEqual({
+        id: 'web_search',
+        kind: 'tool',
+        status: 'unavailable',
+        reason: 'No safe executable implementation is available in this runtime.',
+      });
+
+      const webAgent = {
+        name: 'web-agent',
+        model: 'gpt-4o',
+        system: 'Use web tools.',
+        tools: [{
+          type: 'agent_toolset_20260401',
+          configs: [{ name: 'web_fetch' }, { name: 'web_search' }],
+        }],
+      };
+      const agentCountBefore = (db.prepare('SELECT COUNT(*) AS count FROM agents').get() as { count: number }).count;
+      const rejectedAgent = await postJson('/v1/agents', webAgent);
+      expect(rejectedAgent.res.status).toBe(400);
+      expect(rejectedAgent.body.error).toEqual({
+        type: 'unsupported_capability',
+        message: 'Agent requests unavailable runtime capabilities: web_fetch, web_search',
+        details: {
+          capabilities: [
+            { id: 'web_fetch', reason: 'No safe executable implementation is available in this runtime.' },
+            { id: 'web_search', reason: 'No safe executable implementation is available in this runtime.' },
+          ],
+        },
+      });
+      expect((db.prepare('SELECT COUNT(*) AS count FROM agents').get() as { count: number }).count).toBe(agentCountBefore);
+
+      db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+        'agent_legacy-web',
+        'legacy-web',
+        JSON.stringify(webAgent),
+      );
+      const sessionCountBefore = (db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count;
+      const rejectedSession = await postJson('/v1/sessions', { agent: 'agent_legacy-web' });
+      expect(rejectedSession.res.status).toBe(400);
+      expect(rejectedSession.body.error).toEqual(rejectedAgent.body.error);
+      expect((db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(sessionCountBefore);
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_legacy-web');
+    });
+
     it('accepts standard agent refs, resources, vault ids, and redacts repository tokens', async () => {
       const { body: store } = await postJson('/v1/memory_stores', {
         name: 'Session resource memory',

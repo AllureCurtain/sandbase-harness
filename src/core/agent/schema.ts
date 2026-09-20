@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { BUILTIN_TOOL_NAMES } from '@/core/capabilities/registry.js';
 import type { AgentDefinition } from '@/types/agent.js';
 
 // ============================================================
@@ -39,7 +40,7 @@ const agentToolConfigSchema = z.object({
 });
 
 const builtinToolConfigSchema = agentToolConfigSchema.extend({
-  name: z.enum(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'web_fetch', 'web_search']),
+  name: z.enum(BUILTIN_TOOL_NAMES),
 });
 
 const mcpToolConfigSchema = agentToolConfigSchema.extend({

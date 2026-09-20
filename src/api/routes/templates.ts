@@ -26,13 +26,13 @@ function builtInTemplates(defaultModelName: string) {
       id: 'template_blank_agent',
       type: 'template',
       name: 'Blank agent',
-      description: 'Start from scratch with just the core toolset and a generic prompt.',
+      description: 'Start from scratch with a generic prompt and configure the tools your workflow needs.',
       tags: ['starter'],
       agent: {
         name: 'Untitled agent',
         model: defaultModelName,
-        description: 'A blank starting point with the core toolset.',
-        system: 'You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user\'s task end to end.',
+        description: 'A blank starting point for configuring a prompt and tools.',
+        system: 'You are a general-purpose agent. Complete the user\'s task end to end using only configured tools and connected services.',
         mcp_servers: [],
         tools: [{ type: 'agent_toolset_20260401' }],
         skills: [],
@@ -43,13 +43,13 @@ function builtInTemplates(defaultModelName: string) {
       id: 'template_deep_researcher',
       type: 'template',
       name: 'Deep researcher',
-      description: 'Plans multi-step research, tracks sources, and writes a cited synthesis.',
-      tags: ['research', 'web'],
+      description: 'Plans multi-step research over supplied materials and writes a cited synthesis.',
+      tags: ['research', 'analysis'],
       agent: {
         name: 'deep-researcher',
         model: defaultModelName,
-        description: 'Conducts multi-step web research with source synthesis and citations.',
-        system: 'You are a deep research agent. Break the task into questions, gather sources, compare evidence, and produce a concise cited report.',
+        description: 'Conducts multi-step research over supplied materials with source synthesis and citations.',
+        system: 'You are a deep research agent. Break the task into questions, inspect the available workspace materials, compare evidence, and produce a concise cited report.',
         tools: [{
           type: 'agent_toolset_20260401',
           default_config: {
@@ -60,8 +60,6 @@ function builtInTemplates(defaultModelName: string) {
             { name: 'read', enabled: true },
             { name: 'write', enabled: true },
             { name: 'grep', enabled: true },
-            { name: 'web_search', enabled: true },
-            { name: 'web_fetch', enabled: true },
           ],
         }],
         skills: [],
@@ -98,13 +96,13 @@ function builtInTemplates(defaultModelName: string) {
       id: 'template_field_monitor',
       type: 'template',
       name: 'Field monitor',
-      description: 'Scans software blogs for a topic and writes a weekly what-changed brief.',
+      description: 'Synthesizes assigned software updates into a weekly what-changed brief.',
       tags: ['monitoring', 'recurring'],
       agent: {
         name: 'Field monitor',
         model: defaultModelName,
-        description: 'Scans software blogs for a topic and writes a weekly what-changed brief.',
-        system: 'You are a field monitor. Track the assigned topic, scan relevant product and engineering updates, compare changes week over week, and write a concise brief with links and impact notes.',
+        description: 'Synthesizes assigned software updates and connected knowledge-base material into a weekly what-changed brief.',
+        system: 'You are a field monitor. Use the assigned workspace materials and connected knowledge sources to compare updates week over week, then write a concise brief with source references and impact notes.',
         mcp_servers: [
           { name: 'notion', type: 'url', url: 'https://mcp.notion.com/mcp' },
         ],
@@ -124,13 +122,13 @@ function builtInTemplates(defaultModelName: string) {
       id: 'template_support_agent',
       type: 'template',
       name: 'Support agent',
-      description: 'Answers questions from documentation and escalates unresolved cases.',
-      tags: ['support'],
+      description: 'Answers questions from available documentation and escalates unresolved cases.',
+      tags: ['support', 'documentation'],
       agent: {
         name: 'support-agent',
         model: defaultModelName,
-        description: 'Answers customer questions from your docs and knowledge base, and escalates when needed.',
-        system: 'You are a support agent. Use the available docs first, answer with clear steps, and escalate when confidence is low.',
+        description: 'Answers customer questions from available workspace documentation and knowledge base materials, and escalates when needed.',
+        system: 'You are a support agent. Use the available workspace documentation first, answer with clear steps, and escalate when confidence is low.',
         tools: [{
           type: 'agent_toolset_20260401',
           default_config: {
@@ -140,7 +138,6 @@ function builtInTemplates(defaultModelName: string) {
           configs: [
             { name: 'read', enabled: true },
             { name: 'grep', enabled: true },
-            { name: 'web_fetch', enabled: true },
           ],
         }],
         skills: [],
@@ -160,7 +157,7 @@ function builtInTemplates(defaultModelName: string) {
         system: `You are an on-call incident commander. When handed a Sentry issue ID or an error fingerprint:
 
 1. Pull the full event payload, stack trace, release tag, and affected-user count from Sentry.
-2. Grep the repo for the top frame's file path and surrounding commits (last 72h).
+2. Use the connected GitHub service to find the top frame's file path and recent surrounding commits (last 72h).
 3. Open a Linear incident ticket with severity, suspected blast radius, and your rollback recommendation.
 4. Post a threaded status to the incident Slack channel: what broke, who's looking, ETA for next update.
 5. Every 15 minutes, re-check Sentry event volume and update the thread until the user closes the incident.

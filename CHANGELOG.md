@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Exposes `GET /v1/x/capabilities` as the canonical inventory for locally
+  executable built-in tools. Agent create/update and session creation now
+  reject enabled `web_fetch` and `web_search` requests with a structured
+  `unsupported_capability` error before persistence or model/tool execution.
+
 ### Fixes
 
 - Makes approval-gated tool calls durable and atomic per model step. Every
