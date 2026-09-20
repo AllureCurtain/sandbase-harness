@@ -27,7 +27,11 @@ import type {
   ListSessionsParams,
   PaginatedResult,
 } from '@/types/session.js';
-import type { ContentBlock, UserEvent } from '@/types/cma-protocol.js';
+import type { ContentBlock, SessionErrorRetryStatus, UserEvent } from '@/types/cma-protocol.js';
+import {
+  LOOP_ENGINE_INVALID_CODE,
+  LOOP_ENGINE_UNSUPPORTED_CODE,
+} from './loop-engine-admission.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import {
   runtimeCapabilityRegistry,
@@ -37,6 +41,11 @@ import {
   assertPiAgentCanExecute,
   assertPiEnvironmentCanExecute,
   assertPiUserEventCanExecute,
+  PI_ALWAYS_ASK_UNSUPPORTED_CODE,
+  PI_MESSAGE_CONTENT_UNSUPPORTED_CODE,
+  PI_SANDBOX_UNSUPPORTED_CODE,
+  PI_TOOL_POLICY_UNSUPPORTED_CODE,
+  PI_USER_EVENT_UNSUPPORTED_CODE,
 } from './pi-policy.js';
 import {
   assertLoopEngineExecutable,
@@ -548,10 +557,11 @@ export class SessionManager {
         return tail;
       }
     }
+    const code = errorCodeOf(error);
     const event = this.eventLogger.append(sessionId, {
       type: 'session.error',
       content: [{ type: 'text', text: message }],
-      ...(errorCodeOf(error) ? { metadata: { code: errorCodeOf(error) } } : {}),
+      metadata: { ...sessionErrorMetadata(error, code), ...(code ? { code } : {}) },
     });
     this.broadcast(sessionId, event);
     return event;
@@ -740,10 +750,11 @@ export class SessionManager {
       }
     } catch (err) {
       const errorCode = errorCodeOf(err);
-      if (errorCode === 'pi_cleanup_pending') {
+      if (errorCode === PI_CLEANUP_PENDING_CODE) {
         const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+          metadata: sessionErrorMetadata(err, errorCode),
         });
         this.broadcast(sessionId, errorEvent);
         if (this.get(sessionId)?.status === 'running') this.updateStatus(sessionId, 'cleanup_pending');
@@ -756,18 +767,19 @@ export class SessionManager {
         const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+          metadata: sessionErrorMetadata(err, errorCode),
         });
         this.broadcast(sessionId, errorEvent);
         const current = this.get(sessionId);
         if (current && !isTerminal(current.status)) {
-          if (errorCode === 'pi_cleanup_pending') this.updateStatus(sessionId, 'cleanup_pending');
-          else if (errorCode === 'pi_timed_out') this.updateStatus(sessionId, 'timed_out');
-          else if (errorCode === 'pi_session_busy') this.updateStatus(sessionId, 'paused');
+          if (errorCode === PI_CLEANUP_PENDING_CODE) this.updateStatus(sessionId, 'cleanup_pending');
+          else if (errorCode === PI_TIMED_OUT_CODE) this.updateStatus(sessionId, 'timed_out');
+          else if (errorCode === PI_SESSION_BUSY_CODE) this.updateStatus(sessionId, 'paused');
           else this.updateStatus(sessionId, 'failed');
         }
         // A cleanup_pending child may still own the workspace. Never release it
         // based on parent close or a failed taskkill result.
-        if (errorCode !== 'pi_cleanup_pending') await this.releaseSandbox(sessionId);
+        if (errorCode !== PI_CLEANUP_PENDING_CODE) await this.releaseSandbox(sessionId);
       }
     } finally {
       this.abortControllers.delete(sessionId);
@@ -882,6 +894,68 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
       action_type: 'tool_confirmation',
     },
   };
+}
+
+/**
+ * Pi codes this module reports. Declared here because the same three literals
+ * appear in the status transitions below, and a spelling drift between the two
+ * is exactly how a failure silently loses its retry classification.
+ */
+const PI_SESSION_BUSY_CODE = 'pi_session_busy';
+const PI_CLEANUP_PENDING_CODE = 'pi_cleanup_pending';
+const PI_TIMED_OUT_CODE = 'pi_timed_out';
+const INTERNAL_ERROR_CODE = 'internal_error';
+
+/**
+ * Structured payload carried by `session.error`.
+ *
+ * The event log has no per-type payload column, so the typed error object is
+ * persisted through the generic metadata carrier and projected back to the
+ * documented top-level `error` field by `toApiEvent` — the same route
+ * `session.usage` already takes. `content` still carries the message as text,
+ * so a client that only renders content keeps working.
+ *
+ * Retry disposition is derived from the error code rather than guessed from
+ * the message. A code the runtime does not recognize reports `unknown`, which
+ * is the honest answer: claiming `not_retryable` for an unknown failure would
+ * tell a client to give up on work that might succeed on retry.
+ */
+function sessionErrorMetadata(error: unknown, code: string | undefined): Record<string, unknown> {
+  return {
+    error: {
+      type: code ?? INTERNAL_ERROR_CODE,
+      message: error instanceof Error ? error.message : String(error),
+      retry_status: retryStatusFor(code),
+    },
+  };
+}
+
+/**
+ * Classify a caught error code for `session.error.retry_status`.
+ *
+ * Keys off the exported code constants rather than retyped literals: the Pi
+ * admission codes all end in `_not_supported`, and an earlier literal spelling
+ * of `_unsupported` meant those failures fell through to `unknown` — telling a
+ * client it might retry a request the runtime will always refuse.
+ */
+function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
+  switch (code) {
+    case PI_SESSION_BUSY_CODE:
+      return 'retryable';
+    case PI_CLEANUP_PENDING_CODE:
+    case PI_TIMED_OUT_CODE:
+    case PI_ALWAYS_ASK_UNSUPPORTED_CODE:
+    case PI_TOOL_POLICY_UNSUPPORTED_CODE:
+    case PI_SANDBOX_UNSUPPORTED_CODE:
+    case PI_USER_EVENT_UNSUPPORTED_CODE:
+    case PI_MESSAGE_CONTENT_UNSUPPORTED_CODE:
+    case LOOP_ENGINE_UNSUPPORTED_CODE:
+    case LOOP_ENGINE_INVALID_CODE:
+    case 'unsupported_capability':
+      return 'not_retryable';
+    default:
+      return 'unknown';
+  }
 }
 
 function errorCodeOf(error: unknown): string | undefined {

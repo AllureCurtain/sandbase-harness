@@ -262,11 +262,23 @@ export interface SessionStatusTerminatedEvent extends EventBase {
   reason?: string;
 }
 
+/**
+ * Retry disposition carried by `session.error`.
+ *
+ * Contract note: the published contract documents a typed `error` object
+ * carrying `retry_status`, but the value set is not enumerated there. These
+ * three strings are therefore a SandBase profile, not a verified upstream
+ * enumeration. Only the field's type and presence are asserted; a client must
+ * treat an unrecognized value as `unknown`.
+ */
+export type SessionErrorRetryStatus = 'retryable' | 'not_retryable' | 'unknown';
+
 export interface SessionErrorEvent extends EventBase {
   type: 'session.error';
   error: {
     type: string;
     message: string;
+    retry_status: SessionErrorRetryStatus;
   };
 }
 

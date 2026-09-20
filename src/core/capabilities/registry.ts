@@ -38,6 +38,11 @@ const DEFAULT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
 
 export class UnsupportedCapabilityError extends Error {
   readonly type = 'unsupported_capability';
+  /**
+   * Stable identifier published alongside `type`, so the generic code reader
+   * used by `session.error` sees it without special-casing this class.
+   */
+  readonly code = 'unsupported_capability';
 
   constructor(readonly capabilities: readonly RuntimeCapability[]) {
     super(`Agent requests unavailable runtime capabilities: ${capabilities.map((capability) => capability.id).join(', ')}`);
