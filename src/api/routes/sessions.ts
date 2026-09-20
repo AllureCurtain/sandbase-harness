@@ -39,6 +39,10 @@ import {
   isLoopEngineAdmissionError,
   resolveRequestedLoopEngine,
 } from '@/core/session/loop-engine-admission.js';
+import {
+  normalizeSystemMessageContent,
+  systemMessageContentError,
+} from './system-message.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -237,12 +241,34 @@ export function sessionsRoutes(deps: ServerDeps) {
           400,
         );
       }
+      // `system.message` is privileged system-level context, not a user turn,
+      // so it is admitted here and projected as a `system` role turn below.
+      if (event.type === 'system.message') {
+        const content = normalizeSystemMessageContent(event.content);
+        if (!content) {
+          // Report which constraint was violated: an over-long batch is a
+          // different client bug from a malformed block.
+          return c.json(
+            {
+              error: {
+                type: 'invalid_request',
+                message: systemMessageContentError(event.content)
+                  ?? 'system.message content must be a non-empty array of valid content blocks',
+              },
+            },
+            400,
+          );
+        }
+        // Validated in place: the batch this route forwards is the caller's
+        // own array, and the payload is already in the shape the log stores.
+        continue;
+      }
       if (!event.type.startsWith('user.')) {
         return c.json(
           {
             error: {
               type: 'invalid_request',
-              message: `Only user.* events can be sent to a session (got "${event.type}")`,
+              message: `Only system.message and user.* events can be sent to a session (got "${event.type}")`,
             },
           },
           400,

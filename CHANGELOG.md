@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Added
+- Accepts `system.message` as an inbound session event alongside the `user.*`
+  family. The payload uses the same content-block vocabulary as `user.message` and
+  must be a non-empty array of at most 1000 valid blocks; an over-long batch is
+  reported as a size violation naming the ceiling rather than as a generic shape
+  error. The event projects as its own `system` role turn, so it applies to the
+  accompanying turn and every later turn rather than folding into the agent's
+  top-level prompt. A message that arrives while an assistant turn is pending
+  flushes that turn first, and one with no usable text is dropped instead of
+  projected as an empty turn.
 - Spills an oversized tool result into the sandbox and gives the model a short
   preview plus the path it can read the full content back from, through one
   contract shared by the built-in tool path, the MCP tool path, and the Pi stdout
