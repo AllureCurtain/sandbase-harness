@@ -20,8 +20,17 @@ export class EnvVarNotFoundError extends Error {
  * @param required - If true, throw when a variable is not found; if false, leave the placeholder as-is
  */
 export function resolveEnvVars(value: string, required = true): string {
+  return resolveEnvVarsFrom(value, process.env, required);
+}
+
+/** Resolve placeholders from an explicit host environment without mutating it. */
+export function resolveEnvVarsFrom(
+  value: string,
+  environment: NodeJS.ProcessEnv,
+  required = true,
+): string {
   return value.replace(ENV_VAR_PATTERN, (match, varName: string) => {
-    const envValue = process.env[varName];
+    const envValue = environment[varName];
     if (envValue === undefined) {
       if (required) {
         throw new EnvVarNotFoundError(varName);
@@ -30,6 +39,12 @@ export function resolveEnvVars(value: string, required = true): string {
     }
     return envValue;
   });
+}
+
+/** Return the host variable names referenced by a configuration string. */
+export function referencedEnvVars(value?: string): string[] {
+  if (!value) return [];
+  return [...new Set([...value.matchAll(ENV_VAR_PATTERN)].map((match) => match[1]))];
 }
 
 /**

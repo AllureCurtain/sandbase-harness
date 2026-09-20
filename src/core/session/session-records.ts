@@ -7,6 +7,7 @@ export interface SessionRow {
   agent_name: string;
   agent_version: number | null;
   agent_definition: string | null;
+  loop_engine: string | null;
   environment_id: string;
   status: string;
   title: string | null;
@@ -30,6 +31,7 @@ export function rowToSession(row: SessionRow): Session {
     agentName: row.agent_name,
     agentVersion: row.agent_version ?? undefined,
     agentDefinition: row.agent_definition ? JSON.parse(row.agent_definition) as AgentDefinition : undefined,
+    loopEngine: row.loop_engine === 'pi' ? 'pi' : 'builtin',
     environmentId: row.environment_id,
     status: row.status as SessionStatus,
     title: row.title ?? undefined,

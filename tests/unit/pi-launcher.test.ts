@@ -1,0 +1,459 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, win32 } from 'node:path';
+import { PiLauncher, piInvocationFor, probePiCli } from '@/strategy/pi-launcher.js';
+
+const directories: string[] = [];
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function controlledCli(directory: string): { command: string; commandArgs: string[]; resultPath: string } {
+  const script = join(directory, 'controlled-pi.mjs');
+  const resultPath = join(directory, 'pi-result.json');
+  writeFileSync(script, `
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const [resultPath, ...args] = process.argv.slice(2);
+let stdin = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { stdin += chunk; });
+process.stdin.on('end', () => {
+  const config = process.env.PI_CODING_AGENT_DIR
+    ? readFileSync(process.env.PI_CODING_AGENT_DIR + '/models.json', 'utf8')
+    : '';
+  const agentsPath = process.cwd() + '/AGENTS.md';
+  const result = {
+    args,
+    stdin,
+    cwd: process.cwd(),
+    telemetry: process.env.PI_TELEMETRY,
+    apiKey: process.env.SANDBASE_PI_API_KEY,
+    sourceApiKey: process.env.PI_MODEL_API_KEY,
+    sourceBaseUrl: process.env.PI_MODEL_BASE_URL,
+    unexpectedSecret: process.env.UNRELATED_SERVICE_SECRET,
+    config,
+    agents: existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : undefined,
+  };
+  const waitForAbort = args.includes('sandbase/wait-for-abort');
+  if (waitForAbort) {
+    process.once('SIGTERM', () => {
+      writeFileSync(resultPath, JSON.stringify({ ...result, aborted: true }));
+      process.exit(0);
+    });
+  }
+  writeFileSync(resultPath, JSON.stringify(result));
+  if (waitForAbort) setInterval(() => {}, 1_000);
+});
+`);
+  return { command: process.execPath, commandArgs: [script, resultPath], resultPath };
+}
+
+function restrictedTestEnvironment(): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    ComSpec: process.env.ComSpec,
+    PI_MODEL_API_KEY: 'resolved-host-api-key',
+    PI_MODEL_BASE_URL: 'https://models.example.test/v1',
+    UNRELATED_SERVICE_SECRET: 'must-not-inherit',
+  };
+}
+
+function launchRequest(workDir: string, sessionId: string) {
+  return {
+    sessionId,
+    workDir,
+    prompt: 'safe prompt',
+    systemPrompt: 'system',
+    model: { provider: 'openai', model: 'test-model', api_key: 'test-key' },
+  } as const;
+}
+
+async function waitForFile(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (existsSync(path)) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+  }
+  throw new Error(`Timed out waiting for ${path}`);
+}
+
+describe('Pi launcher', () => {
+  it('resolves host model settings into a managed config and launches one selected print-mode child', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-launcher-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const prompt = 'do not put this prompt in argv';
+    const systemPrompt = '# System\n\nUse the included skill.';
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+    });
+
+    await launcher.launch({
+      sessionId: 'sess_safe_123',
+      workDir,
+      prompt,
+      systemPrompt,
+      model: {
+        provider: 'openai',
+        model: 'gpt-4.1',
+        api_key: '${PI_MODEL_API_KEY}',
+        base_url: '${PI_MODEL_BASE_URL}',
+      },
+    });
+
+    const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as {
+      args: string[];
+      stdin: string;
+      cwd: string;
+      telemetry: string;
+      apiKey?: string;
+      sourceApiKey?: string;
+      sourceBaseUrl?: string;
+      unexpectedSecret?: string;
+      config: string;
+      agents?: string;
+    };
+    const expectedSessionFile = join(directory, 'pi-sessions', 'sess_safe_123.jsonl');
+    expect(observed.args).toEqual([
+      '-p', '--mode', 'json', '--model', 'sandbase/gpt-4.1', '--session', expectedSessionFile,
+    ]);
+    expect(observed.stdin).toBe(prompt);
+    expect(observed.cwd).toBe(workDir);
+    expect(observed.args.join(' ')).not.toContain(prompt);
+    expect(observed.args).not.toContain('--provider');
+    expect(observed.telemetry).toBe('0');
+    expect(observed.apiKey).toBe('resolved-host-api-key');
+    expect(observed.sourceApiKey).toBeUndefined();
+    expect(observed.sourceBaseUrl).toBeUndefined();
+    expect(observed.unexpectedSecret).toBeUndefined();
+    expect(JSON.parse(observed.config)).toEqual({
+      providers: {
+        sandbase: {
+          apiKey: '$SANDBASE_PI_API_KEY',
+          api: 'openai-completions',
+          baseUrl: 'https://models.example.test/v1',
+          models: [{ id: 'gpt-4.1' }],
+        },
+      },
+    });
+    expect(observed.config).not.toContain('resolved-host-api-key');
+    expect(observed.agents).toBe(systemPrompt);
+    expect(existsSync(expectedSessionFile)).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(statSync(expectedSessionFile).mode & 0o077).toBe(0);
+    }
+  });
+
+  it('cancels a running Pi child and waits for it to exit before rejecting the turn', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-abort-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const controller = new AbortController();
+    const terminationCalls: boolean[] = [];
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        terminationCalls.push(force);
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+      terminationGraceMs: 10,
+    });
+
+    const launch = launcher.launch({
+      ...launchRequest(workDir, 'sess_abort_123'),
+      model: { provider: 'openai', model: 'wait-for-abort', api_key: 'test-key' },
+      abortSignal: controller.signal,
+    });
+    await waitForFile(cli.resultPath);
+    controller.abort();
+
+    await expect(launch).rejects.toMatchObject({ name: 'AbortError' });
+    expect(terminationCalls).toEqual([false]);
+  });
+
+  it('keeps cancellation pending until a surviving Pi process group is force-terminated', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-group-abort-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const controller = new AbortController();
+    const terminationCalls: boolean[] = [];
+    let groupDescendantAlive = true;
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      platform: 'linux',
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        terminationCalls.push(force);
+        if (force) groupDescendantAlive = false;
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+      processGroupAlive: () => groupDescendantAlive,
+      terminationGraceMs: 10,
+    });
+
+    const launch = launcher.launch({
+      ...launchRequest(workDir, 'sess_group_abort_123'),
+      model: { provider: 'openai', model: 'wait-for-abort', api_key: 'test-key' },
+      abortSignal: controller.signal,
+    });
+    await waitForFile(cli.resultPath);
+    controller.abort();
+
+    await expect(launch).rejects.toMatchObject({ name: 'AbortError' });
+    expect(terminationCalls).toEqual([false, true]);
+  });
+
+  it('waits for Windows tree termination after the Pi parent closes', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-windows-tree-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const controller = new AbortController();
+    let completeTreeTermination: (() => void) | undefined;
+    const treeTermination = new Promise<void>((resolvePromise) => {
+      completeTreeTermination = resolvePromise;
+    });
+    let notifyParentClosed: (() => void) | undefined;
+    const parentClosed = new Promise<void>((resolvePromise) => {
+      notifyParentClosed = resolvePromise;
+    });
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      platform: 'win32',
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child) => {
+        child.once('close', () => notifyParentClosed?.());
+        child.kill('SIGTERM');
+        return treeTermination;
+      },
+    });
+
+    const launch = launcher.launch({
+      ...launchRequest(workDir, 'sess_windows_abort_123'),
+      model: { provider: 'openai', model: 'wait-for-abort', api_key: 'test-key' },
+      abortSignal: controller.signal,
+    });
+    let settled = false;
+    void launch.then(() => { settled = true; }, () => { settled = true; });
+    await waitForFile(cli.resultPath);
+    controller.abort();
+    await parentClosed;
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    completeTreeTermination?.();
+    await expect(launch).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('rejects nested unresolved model base URL references before materializing or launching Pi', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-unresolved-url-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: {
+        ...restrictedTestEnvironment(),
+        PI_MODEL_BASE_URL: '${UNRESOLVED_NESTED_BASE_URL}',
+      },
+    });
+
+    await expect(launcher.launch({
+      sessionId: 'sess_unresolved_url',
+      workDir,
+      prompt: 'safe prompt',
+      systemPrompt: 'system',
+      model: {
+        provider: 'openai',
+        model: 'gpt-4.1',
+        api_key: '${PI_MODEL_API_KEY}',
+        base_url: '${PI_MODEL_BASE_URL}',
+      },
+    })).rejects.toThrow('Pi loop engine model base URL contains unresolved environment references');
+
+    expect(existsSync(cli.resultPath)).toBe(false);
+    expect(existsSync(join(directory, 'pi-sessions'))).toBe(false);
+    expect(existsSync(join(workDir, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('rejects nested unresolved model API key references before materializing or launching Pi', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-unresolved-key-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: {
+        ...restrictedTestEnvironment(),
+        PI_MODEL_API_KEY: '${UNRESOLVED_NESTED_API_KEY}',
+      },
+    });
+
+    await expect(launcher.launch({
+      sessionId: 'sess_unresolved_key',
+      workDir,
+      prompt: 'safe prompt',
+      systemPrompt: 'system',
+      model: {
+        provider: 'openai',
+        model: 'gpt-4.1',
+        api_key: '${PI_MODEL_API_KEY}',
+        base_url: '${PI_MODEL_BASE_URL}',
+      },
+    })).rejects.toThrow('Pi loop engine model API key contains unresolved environment references');
+
+    expect(existsSync(cli.resultPath)).toBe(false);
+    expect(existsSync(join(directory, 'pi-sessions'))).toBe(false);
+    expect(existsSync(join(workDir, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('uses the Anthropic API kind with the same managed provider selector', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-anthropic-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+    });
+
+    await launcher.launch({
+      sessionId: 'sess_anthropic_123',
+      workDir,
+      prompt: 'hello',
+      systemPrompt: 'system',
+      model: { provider: 'anthropic', model: 'claude-test', api_key: '${PI_MODEL_API_KEY}' },
+    });
+
+    const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as { args: string[]; config: string };
+    expect(observed.args).toEqual(expect.arrayContaining(['--model', 'sandbase/claude-test']));
+    expect(JSON.parse(observed.config)).toEqual({
+      providers: {
+        sandbase: {
+          apiKey: '$SANDBASE_PI_API_KEY',
+          api: 'anthropic-messages',
+          models: [{ id: 'claude-test' }],
+        },
+      },
+    });
+  });
+
+  it('rejects unsafe session identifiers before resolving a session file path', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-path-'));
+    directories.push(directory);
+    const launcher = new PiLauncher({ dataDir: directory, command: process.execPath });
+
+    await expect(launcher.launch({
+      sessionId: 'sess_.._escape',
+      workDir: directory,
+      prompt: 'safe prompt',
+      systemPrompt: 'system',
+      model: { provider: 'openai', model: 'test-model', api_key: 'test-key' },
+    })).rejects.toThrow('Pi session id is invalid');
+    expect(existsSync(join(directory, 'escape.jsonl'))).toBe(false);
+  });
+
+  it('refuses non-regular session and AGENTS.md targets before launching Pi', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-private-files-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = controlledCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+    });
+
+    const sessionsDir = join(directory, 'pi-sessions');
+    mkdirSync(sessionsDir);
+    mkdirSync(join(sessionsDir, 'sess_nonregular.jsonl'));
+    await expect(launcher.launch(launchRequest(workDir, 'sess_nonregular')))
+      .rejects.toThrow('Pi session file must be a private regular file');
+    expect(existsSync(cli.resultPath)).toBe(false);
+
+    rmSync(join(sessionsDir, 'sess_nonregular.jsonl'), { recursive: true });
+    mkdirSync(join(workDir, 'AGENTS.md'));
+    await expect(launcher.launch(launchRequest(workDir, 'sess_agents_target')))
+      .rejects.toThrow('Pi AGENTS.md must be a private regular file');
+    expect(existsSync(cli.resultPath)).toBe(false);
+  });
+
+  it('uses the neighbouring PowerShell shim for a Windows npm pi.cmd executable', () => {
+    const command = 'C:\\npm\\pi.cmd';
+    const shim = 'C:\\npm\\pi.ps1';
+    const invocation = piInvocationFor(['-p', '--mode', 'json', '--session', 'C:\\data\\pi-sessions\\sess_1.jsonl'], {
+      command,
+      platform: 'win32',
+      environment: { SystemRoot: 'C:\\Windows' },
+      fileExists: (path) => path === shim,
+    });
+
+    expect(invocation.file).toBe(win32.join('C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
+    expect(invocation.args).toEqual(expect.arrayContaining([
+      '-Command',
+      '& $args[0] @args[1..($args.Length - 1)]',
+      shim,
+      '-p',
+      '--mode',
+      'json',
+      '--session',
+      'C:\\data\\pi-sessions\\sess_1.jsonl',
+    ]));
+  });
+
+  it('fails explicitly when the Pi executable is missing', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-missing-'));
+    directories.push(directory);
+    const launcher = new PiLauncher({ dataDir: directory, command: join(directory, 'missing-pi') });
+
+    await expect(launcher.launch({
+      sessionId: 'sess_missing',
+      workDir: directory,
+      prompt: 'hello',
+      systemPrompt: 'system',
+      model: { provider: 'openai', model: 'test-model', api_key: 'test-key' },
+    })).rejects.toThrow('Pi CLI is not available');
+  });
+
+  it('probes a controlled executable without passing service credentials', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-probe-'));
+    directories.push(directory);
+    const cli = controlledCli(directory);
+    const result = await probePiCli({
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+    });
+
+    expect(result).toEqual({ available: true, message: 'Pi CLI is available.' });
+  });
+});

@@ -44,8 +44,13 @@ export const SESSION_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
 // Session
 // ============================================================
 
+/** Engine provider frozen when the session is created. */
+export type SessionLoopEngine = 'builtin' | 'pi';
+
 export interface Session {
   id: string; // sess_xxx
+  /** Persisted engine selection. Undefined is treated as builtin for legacy callers. */
+  loopEngine?: SessionLoopEngine;
   agentId: string;
   agentName: string;
   agentVersion?: number;

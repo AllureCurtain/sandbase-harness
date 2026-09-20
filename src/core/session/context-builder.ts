@@ -27,7 +27,7 @@ export class ContextBuilder {
     session: Session,
     agent: AgentDefinition,
     event: UserEvent,
-    model: unknown,
+    model: unknown | undefined,
     broadcast: (event: SessionEvent) => void,
   ): Promise<BuiltContext> {
     await this.compactIfNeeded(session, model, broadcast);
@@ -71,10 +71,12 @@ export class ContextBuilder {
 
   private async compactIfNeeded(
     session: Session,
-    model: unknown,
+    model: unknown | undefined,
     broadcast: (event: SessionEvent) => void,
   ): Promise<void> {
-    if (!this.deps.compactor) return;
+    // Strategies such as Pi own their model transport, so compaction cannot
+    // construct or invoke an AI SDK model on their behalf.
+    if (!this.deps.compactor || !model) return;
 
     const projected = eventsToMessages(this.deps.eventLogger.getEvents(session.id));
     if (!this.deps.compactor.shouldCompact(projected)) return;

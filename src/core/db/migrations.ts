@@ -731,6 +731,11 @@ const M030_EVENT_METADATA = `
 ALTER TABLE events ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
 `;
 
+/** Freezes the selected loop engine for every durable session. */
+const M031_SESSION_LOOP_ENGINE = `
+ALTER TABLE sessions ADD COLUMN loop_engine TEXT NOT NULL DEFAULT 'builtin';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -762,4 +767,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 28, name: '028_credential_audit', sql: M028_CREDENTIAL_AUDIT },
   { version: 29, name: '029_webhook_retries', sql: M029_WEBHOOK_RETRIES },
   { version: 30, name: '030_event_metadata', sql: M030_EVENT_METADATA },
+  { version: 31, name: '031_session_loop_engine', sql: M031_SESSION_LOOP_ENGINE },
 ];

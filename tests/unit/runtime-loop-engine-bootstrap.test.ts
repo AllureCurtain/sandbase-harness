@@ -21,6 +21,20 @@ describe('runtime loop engine bootstrap', () => {
     expect(engine.strategy.execute).toBeTypeOf('function');
   });
 
+  it('creates the Pi strategy when runtime data are available', () => {
+    const engine = bootstrapRuntimeLoopEngine({
+      ...settings,
+      loop_engine: { provider: 'pi', options: { default_max_steps: 25 } },
+    }, {
+      dataDir: '/runtime-data',
+    });
+
+    expect(engine.provider).toBe('pi');
+    expect(engine.strategy.name).toBe('pi');
+    expect(engine.strategies.builtin?.name).toBe('default');
+    expect(engine.strategies.pi?.name).toBe('pi');
+  });
+
   it('rejects unavailable loop engines', () => {
     expect(() => bootstrapRuntimeLoopEngine({
       ...settings,

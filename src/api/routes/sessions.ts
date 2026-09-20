@@ -15,6 +15,7 @@ import { streamSSE } from 'hono/streaming';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ServerDeps } from '../server.js';
 import type { SessionEvent } from '@/types/session.js';
+import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { pageOf, toApiEvent, toApiSession } from '../standard.js';
@@ -32,6 +33,7 @@ import {
   normalizeVaultIds,
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
+import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -79,6 +81,13 @@ export function sessionsRoutes(deps: ServerDeps) {
     } catch (err) {
       if (err instanceof UnsupportedCapabilityError) {
         return unsupportedCapability(c, err);
+      }
+      if (isPiSessionAdmissionError(err)) {
+        return c.json({ error: {
+          type: 'invalid_request',
+          code: err.code,
+          message: err.message,
+        } }, 400);
       }
       if (err instanceof Error && err.message.includes('Agent not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
@@ -230,6 +239,11 @@ export function sessionsRoutes(deps: ServerDeps) {
     }
 
     try {
+      // Evaluate every event before appending any one of them so a later Pi
+      // policy failure cannot partially apply a mixed CMA batch.
+      for (const event of events) {
+        sessionManager.assertSessionCanAcceptEvent(sessionId, event as UserEvent);
+      }
       for (const event of events) {
         await sessionManager.sendEvent(sessionId, event);
       }
@@ -237,6 +251,13 @@ export function sessionsRoutes(deps: ServerDeps) {
     } catch (err: any) {
       if (err instanceof UnsupportedCapabilityError) {
         return unsupportedCapability(c, err);
+      }
+      if (isPiSessionAdmissionError(err)) {
+        return c.json({ error: {
+          type: 'invalid_request',
+          code: err.code,
+          message: err.message,
+        } }, 400);
       }
       if (err.message?.includes('not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
@@ -289,12 +310,22 @@ export function sessionsRoutes(deps: ServerDeps) {
     const shouldStream = body && typeof body === 'object' ? body.stream !== false : true;
 
     // A streaming response cannot be converted into the standard JSON error
-    // envelope after it starts. Use the manager's snapshot-first/current-durable
-    // resolution so legacy sessions fail before opening SSE.
+    // envelope after it starts. Preflight both current capability and Pi policy
+    // so policy failures retain their stable client error before SSE opens.
     try {
       sessionManager.assertSessionCapabilities(session);
-    } catch (err) {
+      if (shouldStream) {
+        sessionManager.assertSessionCanAcceptEvent(sessionId, event);
+      }
+    } catch (err: any) {
       if (err instanceof UnsupportedCapabilityError) return unsupportedCapability(c, err);
+      if (isPiSessionAdmissionError(err)) {
+        return c.json({ error: {
+          type: 'invalid_request',
+          code: err.code,
+          message: err.message,
+        } }, 400);
+      }
       throw err;
     }
 
@@ -305,6 +336,13 @@ export function sessionsRoutes(deps: ServerDeps) {
       } catch (err: any) {
         if (err instanceof UnsupportedCapabilityError) {
           return unsupportedCapability(c, err);
+        }
+        if (isPiSessionAdmissionError(err)) {
+          return c.json({ error: {
+            type: 'invalid_request',
+            code: err.code,
+            message: err.message,
+          } }, 400);
         }
         if (err.message?.includes('not found')) {
           return c.json({ error: { type: 'not_found', message: err.message } }, 404);

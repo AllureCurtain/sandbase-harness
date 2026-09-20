@@ -6,6 +6,7 @@
  */
 
 import type { LanguageModel } from 'ai';
+import type { ModelConfig } from './model.js';
 import type { SandboxInstance } from './sandbox.js';
 import type { Session, SessionEvent } from './session.js';
 
@@ -15,6 +16,8 @@ import type { Session, SessionEvent } from './session.js';
 
 export interface AgentStrategy {
   readonly name: string; // 'default' | 'planner' | 'rag' | ...
+  /** Defaults to true. Set false when the strategy owns model transport itself. */
+  readonly requiresModel?: boolean;
 
   /**
    * Execute a complete session turn.
@@ -30,10 +33,15 @@ export interface AgentStrategy {
 
 export interface StrategyContext {
   session: Session;
+  /** The incoming user event for strategies that use the raw turn prompt. */
+  userEvent: import('./cma-protocol.js').UserEvent;
   /** Agent system prompt (with any injected skills). Sent to the model. */
   systemPrompt: string;
   messages: CoreMessage[];
-  model: LanguageModel;
+  /** Resolved selected model configuration, including no AI SDK construction. */
+  modelConfig?: ModelConfig;
+  /** Constructed only for strategies that require the AI SDK model transport. */
+  model?: LanguageModel;
   tools: Record<string, CoreTool>;
   sandbox: SandboxInstance;
   eventLog: EventLogWriter;

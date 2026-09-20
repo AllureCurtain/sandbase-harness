@@ -53,6 +53,11 @@ export function describeSettingsAdapters(installedSandboxes: string[] = ['local'
       descriptor('builtin', 'Default', true, 'runtime', objectSchema({
         default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
       })),
+      // This means the shipped adapter is selectable. The Settings test probes
+      // the external executable and a turn still fails explicitly if it is absent.
+      descriptor('pi', 'Pi CLI', true, 'runtime', objectSchema({
+        default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
+      })),
       descriptor('harness', 'Harness', false, 'runtime', objectSchema()),
       descriptor('codex', 'Codex', false, 'runtime', objectSchema()),
       descriptor('claude', 'Claude', false, 'runtime', objectSchema()),

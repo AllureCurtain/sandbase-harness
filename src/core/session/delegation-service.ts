@@ -1,10 +1,13 @@
 import { nanoid } from 'nanoid';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
-import type { Session } from '@/types/session.js';
+import type { Session, SessionLoopEngine } from '@/types/session.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { InMemoryEventLog } from './in-memory-event-log.js';
+import {
+  assertPiAgentCanExecute,
+} from '@/core/session/pi-policy.js';
 import {
   validateDelegation,
   childDelegationContext,
@@ -16,6 +19,8 @@ export interface DelegationServiceDeps {
   agents: AgentDefinition[];
   modelRegistry: ModelRegistry;
   strategy: AgentStrategy;
+  /** Resolve the parent's frozen engine for delegated turns as well. */
+  resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
   /**
    * Provision a sandbox for a sub-agent run.
    *
@@ -126,7 +131,23 @@ export class DelegationService {
     ctx: DelegationContext,
     session: Session,
   ): Promise<string> {
-    const model = this.deps.modelRegistry.createModel(target.model);
+    const strategy = this.deps.resolveStrategy?.(session.loopEngine ?? 'builtin') ?? this.deps.strategy;
+    // A delegated target is a new Pi execution boundary. Validate its policy
+    // before resolving credentials, constructing a model, or provisioning a
+    // sandbox; otherwise a parent Pi session could bypass the creation-time
+    // always_ask/never_allow/disabled admission gate for its child.
+    if (session.loopEngine === 'pi' || strategy.name === 'pi') {
+      assertPiAgentCanExecute(target);
+    }
+    // Pi owns its transport but still needs the selected concrete model config.
+    // Builtin strategies keep their existing AI SDK model construction path and
+    // do not need registry resolution before that factory runs.
+    const modelConfig = strategy.requiresModel === false
+      ? this.deps.modelRegistry.resolveModelConfig(target.model)
+      : undefined;
+    const model = strategy.requiresModel === false
+      ? undefined
+      : this.deps.modelRegistry.createModel(target.model);
     const subSessionId = `subsess_${ctx.chain.join('.')}_${nanoid(8)}`;
     // Same backend as the parent session, resolved through the same fail-loud
     // path — a sub-agent must not receive weaker isolation than its parent.
@@ -144,6 +165,7 @@ export class DelegationService {
           id: subSessionId,
           agentId: target.name,
           agentName: target.name,
+          loopEngine: session.loopEngine ?? 'builtin',
           // Inherit the parent's environment so anything downstream that
           // resolves configuration from it sees the same backend the
           // sub-agent's sandbox was provisioned from.
@@ -153,7 +175,9 @@ export class DelegationService {
           updatedAt: new Date(),
         },
         systemPrompt: this.deps.composeSystemPrompt(target),
+        userEvent: { type: 'user.message', content: [{ type: 'text', text: task }] },
         messages: [{ role: 'user', content: [{ type: 'text', text: task }] }] as any,
+        modelConfig,
         model,
         tools,
         sandbox,
@@ -173,7 +197,7 @@ export class DelegationService {
         },
       };
 
-      for await (const _evt of this.deps.strategy.execute(subContext)) {
+      for await (const _evt of strategy.execute(subContext)) {
         // sub-agent events are ephemeral
       }
 
