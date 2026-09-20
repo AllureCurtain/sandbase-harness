@@ -118,8 +118,11 @@ export class DefaultSessionExecutor implements SessionExecutor {
     }
 
     // Pi owns model transport, but it still receives the selected concrete
-    // model configuration. Builtin strategies retain AI SDK construction.
-    const modelConfig = modelRegistry.resolveModelConfig(agent.model);
+    // model configuration. Builtin strategies retain AI SDK construction and
+    // do not need registry resolution before their existing model factory.
+    const modelConfig = strategy.requiresModel === false
+      ? modelRegistry.resolveModelConfig(agent.model)
+      : undefined;
     const model = strategy.requiresModel === false ? undefined : modelRegistry.createModel(agent.model);
 
     // 3. Provision sandbox (or reuse the one bound to this session)

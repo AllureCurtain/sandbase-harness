@@ -140,8 +140,11 @@ export class DelegationService {
       assertPiAgentCanExecute(target);
     }
     // Pi owns its transport but still needs the selected concrete model config.
-    // Builtin strategies keep their existing AI SDK model construction path.
-    const modelConfig = this.deps.modelRegistry.resolveModelConfig(target.model);
+    // Builtin strategies keep their existing AI SDK model construction path and
+    // do not need registry resolution before that factory runs.
+    const modelConfig = strategy.requiresModel === false
+      ? this.deps.modelRegistry.resolveModelConfig(target.model)
+      : undefined;
     const model = strategy.requiresModel === false
       ? undefined
       : this.deps.modelRegistry.createModel(target.model);
