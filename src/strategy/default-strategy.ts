@@ -21,6 +21,7 @@ import type { LanguageModel } from 'ai';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
+import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
 /** Max characters retained per tool result (OMA parity). */
@@ -147,6 +148,9 @@ export class DefaultStrategy implements AgentStrategy {
     }> = [];
     const modelUsed = modelIdentifier(model, '');
     const startTime = Date.now();
+    // Declared MCP server names, used to attribute `agent.mcp_*` events back to
+    // the server that produced them when several servers expose the same tool.
+    const mcpServerNames = (session.agentDefinition?.mcp_servers ?? []).map((server) => server.name);
 
     try {
       // Build Vercel AI SDK tool definitions from our CoreTool map
@@ -254,6 +258,7 @@ export class DefaultStrategy implements AgentStrategy {
               }
 
               const isMcp = toolCall.toolName.startsWith('mcp_');
+              const mcpServerName = isMcp ? resolveMcpServerName(toolCall.toolName, mcpServerNames) : undefined;
               const toolUseEvent = eventLog.append(session.id, {
                 type: isMcp ? 'agent.mcp_tool_use' : 'agent.tool_use',
                 content: [{
@@ -266,6 +271,7 @@ export class DefaultStrategy implements AgentStrategy {
                 tokensOut,
                 modelUsed,
                 stopReason,
+                ...(mcpServerName ? { metadata: { mcp_server_name: mcpServerName } } : {}),
               });
               broadcast(toolUseEvent);
             }
@@ -275,6 +281,9 @@ export class DefaultStrategy implements AgentStrategy {
           if (step.toolResults && step.toolResults.length > 0) {
             for (const toolResult of step.toolResults) {
               const isMcp = toolResult.toolName?.startsWith('mcp_') ?? false;
+              const mcpServerName = isMcp
+                ? resolveMcpServerName(toolResult.toolName ?? '', mcpServerNames)
+                : undefined;
               const raw = typeof toolResult.output === 'string'
                 ? toolResult.output
                 : JSON.stringify(toolResult.output);
@@ -290,6 +299,7 @@ export class DefaultStrategy implements AgentStrategy {
                 }] as ContentBlock[],
                 modelUsed,
                 stopReason,
+                ...(mcpServerName ? { metadata: { mcp_server_name: mcpServerName } } : {}),
               });
               broadcast(toolResultEvent);
             }

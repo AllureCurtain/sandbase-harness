@@ -34,6 +34,35 @@ export function reconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
 }
 
+/** Prefix every MCP-provided tool carries in the runtime tool map. */
+export const MCP_TOOL_PREFIX = 'mcp_';
+
+/** Runtime tool name for one of a server's tools: `mcp_<server>_<tool>`. */
+export function mcpToolName(serverName: string, toolName: string): string {
+  return `${MCP_TOOL_PREFIX}${serverName}_${toolName}`;
+}
+
+/**
+ * Recover the MCP server identity behind a runtime tool name.
+ *
+ * The runtime name is `mcp_<server>_<tool>`, which is ambiguous on its own
+ * because both segments may contain underscores. Resolving it against the
+ * declared server names and preferring the longest match makes the answer
+ * deterministic for the agents we actually run, and returns `undefined` rather
+ * than guessing when nothing matches. Events use this so a tool call can be
+ * attributed to a server even when two servers expose the same tool name.
+ */
+export function resolveMcpServerName(toolName: string, serverNames: readonly string[]): string | undefined {
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) return undefined;
+  let best: string | undefined;
+  for (const name of serverNames) {
+    if (!name) continue;
+    if (!toolName.startsWith(`${MCP_TOOL_PREFIX}${name}_`)) continue;
+    if (best === undefined || name.length > best.length) best = name;
+  }
+  return best;
+}
+
 export interface McpServerStatus {
   name: string;
   type: 'stdio' | 'url';
@@ -84,7 +113,7 @@ export class McpManager {
         this.liveTools.set(server.name, result.tools);
         let count = 0;
         for (const toolName of Object.keys(result.tools)) {
-          merged[`mcp_${server.name}_${toolName}`] = this.wrapTool(server.name, toolName);
+          merged[mcpToolName(server.name, toolName)] = this.wrapTool(server.name, toolName);
           count++;
         }
         this.setStatus(server, true, count);
@@ -148,7 +177,7 @@ export class McpManager {
         const tools: Record<string, unknown> = {};
         let count = 0;
         for (const toolName of Object.keys(result.tools)) {
-          tools[`mcp_${serverName}_${toolName}`] = this.wrapTool(serverName, toolName);
+          tools[mcpToolName(serverName, toolName)] = this.wrapTool(serverName, toolName);
           count++;
         }
         this.setStatus(server, true, count);
