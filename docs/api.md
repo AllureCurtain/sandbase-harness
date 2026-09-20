@@ -615,6 +615,32 @@ curl -X POST http://127.0.0.1:3000/v1/files \
 
 The per-file upload limit is 10 MB.
 
+### Mounting a file into a session
+
+A file attached to a session carries a `mount_path` that is a logical path inside
+the session, not a sandbox path. The runtime maps it under its own mount root, so
+the caller never has to know the sandbox layout:
+
+```json
+{ "type": "file", "file_id": "file_01J...", "mount_path": "/data.csv" }
+```
+
+| Input `mount_path` | Resulting sandbox path |
+| --- | --- |
+| `/data.csv` | `/mnt/session/uploads/data.csv` |
+| `/src/main.py` | `/mnt/session/uploads/src/main.py` |
+| omitted or blank | `/mnt/session/uploads/<file_id>` |
+| `/uploads/file.txt` | `/mnt/session/uploads/uploads/file.txt` |
+
+The whole relative path is preserved, so a nested layout is not flattened to its
+basename. Validation runs on the logical path before the mapping, and a path that
+is relative, contains `.` or `..`, contains an empty segment, contains a backslash
+or a NUL byte, or names the bare root is rejected with `invalid_request_error`.
+
+The historical `/uploads/` prefix is still accepted as a logical path, so an
+existing request keeps working; it simply no longer maps to the mount root
+itself.
+
 ## Session Artifacts
 
 Artifacts are generated outputs associated with a session. They use the same

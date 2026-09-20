@@ -1,6 +1,7 @@
 import type { ServerDeps } from '../server.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { encryptSecret } from '@/core/security/secrets.js';
+import { resolveFileMountPath } from '@/core/session/file-mount-path.js';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
@@ -86,12 +87,18 @@ function normalizeSessionResource(deps: ServerDeps, resource: Record<string, unk
 
 export function normalizeFileResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
   const fileId = readString(resource.file_id);
-  const mountPath = readString(resource.mount_path);
   if (!fileId?.startsWith('file_')) return { ok: false, message: `resources[${index}].file_id is required` };
-  if (!mountPath?.startsWith('/uploads/')) return { ok: false, message: `resources[${index}].mount_path must start with /uploads/` };
+  // `mount_path` is a logical path inside the session, not an internal sandbox
+  // path. The mapping to the mount root happens here, so a caller never has to
+  // know the sandbox layout and a traversal attempt cannot be made to look
+  // valid by carrying the internal prefix.
+  const mount = resolveFileMountPath(readString(resource.mount_path), fileId);
+  if (!mount.ok || !mount.mountPath) {
+    return { ok: false, message: `resources[${index}].mount_path ${mount.message ?? 'is invalid'}` };
+  }
   const row = deps.db.prepare("SELECT id FROM files WHERE id = ? AND role = 'file' AND archived_at IS NULL").get(fileId);
   if (!row) return { ok: false, message: `File not found: ${fileId}` };
-  return { ok: true, value: { type: 'file', file_id: fileId, mount_path: mountPath } };
+  return { ok: true, value: { type: 'file', file_id: fileId, mount_path: mount.mountPath } };
 }
 
 function normalizeGithubRepositoryResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
