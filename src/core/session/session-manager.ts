@@ -16,6 +16,7 @@ import { EventLogger } from './event-logger.js';
 import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
 import { findOrphanedToolUses } from './session-recovery.js';
 import { rowToSession, type SessionRow } from './session-records.js';
+import { buildSessionUsageSnapshot } from './session-usage.js';
 import { canTransition, isTerminal } from './state-machine.js';
 import type {
   Session,
@@ -569,12 +570,40 @@ export class SessionManager {
     // Broadcast the corresponding CMA lifecycle event
     const eventType = eventTypeForStatus(newStatus);
     if (eventType) {
+      const events = this.eventLogger.getEvents(sessionId);
+      // Hard ordering guarantee: `session.usage` always sits immediately before
+      // `session.status_idle`, so a client can settle the finished turn from the
+      // snapshot before it observes the idle transition. Terminal transitions
+      // are deliberately not covered — the upstream guarantee is defined for
+      // idle, and this runtime only claims what it has verified.
+      if (eventType === 'session.status_idle') {
+        this.appendUsageSnapshot(sessionId, events);
+      }
       const statusEvent = this.eventLogger.append(sessionId, {
         type: eventType,
-        metadata: lifecycleMetadataFor(newStatus, this.eventLogger.getEvents(sessionId)),
+        metadata: lifecycleMetadataFor(newStatus, events),
       });
       this.broadcast(sessionId, statusEvent);
     }
+  }
+
+  /**
+   * Append and broadcast the `session.usage` snapshot for the session's current
+   * aggregate. Cost, budget, and server-tool counters are omitted rather than
+   * reported as zero: this runtime has no truthful value for them, and a `0`
+   * would read as "supported, currently zero".
+   */
+  private appendUsageSnapshot(sessionId: string, events: SessionEvent[]): void {
+    const session = this.get(sessionId);
+    const usage = buildSessionUsageSnapshot(events, {
+      tokensIn: session?.usage?.tokensIn,
+      tokensOut: session?.usage?.tokensOut,
+    });
+    const usageEvent = this.eventLogger.append(sessionId, {
+      type: 'session.usage',
+      metadata: { usage },
+    });
+    this.broadcast(sessionId, usageEvent);
   }
 
   /**

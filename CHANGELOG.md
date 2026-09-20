@@ -4,6 +4,13 @@
 
 ### Added
 
+- Writes a `session.usage` snapshot event immediately before every
+  `session.status_idle`. The snapshot reports the session's aggregate
+  input/output token counters plus `active_seconds`, the wall-clock time the
+  harness loop spent executing the session, derived from the append-only event
+  log so it survives restarts without a migration. Cost, budget, and
+  server-tool counters are omitted rather than reported as zero.
+
 - Makes new-session `loop_engine` admission fail closed. The optional request
   override resolves against one Settings descriptor source, freezes the selected
   executable engine on the session, returns stable `loop_engine_invalid` and

@@ -751,6 +751,36 @@ describe('Managed Agents API', () => {
       expect(text).toContain('event: session.status_idle');
     });
 
+    it('emits a session.usage snapshot immediately before session.status_idle', async () => {
+      const id = await createSession();
+      const res = await app.request(`/v1/sessions/${id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'hello' }),
+      });
+
+      const text = await res.text();
+      const usageAt = text.indexOf('event: session.usage');
+      const idleAt = text.indexOf('event: session.status_idle');
+      expect(usageAt).toBeGreaterThan(-1);
+      expect(usageAt).toBeLessThan(idleAt);
+
+      const events = ((await (await app.request(`/v1/sessions/${id}/events`)).json()) as any).data as any[];
+      const usageIndex = events.findIndex((event) => event.type === 'session.usage');
+      const idleIndex = events.findIndex((event) => event.type === 'session.status_idle');
+      expect(usageIndex).toBeGreaterThan(-1);
+      expect(idleIndex).toBe(usageIndex + 1);
+
+      const usage = events[usageIndex].usage;
+      expect(usage.input_tokens).toBe(0);
+      expect(usage.output_tokens).toBe(0);
+      expect(usage.active_seconds).toBeGreaterThanOrEqual(0);
+      // Capabilities this runtime does not have are omitted, not zeroed.
+      expect(usage).not.toHaveProperty('list_cost');
+      expect(usage).not.toHaveProperty('budget');
+      expect(usage).not.toHaveProperty('server_tool_use');
+    });
+
     it('returns 404 for messages on non-existent sessions', async () => {
       const res = await app.request('/v1/sessions/sess_nope/messages', {
         method: 'POST',
