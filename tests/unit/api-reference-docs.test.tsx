@@ -43,6 +43,7 @@ describe('API reference docs', () => {
       'runtime.ts': '/v1/x',
       'settings.ts': '/v1/x/settings',
       'sessions.ts': '/v1/sessions',
+      'runs.ts': '/v1/runs',
       'skills.ts': '/v1/skills',
       'stream.ts': '/v1/sessions',
       'templates.ts': '/v1/x/templates',

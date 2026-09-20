@@ -1,0 +1,91 @@
+[
+  {
+    "id": "runs-create",
+    "group": "Runs",
+    "title": "Create a run",
+    "method": "POST",
+    "path": "/v1/runs",
+    "summary": "Start one turn and return its result without driving the session lifecycle.",
+    "parameters": [
+      {
+        "name": "agent",
+        "type": "string | { id, version }",
+        "description": "Agent id, or an object pinning a version.",
+        "required": true
+      },
+      {
+        "name": "input",
+        "type": "string | ContentBlock[]",
+        "description": "The user message for this turn. Must be non-empty.",
+        "required": true
+      },
+      {
+        "name": "environment_id",
+        "type": "string",
+        "description": "Environment to run in. Defaults to the local environment."
+      },
+      {
+        "name": "loop_engine",
+        "type": "builtin | pi",
+        "description": "Engine override for the created session. An unavailable engine returns loop_engine_not_supported; an unknown value returns loop_engine_invalid."
+      },
+      {
+        "name": "response_mode",
+        "type": "wait | sse | async",
+        "description": "How the answer is delivered. Defaults to wait."
+      },
+      {
+        "name": "max_wait_seconds",
+        "type": "number",
+        "description": "Upper bound for the wait mode, 0 to 3600. Defaults to 60."
+      },
+      {
+        "name": "session",
+        "type": "object",
+        "description": "Session fields applied at creation: title, resources, vault_ids, metadata."
+      }
+    ],
+    "response": [
+      {
+        "name": "run_id",
+        "type": "string",
+        "description": "The session that ran the turn."
+      },
+      {
+        "name": "session_id",
+        "type": "string",
+        "description": "Same value as run_id; a run is one turn of one session."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "description": "completed, failed, cancelled, timed_out, cleanup_pending (200), or running, requires_action (202)."
+      },
+      {
+        "name": "output",
+        "type": "ContentBlock[]",
+        "description": "The agent.message content blocks produced by the turn."
+      },
+      {
+        "name": "usage",
+        "type": "object",
+        "description": "input_tokens and output_tokens for the session."
+      },
+      {
+        "name": "events_url",
+        "type": "string",
+        "description": "Where to read the durable event log (202 responses)."
+      },
+      {
+        "name": "stream_url",
+        "type": "string",
+        "description": "Where to resume the SSE stream (202 responses)."
+      },
+      {
+        "name": "wait_deadline_reached",
+        "type": "boolean",
+        "description": "Present only in wait mode when max_wait_seconds elapsed. The session keeps running."
+      }
+    ]
+  }
+]

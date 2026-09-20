@@ -447,6 +447,47 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### Runs
+
+`POST /v1/runs` starts one turn and returns its result, so a client does not have to
+drive the session lifecycle by hand. A run is one turn of one session, so
+`run_id` and `session_id` are always the same value.
+
+```json
+{
+  "agent": "agent_echo-agent",
+  "input": "Summarize this repo.",
+  "response_mode": "wait",
+  "max_wait_seconds": 60
+}
+```
+
+`response_mode` selects how the answer is delivered:
+
+| Mode | Response |
+| --- | --- |
+| `wait` (default) | 200 with `run_id`, `session_id`, `status`, `output` (the `agent.message` content blocks), and `usage`. |
+| `sse` | An SSE stream of the session's events, ending on a terminal event. |
+| `async` | 202 with `run_id`, `session_id`, `status`, `events_url`, and `stream_url`. |
+
+`max_wait_seconds` bounds only the `wait` mode, from 0 to 3600. When it elapses
+with the turn still working, the answer is 202 with the query handle and
+`wait_deadline_reached: true`. That is a transport deadline, not an execution
+timeout: the session keeps running and its terminal state is not pre-empted.
+
+The optional `session` object applies session fields at creation: `title`,
+`resources`, `vault_ids`, and `metadata`.
+
+A refusal that happens before a turn starts is answered with its own status
+rather than as a runtime fault: an unavailable engine returns
+`loop_engine_not_supported`, an unknown value returns `loop_engine_invalid`,
+and an unknown agent returns 404. A failure raised while waiting or streaming is
+recorded once into the session's event log as `session.error`, so it replays
+from `GET /v1/sessions/{id}/events` exactly like one the turn loop recorded
+itself.
+
+Session budgets are not part of this endpoint.
+
 ### Starting a session with initial events
 
 `POST /v1/sessions` accepts an optional `initial_events` array so a client can

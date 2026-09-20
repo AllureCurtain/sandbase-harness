@@ -4,6 +4,15 @@
 
 ### Added
 
+- Adds `POST /v1/runs`, which starts one turn and returns its result without
+  driving the session lifecycle. `response_mode` selects `wait` (200 with
+  the output and usage), `sse` (event stream), or `async` (202 with a
+  query handle); `max_wait_seconds` bounds only the wait and answers 202 with
+  `wait_deadline_reached` when it elapses, leaving the turn running. A refusal
+  before a turn starts answers with its own status, and a failure raised while
+  waiting or streaming is recorded once as `session.error` so it replays from
+  the session's event log. Session budgets are not part of this endpoint.
+
 - Lets `POST /v1/sessions` start a session in one call with an optional
   `initial_events` array of `user.message` events. A non-empty list yields a
   `running` session whose event log already holds every supplied event, in

@@ -11,6 +11,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sessionsRoutes } from './routes/sessions.js';
+import { runsRoutes } from './routes/runs.js';
 import { agentsRoutes } from './routes/agents.js';
 import { resourceRoutes } from './routes/resources.js';
 import { skillsRoutes } from './routes/skills.js';
@@ -167,6 +168,7 @@ export function createServer(deps: ServerDeps) {
 
   // Managed Agents API endpoints
   app.route('/v1/sessions', sessionsRoutes(deps));
+app.route('/v1/runs', runsRoutes(deps));
   app.route('/v1/agents', agentsRoutes(deps));
   app.route('/v1', resourceRoutes(deps));
   app.route('/v1/skills', skillsRoutes(deps));

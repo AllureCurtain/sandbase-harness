@@ -528,6 +528,35 @@ export class SessionManager {
     this.broadcast(sessionId, deletedEvent);
   }
 
+  /**
+   * Record a failure once against a session's durable log.
+   *
+   * A run or a streaming turn can be refused after the session already
+   * exists. Writing the failure into the Event Log makes it replayable from
+   * `GET /v1/sessions/{id}/events` exactly like one the turn loop recorded
+   * itself, so a client that reconnects sees the same incident instead of a
+   * gap. The guard keeps one incident from being written twice: a repeated
+   * failure with the same message returns the event already on the log.
+   */
+  recordErrorOnce(sessionId: string, error: unknown): SessionEvent | undefined {
+    const events = this.eventLogger.getEvents(sessionId);
+    const tail = events[events.length - 1];
+    const message = error instanceof Error ? error.message : String(error);
+    if (tail?.type === 'session.error' && tail.content) {
+      const recorded = (tail.content as Array<{ type?: string; text?: unknown }>)[0];
+      if (recorded?.type === 'text' && recorded.text === message) {
+        return tail;
+      }
+    }
+    const event = this.eventLogger.append(sessionId, {
+      type: 'session.error',
+      content: [{ type: 'text', text: message }],
+      ...(errorCodeOf(error) ? { metadata: { code: errorCodeOf(error) } } : {}),
+    });
+    this.broadcast(sessionId, event);
+    return event;
+  }
+
   /** Await the current execution chain for a session (if any), swallowing errors. */
   private async drainChain(sessionId: string): Promise<void> {
     const chain = this.executionChains.get(sessionId);
