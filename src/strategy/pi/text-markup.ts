@@ -136,12 +136,8 @@ function looksLikeControlPrefix(value: string): boolean {
 }
 
 function stripControlTokens(value: string): string {
-  const withoutControlTokens = value.replace(PI_CONTROL_TOKEN_RE, '');
-  return escapePiHtmlText(withoutControlTokens);
-}
-
-function escapePiHtmlText(value: string): string {
   return value
+    .replace(PI_CONTROL_TOKEN_RE, '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
