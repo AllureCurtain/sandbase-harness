@@ -23,7 +23,12 @@ export interface RuntimeCapability {
   reason?: string;
 }
 
-const UNSAFE_WEB_TOOL_REASON = 'No safe executable implementation is available in this runtime.';
+/**
+ * Kept distinct from a generic "unsafe" reason: web_search is not missing a safe
+ * implementation, it is missing a provider. Conflating the two would tell an
+ * operator the same thing about two different gaps.
+ */
+const WEB_SEARCH_NO_PROVIDER_REASON = 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.';
 
 const DEFAULT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
   { id: 'bash', kind: 'tool', status: 'available' },
@@ -32,8 +37,9 @@ const DEFAULT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
   { id: 'write', kind: 'tool', status: 'available' },
   { id: 'glob', kind: 'tool', status: 'available' },
   { id: 'grep', kind: 'tool', status: 'available' },
-  { id: 'web_fetch', kind: 'tool', status: 'unavailable', reason: UNSAFE_WEB_TOOL_REASON },
-  { id: 'web_search', kind: 'tool', status: 'unavailable', reason: UNSAFE_WEB_TOOL_REASON },
+  // web_fetch executes behind the address guard in core/web/web-fetch.ts.
+  { id: 'web_fetch', kind: 'tool', status: 'available' },
+  { id: 'web_search', kind: 'tool', status: 'unavailable', reason: WEB_SEARCH_NO_PROVIDER_REASON },
 ];
 
 export class UnsupportedCapabilityError extends Error {

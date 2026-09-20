@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Added
+- Executes `web_fetch` behind an SSRF address guard. The guard refuses internal
+  host names before DNS, refuses every resolution that is loopback, RFC 1918,
+  link-local, or CGNAT (including IPv4-mapped IPv6 forms), and pins the connection
+  to the validated address so a second resolution cannot disagree with the first.
+  Every redirect hop restarts the checks, the domain lists the agent declared are
+  enforced, and an oversized body, a stalled response, and a binary content type
+  are each handled without inlining the content. Failures return a tool error
+  rather than a fake success. `web_search` stays unavailable because no search
+  provider is bundled.
 - Publishes the files an agent writes under `/mnt/session/outputs/` as
   session-scoped file records after each turn, so the deliverables become
   retrievable through the Files API. The output directory is walked rather than

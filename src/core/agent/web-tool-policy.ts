@@ -8,15 +8,15 @@
  *    whether this runtime can execute web tools. It must be rejected at the
  *    same entry points the contract names (agent create/update, session
  *    create/update) with a 400 `invalid_request_error`.
- * 2. Can the configuration be *executed*? This runtime has no safe web tool
- *    implementation, so an enabled web tool is refused by capability
+ * 2. Can the configuration be *executed*? `web_fetch` executes through the
+ *    WebFetch tool in `core/web/web-fetch.ts`, which consumes the resolved
+ *    lists via {@link resolveWebToolExecutionPolicy}. `web_search` has no
+ *    search provider, so an enabled entry is still refused by capability
  *    admission. That check lives in the capability registry, not here.
  *
- * Keeping them apart means `{"name": "web_fetch", "enabled": false,
- * "blocked_domains": [...]}` is a storable declaration of intent, while
- * `{"name": "web_fetch"}` (enabled by default) is not — the first is a valid
- * configuration the runtime currently cannot run, the second would be an
- * agent that claims to browse and never can.
+ * Keeping them apart means a malformed list is rejected even on a disabled
+ * entry — a broken declaration of intent is still broken — while the
+ * execution question is answered separately by the capability registry.
  *
  * Rules implemented from 工具.md §"域名列表规则" (`claude-managed-agents-docs`):
  * - One of `allowed_domains` / `blocked_domains` per entry, never both.
@@ -46,6 +46,7 @@
  */
 
 import { z } from 'zod';
+import type { AgentToolset } from '@/types/agent.js';
 
 /** The only tool names that accept domain lists. */
 export const WEB_TOOL_NAMES = ['web_fetch', 'web_search'] as const;
@@ -387,3 +388,29 @@ export const webToolPolicyFieldsSchema = {
     })
     .optional(),
 } as const;
+/**
+ * Resolve the *execution* policy for one web tool from an agent definition.
+ *
+ * The ingress validator guarantees the grammar, so this only normalizes:
+ * lowercase, trailing slash removed, first matching config entry wins. A tool
+ * with neither list yields `mode: undefined`, which the executor reads as
+ * "no domain restriction" — the address guard still applies.
+ */
+export function resolveWebToolExecutionPolicy(
+  agent: { tools?: AgentToolset[] },
+  name: WebToolName,
+): WebToolPolicy | undefined {
+  for (const toolset of agent.tools ?? []) {
+    if (toolset.type !== 'agent_toolset_20260401') continue;
+    const config = (toolset.configs ?? []).find((entry) => entry.name === name);
+    if (!config) continue;
+    const allowed = config.allowed_domains ?? undefined;
+    const blocked = config.blocked_domains ?? undefined;
+    return {
+      mode: allowed ? 'allowed' : blocked ? 'blocked' : undefined,
+      domains: (allowed ?? blocked ?? []).map((domain) => domain.toLowerCase().replace(/\/$/, '')),
+      maxContentTokens: config.max_content_tokens,
+    };
+  }
+  return undefined;
+}

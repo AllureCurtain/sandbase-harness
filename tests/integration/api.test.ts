@@ -353,14 +353,13 @@ describe('Managed Agents API', () => {
       expect(capabilities.body.capabilities).toContainEqual({
         id: 'web_fetch',
         kind: 'tool',
-        status: 'unavailable',
-        reason: 'No safe executable implementation is available in this runtime.',
+        status: 'available',
       });
       expect(capabilities.body.capabilities).toContainEqual({
         id: 'web_search',
         kind: 'tool',
         status: 'unavailable',
-        reason: 'No safe executable implementation is available in this runtime.',
+        reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.',
       });
 
       const webAgent = {
@@ -377,11 +376,10 @@ describe('Managed Agents API', () => {
       expect(rejectedAgent.res.status).toBe(400);
       expect(rejectedAgent.body.error).toEqual({
         type: 'unsupported_capability',
-        message: 'Agent requests unavailable runtime capabilities: web_fetch, web_search',
+        message: 'Agent requests unavailable runtime capabilities: web_search',
         details: {
           capabilities: [
-            { id: 'web_fetch', reason: 'No safe executable implementation is available in this runtime.' },
-            { id: 'web_search', reason: 'No safe executable implementation is available in this runtime.' },
+            { id: 'web_search', reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.' },
           ],
         },
       });

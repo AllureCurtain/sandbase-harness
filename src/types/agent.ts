@@ -86,6 +86,25 @@ export interface AgentToolConfig {
 
 export interface NamedAgentToolConfig extends AgentToolConfig {
   name: string;
+  /**
+   * `web_fetch` / `web_search` domain scope. At most one of the two lists may
+   * be set on an entry. Validated by `core/agent/web-tool-policy.ts` so the
+   * published list/index error paths survive; kept here so the policy survives
+   * a read-back instead of being dropped by an unknown-key strip.
+   */
+  allowed_domains?: string[] | null;
+  blocked_domains?: string[] | null;
+  /** `web_fetch` only: cap on page content folded into context. */
+  max_content_tokens?: number;
+  /** `web_search` only: result localization. */
+  user_location?: WebUserLocation;
+}
+
+/** Search-result localization; shape mirrors the Messages API parameter. */
+export interface WebUserLocation {
+  type?: string;
+  country?: string;
+  timezone?: string;
 }
 
 export type AgentToolset = BuiltinAgentToolset | McpToolset;
