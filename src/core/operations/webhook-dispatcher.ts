@@ -1,4 +1,9 @@
 import { createHmac } from 'node:crypto';
+import {
+  WEBHOOK_HEADERS,
+  signWebhookDelivery,
+  webhookSigningKey,
+} from './webhook-signature.js';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 
@@ -79,7 +84,19 @@ async function attemptDelivery(
   const signature = signPayload(payloadJson, opts.secret);
   const id = `whd_${nanoid(18)}`;
   const createdAt = (opts.now?.() ?? new Date()).toISOString();
-  const attempt = await postWebhook(webhook.url, payloadJson, signature, opts.fetchImpl);
+  // The published header set is keyed by the delivery id and the timestamp the
+  // signature covers, so a receiver can verify a replay or an altered body.
+  const deliveryIdentity = {
+    id,
+    timestamp: String(Math.floor(new Date(createdAt).getTime() / 1000)),
+  };
+  const attempt = await postWebhook(
+    webhook.url,
+    payloadJson,
+    signature,
+    opts.fetchImpl,
+    { ...deliveryIdentity, secret: opts.secret },
+  );
   const nextRetry = nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
     `INSERT INTO webhook_deliveries (
@@ -130,7 +147,13 @@ async function retryDelivery(
   return rowById(db, row.id);
 }
 
-async function postWebhook(url: string, payload: string, signature: string, fetchImpl: typeof fetch = fetch) {
+async function postWebhook(
+  url: string,
+  payload: string,
+  signature: string,
+  fetchImpl: typeof fetch = fetch,
+  delivery?: { id: string; timestamp: string; secret: string },
+) {
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
@@ -138,6 +161,21 @@ async function postWebhook(url: string, payload: string, signature: string, fetc
         'Content-Type': 'application/json',
         'User-Agent': 'managed-agents-webhook/0.1',
         'X-Managed-Agents-Signature': signature,
+        // The published header set. `webhook-id` and `webhook-timestamp` are
+        // what the signature covers, so a receiver can verify a replay or an
+        // altered body rather than only a forged one.
+        ...(delivery
+          ? {
+            [WEBHOOK_HEADERS.id]: delivery.id,
+            [WEBHOOK_HEADERS.timestamp]: delivery.timestamp,
+            [WEBHOOK_HEADERS.signature]: webhookDeliverySignature({
+              secret: delivery.secret,
+              id: delivery.id,
+              timestamp: delivery.timestamp,
+              body: payload,
+            }),
+          }
+          : {}),
       },
       body: payload,
     });
@@ -171,8 +209,28 @@ function eventMatches(subscriptions: string[], event: string): boolean {
   return subscriptions.includes('*') || subscriptions.includes(event) || subscriptions.some((item) => item.endsWith('.*') && event.startsWith(item.slice(0, -1)));
 }
 
+/**
+ * Legacy signature, kept so a receiver that predates the published header set
+ * keeps working. The canonical signature is carried in `webhook-signature`; see
+ * `webhook-signature.ts`.
+ */
 export function signPayload(payload: string, secret: string) {
-  return `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+  return `sha256=${createHmac('sha256', webhookSigningKey(secret)).update(payload).digest('hex')}`;
+}
+
+/**
+ * The Standard Webhooks v1 signature for one delivery.
+ *
+ * The signed content is `id.timestamp.body`, so a receiver can detect a
+ * replayed or altered delivery rather than only a forged one.
+ */
+export function webhookDeliverySignature(opts: {
+  secret: string;
+  id: string;
+  timestamp: string;
+  body: string;
+}): string {
+  return signWebhookDelivery(opts);
 }
 
 function rowById(db: Database, id: string): WebhookDeliveryResult {
