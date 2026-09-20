@@ -27,7 +27,7 @@ import type {
   ListSessionsParams,
   PaginatedResult,
 } from '@/types/session.js';
-import type { UserEvent } from '@/types/cma-protocol.js';
+import type { ContentBlock, UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import {
   runtimeCapabilityRegistry,
@@ -365,6 +365,71 @@ export class SessionManager {
         if (set.size === 0) this.subscribers.delete(sessionId);
       }
     };
+  }
+
+  /**
+   * Create a session and, in the same transaction, append the caller's initial
+   * events.
+   *
+   * A non-empty list starts the session `running` once the log is durable, so
+   * the client's first turn is the one it asked for instead of an idle session
+   * it has to poke. Creation and the events commit together: a throw inside the
+   * transaction discards the row and every event appended before it, so a
+   * rejected batch never leaves a session or a partial history behind.
+   */
+  createWithInitialEvents(params: CreateSessionParams, events: UserEvent[]): Session {
+    const session = this.db.transaction(() => {
+      const created = this.create(params);
+      // Validate against the real row, not a synthetic id: admission checks
+      // read the durable session and its log, so they only mean anything once
+      // the row exists. Inside the transaction a throw discards the row and
+      // every event appended before it, which is the property that matters.
+      for (const event of events) {
+        this.assertSessionCanAcceptEvent(created.id, event);
+      }
+      for (const event of events) {
+        this.appendUserEventInTransaction(created.id, event);
+      }
+      return created;
+    });
+
+    // Post-commit: the log is durable, so the turn can now be queued.
+    if (events.length > 0 && this.executor) {
+      this.updateStatus(session.id, 'running');
+    }
+    for (const event of events) {
+      this.enqueueTurnForEvent(session.id, event);
+    }
+    return this.get(session.id) ?? session;
+  }
+
+  /**
+   * Append one user event to the log and broadcast it. This is the synchronous
+   * half of `sendEvent` — everything except starting the model loop.
+   */
+  private appendUserEventInTransaction(sessionId: string, event: UserEvent): void {
+    const logged = this.eventLogger.append(sessionId, {
+      type: event.type,
+      content: 'content' in event ? (event as { content?: ContentBlock[] }).content : undefined,
+    });
+    this.broadcast(sessionId, logged);
+  }
+
+  /** Queue the turn for one initial event, serialized per session. */
+  private enqueueTurnForEvent(sessionId: string, event: UserEvent): void {
+    if (!this.executor) return;
+    const prev = this.executionChains.get(sessionId) ?? Promise.resolve();
+    const next = prev
+      .catch(() => {}) // isolate failures so one bad turn doesn't wedge the chain
+      .then(() => this.runTurn(sessionId, event))
+      .catch(() => {}); // never let a turn (even its prelude) reject the chain
+    this.executionChains.set(sessionId, next);
+    // Clean up the map entry once this is the last queued turn (L1 leak fix).
+    void next.finally(() => {
+      if (this.executionChains.get(sessionId) === next) {
+        this.executionChains.delete(sessionId);
+      }
+    });
   }
 
   /**

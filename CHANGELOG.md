@@ -4,6 +4,12 @@
 
 ### Added
 
+- Lets `POST /v1/sessions` start a session in one call with an optional
+  `initial_events` array of `user.message` events. A non-empty list yields a
+  `running` session whose event log already holds every supplied event, in
+  order; an absent field and an empty array still create an idle session. The
+  batch is validated and written inside the creation transaction, so a rejected
+  batch leaves no session row and no partial history behind.
 - Attributes `agent.mcp_tool_use` and `agent.mcp_tool_result` events to the MCP
   server that produced them. Both events carry `mcp_server_name`, results also
   carry `mcp_tool_use_id`, and the identity is projected onto the public API
