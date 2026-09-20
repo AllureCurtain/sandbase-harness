@@ -1006,6 +1006,33 @@ with `400 unsupported_capability` before an agent or session is persisted. In
 particular, `web_fetch` and `web_search` cannot reach model or tool execution
 until safe runtime implementations exist.
 
+### Web tool domain lists
+
+`web_fetch` and `web_search` accept an optional domain list. Expressing a list is
+independent of being able to run the tool: a disabled `web_fetch` with a
+`blocked_domains` list is a storable declaration of intent, while an enabled
+`web_fetch` is still refused by capability admission.
+
+Agent create/update and session creation enforce these rules:
+
+| Rule | Detail |
+| --- | --- |
+| One list per entry | `allowed_domains` or `blocked_domains`, never both. |
+| Non-empty | An empty list is ambiguous and rejected; `null` means no restriction. |
+| Size | 1-64 domains, each 1-255 characters. |
+| Hostname shape | Plain ASCII hostname. No scheme, port, credentials, wildcard, whitespace, or path. No label may start or end with a hyphen. |
+| Not an address | Any IP form is rejected, including bracketed IPv6 and numeric shorthand such as `127.1`. |
+| Not internal | `localhost`, `.localhost`, `.local`, `.internal`, `.localdomain`, and `.invalid` are rejected. |
+| Not a suffix | Bare registry suffixes such as `com`, `co.uk`, and single-label names such as `intranet` are rejected. |
+| Path suffix | `web_fetch` domains carry no path; `web_search` may carry one suffix without whitespace or any of `? # $ , | ^ !`. |
+| Unique | Duplicates are rejected after lowercasing and stripping one trailing slash. `www.example.com` does not stand in for `example.com`. |
+
+`max_content_tokens` is accepted only on `web_fetch`; `user_location` only on
+`web_search`.
+
+A rejected list answers `400 invalid_request_error` naming the exact list and
+zero-based index, for example `tools.0.configs.1.allowed_domains.2`.
+
 The runtime never returns raw API keys or resolved secret values to the Console.
 
 Settings V2 is the source of truth for model vendor, loop engine, storage,
