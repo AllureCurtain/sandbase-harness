@@ -105,6 +105,8 @@ export interface SessionEvent {
 export interface CreateSessionParams {
   agent: string; // agent name or ID
   agentVersion?: number;
+  /** Engine override for this session only; omitted means the effective default. */
+  loopEngine?: SessionLoopEngine;
   environmentId?: string;
   /** Internal memory scope used by the current runtime; not exposed as a public API field. */
   contextId?: string;

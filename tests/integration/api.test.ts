@@ -57,7 +57,7 @@ describe('Managed Agents API', () => {
       }),
     );
 
-    const sessionManager = new SessionManager(db, undefined, 'pi');
+    const sessionManager = new SessionManager(db, undefined, 'pi', undefined, (engine) => engine === 'builtin' || engine === 'pi');
     sessionManager.setExecutor({
       async *execute(session: Session, event: UserEvent): AsyncIterable<SessionEvent> {
         // UserEvent is a discriminated union and only some members carry
@@ -208,6 +208,62 @@ describe('Managed Agents API', () => {
       expect(body.status).toBe('idle');
       expect(body.agent.id).toBe('agent_echo-agent');
       expect(body.agent.name).toBe('echo-agent');
+      expect(body.loop_engine).toBe('pi');
+    });
+
+    it('freezes an explicit executable loop engine in create, detail, and list responses', async () => {
+      const created = await postJson('/v1/sessions', { agent: 'agent_echo-agent', loop_engine: 'builtin' });
+      expect(created.res.status).toBe(201);
+      expect(created.body.loop_engine).toBe('builtin');
+
+      const detail = await getJson(`/v1/sessions/${created.body.id}`);
+      expect(detail.body.loop_engine).toBe('builtin');
+
+      const list = await getJson('/v1/sessions');
+      const listed = (list.body.data as Array<{ id: string; loop_engine: string }>)
+        .find((session) => session.id === created.body.id);
+      expect(listed?.loop_engine).toBe('builtin');
+    });
+
+    it('rejects unavailable or invalid engines before creating a session row', async () => {
+      for (const [loop_engine, code] of [
+        ['codex', 'loop_engine_not_supported'],
+        ['gpt-5', 'loop_engine_invalid'],
+        [42, 'loop_engine_invalid'],
+      ] as const) {
+        const before = (db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count;
+        const rejected = await postJson('/v1/sessions', { agent: 'agent_echo-agent', loop_engine });
+        expect(rejected.res.status).toBe(400);
+        expect(rejected.body.error.code).toBe(code);
+        const after = (db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count;
+        expect(after).toBe(before);
+      }
+    });
+
+    it('keeps the Pi policy gate on explicit engine selection', async () => {
+      db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+        'agent_pi_admission_always_ask',
+        'pi-admission-always-ask',
+        JSON.stringify({
+          name: 'pi-admission-always-ask',
+          model: 'gpt-4o',
+          system: 'Ask first.',
+          tools: [{
+            type: 'agent_toolset_20260401',
+            configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
+          }],
+        }),
+      );
+
+      const rejected = await postJson('/v1/sessions', {
+        agent: 'agent_pi_admission_always_ask',
+        loop_engine: 'pi',
+      });
+      expect(rejected.res.status).toBe(400);
+      expect(rejected.body.error.code).toBe('pi_always_ask_not_supported');
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?')
+        .get('agent_pi_admission_always_ask')).toEqual({ count: 0 });
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_admission_always_ask');
     });
 
     it('reports executable capabilities and rejects unavailable web tools before persistence', async () => {

@@ -29,6 +29,8 @@ export interface RuntimeSessionServicesOptions {
   loopEngine?: SessionLoopEngine;
   /** Resolve the strategy matching a persisted session engine. */
   resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
+  /** Engines this process can actually dispatch for new sessions. */
+  isLoopEngineAvailable?: (loopEngine: SessionLoopEngine) => boolean;
   skills: Skill[];
   skillsDir?: string;
   memory?: MemoryProvider;
@@ -51,6 +53,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     runtimeCapabilityRegistry,
     options.loopEngine ?? 'builtin',
     (environmentId: string) => options.runtimeComposition.resolveEnvironmentConfig(environmentId)?.sandbox_provider,
+    options.isLoopEngineAvailable,
   );
   const eventLogger = sessionManager.getEventLogger();
   const snapshots = new SnapshotManager(options.db, options.artifactStore.path('snapshots'));

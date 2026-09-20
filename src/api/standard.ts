@@ -1,5 +1,5 @@
 import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
-import type { Session, SessionEvent } from '@/types/session.js';
+import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
 
 export interface ApiPage<T extends { id: string }> {
   data: T[];
@@ -43,6 +43,8 @@ export interface ApiSession {
   title: string | null;
   agent: ApiAgent | { id: string; type: 'agent'; name: string };
   environment_id: string;
+  /** Engine frozen when the session was created, not the current Settings default. */
+  loop_engine: SessionLoopEngine;
   status: 'idle' | 'running' | 'requires_action' | 'terminated' | 'failed' | 'cancelled' | 'timed_out' | 'cleanup_pending';
   resources: ApiSessionResource[];
   vault_ids: string[];
@@ -135,6 +137,8 @@ export function toApiSession(session: Session, agent?: AgentDefinition): ApiSess
       ? toApiAgent(agent, { id: session.agentId, version: session.agentVersion })
       : { id: session.agentId, type: 'agent', name: session.agentName },
     environment_id: session.environmentId,
+    // Legacy rows predate explicit engine selection and were executed by builtin.
+    loop_engine: session.loopEngine ?? 'builtin',
     status: toApiSessionStatus(session.status),
     resources: parseJsonArray<Record<string, unknown>>(session.resources).map(toApiSessionResource),
     vault_ids: parseJsonArray(session.vaultIds),
