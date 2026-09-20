@@ -447,6 +447,40 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### Usage snapshots
+
+`session.usage` is written immediately before every `session.status_idle`, so a
+client can settle the finished turn before it observes the idle transition:
+
+```json
+{
+  "type": "session.usage",
+  "usage": {
+    "input_tokens": 5000,
+    "output_tokens": 3200,
+    "active_seconds": 12.5
+  }
+}
+```
+
+`active_seconds` is the wall-clock time the harness loop was executing the
+session, derived from the `session.status_running` → `session.status_idle`
+intervals in the durable log. Fields this runtime cannot report truthfully are
+omitted rather than sent as zero, because a `0` reads as "supported, currently
+zero":
+
+| Field | Status |
+| --- | --- |
+| `input_tokens`, `output_tokens` | Reported from the session's aggregate token counters. |
+| `active_seconds` | Reported. Single-threaded session, so "at least one thread running" is the sum of the turn intervals. |
+| `list_cost` | Omitted. No cost model is implemented. |
+| `budget` | Omitted. Session budgets are explicitly unsupported. |
+| `server_tool_use` | Omitted. No built-in web tools exist. |
+
+`active_seconds` appears only on the snapshot event. The session envelope keeps
+its accumulated token counters and does not recompute activity time per
+request; read the latest `session.usage` event or the log for that.
+
 ## Files
 
 Files can be uploaded once and mounted into sessions.

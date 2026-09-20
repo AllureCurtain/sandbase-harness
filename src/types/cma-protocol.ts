@@ -17,7 +17,7 @@
 
 /**
  * All possible CMA event types.
- * 4 user + 8 agent + 6 session + 2 span + 1 terminal = 21 total
+ * 4 user + 8 agent + 3 streaming + 7 session + 2 span + 1 terminal = 25 total
  */
 export type CMAEventType =
   // User events (4)
@@ -38,13 +38,14 @@ export type CMAEventType =
   | 'agent.message_stream_start'
   | 'agent.message_chunk'
   | 'agent.message_stream_end'
-  // Session events (6)
+  // Session events (7)
   | 'session.status_idle'
   | 'session.status_running'
   | 'session.status_rescheduled'
   | 'session.status_terminated'
   | 'session.error'
   | 'session.deleted'
+  | 'session.usage'
   // Span events (2)
   | 'span.model_request_start'
   | 'span.model_request_end'
@@ -273,13 +274,31 @@ export interface SessionDeletedEvent extends EventBase {
   type: 'session.deleted';
 }
 
+/**
+ * Usage snapshot for a session, emitted immediately before every
+ * `session.status_idle`. Fields the runtime cannot report truthfully are
+ * omitted rather than sent as zero: no `list_cost` (no cost model), no
+ * `budget` (session budgets are explicitly unsupported), and no
+ * `server_tool_use` (no built-in web tools).
+ */
+export interface SessionUsageEvent extends EventBase {
+  type: 'session.usage';
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    /** Wall-clock seconds the harness loop was executing this session. */
+    active_seconds: number;
+  };
+}
+
 export type SessionLifecycleEvent =
   | SessionStatusIdleEvent
   | SessionStatusRunningEvent
   | SessionStatusRescheduledEvent
   | SessionStatusTerminatedEvent
   | SessionErrorEvent
-  | SessionDeletedEvent;
+  | SessionDeletedEvent
+  | SessionUsageEvent;
 
 // ============================================================
 // Span Events (observability)

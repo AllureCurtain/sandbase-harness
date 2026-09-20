@@ -71,6 +71,16 @@ export interface ApiEvent {
   content: unknown[] | null;
   metadata?: Record<string, unknown>;
   tool_use_id?: string;
+  /**
+   * Usage snapshot carried by `session.usage`. Emitted immediately before
+   * `session.status_idle`. Cost, budget, and server-tool counters are omitted
+   * rather than reported as zero.
+   */
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    active_seconds: number;
+  };
   model_used?: string;
   tokens_in?: number;
   tokens_out?: number;
@@ -156,6 +166,12 @@ export function toApiSession(session: Session, agent?: AgentDefinition): ApiSess
 
 export function toApiEvent(event: SessionEvent): ApiEvent {
   const streamEvent = event as SessionEvent & { delta?: string; message_id?: string };
+  // `session.usage` is persisted through the generic metadata carrier (the
+  // events table has no per-type payload column) and projected to its
+  // documented top-level field here.
+  const usage = event.type === 'session.usage'
+    ? metadataObject(event, 'usage') as ApiEvent['usage']
+    : undefined;
   return {
     id: event.id,
     seq: event.seq,
@@ -165,6 +181,7 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     ...(event.type === 'user.tool_confirmation' && typeof event.metadata?.tool_use_id === 'string'
       ? { tool_use_id: event.metadata.tool_use_id }
       : {}),
+    ...(usage ? { usage } : {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
@@ -256,4 +273,12 @@ function parseJsonArray<T = any>(value: unknown): T[] {
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+/** Object-valued metadata entry, or `undefined` when the shape is not an object. */
+function metadataObject(event: SessionEvent, key: string): Record<string, unknown> | undefined {
+  const value = event.metadata?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
