@@ -43,6 +43,12 @@
   `unsupported_capability` error before persistence or model/tool execution.
 
 ### Changed
+- Treats a session file resource's `mount_path` as a logical path inside the
+  session instead of an internal sandbox path. `/data.csv` is accepted and maps
+  under the runtime's own mount root, the full relative path is preserved rather
+  than flattened to its basename, an omitted or blank path defaults to the file
+  id, and traversal-shaped paths are still rejected. The historical `/uploads/`
+  spelling remains accepted as a logical path.
 - Accepts the canonical agent `model` object form and carries `effort` through
   to the stored agent instead of dropping it. `speed` keeps its `standard`
   default and also accepts the `extended` local value. An unrecognized key and a
