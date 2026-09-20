@@ -1,3 +1,5 @@
+import escapeHtml from 'escape-html';
+
 const PI_CONTROL_TOKEN_RE = /<\|[A-Za-z0-9_-]+>[A-Za-z0-9_-]*|<[A-Za-z0-9_-]+\|>/g;
 const STRUCTURED_PREFIXES = ['call:', 'response:'] as const;
 
@@ -136,11 +138,5 @@ function looksLikeControlPrefix(value: string): boolean {
 }
 
 function stripControlTokens(value: string): string {
-  return value
-    .replace(PI_CONTROL_TOKEN_RE, '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+  return escapeHtml(value.replace(PI_CONTROL_TOKEN_RE, ''));
 }
