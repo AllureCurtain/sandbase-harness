@@ -37,6 +37,10 @@ import {
   assertPiEnvironmentCanExecute,
   assertPiUserEventCanExecute,
 } from './pi-policy.js';
+import {
+  assertLoopEngineExecutable,
+  resolveRequestedLoopEngine,
+} from './loop-engine-admission.js';
 
 // ============================================================
 // Types
@@ -68,6 +72,7 @@ type EnvironmentSandboxProviderResolver = (environmentId: string) => string | un
 export class SessionManager {
   private readonly eventLogger: EventLogger;
   private readonly resolveEnvironmentSandboxProvider: EnvironmentSandboxProviderResolver;
+  private readonly isLoopEngineExecutable: (engine: SessionLoopEngine) => boolean;
   private subscribers = new Map<string, Set<Subscriber>>();
   private executor?: SessionExecutor;
   /** Per-session execution chain — serializes turns so they never overlap. */
@@ -81,7 +86,9 @@ export class SessionManager {
     /** Captured into each newly created session; persisted sessions retain their own value. */
     private readonly defaultLoopEngine: SessionLoopEngine = 'builtin',
     environmentSandboxProviderResolver?: EnvironmentSandboxProviderResolver,
+    loopEngineAvailability?: (engine: SessionLoopEngine) => boolean,
   ) {
+    this.isLoopEngineExecutable = loopEngineAvailability ?? ((engine) => engine === this.defaultLoopEngine);
     this.eventLogger = new EventLogger(db);
     // Direct/embedded managers do not have runtime Settings V2 composition.
     // Retain their declared-Environment lookup, but let composed runtimes make
@@ -122,13 +129,15 @@ export class SessionManager {
   create(params: CreateSessionParams): Session {
     const id = `sess_${nanoid(16)}`;
     const now = new Date();
+    const loopEngine = resolveRequestedLoopEngine(params.loopEngine) ?? this.defaultLoopEngine;
+    assertLoopEngineExecutable(loopEngine, this.isLoopEngineExecutable);
 
     const agentSnapshot = this.resolveAgentSnapshot(params.agent, params.agentVersion);
     if (!agentSnapshot) {
       throw new Error(`Agent not found: ${params.agent}`);
     }
     this.assertAgentCapabilities(agentSnapshot.definition);
-    if (this.defaultLoopEngine === 'pi') {
+    if (loopEngine === 'pi') {
       assertPiAgentCanExecute(agentSnapshot.definition);
       assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default'));
     }
@@ -147,7 +156,7 @@ export class SessionManager {
       agentSnapshot.name,
       agentSnapshot.version,
       params.agentVersion !== undefined ? JSON.stringify(agentSnapshot.definition) : null,
-      this.defaultLoopEngine,
+      loopEngine,
       params.environmentId ?? 'env_default',
       params.title ?? null,
       params.contextId ?? null,
@@ -162,7 +171,7 @@ export class SessionManager {
       agentName: agentSnapshot.name,
       agentVersion: agentSnapshot.version,
       agentDefinition: params.agentVersion !== undefined ? agentSnapshot.definition : undefined,
-      loopEngine: this.defaultLoopEngine,
+      loopEngine,
       environmentId: params.environmentId ?? 'env_default',
       status: 'queued',
       title: params.title,

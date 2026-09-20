@@ -11,6 +11,17 @@ export type AdapterDescriptor = {
   status: AdapterStatus;
   restart_policy: 'none' | 'runtime';
   options_schema: Record<string, unknown>;
+  /**
+   * Why an adapter is unavailable, or which restriction applies when it is
+   * available but limited. Omitted only when the adapter is fully available
+   * with no caveat. Consumed verbatim by Settings, `POST /v1/sessions`
+   * admission, and the API reference so no consumer invents its own wording.
+   */
+  reason?: string;
+  /** External or configuration prerequisites a turn cannot run without. */
+  requirements?: string[];
+  /** Behaviors the adapter provides once it is available. */
+  capabilities?: string[];
 };
 
 export type SettingsAdapterDescriptors = {
@@ -23,6 +34,66 @@ export type SettingsAdapterDescriptors = {
   memory: AdapterDescriptor[];
   sandbox: AdapterDescriptor[];
 };
+
+/**
+ * Loop engines the public contract recognizes, in display order.
+ *
+ * `harness`, `codex`, and `claude` stay listed so a client can discover *why*
+ * they are unavailable instead of guessing at an unknown value. They are never
+ * selectable and never resolve to `builtin`.
+ */
+export const LOOP_ENGINE_ADAPTER_IDS = ['builtin', 'pi', 'harness', 'codex', 'claude'] as const;
+
+export type LoopEngineAdapterId = (typeof LOOP_ENGINE_ADAPTER_IDS)[number];
+
+/** Loop engines this runtime can actually execute today. */
+export const EXECUTABLE_LOOP_ENGINE_IDS = ['builtin', 'pi'] as const;
+
+/** Stable reason text for a roadmap engine that has no executable adapter. */
+export const ROADMAP_LOOP_ENGINE_REASON =
+  'No execution adapter for this loop engine is implemented in this runtime.';
+
+/**
+ * Pi is a shipped adapter, but it is not a peer of `builtin`: it drives a
+ * host-local child CLI whose native tools sit outside Harness approval and
+ * sandbox path policy. The restriction is reported rather than hidden.
+ */
+export const PI_LOOP_ENGINE_REASON =
+  'Runs the Pi CLI against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy.';
+
+/**
+ * Single engine-discovery source of truth.
+ *
+ * Settings, session-creation admission, and the API reference all read this
+ * list instead of maintaining their own availability table.
+ */
+export function describeLoopEngineAdapters(): AdapterDescriptor[] {
+  return [
+    descriptor('builtin', 'Default', true, 'runtime', objectSchema({
+      default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
+    }), {
+      capabilities: ['harness-tool-loop', 'tool-confirmation', 'sandbox-providers'],
+    }),
+    // The shipped adapter is selectable. The Settings test probes the external
+    // executable, and a turn still fails explicitly if it is absent.
+    descriptor('pi', 'Pi CLI', true, 'runtime', objectSchema({
+      default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
+      timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
+    }), {
+      reason: PI_LOOP_ENGINE_REASON,
+      requirements: ['Pi CLI available on PATH', 'local sandbox provider'],
+      capabilities: ['stdout-jsonl', 'session-continuity', 'native-pi-tools'],
+    }),
+    descriptor('harness', 'Harness', false, 'runtime', objectSchema(), { reason: ROADMAP_LOOP_ENGINE_REASON }),
+    descriptor('codex', 'Codex', false, 'runtime', objectSchema(), { reason: ROADMAP_LOOP_ENGINE_REASON }),
+    descriptor('claude', 'Claude', false, 'runtime', objectSchema(), { reason: ROADMAP_LOOP_ENGINE_REASON }),
+  ];
+}
+
+/** Look up one loop-engine descriptor, or `undefined` for a value outside the contract. */
+export function loopEngineDescriptor(id: string): AdapterDescriptor | undefined {
+  return describeLoopEngineAdapters().find((item) => item.id === id);
+}
 
 export function describeSettingsAdapters(installedSandboxes: string[] = ['local']): SettingsAdapterDescriptors {
   const knownSandboxIds = new Set<string>(['local', 'docker', 'kubernetes', 'remote']);
@@ -49,20 +120,7 @@ export function describeSettingsAdapters(installedSandboxes: string[] = ['local'
       })),
       descriptor('openai_compatible', 'OpenAI compatible', true, 'runtime', objectSchema()),
     ],
-    loop_engine: [
-      descriptor('builtin', 'Default', true, 'runtime', objectSchema({
-        default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
-      })),
-      // This means the shipped adapter is selectable. The Settings test probes
-      // the external executable and a turn still fails explicitly if it is absent.
-      descriptor('pi', 'Pi CLI', true, 'runtime', objectSchema({
-        default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
-        timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
-      })),
-      descriptor('harness', 'Harness', false, 'runtime', objectSchema()),
-      descriptor('codex', 'Codex', false, 'runtime', objectSchema()),
-      descriptor('claude', 'Claude', false, 'runtime', objectSchema()),
-    ],
+    loop_engine: describeLoopEngineAdapters(),
     storage: {
       metadata: [
         descriptor('sqlite', 'SQLite', true, 'runtime', objectSchema()),
@@ -147,6 +205,7 @@ function descriptor(
   available: boolean,
   restartPolicy: AdapterDescriptor['restart_policy'],
   optionsSchema: Record<string, unknown>,
+  details: Pick<AdapterDescriptor, 'reason' | 'requirements' | 'capabilities'> = {},
 ): AdapterDescriptor {
   return {
     id,
@@ -155,6 +214,9 @@ function descriptor(
     status: available ? 'available' : 'unavailable',
     restart_policy: restartPolicy,
     options_schema: optionsSchema,
+    ...(details.reason ? { reason: details.reason } : {}),
+    ...(details.requirements?.length ? { requirements: details.requirements } : {}),
+    ...(details.capabilities?.length ? { capabilities: details.capabilities } : {}),
   };
 }
 

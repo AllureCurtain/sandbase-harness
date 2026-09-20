@@ -4,6 +4,12 @@
 
 ### Added
 
+- Makes new-session `loop_engine` admission fail closed. The optional request
+  override resolves against one Settings descriptor source, freezes the selected
+  executable engine on the session, returns stable `loop_engine_invalid` and
+  `loop_engine_not_supported` errors before persistence, and documents that Pi
+  native tools are outside Harness approval and sandbox path policy.
+
 - Exposes `GET /v1/x/capabilities` as the canonical inventory for locally
   executable built-in tools. Agent create/update and session creation now
   reject enabled `web_fetch` and `web_search` requests with a structured

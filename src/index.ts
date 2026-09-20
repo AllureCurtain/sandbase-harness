@@ -115,6 +115,7 @@ async function startServer(opts: StartServerOptions) {
       if (!strategy) throw new Error(`Persisted loop engine "${provider}" is not available`);
       return strategy;
     },
+    isLoopEngineAvailable: (provider) => Boolean(loopEngine.strategies[provider]),
     skills,
     skillsDir,
     memory,

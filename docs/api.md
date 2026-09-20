@@ -275,6 +275,24 @@ curl -X POST http://127.0.0.1:3000/v1/sessions \
   }'
 ```
 
+`loop_engine` is optional and selects the execution engine for this session only.
+Omit it to use the effective Settings default. The selected engine is persisted
+and frozen on the session, so later Settings changes do not switch an existing
+session. Every session response returns the frozen `loop_engine` value.
+
+Admission is fail-closed and happens before the session row, event log, or
+sandbox is touched:
+
+| Requested value | Result |
+| --- | --- |
+| omitted or `null` | Effective Settings `loop_engine.provider` is used. |
+| `builtin` | Harness tool loop, confirmation, and sandbox policy. |
+| `pi` | Local Pi CLI adapter; requires Pi on `PATH` and the local sandbox. |
+| `harness`, `codex`, `claude` | `400` with `loop_engine_not_supported` and the descriptor reason. |
+| any other value or type | `400` with `loop_engine_invalid`. |
+
+The Pi adapter is available but limited: Runs the Pi CLI against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy. An unavailable engine is never silently downgraded to `builtin`.
+
 Pin a session to an immutable agent version snapshot:
 
 ```json

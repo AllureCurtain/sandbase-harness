@@ -14,7 +14,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ServerDeps } from '../server.js';
-import type { SessionEvent } from '@/types/session.js';
+import type { SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
@@ -34,6 +34,10 @@ import {
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
+import {
+  isLoopEngineAdmissionError,
+  resolveRequestedLoopEngine,
+} from '@/core/session/loop-engine-admission.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -55,6 +59,13 @@ export function sessionsRoutes(deps: ServerDeps) {
     const environment = normalizeEnvironmentId(deps, environment_id);
     const resources = normalizeResources(deps, body.resources);
     const vaultIds = normalizeVaultIds(deps, body.vault_ids);
+    let loopEngine: SessionLoopEngine | undefined;
+    try {
+      loopEngine = resolveRequestedLoopEngine(body.loop_engine);
+    } catch (err) {
+      if (isLoopEngineAdmissionError(err)) return invalidWithCode(c, err.code, err.message);
+      throw err;
+    }
 
     if (!agentRef) {
       return invalid(c, 'agent field is required');
@@ -70,6 +81,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       const session = sessionManager.create({
         agent: agentRef.id,
         agentVersion: agentRef.version,
+        ...(loopEngine ? { loopEngine } : {}),
         environmentId: environment.value,
         title,
         resources: resources.value,
@@ -81,6 +93,9 @@ export function sessionsRoutes(deps: ServerDeps) {
     } catch (err) {
       if (err instanceof UnsupportedCapabilityError) {
         return unsupportedCapability(c, err);
+      }
+      if (isLoopEngineAdmissionError(err)) {
+        return invalidWithCode(c, err.code, err.message);
       }
       if (isPiSessionAdmissionError(err)) {
         return c.json({ error: {
@@ -506,4 +521,8 @@ function mediaTypeForArtifactName(name: string): string {
 }
 function invalid(c: any, message: string): Response {
   return c.json({ error: { type: 'invalid_request', message } }, 400);
+}
+
+function invalidWithCode(c: any, code: string, message: string): Response {
+  return c.json({ error: { type: 'invalid_request', code, message } }, 400);
 }
