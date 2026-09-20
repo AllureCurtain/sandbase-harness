@@ -223,6 +223,14 @@ export class DefaultStrategy implements AgentStrategy {
               metadata: { signal: 'reasoning' },
             });
             broadcast(thinkingEvent);
+            // The canonical preview for `agent.thinking` is `event_start` only:
+            // the buffered event carries no reasoning text, so a delta would
+            // have to invent content. The carrier is keyed to the persisted
+            // event's id so a projector can reconcile the two.
+            broadcast(transientEvent(session.id, 'agent.thinking_stream_start', {
+              message_id: thinkingEvent.id,
+              signal: 'reasoning',
+            }));
           }
 
           // Emit agent.message for this step's text (OMA pattern: per-step, not end-of-loop)

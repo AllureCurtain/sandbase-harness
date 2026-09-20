@@ -439,6 +439,41 @@ curl -N http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream \
   -H "Last-Event-ID: 42"
 ```
 
+Opt into token-level previews on one connection:
+
+```bash
+curl -N "http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream?event_deltas[]=agent.message"
+```
+
+`event_deltas[]` is repeated once per preview type. Two types are accepted:
+`agent.message` and `agent.thinking`. An unsupported value, an empty value, and
+more than 100 values each return `400 invalid_request` before the stream opens, so
+the rejection arrives as a normal response rather than as an error frame on an
+established stream. Exactly 100 values are accepted, and a repeated value is
+collapsed rather than previewed twice.
+
+An opted-in connection receives `event_start` and `event_delta` frames ahead of the
+buffered event they anticipate:
+
+```json
+{ "type": "event_start", "event": { "type": "agent.message", "id": "sevt_01J..." } }
+{ "type": "event_delta", "event_id": "sevt_01J...", "delta": { "type": "content_delta", "index": 0, "content": { "type": "text", "text": "Hel" } } }
+```
+
+Previews are never persisted. A preview frame carries no `id` and no
+`processed_at`, so it must not advance the `Last-Event-ID` cursor; the only
+identifier it carries is the id of the event it previews, which is what an
+accumulator keys on to reconcile the preview against the buffered event when it
+lands. At most one `event_start` is emitted per previewed id.
+
+A preview is a prefix, not the full text. Deltas may be dropped under load, so
+render the buffered event as the record and treat the accumulated preview as a
+draft.
+
+`agent.message` previews carry incremental text. `agent.thinking` receives an
+`event_start` only, because the buffered `agent.thinking` event carries no
+reasoning text and a delta would have to invent content.
+
 ### Event ordering and metadata
 
 Persisted event responses include an append-only per-session `seq` and optional

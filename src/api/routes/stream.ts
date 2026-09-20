@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { SessionEvent } from '@/types/session.js';
 import { toApiEvent } from '@/api/standard.js';
+import { EventDeltaProjector, parseEventDeltas } from '@/core/session/event-deltas.js';
 import type { ServerDeps } from '../server.js';
 
 export function streamRoutes(deps: ServerDeps) {
@@ -28,6 +29,18 @@ export function streamRoutes(deps: ServerDeps) {
     if (!session) {
       return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
     }
+
+    // `event_deltas[]` is rejected before the stream opens: a 400 must arrive as
+    // a normal response, not as an error on an established event stream.
+    const requestedDeltas = [
+      ...c.req.queries('event_deltas') ?? [],
+      ...c.req.queries('event_deltas[]') ?? [],
+    ];
+    const parsedDeltas = parseEventDeltas(requestedDeltas.length > 0 ? requestedDeltas : undefined);
+    if (!parsedDeltas.ok) {
+      return c.json({ error: { type: 'invalid_request', message: parsedDeltas.message } }, 400);
+    }
+    const projector = new EventDeltaProjector(parsedDeltas.types);
 
     // Parse resume cursor from Last-Event-ID header or query param
     const lastEventIdRaw =
@@ -44,15 +57,28 @@ export function streamRoutes(deps: ServerDeps) {
       let backfilling = true;
 
       const writeEvent = async (event: SessionEvent) => {
-        // Transient streaming events (seq === 0) are broadcast-only: they are
-        // never persisted, don't advance the resume cursor, and skip dedup.
+        // Transient events (seq === 0) are broadcast-only: they are never
+        // persisted, don't advance the resume cursor, and skip dedup.
         const transient = event.seq === 0;
         if (!transient) {
           if (event.seq <= maxEmittedSeq) return; // dedup persisted events
           maxEmittedSeq = event.seq;
         }
+
+        // Opted-in previews are emitted ahead of the buffered event they
+        // anticipate. They carry no `id`, so they must not set the resume
+        // cursor a reconnecting client would send back.
+        for (const frame of projector.framesFor(event)) {
+          await stream.writeSSE({ event: frame.type, data: JSON.stringify(frame) });
+        }
+
+        if (transient) return;
+
+        // A buffered event closes its own preview on this connection.
+        projector.reconcile(event);
+
         await stream.writeSSE({
-          ...(transient ? {} : { id: String(event.seq) }),
+          id: String(event.seq),
           event: event.type,
           data: JSON.stringify(toApiEvent(event)),
         });
