@@ -138,5 +138,14 @@ function looksLikeControlPrefix(value: string): boolean {
 }
 
 function stripControlTokens(value: string): string {
-  return escapeHtml(value.replace(PI_CONTROL_TOKEN_RE, ''));
+  let output = '';
+  let lastIndex = 0;
+  PI_CONTROL_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PI_CONTROL_TOKEN_RE.exec(value)) !== null) {
+    output += value.slice(lastIndex, match.index);
+    lastIndex = match.index + match[0].length;
+  }
+  output += value.slice(lastIndex);
+  return escapeHtml(output);
 }
