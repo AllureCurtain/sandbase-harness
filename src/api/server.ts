@@ -186,7 +186,9 @@ app.route('/v1/runs', runsRoutes(deps));
 
   // Self-hosted sandbox worker endpoints (R9.14)
   if (deps.workQueue) {
-    app.route('/v1/x/worker', workerRoutes(deps.workQueue));
+    // `db` is passed so a claim presenting an `environment_key` is scoped to
+    // the issuing environment rather than being unscoped.
+    app.route('/v1/x/worker', workerRoutes(deps.workQueue, deps.db));
   }
 
   // Root health check (JSON - used by SDK/clients)
