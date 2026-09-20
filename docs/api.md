@@ -1124,6 +1124,36 @@ with `400 unsupported_capability` before an agent or session is persisted. In
 particular, `web_fetch` and `web_search` cannot reach model or tool execution
 until safe runtime implementations exist.
 
+### Tool output overflow
+
+A tool result larger than the local ceiling is written into the sandbox and the
+model receives a short preview plus the path it can read the full content back
+from. The preview opens with one marker line and reports the original and
+retained character counts:
+
+```text
+[tool output overflow]
+original_chars: 184320
+preview_chars: 2000
+file: /mnt/session/tool_outputs/sess_01J-9f3k2j1x8q.txt
+file_bytes: 184320
+The full output is available at the path above.
+```
+
+The `agent.tool_result` event records the spill path in its `tool_output_overflow`
+metadata. That field is present only when a file was actually written: when no
+sandbox is available or the write fails, the preview reports `file: none` and no
+path is recorded, so a client is never pointed at a file that does not exist. A
+failed spill never fails the turn.
+
+One spill format serves every tool. The built-in tool path, the MCP tool path, and
+the Pi stdout translator all call the same contract, so no tool can invent its own
+truncation marker or its own retained-size accounting.
+
+The local ceiling is 50,000 characters rather than the published 100,000. A local
+runtime persists every event into SQLite, so the ceiling also bounds what one
+session log can grow to.
+
 ### Web tool domain lists
 
 `web_fetch` and `web_search` accept an optional domain list. Expressing a list is

@@ -36,6 +36,9 @@ function fakeSink() {
     },
     broadcast: (event) => broadcasts.push(event),
     recordUsage: (sessionId, input, output) => usage.push([sessionId, input, output]),
+    // The translator no longer caps output itself; the shared overflow
+    // contract does. The double under the local ceiling is a pass-through.
+    spillToolOutput: async (output) => output,
   };
   return { options, events, broadcasts, usage };
 }

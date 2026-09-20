@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Spills an oversized tool result into the sandbox and gives the model a short
+  preview plus the path it can read the full content back from, through one
+  contract shared by the built-in tool path, the MCP tool path, and the Pi stdout
+  translator. The spill path is recorded on the `agent.tool_result` event only
+  when a file was actually written, and a failed spill degrades to a path-less
+  preview instead of failing the turn. The local ceiling stays at 50,000
+  characters rather than the published 100,000, because a local runtime persists
+  every event into SQLite.
 - Lets a session event stream opt into token-level previews with a repeated
   `event_deltas[]` query parameter for `agent.message` and `agent.thinking`. An
   unsupported value, an empty value, or more than 100 values is rejected with
