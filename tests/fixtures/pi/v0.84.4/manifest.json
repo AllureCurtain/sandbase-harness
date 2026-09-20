@@ -1,0 +1,42 @@
+{
+  "pi_cli_version": "0.84.4",
+  "json_protocol_version": "pi-print-jsonl",
+  "source": {
+    "category": "synthetic contract",
+    "url": "https://github.com/badlogic/pi-mono",
+    "revision": "v0.84.4"
+  },
+  "redaction_review_date": "2026-09-15",
+  "fixtures": {
+    "text-success.stdout.jsonl": {
+      "sha256": "d79358c8f86cba538e15cb263cfb24dbc2237a114f82afebb65e2a98c50ff9f5",
+      "expected_canonical_events": ["span.model_request_start", "agent.message", "span.model_request_end", "turn_complete"]
+    },
+    "thinking-tool.stdout.jsonl": {
+      "sha256": "fc9159759d187e4a40523a44cac7ee35834182b2e3f79c4fad85f0aca80f2d5a",
+      "expected_canonical_events": ["span.model_request_start", "agent.thinking", "agent.tool_use", "agent.tool_result", "agent.message", "span.model_request_end", "turn_complete"]
+    },
+    "auto-retry.stdout.jsonl": {
+      "sha256": "c9998a32fc495e4206bda0955fdf99b8112e40ef9f81880b04f0b0047b1b7488",
+      "expected_canonical_events": ["span.model_request_start", "span.model_request_end", "span.model_request_start", "agent.message", "span.model_request_end", "turn_complete"]
+    },
+    "malformed-line.stdout.jsonl": {
+      "sha256": "13ce8e3500623cc49ce6461bc86316aec09bcbf60e1817feeb1f2ddb0ac9715f",
+      "expected_canonical_events": ["session.error"]
+    },
+    "nonzero-exit.stderr.txt": {
+      "sha256": "11d6d0a9f2afa561cfe17565063a83b93bba548fcaf8575bf0124a9a83aaeabb",
+      "expected_canonical_events": ["session.error"]
+    },
+    "session-resume-refused.stderr.txt": {
+      "sha256": "882f61987ba08c3dcb83e3d3170863819f7e80cdd55b810922536ce3ed185261",
+      "expected_canonical_events": ["session.error"]
+    }
+  },
+  "boundary_cases_generated_by_tests": [
+    "16 MiB JSONL line",
+    "invalid UTF-8",
+    "markup split across chunks",
+    "multiline and Unicode stdin"
+  ]
+}

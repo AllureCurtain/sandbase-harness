@@ -1,0 +1,1 @@
+Pi provider failed: authorization: Bearer [REDACTED]

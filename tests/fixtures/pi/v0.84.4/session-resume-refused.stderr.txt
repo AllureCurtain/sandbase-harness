@@ -1,0 +1,1 @@
+Stored session working directory does not exist
