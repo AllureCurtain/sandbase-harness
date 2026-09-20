@@ -30,17 +30,13 @@ describe('RuntimeCapabilityRegistry', () => {
       { id: 'write', kind: 'tool', status: 'available' },
       { id: 'glob', kind: 'tool', status: 'available' },
       { id: 'grep', kind: 'tool', status: 'available' },
-      {
-        id: 'web_fetch',
-        kind: 'tool',
-        status: 'unavailable',
-        reason: 'No safe executable implementation is available in this runtime.',
-      },
+      // web_fetch executes behind the address guard in core/web/web-fetch.ts.
+      { id: 'web_fetch', kind: 'tool', status: 'available' },
       {
         id: 'web_search',
         kind: 'tool',
         status: 'unavailable',
-        reason: 'No safe executable implementation is available in this runtime.',
+        reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.',
       },
     ]);
   });
@@ -48,13 +44,14 @@ describe('RuntimeCapabilityRegistry', () => {
   it('identifies and rejects enabled unavailable web tools with their reasons', () => {
     const registry = new RuntimeCapabilityRegistry();
 
+    // web_fetch is executable, so only web_search is refused, and with the
+    // provider reason rather than a generic "unsafe" one.
     expect(registry.getUnavailableCapabilities(unavailableWebAgent)).toMatchObject([
-      { id: 'web_fetch', reason: 'No safe executable implementation is available in this runtime.' },
-      { id: 'web_search', reason: 'No safe executable implementation is available in this runtime.' },
+      { id: 'web_search', reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.' },
     ]);
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(UnsupportedCapabilityError);
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(
-      'Agent requests unavailable runtime capabilities: web_fetch, web_search',
+      'Agent requests unavailable runtime capabilities: web_search',
     );
   });
 
@@ -65,8 +62,8 @@ describe('RuntimeCapabilityRegistry', () => {
       tools: [{
         type: 'agent_toolset_20260401',
         configs: [
-          { name: 'web_fetch', enabled: false },
-          { name: 'web_search', permission_policy: { type: 'never_allow' } },
+          { name: 'web_search', enabled: false },
+          { name: 'web_fetch', permission_policy: { type: 'never_allow' } },
         ],
       }],
     } satisfies AgentDefinition;

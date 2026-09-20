@@ -20,11 +20,10 @@ const unsupportedWebAgent = {
 
 const unsupportedCapabilityError = {
   type: 'unsupported_capability',
-  message: 'Agent requests unavailable runtime capabilities: web_fetch, web_search',
+  message: 'Agent requests unavailable runtime capabilities: web_search',
   details: {
     capabilities: [
-      { id: 'web_fetch', reason: 'No safe executable implementation is available in this runtime.' },
-      { id: 'web_search', reason: 'No safe executable implementation is available in this runtime.' },
+      { id: 'web_search', reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.' },
     ],
   },
 };

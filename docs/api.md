@@ -1218,6 +1218,44 @@ The local ceiling is 50,000 characters rather than the published 100,000. A loca
 runtime persists every event into SQLite, so the ceiling also bounds what one
 session log can grow to.
 
+### Executing web_fetch
+
+`web_fetch` executes behind one guard chain, applied in this order:
+
+1. **URL shape** — only `http:` and `https:`, no embedded credentials, and a length
+   cap. A malformed or exotic URL is a refusal, not a request.
+2. **Internal host names** — `localhost` and the `.local` / `.internal` /
+   `.localhost` / `.localdomain` / `.invalid` family are refused before DNS,
+   because a resolver can be pointed anywhere.
+3. **Domain policy** — `allowed_domains` (exact host or subdomain) or
+   `blocked_domains`, exactly the lists the agent definition declared. No list
+   means any public host is reachable.
+4. **Address guard** — every DNS result is checked against loopback, RFC 1918,
+   link-local, CGNAT, and their IPv6 equivalents, and the connection is pinned to
+   the validated address through a custom `lookup`. Pinning is what closes DNS
+   rebinding: the address the guard checked is the address the socket connects
+   to, so a second resolution cannot disagree with the first.
+5. **Redirects** — every hop restarts checks 1-4, so a 302 to a forbidden or
+   internal host is refused at that hop, with a bounded hop count.
+6. **Response limits** — a byte cap aborts oversized bodies, a per-request timeout
+   bounds slow ones, and only text-like content types are decoded; binary content
+   is reported as its media type and size, never inlined.
+7. **Context limits** — the extracted text is capped by `max_content_tokens` before
+   it reaches the model.
+
+Failures return an `Error: ...` result string — the same shape every other built-in
+tool uses — so the model sees a real tool error rather than a fake success, and the
+strategy persists it as a normal `agent.tool_result`.
+
+The transport override surface (resolver, address guard, limits) is
+constructor-level only. An agent definition cannot reach it, so no model-facing or
+API-facing input can relax the guard.
+
+`web_search` remains unavailable: no search provider is bundled or configured, so an
+enabled entry is still refused by capability admission. `GET /v1/x/capabilities`
+reports the two tools separately, because a missing safe implementation and a
+missing provider are different facts.
+
 ### Web tool domain lists
 
 `web_fetch` and `web_search` accept an optional domain list. Expressing a list is

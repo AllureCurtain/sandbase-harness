@@ -37,6 +37,7 @@ import {
   assertPiEnvironmentCanExecute,
   assertPiUserEventCanExecute,
 } from './pi-policy.js';
+import type { WebFetchOverrides } from '@/core/web/web-fetch.js';
 
 export interface ExecutorDeps {
   agents: AgentDefinition[];
@@ -65,6 +66,13 @@ export interface ExecutorDeps {
   snapshots?: SnapshotManager;
   /** Workspace fallback when an agent does not set max_turns. */
   defaultMaxSteps?: number;
+  /**
+   * WebFetch transport overrides (resolver, address guard, limits).
+   *
+   * Constructor-level only, so no model-facing or API-facing input can relax
+   * the guard.
+   */
+  webFetch?: WebFetchOverrides;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
   /**
@@ -102,7 +110,10 @@ export class DefaultSessionExecutor implements SessionExecutor {
       buildSandboxTools: (agent, sandbox) => this.toolResolver.buildSandboxTools(agent, sandbox),
       resolveSkillDirs: (agent) => this.skillDirsFor(agent),
     });
-    this.toolResolver = new ToolResolver({ delegationService: this.delegationService });
+    this.toolResolver = new ToolResolver({
+      delegationService: this.delegationService,
+      webFetch: deps.webFetch,
+    });
   }
 
   async *execute(

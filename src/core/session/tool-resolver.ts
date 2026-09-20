@@ -7,9 +7,18 @@ import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orch
 import type { EventLogger } from './event-logger.js';
 import type { DelegationService } from './delegation-service.js';
 import { getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
+import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 
 export interface ToolResolverDeps {
   delegationService: DelegationService;
+  /**
+   * WebFetch transport overrides (DNS resolution, address guard, limits).
+   *
+   * Constructor-level only: an agent definition cannot reach it, so no
+   * model-facing or API-facing input can relax the guard.
+   */
+  webFetch?: WebFetchOverrides;
 }
 
 export interface ToolConfirmationResolution {
@@ -303,6 +312,17 @@ export class ToolResolver {
           return hits.length > 0 ? hits.slice(0, 200).join('\n') : `No matches for "${query}"`;
         },
       };
+    }
+
+    // `web_fetch` executes here; `web_search` deliberately does not. No search
+    // provider is bundled, so registering a `web_search` executor that scraped
+    // a search engine would be a different tool from the one the contract
+    // describes. `web_search` stays refused by capability admission.
+    if (enabledTools.has('web_fetch')) {
+      tools['web_fetch'] = createWebFetchTool({
+        policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'),
+        overrides: this.deps.webFetch,
+      });
     }
 
     return tools;
