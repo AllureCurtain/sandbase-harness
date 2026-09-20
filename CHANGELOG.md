@@ -4,6 +4,11 @@
 
 ### Added
 
+- Attributes `agent.mcp_tool_use` and `agent.mcp_tool_result` events to the MCP
+  server that produced them. Both events carry `mcp_server_name`, results also
+  carry `mcp_tool_use_id`, and the identity is projected onto the public API
+  event, so two servers exposing the same tool name stay distinguishable in the
+  durable log.
 - Writes a `session.usage` snapshot event immediately before every
   `session.status_idle`. The snapshot reports the session's aggregate
   input/output token counters plus `active_seconds`, the wall-clock time the

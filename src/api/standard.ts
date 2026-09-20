@@ -72,6 +72,14 @@ export interface ApiEvent {
   metadata?: Record<string, unknown>;
   tool_use_id?: string;
   /**
+   * Server that produced an `agent.mcp_tool_use` / `agent.mcp_tool_result`.
+   * Without it, two MCP servers exposing the same tool name are
+   * indistinguishable in the event log.
+   */
+  mcp_server_name?: string;
+  /** Tool-use this MCP result answers. */
+  mcp_tool_use_id?: string;
+  /**
    * Usage snapshot carried by `session.usage`. Emitted immediately before
    * `session.status_idle`. Cost, budget, and server-tool counters are omitted
    * rather than reported as zero.
@@ -172,6 +180,8 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   const usage = event.type === 'session.usage'
     ? metadataObject(event, 'usage') as ApiEvent['usage']
     : undefined;
+  const mcpServerName = metadataString(event, 'mcp_server_name');
+  const mcpToolUseId = event.type === 'agent.mcp_tool_result' ? contentToolUseId(event) : undefined;
   return {
     id: event.id,
     seq: event.seq,
@@ -182,6 +192,8 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
       ? { tool_use_id: event.metadata.tool_use_id }
       : {}),
     ...(usage ? { usage } : {}),
+    ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
+    ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
@@ -280,5 +292,20 @@ function metadataObject(event: SessionEvent, key: string): Record<string, unknow
   const value = event.metadata?.[key];
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
+    : undefined;
+}
+
+function metadataString(event: SessionEvent, key: string): string | undefined {
+  const value = event.metadata?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** `tool_use_id` carried inside a `tool_result` content block. */
+function contentToolUseId(event: SessionEvent): string | undefined {
+  const block = event.content?.find((item) => item.type === 'tool_result') as
+    | { type: 'tool_result'; tool_use_id?: unknown }
+    | undefined;
+  return typeof block?.tool_use_id === 'string' && block.tool_use_id.length > 0
+    ? block.tool_use_id
     : undefined;
 }

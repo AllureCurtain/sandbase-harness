@@ -447,6 +447,14 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### MCP tool identity
+
+`agent.mcp_tool_use` and `agent.mcp_tool_result` events carry the MCP server
+that produced the call as `mcp_server_name`, so two servers exposing the same
+tool name stay distinguishable in the log. Tool results additionally carry
+`mcp_tool_use_id`, the tool use they answer. Non-MCP tool events carry neither
+field.
+
 ### Usage snapshots
 
 `session.usage` is written immediately before every `session.status_idle`, so a
