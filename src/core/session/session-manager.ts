@@ -27,6 +27,10 @@ import type {
 } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
+import {
+  runtimeCapabilityRegistry,
+  type RuntimeCapabilityRegistry,
+} from '@/core/capabilities/registry.js';
 
 // ============================================================
 // Types
@@ -63,8 +67,29 @@ export class SessionManager {
   /** Per-session abort controller for the currently running turn. */
   private abortControllers = new Map<string, AbortController>();
 
-  constructor(private readonly db: Database) {
+  constructor(
+    private readonly db: Database,
+    private readonly capabilityRegistry: RuntimeCapabilityRegistry = runtimeCapabilityRegistry,
+  ) {
     this.eventLogger = new EventLogger(db);
+  }
+
+  getCapabilityRegistry(): RuntimeCapabilityRegistry {
+    return this.capabilityRegistry;
+  }
+
+  assertAgentCapabilities(agent: AgentDefinition): void {
+    this.capabilityRegistry.assertAgentSupported(agent);
+  }
+
+  /**
+   * Validate the definition that governs this session at event ingress.
+   * Persisted version snapshots remain authoritative; unpinned legacy
+   * sessions intentionally follow the current durable agent definition.
+   */
+  assertSessionCapabilities(session: Session): void {
+    const effectiveAgent = session.agentDefinition ?? this.resolveAgentSnapshot(session.agentId)?.definition;
+    if (effectiveAgent) this.assertAgentCapabilities(effectiveAgent);
   }
 
   /**
@@ -86,6 +111,7 @@ export class SessionManager {
     if (!agentSnapshot) {
       throw new Error(`Agent not found: ${params.agent}`);
     }
+    this.assertAgentCapabilities(agentSnapshot.definition);
 
     const stmt = this.db.prepare(`
       INSERT INTO sessions (
@@ -189,6 +215,10 @@ export class SessionManager {
     if (isTerminal(session.status)) {
       throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
     }
+
+    // Revalidate the snapshot-first/current-durable effective definition before
+    // mutating the append-only log or queuing any model, sandbox, or tool work.
+    this.assertSessionCapabilities(session);
 
     const confirmationMetadata = event.type === 'user.tool_confirmation'
       ? getConfirmationMetadata(event, this.eventLogger.getEvents(sessionId))

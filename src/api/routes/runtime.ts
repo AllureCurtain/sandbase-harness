@@ -200,6 +200,13 @@ export function runtimeRoutes(deps: ServerDeps) {
     });
   });
 
+  app.get('/capabilities', (c) => {
+    return c.json({
+      type: 'capability_inventory',
+      capabilities: deps.sessionManager.getCapabilityRegistry().list(),
+    });
+  });
+
   app.get('/runtime', (c) => {
     const authEnabled = Boolean(deps.runtime?.authEnabled || deps.hasApiKeys?.());
     return c.json({

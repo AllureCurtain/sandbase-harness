@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { pageOf, toApiAgent } from '../standard.js';
+import { unsupportedCapability } from '../capability-errors.js';
+import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { validateAgentDefinition } from '@/core/agent/schema.js';
 import {
   loadActiveAgentRows,
@@ -44,6 +46,12 @@ export function agentsRoutes(deps: ServerDeps) {
     }
 
     const agent = result.data;
+    try {
+      deps.sessionManager.assertAgentCapabilities(agent);
+    } catch (error) {
+      if (error instanceof UnsupportedCapabilityError) return unsupportedCapability(c, error);
+      throw error;
+    }
     const id = createAgentId(deps);
 
     deps.db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
@@ -87,6 +95,12 @@ export function agentsRoutes(deps: ServerDeps) {
     }
 
     const agent = result.data;
+    try {
+      deps.sessionManager.assertAgentCapabilities(agent);
+    } catch (error) {
+      if (error instanceof UnsupportedCapabilityError) return unsupportedCapability(c, error);
+      throw error;
+    }
     const existing = activeAgentRow(deps, id);
     if (!existing) {
       return c.json({ error: { type: 'not_found', message: `Agent not found: ${id}` } }, 404);

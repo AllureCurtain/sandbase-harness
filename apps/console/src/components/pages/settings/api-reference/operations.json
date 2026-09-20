@@ -20,6 +20,26 @@
     ]
   },
   {
+    "id": "runtime-capabilities",
+    "group": "Operations",
+    "title": "List runtime capabilities",
+    "method": "GET",
+    "path": "/v1/x/capabilities",
+    "summary": "Read the canonical inventory of locally executable built-in capabilities. Capabilities that are unavailable (for example web_fetch and web_search) are reported here and rejected before agent or session persistence.",
+    "response": [
+      {
+        "name": "type",
+        "type": "capability_inventory",
+        "description": "Discriminator for the capability inventory response."
+      },
+      {
+        "name": "capabilities",
+        "type": "array",
+        "description": "Built-in capability descriptors, including availability and rejection reason when unavailable."
+      }
+    ]
+  },
+  {
     "id": "runtime-info",
     "group": "Operations",
     "title": "Runtime info",
