@@ -1,0 +1,151 @@
+# CMA Contract — credentials and vaults
+
+Contract area: `/v1/vaults` and vault credentials.
+Status: `supported` for the wire profile and rotation; OAuth refresh is
+`unavailable`, see §4 and §7.
+Source: `src/core/credentials/canonical-credential.ts`,
+`src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`.
+
+---
+
+## 1. Official definition
+
+- A vault carries `display_name` and optional `metadata`.
+- A credential nests its type under `auth`. Each type has its own shape:
+  - `mcp_oauth` — keyed by `mcp_server_url`, with `access_token` and an optional
+    `refresh` block carrying `token_endpoint`, `client_id`, and
+    `token_endpoint_auth`.
+  - `static_bearer` — keyed by `mcp_server_url`, carrying a fixed `token`.
+  - `environment_variable` — keyed by `secret_name`, carrying `secret_value`,
+    `networking`, and `injection_location`.
+- MCP credential types are **keyed by `mcp_server_url`**: a credential matches
+  the MCP server declared with the same URL. Matching normalizes scheme and host
+  case, removes a default port, and ignores a single trailing slash; a different
+  path, subdomain, or non-default port is a genuine mismatch.
+- Write-only fields — `token`, `access_token`, `refresh_token`,
+  `client_secret`, `secret_value` — are accepted on write and never returned.
+- Structural fields — `mcp_server_url`, `secret_name`, `token_endpoint`,
+  `client_id` — are locked after creation. Changing one requires archiving the
+  credential and creating a new one.
+- `injection_location` is an optional object with `header` and `body` booleans,
+  sibling to `networking`:
+  - On create, **omitting it enables both positions**; supplying the object
+    fills omitted fields with `false`.
+  - An explicit `null` for the object or either field is an error; the field
+    should be omitted instead.
+  - At least one position must be enabled.
+  - The response always returns both fields resolved.
+
+## 2. Current SandBase shape
+
+Wire profile:
+
+- `display_name` is read from the **top level** of the payload, a sibling of
+  `auth` and `metadata`. `auth.display_name` is accepted as a local alias and
+  the top-level spelling wins when both are present.
+- The three canonical `auth.type` values are supported. The local legacy values
+  `bearer_token` (flat) and the `auth_type` + `value` + `variable_name` flat
+  spelling are accepted on write and normalized.
+- Supplying both `auth` and the flat spelling is rejected rather than merged:
+  merging would let a flat field override a nested one, which is how a
+  credential ends up pointed somewhere the caller did not intend.
+
+Write-only handling:
+
+- Secret material is encrypted at rest; the record stores only a hint (the last
+  four characters) for display.
+- `toCanonicalCredential` omits write-only fields entirely rather than masking
+  them, because a mask could be mistaken for the real value.
+
+Locked fields:
+
+- `checkCredentialUpdate` reports **every** locked field an update tried to
+  change, so the caller learns the full set rather than fixing one and
+  rediscovering the next.
+
+Rotation:
+
+- A rotation replaces only the ciphertext, nonce, tag, and hint. The credential's
+  identity, `auth_type`, name, network policy, and injection locations are
+  preserved. The prior ciphertext is overwritten, so the old secret is not
+  recoverable from this runtime once rotation succeeds.
+- When the rotated Vault is referenced by active Sessions, the runtime asks
+  each Session's MCP manager to close and reconnect its configured transports.
+  The next MCP tool call therefore uses the newly resolved credential without
+  recreating the Session. Reconnect failures do not roll back the committed
+  rotation; the MCP status remains the source of truth for degraded servers.
+
+`injection_location`:
+
+- Implemented to the published rules, including the create/update asymmetry, the
+  `null` rejection, the at-least-one rule, and returning both fields resolved.
+- The local legacy `injection_locations` token list is kept as a SandBase
+  extension on the stored record, so a caller that wrote a token list still
+  observes it. The canonical `auth` projection carries `injection_location` only
+  for environment variables.
+
+MCP URL binding:
+
+- `mcpServerUrlMatches` canonicalizes both sides before comparing. If no
+  credential matches a declared MCP server, the connection is attempted without
+  authentication rather than failing the session.
+
+GitHub resource boundary:
+
+- A `github_repository.authorization_token` is a separate encrypted
+  session-resource secret, matching the official CMA GitHub resource shape. It
+  is not resolved from `vault_ids`; Vault credentials are used for MCP and
+  environment-variable authentication. A future `credential_id` reference may
+  be offered as a SandBase extension, but it must not replace the canonical
+  resource field or make GitHub mounts depend on an unrelated Vault.
+
+## 3. Alignment
+
+Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
+URL with normalization, write-only secret handling, locked structural fields,
+the `injection_location` create/update asymmetry and both-fields-resolved
+response, and rotation that preserves identity.
+
+## 4. Differences
+
+| Difference | Detail |
+| --- | --- |
+| OAuth refresh | There is no refresh loop, no refresh-failure event, and no validate endpoint. A supplied `refresh` block is parsed, recorded, and reported back as **not executed**, with a warning on the response. |
+| Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
+| Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
+| Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
+
+## 5. Reason for the difference
+
+- OAuth refresh is reported rather than silently stored because the failure mode
+  matters: a session would keep presenting an expired access token and report
+  nothing. A warning that reaches the caller is the difference between a
+  diagnosable auth failure and a mystery.
+- The legacy spelling is accepted so existing SandBase callers keep working, but
+  it is documented as legacy rather than presented as canonical.
+- Rotation preserving identity follows from the locking rule: if identity
+  fields cannot change, a rotation that changed them would be a new credential
+  wearing an old id.
+
+## 6. Corresponding tests
+
+- `tests/unit/canonical-credential.test.ts` — 26 cases: `injection_location`
+  create/update asymmetry and `null` rejection, all three auth shapes, the
+  both-spellings rejection, MCP URL normalization and mismatch cases, locked
+  field reporting, and write-only omission from the projection.
+- `tests/unit/credential-policy.test.ts` — network policy normalization.
+- `tests/unit/credential-redaction.test.ts` — secret material never appears in
+  a response.
+- `tests/integration/api.test.ts` — vault and credential CRUD, rotation,
+  and canonical response shape.
+- `tests/integration/mcp.test.ts` — a real stdio MCP server receives the
+  session's Vault environment credential, and an in-place rotation refreshes the
+  live transport so the existing tool wrapper uses the new value.
+- `tests/integration/credential-rotation.test.ts` — the rotation route notifies
+  every active Session that references the rotated Vault.
+
+## 7. Status
+
+`supported` for the wire profile, write-only handling, locked fields, and
+rotation. OAuth refresh is `unavailable` and is recorded as such in the capability
+matrix rather than presented as supported.
