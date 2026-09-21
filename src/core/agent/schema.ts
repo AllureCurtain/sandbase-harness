@@ -12,7 +12,7 @@ import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
 } from '@/core/agent/web-tool-policy.js';
-import type { AgentDefinition } from '@/types/agent.js';
+import type { AgentDefinition, AgentToolset } from '@/types/agent.js';
 
 // ============================================================
 // MCP Server Config Schema
@@ -57,18 +57,61 @@ const mcpToolConfigSchema = agentToolConfigSchema.extend({
   name: z.string().min(1, 'Tool config name is required').max(128),
 });
 
-export const agentToolsetSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('agent_toolset_20260401'),
-    configs: z.array(builtinToolConfigSchema).default([]),
-    default_config: agentToolConfigSchema.optional(),
-  }),
-  z.object({
-    type: z.literal('mcp_toolset'),
-    mcp_server_name: z.string().min(1, 'MCP toolset server name is required'),
-    configs: z.array(mcpToolConfigSchema).default([]),
-    default_config: agentToolConfigSchema.optional(),
-  }),
+const jsonSchemaValue = z.record(z.string(), z.unknown());
+const customToolNameSchema = z.string()
+  .min(1, 'Custom tool name is required')
+  .max(128)
+  .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, 'Custom tool name must start with a letter and contain only letters, numbers, underscores, or hyphens');
+
+const customToolConfigSchema = agentToolConfigSchema.extend({
+  name: customToolNameSchema,
+  description: z.string().min(1, 'Custom tool description is required').max(4096),
+  // `input_schema` is accepted for CMA-shaped definitions; normalization below
+  // gives the runtime one canonical `parameters` field.
+  input_schema: jsonSchemaValue.optional(),
+  parameters: jsonSchemaValue.optional(),
+}).refine(
+  (config) => config.input_schema !== undefined || config.parameters !== undefined,
+  { path: ['parameters'], message: 'Custom tool requires input_schema or parameters' },
+);
+
+/**
+ * Canonical CMA custom tool: an independent `tools[]` entry.
+ *
+ * Deliberately has no `permission_policy` and no `enabled` field. The caller
+ * executes the tool and decides whether to run it, so accepting a policy here
+ * would claim governance the runtime does not hold. `parameters` stays accepted
+ * as a legacy alias so a SandBase-authored definition keeps validating; the
+ * canonical field is `input_schema`.
+ */
+const canonicalCustomToolSchema = z.object({
+  type: z.literal('custom'),
+  name: customToolNameSchema,
+  description: z.string().min(1, 'Custom tool description is required').max(4096),
+  input_schema: jsonSchemaValue,
+  parameters: jsonSchemaValue.optional(),
+}).strict();
+
+export const agentToolsetSchema = z.union([
+  z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('agent_toolset_20260401'),
+      configs: z.array(builtinToolConfigSchema).default([]),
+      default_config: agentToolConfigSchema.optional(),
+    }),
+    z.object({
+      type: z.literal('mcp_toolset'),
+      mcp_server_name: z.string().min(1, 'MCP toolset server name is required'),
+      configs: z.array(mcpToolConfigSchema).default([]),
+      default_config: agentToolConfigSchema.optional(),
+    }),
+    z.object({
+      type: z.literal('custom_toolset'),
+      configs: z.array(customToolConfigSchema).min(1, 'Custom toolset must declare at least one tool'),
+      default_config: agentToolConfigSchema.optional(),
+    }),
+  ]),
+  canonicalCustomToolSchema,
 ]);
 
 export const skillRefSchema = z.object({
@@ -198,6 +241,11 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     return { valid: false, errors: referenceErrors };
   }
 
+  const customToolErrors = validateCustomToolDefinitions(result.data);
+  if (customToolErrors.length > 0) {
+    return { valid: false, errors: customToolErrors };
+  }
+
   // A field the runtime cannot honour is refused by name rather than accepted
   // and quietly dropped. The schema strips what it does not know, so this runs
   // against the caller's own value; a shape error has already been reported
@@ -223,10 +271,13 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
 }
 
 function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): AgentDefinition {
+  const normalizedTools = normalizeCustomToolsets(data.tools);
+
   if (typeof data.model === 'string') {
     return {
       ...data,
       model: data.model,
+      ...(normalizedTools ? { tools: normalizedTools } : {}),
       ...(data.model_config ? { model_config: { id: data.model_config.id ?? data.model, speed: data.model_config.speed } } : {}),
     } as AgentDefinition;
   }
@@ -234,6 +285,7 @@ function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): 
   return {
     ...data,
     model: data.model.id,
+    ...(normalizedTools ? { tools: normalizedTools } : {}),
     model_config: {
       id: data.model.id,
       speed: data.model.speed ?? 'standard',
@@ -296,4 +348,129 @@ function validateMcpServerReferences(
   });
 
   return errors;
+}
+
+/**
+ * Cross-check custom tool declarations across both wire shapes.
+ *
+ * A custom tool is caller-executed, so the runtime adds no governance of its
+ * own: a name that shadows a built-in tool would silently intercept a call the
+ * model meant for the built-in, and a name declared twice would make the
+ * caller's result ambiguous. Both are refused here rather than at execution
+ * time, where the failure would surface as a tool that does nothing.
+ */
+function validateCustomToolDefinitions(data: z.infer<typeof agentDefinitionSchema>): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const names = new Set<string>();
+  const builtinNames = new Set<string>(BUILTIN_TOOL_NAMES);
+
+  /** One entry per custom tool, regardless of which wire shape declared it. */
+  const declared: Array<{ path: string; name: string; schema: Record<string, unknown>; schemaPath: string }> = [];
+
+  (data.tools ?? []).forEach((toolset, toolsetIndex) => {
+    if (toolset.type === 'custom') {
+      declared.push({
+        path: `tools.${toolsetIndex}.name`,
+        name: toolset.name,
+        schema: toolset.input_schema,
+        schemaPath: `tools.${toolsetIndex}.input_schema`,
+      });
+      return;
+    }
+    if (toolset.type !== 'custom_toolset') return;
+    for (const [configIndex, config] of toolset.configs.entries()) {
+      const usesParameters = config.parameters !== undefined;
+      declared.push({
+        path: `tools.${toolsetIndex}.configs.${configIndex}.name`,
+        name: config.name,
+        schema: (config.parameters ?? config.input_schema)!,
+        schemaPath: `tools.${toolsetIndex}.configs.${configIndex}.${usesParameters ? 'parameters' : 'input_schema'}`,
+      });
+    }
+  });
+
+  for (const tool of declared) {
+    if (builtinNames.has(tool.name)) {
+      errors.push({
+        path: tool.path,
+        message: `Custom tool name "${tool.name}" conflicts with a built-in tool`,
+      });
+    }
+    if (names.has(tool.name)) {
+      errors.push({
+        path: tool.path,
+        message: `Duplicate custom tool name "${tool.name}"`,
+      });
+    }
+    names.add(tool.name);
+
+    const schemaError = validateJsonSchema(tool.schema);
+    if (schemaError) errors.push({ path: tool.schemaPath, message: schemaError });
+  }
+
+  return errors;
+}
+
+function validateJsonSchema(value: Record<string, unknown> | undefined): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'Tool input schema must be an object';
+  if (value.type !== undefined && (typeof value.type !== 'string' || !['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(value.type))) {
+    return 'Tool input schema has an invalid type';
+  }
+  if (value.type === 'object' && value.properties !== undefined
+    && (!value.properties || typeof value.properties !== 'object' || Array.isArray(value.properties))) {
+    return 'Object tool input schema properties must be an object';
+  }
+  if (value.required !== undefined
+    && (!Array.isArray(value.required) || value.required.some((item) => typeof item !== 'string'))) {
+    return 'Tool input schema required must be an array of strings';
+  }
+  if (value.type === 'array' && value.items !== undefined
+    && (!value.items || typeof value.items !== 'object' || Array.isArray(value.items))) {
+    return 'Array tool input schema items must be an object';
+  }
+  return undefined;
+}
+
+/**
+ * Normalize both custom tool wire shapes to the canonical `custom` entry.
+ *
+ * Legacy groupings are accepted on ingress, but every persisted definition is
+ * stored in one shape so downstream code never branches on the wire form.
+ * `enabled: false` still removes a tool rather than translating to a policy:
+ * custom tools are not governed by permission policy, so "disabled" must mean
+ * "not declared".
+ */
+function normalizeCustomToolsets(
+  toolsets: z.infer<typeof agentToolsetSchema>[] | undefined,
+): AgentToolset[] | undefined {
+  if (!toolsets) return undefined;
+
+  const normalized: AgentToolset[] = [];
+  for (const toolset of toolsets) {
+    if (toolset.type === 'custom') {
+      normalized.push({
+        type: 'custom',
+        name: toolset.name,
+        description: toolset.description,
+        input_schema: toolset.input_schema,
+      } satisfies AgentToolset);
+      continue;
+    }
+    if (toolset.type !== 'custom_toolset') {
+      normalized.push(toolset as AgentToolset);
+      continue;
+    }
+    const defaultEnabled = toolset.default_config?.enabled !== false;
+    for (const config of toolset.configs) {
+      if ((config.enabled ?? defaultEnabled) === false) continue;
+      if (config.permission_policy?.type === 'never_allow') continue;
+      normalized.push({
+        type: 'custom',
+        name: config.name,
+        description: config.description,
+        input_schema: config.parameters ?? config.input_schema!,
+      } satisfies AgentToolset);
+    }
+  }
+  return normalized;
 }

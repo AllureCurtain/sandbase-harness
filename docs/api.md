@@ -360,6 +360,10 @@ server; that is a legitimate fan-out of one transport across two tool groups.
 Whether a bound server is reachable, and whether it actually exposes the tools its
 toolset configs name, is checked at connection time rather than at save time.
 
+### Custom tools
+
+A custom tool is declared as an independent `tools[]` entry carrying `type: "custom"`, with `name`, `description`, and `input_schema`. The legacy `custom_toolset` grouping is still accepted on write, with `parameters` accepted as an alias for `input_schema`, and is projected back as flat canonical `custom` entries, so a client reading an agent sees one shape regardless of how it was written. A tool the legacy grouping disables — a config with `enabled: false`, or every config under a `default_config` of `enabled: false` — is dropped rather than translated into a policy. A canonical entry carrying a `permission_policy` is refused with `400 invalid_request_error`: the caller executes the tool and decides whether to run it, so a policy field would claim governance the runtime does not have. A name that collides with a built-in tool, a name declared twice across both shapes, and a malformed input schema are each refused with a message naming the offending entry.
+
 ### Agent model object
 
 `model` accepts either the bare model id string or the canonical object form.
