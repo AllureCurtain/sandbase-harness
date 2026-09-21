@@ -293,6 +293,26 @@ When `expected_version` is present and does not match the current agent
 version, the API returns `409 conflict`. Each successful create/update writes an
 immutable snapshot returned by `/v1/agents/{agent_id}/versions`.
 
+### MCP servers and toolsets
+
+An MCP toolset grants the tools a declared MCP server provides, so `mcp_servers`
+and the `mcp_toolset` entries in `tools` are one contract. An agent definition is
+rejected with `400 invalid_request_error` when either side names something the
+other does not:
+
+- an `mcp_toolset` naming a server absent from `mcp_servers` — the toolset has no
+  transport to connect to;
+- a declared `mcp_servers` entry that no `mcp_toolset` references — the server is
+  invisible to the agent;
+- two `mcp_servers` entries with the same name — a toolset reference would be
+  ambiguous.
+
+Each rejection names the offending entry. Two toolsets may bind the same declared
+server; that is a legitimate fan-out of one transport across two tool groups.
+
+Whether a bound server is reachable, and whether it actually exposes the tools its
+toolset configs name, is checked at connection time rather than at save time.
+
 ### Agent model object
 
 `model` accepts either the bare model id string or the canonical object form.

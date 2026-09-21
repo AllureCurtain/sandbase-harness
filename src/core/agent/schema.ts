@@ -184,6 +184,11 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     return { valid: false, errors: webToolErrors };
   }
 
+  const referenceErrors = validateMcpServerReferences(result.data);
+  if (referenceErrors.length > 0) {
+    return { valid: false, errors: referenceErrors };
+  }
+
   // A field the runtime cannot honour is refused by name rather than accepted
   // and quietly dropped. The schema strips what it does not know, so this runs
   // against the caller's own value; a shape error has already been reported
@@ -228,4 +233,58 @@ function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): 
     // carried through so the value survives a read-back.
     ...(data.model.effort ? { effort: data.model.effort } : {}),
   } as AgentDefinition;
+}
+/**
+ * Cross-check the MCP server list against the MCP toolsets that bind it.
+ *
+ * An MCP toolset grants the tools a declared server provides, so the two lists
+ * are one contract. A toolset naming an undeclared server has no transport to
+ * connect to, and a declared server with no toolset is invisible to the agent;
+ * both persist successfully and then silently do nothing at execution time. A
+ * duplicate server name is refused because a toolset reference would then be
+ * ambiguous.
+ *
+ * Two toolsets may bind the same declared server: that is a legitimate fan-out
+ * of one transport across two tool groups, not a duplicate.
+ */
+function validateMcpServerReferences(
+  data: z.infer<typeof agentDefinitionSchema>,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const servers = data.mcp_servers ?? [];
+
+  const declaredNames = new Set<string>();
+  servers.forEach((server, index) => {
+    if (declaredNames.has(server.name)) {
+      errors.push({
+        path: `mcp_servers.${index}.name`,
+        message: `Duplicate MCP server name "${server.name}"; toolset references would be ambiguous`,
+      });
+      return;
+    }
+    declaredNames.add(server.name);
+  });
+
+  const boundNames = new Set<string>();
+  (data.tools ?? []).forEach((toolset, index) => {
+    if (toolset.type !== 'mcp_toolset') return;
+    if (!declaredNames.has(toolset.mcp_server_name)) {
+      errors.push({
+        path: `tools.${index}.mcp_server_name`,
+        message: `MCP toolset references undeclared MCP server "${toolset.mcp_server_name}"; declare it in mcp_servers`,
+      });
+      return;
+    }
+    boundNames.add(toolset.mcp_server_name);
+  });
+
+  servers.forEach((server, index) => {
+    if (boundNames.has(server.name)) return;
+    errors.push({
+      path: `mcp_servers.${index}.name`,
+      message: `MCP server "${server.name}" has no mcp_toolset, so the agent cannot call it; add a matching toolset or remove the server`,
+    });
+  });
+
+  return errors;
 }
