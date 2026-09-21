@@ -1115,6 +1115,21 @@ Failed dispatches are stored as `pending_retry` until their next retry time or
 as `failed` after the maximum attempts.
 
 ### Scheduled Deployments
+A schedule's cron expression is evaluated in the deployment's own timezone, not in
+UTC. `0 9 * * *` with `timezone: "Asia/Tokyo"` fires at 09:00 Tokyo time, which is
+a different instant from 09:00 UTC, and the difference moves across the year
+because a zone that observes DST shifts by an hour while one that does not does
+not.
+
+Wall-clock arithmetic handles the two cases a naive conversion gets wrong: a
+**spring-forward gap**, where the requested wall time does not exist in the zone,
+yields no run rather than a silently shifted one, and a **fall-back overlap**,
+where the same wall time occurs twice, resolves to one deterministic instant.
+
+An unknown IANA zone name is refused rather than defaulted to UTC. `next_run_at`
+is stored as an absolute instant, so a runtime that was down when a schedule came
+due still computes the next occurrence from the persisted value rather than from
+when it happened to restart.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { isValidTimeZone, nextCronRun as nextCronRunInZone } from './cron.js';
 import type { Database } from '@/core/db/database.js';
 import type { SessionManager } from '@/core/session/session-manager.js';
 
@@ -14,28 +15,21 @@ export type SchedulerRunResult = {
   completed_at: string | null;
 };
 
-export function nextCronRun(cron: string, after: Date = new Date()): Date | null {
-  const schedule = parseCron(cron);
-  if (!schedule) return null;
-  const cursor = new Date(after.getTime());
-  cursor.setUTCSeconds(0, 0);
-  cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
-  const deadline = new Date(after.getTime() + 366 * 24 * 60 * 60 * 1000);
-  while (cursor <= deadline) {
-    if (
-      schedule.minutes.has(cursor.getUTCMinutes())
-      && schedule.hours.has(cursor.getUTCHours())
-      && schedule.months.has(cursor.getUTCMonth() + 1)
-      && schedule.daysOfMonth.has(cursor.getUTCDate())
-      && schedule.daysOfWeek.has(cursor.getUTCDay())
-    ) {
-      return cursor;
-    }
-    cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
-  }
-  return null;
+/**
+ * The next occurrence of a cron expression, evaluated in `timeZone`.
+ *
+ * An unknown zone is refused rather than silently falling back to UTC: a
+ * schedule that quietly fires at the wrong hour is worse than one that fails
+ * to save.
+ */
+export function nextCronRun(
+  cron: string,
+  after: Date = new Date(),
+  timeZone = 'UTC',
+): Date | null {
+  if (!isValidTimeZone(timeZone)) return null;
+  return nextCronRunInZone(cron, after, timeZone);
 }
-
 export function runDueScheduledDeployments(
   db: Database,
   sessionManager: SessionManager,
@@ -66,7 +60,8 @@ export function runSchedule(
   const runId = `srun_${nanoid(18)}`;
   const startedAt = startedAtDate.toISOString();
   const payload = parseObject(schedule.payload);
-  const nextRun = nextCronRun(schedule.cron, startedAtDate)?.toISOString() ?? null;
+  const timeZone = scheduleTimeZone(schedule);
+  const nextRun = nextCronRun(schedule.cron, startedAtDate, timeZone)?.toISOString() ?? null;
   try {
     const session = sessionManager.create({
       agent: schedule.agent_id,
@@ -155,3 +150,15 @@ type ParsedCron = {
   months: Set<number>;
   daysOfWeek: Set<number>;
 };
+/**
+ * The zone a schedule's cron is evaluated in.
+ *
+ * Read from the row's `timezone` column, with `UTC` as the default for a row
+ * written before per-schedule zones existed. An unrecognized value is treated
+ * as UTC rather than refused here, because a stored schedule must still run;
+ * the create and update routes validate the name.
+ */
+function scheduleTimeZone(schedule: ScheduleRow): string {
+  const raw = (schedule as { timezone?: unknown }).timezone;
+  return typeof raw === 'string' && raw.length > 0 ? raw : 'UTC';
+}
