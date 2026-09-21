@@ -1067,6 +1067,26 @@ evaluation. Automatic webhook dispatch and cron scheduling remain planned
 background workers.
 
 ### Webhooks
+Every delivery carries the Standard Webhooks v1 headers:
+
+```text
+webhook-id: <delivery id>
+webhook-timestamp: <unix seconds>
+webhook-signature: v1,<base64 hmac over "<id>.<timestamp>.<body>">
+```
+
+The signature covers the id, the timestamp, and the exact request body, so a
+receiver can detect a replayed or altered delivery rather than only a forged one.
+Verification is constant-time, and the signature header may carry several
+space-separated signatures — that is how the spec expresses a rotation window, so
+an operator can roll a secret without dropping in-flight deliveries.
+
+The signing key is derived from the endpoint secret. A `whsec_`-prefixed secret is
+base64-decoded to its key bytes; an unprefixed secret is used as raw UTF-8, so a
+workspace that predates per-endpoint secrets keeps producing valid signatures.
+
+The legacy `X-Managed-Agents-Signature` header is still sent, so an existing
+receiver keeps working.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

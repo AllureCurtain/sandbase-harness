@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
 import { dispatchWebhookEvent, retryDueWebhookDeliveries } from '@/core/operations/webhook-dispatcher.js';
+import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
 
 describe('webhook dispatcher', () => {
   let db: Database;
@@ -44,6 +45,39 @@ describe('webhook dispatcher', () => {
       attempt_count: 1,
       next_retry_at: null,
     });
+  });
+
+  it('sends the published Standard Webhooks v1 headers', async () => {
+    db.prepare(
+      `INSERT INTO webhooks (id, name, url, events, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('wh_hdr', 'HDR', 'https://example.com/hook', JSON.stringify(['*']), fixedNow.toISOString(), fixedNow.toISOString());
+    const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
+
+    await dispatchWebhookEvent(db, {
+      event: 'session.status_idle',
+      data: { session_id: 'sess_1' },
+      id: 'whevt_fixed',
+    }, { secret: 'whsec_secret_value', fetchImpl, now: () => fixedNow });
+
+    const [, init] = (fetchImpl as any).mock.calls[0];
+    const headers = init.headers as Record<string, string>;
+    // The legacy header is still sent, so an existing receiver keeps working.
+    expect(headers['X-Managed-Agents-Signature']).toMatch(/^sha256=/);
+    // The published set, keyed by the delivery id and the timestamp the
+    // signature covers.
+    expect(headers['webhook-id']).toMatch(/^whd_/);
+    expect(headers['webhook-timestamp']).toBe(String(Math.floor(fixedNow.getTime() / 1000)));
+    expect(headers['webhook-signature']).toMatch(/^v1,/);
+
+    // The signature really does cover id.timestamp.body.
+    const expected = signWebhookDelivery({
+      secret: 'whsec_secret_value',
+      id: headers['webhook-id'],
+      timestamp: headers['webhook-timestamp'],
+      body: String(init.body),
+    });
+    expect(headers['webhook-signature']).toBe(expected);
   });
 
   it('queues failed deliveries for retry and later marks them delivered', async () => {

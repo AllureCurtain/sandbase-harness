@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Signs webhook deliveries with the Standard Webhooks v1 headers. A delivery now
+  carries `webhook-id`, `webhook-timestamp`, and `webhook-signature`, with the
+  signature covering `id.timestamp.body` so a receiver can detect a replayed or
+  altered delivery rather than only a forged one. Verification is constant-time
+  and accepts several space-separated signatures in one header, which is the
+  rotation window. A `whsec_`-prefixed secret is base64-decoded to key bytes and
+  an unprefixed secret is used as raw UTF-8, and the legacy
+  `X-Managed-Agents-Signature` header is still sent.
 - Adds `POST`, `GET`, and revoke routes for a self-hosted environment's worker
   keys. Only the SHA-256 hash is stored, so `secret_key` is returned exactly once
   and list and revoke responses carry `key_prefix` instead. A claim on
