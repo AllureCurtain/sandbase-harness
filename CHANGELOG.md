@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- Evaluates a scheduled deployment's cron expression in the deployment's own
+  timezone instead of UTC. The same wall time resolves to a different instant in
+  a different zone, and the difference moves across the year for a zone that
+  observes DST. A wall time inside a spring-forward gap yields no run rather than
+  a silently shifted one, a fall-back overlap resolves to one deterministic
+  instant, and an unknown IANA zone name is refused rather than defaulted to UTC.
+  `nextCronRun` now takes an optional zone, defaulting to UTC so an existing
+  caller is unchanged.
 - Signs webhook deliveries with the Standard Webhooks v1 headers. A delivery now
   carries `webhook-id`, `webhook-timestamp`, and `webhook-signature`, with the
   signature covering `id.timestamp.body` so a receiver can detect a replayed or
