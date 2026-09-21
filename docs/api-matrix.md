@@ -9,7 +9,9 @@ that every Claude hosted capability exists locally.
 - The current public namespace is `/v1`.
 - Resource ids are opaque.
 - Collection responses use `{ data, has_more, first_id, last_id }`.
-- Errors use `{ error: { type, message } }`.
+- Errors use `{ error: { type, message } }`. A rejected compatibility
+  request also carries a stable `error.code` from the published
+  admission-code set.
 - CMA requests using `x-api-key`, `anthropic-version`, or `anthropic-beta` are
   admitted before `/v1` CMA handlers: version `2023-06-01` and beta
   `managed-agents-2026-04-01` are required, except `/v1/memory_stores` routes

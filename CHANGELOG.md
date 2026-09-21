@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+
+- Publishes stable admission error codes on rejected compatibility requests.
+  `error.code` now names the cause (`missing_anthropic_version`,
+  `unsupported_anthropic_version`, `missing_anthropic_beta`,
+  `malformed_anthropic_beta`, `unsupported_anthropic_beta`,
+  `conflicting_memory_store_beta`) so a client can branch on the reason
+  instead of matching the message text. The `/v1/x` extension root and its
+  subtree remain outside CMA admission.
 - Cross-checks an agent definition's `mcp_servers` against the `mcp_toolset`
   entries that bind it. A toolset naming an undeclared server, a declared server
   no toolset references, and a duplicate server name are each refused with a

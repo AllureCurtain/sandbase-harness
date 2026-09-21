@@ -14,15 +14,35 @@ import {
   CMA_MANAGED_AGENTS_BETA,
 } from '@/core/cma/compatibility.js';
 
-// The literals live in one shared home so the admission middleware and the
-// first-party SDK cannot drift into a state where the SDK sends a beta the
-// server no longer recognizes. Re-exported here because callers already read
-// them from this module.
-export {
-  CMA_AGENT_MEMORY_BETA,
-  CMA_ANTHROPIC_VERSION,
-  CMA_MANAGED_AGENTS_BETA,
-} from '@/core/cma/compatibility.js';
+// The three literals are owned by `@/core/cma/compatibility.js` so the SDK can
+// declare itself a CMA caller with the same values this middleware admits on.
+export { CMA_AGENT_MEMORY_BETA, CMA_ANTHROPIC_VERSION, CMA_MANAGED_AGENTS_BETA };
+
+/**
+ * Stable admission error codes.
+ *
+ * A caller needs to tell these apart programmatically: a missing version header
+ * is a bug in their client, a wrong beta is a wrong resource family, and a
+ * combined memory beta is a request that can never be valid for that path.
+ * Collapsing them all into one opaque 400 makes correct retry logic impossible,
+ * so each condition gets a code that will not change once published.
+ */
+export const CMA_ADMISSION_CODES = {
+  /** A compatibility caller omitted `anthropic-version`. */
+  missingVersion: 'missing_anthropic_version',
+  /** `anthropic-version` is present but not the supported value. */
+  unsupportedVersion: 'unsupported_anthropic_version',
+  /** A compatibility caller omitted `anthropic-beta`. */
+  missingBeta: 'missing_anthropic_beta',
+  /** `anthropic-beta` is present but not comma-separated identifiers. */
+  malformedBeta: 'malformed_anthropic_beta',
+  /** The beta does not match the resource family being addressed. */
+  unsupportedBeta: 'unsupported_anthropic_beta',
+  /** Both memory-store betas were sent on a memory-store request. */
+  conflictingMemoryBeta: 'conflicting_memory_store_beta',
+} as const;
+
+export type CmaAdmissionCode = (typeof CMA_ADMISSION_CODES)[keyof typeof CMA_ADMISSION_CODES];
 
 export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
   return async (c, next) => {
@@ -32,20 +52,28 @@ export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
 
     const version = c.req.header('anthropic-version')?.trim();
     if (!version) {
-      return invalidRequest(c, 'Missing required header: anthropic-version.');
+      return invalidRequest(c, CMA_ADMISSION_CODES.missingVersion, 'Missing required header: anthropic-version.');
     }
     if (version !== CMA_ANTHROPIC_VERSION) {
-      return invalidRequest(c, `Unsupported anthropic-version. Expected "${CMA_ANTHROPIC_VERSION}".`);
+      return invalidRequest(
+        c,
+        CMA_ADMISSION_CODES.unsupportedVersion,
+        `Unsupported anthropic-version. Expected "${CMA_ANTHROPIC_VERSION}".`,
+      );
     }
 
     const betaHeader = c.req.header('anthropic-beta')?.trim();
     if (!betaHeader) {
-      return invalidRequest(c, 'Missing required header: anthropic-beta.');
+      return invalidRequest(c, CMA_ADMISSION_CODES.missingBeta, 'Missing required header: anthropic-beta.');
     }
 
     const betas = parseBetaHeader(betaHeader);
     if (!betas) {
-      return invalidRequest(c, 'Malformed anthropic-beta header. Provide comma-separated beta identifiers.');
+      return invalidRequest(
+        c,
+        CMA_ADMISSION_CODES.malformedBeta,
+        'Malformed anthropic-beta header. Provide comma-separated beta identifiers.',
+      );
     }
 
     const memoryStorePath = isMemoryStorePath(c.req.path);
@@ -54,7 +82,11 @@ export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
     // The CMA memory contract explicitly prohibits combining these resource
     // betas. Reject it before the request can mutate a memory store.
     if (memoryStorePath && hasManagedAgentsBeta && hasAgentMemoryBeta) {
-      return invalidRequest(c, 'Do not combine managed-agents and agent-memory beta headers for memory-store requests.');
+      return invalidRequest(
+        c,
+        CMA_ADMISSION_CODES.conflictingMemoryBeta,
+        'Do not combine managed-agents and agent-memory beta headers for memory-store requests.',
+      );
     }
 
     // CMA defines this read-only listing as equivalent under either beta. It is
@@ -64,13 +96,18 @@ export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
       if (hasManagedAgentsBeta || hasAgentMemoryBeta) return next();
       return invalidRequest(
         c,
+        CMA_ADMISSION_CODES.unsupportedBeta,
         `Unsupported anthropic-beta. Expected "${CMA_MANAGED_AGENTS_BETA}" or "${CMA_AGENT_MEMORY_BETA}".`,
       );
     }
 
     const requiredBeta = memoryStorePath ? CMA_AGENT_MEMORY_BETA : CMA_MANAGED_AGENTS_BETA;
     if (!betas.includes(requiredBeta)) {
-      return invalidRequest(c, `Unsupported anthropic-beta. Expected "${requiredBeta}".`);
+      return invalidRequest(
+        c,
+        CMA_ADMISSION_CODES.unsupportedBeta,
+        `Unsupported anthropic-beta. Expected "${requiredBeta}".`,
+      );
     }
 
     return next();
@@ -78,7 +115,10 @@ export function createCmaRequestAdmissionMiddleware(): MiddlewareHandler {
 }
 
 function isCmaResourcePath(path: string): boolean {
-  return path.startsWith('/v1/') && !/^\/v1\/x(?:\/|$)/.test(path);
+  // The `/v1/x` extension root and everything beneath it stay outside CMA
+  // admission, so a caller addressing the extension namespace never has to
+  // declare a beta just to reach a non-CMA route.
+  return path.startsWith('/v1/') && path !== '/v1/x' && !path.startsWith('/v1/x/');
 }
 
 function hasCmaCompatibilityHeaders(c: Context): boolean {
@@ -100,6 +140,10 @@ function parseBetaHeader(value: string): string[] | null {
   return betas.every(Boolean) ? betas : null;
 }
 
-function invalidRequest(c: Context, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+/**
+ * The admission layer owns the request before any handler runs, so it answers
+ * in the same envelope shape the routes use: a typed error with a stable code.
+ */
+function invalidRequest(c: Context, code: CmaAdmissionCode, message: string): Response {
+  return c.json({ error: { type: 'invalid_request', code, message } }, 400);
 }
