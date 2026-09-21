@@ -18,7 +18,7 @@ import type { AgentDefinition } from '@/types/agent.js';
 // MCP Server Config Schema
 // ============================================================
 
-const mcpServerConfigSchema = z.discriminatedUnion('type', [
+export const mcpServerConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('url'),
     name: z.string().min(1, 'MCP server name is required'),
@@ -57,7 +57,7 @@ const mcpToolConfigSchema = agentToolConfigSchema.extend({
   name: z.string().min(1, 'Tool config name is required').max(128),
 });
 
-const agentToolsetSchema = z.discriminatedUnion('type', [
+export const agentToolsetSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('agent_toolset_20260401'),
     configs: z.array(builtinToolConfigSchema).default([]),
@@ -71,7 +71,7 @@ const agentToolsetSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-const skillRefSchema = z.object({
+export const skillRefSchema = z.object({
   type: z.enum(['custom', 'anthropic']),
   skill_id: z.string().min(1, 'Skill id is required'),
   version: z.string().optional(),
@@ -88,7 +88,7 @@ const modelSpeedSchema = z.enum(['fast', 'standard', 'extended']);
  */
 export const modelEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
-const agentModelConfigSchema = z.object({
+export const agentModelConfigSchema = z.object({
   id: z.string().min(1, 'Model id is required').optional(),
   speed: modelSpeedSchema.default('standard'),
 });
@@ -112,7 +112,7 @@ export const agentModelObjectSchema = z.object({
 // that carries `effort` is parsed by the schema that knows the field. Reversing
 // the order would let the string arm never see it and the legacy object arm
 // strip it, which is exactly the silent loss this parser exists to prevent.
-const agentModelInputSchema = z.union([
+export const agentModelInputSchema = z.union([
   agentModelObjectSchema,
   z.string().min(1, 'Model id is required'),
 ]);
@@ -121,11 +121,20 @@ const agentModelInputSchema = z.union([
 // Agent Definition Schema
 // ============================================================
 
+/**
+ * The agent name rule.
+ *
+ * Extracted so a partial update validates a name against the same shape the
+ * create path uses, rather than re-declaring the pattern and letting the two
+ * drift.
+ */
+export const agentNameSchema = z
+  .string()
+  .min(1, 'Agent name is required')
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/, 'Agent name must be alphanumeric with spaces, hyphens, or underscores');
+
 export const agentDefinitionSchema = z.object({
-  name: z
-    .string()
-    .min(1, 'Agent name is required')
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/, 'Agent name must be alphanumeric with spaces, hyphens, or underscores'),
+  name: agentNameSchema,
   model: agentModelInputSchema,
   model_config: agentModelConfigSchema.optional(),
   system: z.string().min(1, 'System instructions are required'),

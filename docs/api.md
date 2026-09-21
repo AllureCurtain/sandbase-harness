@@ -293,6 +293,34 @@ When `expected_version` is present and does not match the current agent
 version, the API returns `409 conflict`. Each successful create/update writes an
 immutable snapshot returned by `/v1/agents/{agent_id}/versions`.
 
+### Updating an agent
+
+`PUT` and `PATCH` on `/v1/agents/{agent_id}` both accept a partial definition and
+apply the same update semantics, so a client that only shows a subset of the
+definition can save without resending every field:
+
+| Rule | Behaviour |
+| --- | --- |
+| Omitted field | Keeps its stored value. |
+| Present scalar | Replaces its value. |
+| `tools`, `mcp_servers`, `skills` | Replace wholesale when present. |
+| `metadata` | Merges per key; a key set to `null` is deleted. |
+| `null` on a clearable field | Clears it, the same as `[]` for a list field. |
+| `name`, `model` | Cannot be cleared; a clear attempt gets its own message. |
+| Unknown field | Rejected with a message naming it, not silently discarded. |
+
+The merged definition is revalidated against the full agent schema before it is
+persisted, so a request that changes one side of a coupled pair is judged on the
+pair it produces. Replacing `model` without an explicit `model_config` drops the
+stale config rather than leaving a previous id and speed pointing at the old model.
+Clearing `system` is refused, because the runtime requires a non-empty system
+prompt.
+
+`expected_version` remains the optimistic-lock precondition: absent means no
+precondition, and a malformed value is a `400` rather than a silent downgrade to an
+unguarded update. A successful update writes a new immutable version, and an update
+that changes nothing writes no version at all.
+
 ### MCP servers and toolsets
 
 An MCP toolset grants the tools a declared MCP server provides, so `mcp_servers`
