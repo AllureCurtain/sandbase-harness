@@ -198,6 +198,13 @@
 
 ### Security
 
+- Redacts credential secrets from values that are logged or returned. A redactor
+  bound to one injection bundle replaces every secret it holds wherever it appears,
+  including nested objects and arrays, and `clear()` drops the held secrets so the
+  redactor cannot be reused after the turn ends. A secret belonging to a different
+  bundle is not redacted, and a value containing no secret is returned unchanged.
+  The canonical credential shape rejects an unknown field rather than ignoring it.
+
 - Stops persisting raw model reasoning in the public event log. `agent.thinking`
   is now emitted as a content-free progress signal carrying
   `metadata.signal = "reasoning"`, so reasoning traces that echo tool output are
