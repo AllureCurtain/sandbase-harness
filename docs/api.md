@@ -886,6 +886,26 @@ curl -X POST http://127.0.0.1:3000/v1/sessions/SESSION_ID/artifacts \
 Text, Markdown, JSON, YAML, HTML, and SVG artifacts include inline previews in
 metadata responses. Raw storage paths are never returned.
 
+### Memory versions
+
+A memory is overwritten in place, so every write also records an immutable
+version row carrying the store, the memory, a per-memory monotonic version
+number, the path, the content, its SHA-256, its size in bytes, the change kind,
+and the session that made it. A memory's history is therefore reconstructable
+without diffing snapshots of the store, and a second writer claiming a version
+that already exists is refused by a unique index rather than overwriting the
+first. Numbering is per memory, so two memories in one store do not share a
+sequence. The live memory row is unchanged by reading a version.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/memory_stores/{memory_store_id}/memory_versions` | List recorded versions, newest first. |
+| `GET` | `/v1/memory_stores/{memory_store_id}/memory_versions/{version_id}` | Read one recorded version. |
+
+Pass `memory_id` to the listing to read the history of one memory alone. The
+recorded content hash is the same digest the store's precondition checks use, so
+a version can be verified without trusting the row.
+
 ### Session resources
 
 A resource attached to a session is a per-session instance with its own
