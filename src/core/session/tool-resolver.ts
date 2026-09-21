@@ -6,7 +6,7 @@ import { McpManager, type McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orchestrator/agent-orchestrator.js';
 import type { EventLogger } from './event-logger.js';
 import type { DelegationService } from './delegation-service.js';
-import { getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 
@@ -50,6 +50,17 @@ export class ToolResolver {
     const tools = this.buildSandboxTools(agent, sandbox);
     Object.assign(tools, await this.getOrConnectMcp(session.id, agent));
     Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx, session));
+    // Custom tools are model-visible declarations only. The caller executes them
+    // and answers through `user.custom_tool_result`, so the entry carries the
+    // description and input schema the model needs and no `execute` at all.
+    const customNames = new Set(getCustomToolNames(agent));
+    for (const config of getCustomToolConfigs(agent)) {
+      if (!customNames.has(config.name)) continue;
+      tools[config.name] = {
+        description: config.description,
+        parameters: config.parameters,
+      };
+    }
 
     for (const name of getToolsRequiringConfirmation(agent)) {
       if (tools[name]) {

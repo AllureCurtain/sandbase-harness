@@ -131,7 +131,7 @@ export class DefaultStrategy implements AgentStrategy {
   readonly requiresModel = true;
 
   async *execute(context: StrategyContext): AsyncIterable<SessionEvent> {
-    const { session, systemPrompt, messages, model, tools, sandbox: _sandbox, eventLog, broadcast, config, abortSignal } = context;
+    const { session, systemPrompt, messages, model, tools, customToolNames, sandbox: _sandbox, eventLog, broadcast, config, abortSignal } = context;
     if (!model) throw new Error('Default strategy requires an AI SDK model');
     const maxSteps = config.maxSteps ?? 25;
 
@@ -144,13 +144,23 @@ export class DefaultStrategy implements AgentStrategy {
     let totalTokensIn = 0;
     let totalTokensOut = 0;
     const confirmTools = new Set(config.confirmTools ?? []);
+    const customTools = new Set(customToolNames ?? []);
     const confirmableToolCallIds = new Set<string>();
+    const customToolCallIds = new Set<string>();
     const pendingConfirmationCalls: Array<{
       toolCallId: string;
       toolName: string;
       tokensIn: number;
       tokensOut: number;
       confirmationGroupId: string;
+    }> = [];
+    const pendingCustomToolCalls: Array<{
+      toolCallId: string;
+      toolName: string;
+      input: Record<string, unknown>;
+      tokensIn: number;
+      tokensOut: number;
+      stopReason?: string;
     }> = [];
     const modelUsed = modelIdentifier(model, '');
     const startTime = Date.now();
@@ -163,14 +173,18 @@ export class DefaultStrategy implements AgentStrategy {
       const confirmationToolDefinitions = Object.fromEntries(
         Object.entries(tools).filter(([name]) => confirmTools.has(name)),
       );
+      const customToolDefinitions = Object.fromEntries(
+        Object.entries(tools).filter(([name]) => customTools.has(name)),
+      );
       const lockedConfirmationTools = createAiSdkExecutionLock(confirmationToolDefinitions);
+      const lockedCustomTools = createAiSdkExecutionLock(customToolDefinitions);
       const aiTools: Record<string, any> = {};
       for (const [name, tool] of Object.entries(tools)) {
-        aiTools[name] = toAiTool(lockedConfirmationTools[name] ?? tool);
+        aiTools[name] = toAiTool(lockedConfirmationTools[name] ?? lockedCustomTools[name] ?? tool);
       }
       const guard = createAiSdkV4ExecutionGuard({
         schemas: Object.fromEntries(
-          Object.entries(confirmationToolDefinitions)
+          Object.entries({ ...confirmationToolDefinitions, ...customToolDefinitions })
             .filter(([, tool]) => tool?.parameters && typeof tool.parameters === 'object')
             .map(([name, tool]) => [name, tool.parameters as JsonSchemaLike]),
         ),
@@ -187,7 +201,15 @@ export class DefaultStrategy implements AgentStrategy {
         system: systemPrompt || undefined,
         messages: aiMessages,
         tools: Object.keys(aiTools).length > 0 ? aiTools : undefined,
-        stopWhen: stepCountIs(maxSteps),
+        stopWhen: [
+          stepCountIs(maxSteps),
+          // A custom tool call has no local executor, so the turn stops rather
+          // than asking the SDK to run a tool that cannot produce a result.
+          ...(customTools.size > 0
+            ? [({ steps }: { steps: Array<{ toolCalls?: Array<{ toolName: string }> }> }) =>
+              steps.at(-1)?.toolCalls?.some((call) => customTools.has(call.toolName)) ?? false]
+            : []),
+        ],
         temperature: config.temperature,
         maxOutputTokens: config.maxTokens,
         abortSignal,
@@ -258,6 +280,23 @@ export class DefaultStrategy implements AgentStrategy {
             const resultIds = new Set((step.toolResults ?? []).map((result) => result.toolCallId));
             let confirmationGroupId: string | undefined;
             for (const toolCall of step.toolCalls) {
+              // A custom tool call is never executed here. It is collected and
+              // persisted after the raw call passes the execution guard, so a
+              // malformed call never reaches the event log.
+              const isCustom = customTools.has(toolCall.toolName);
+              if (isCustom) {
+                if (!resultIds.has(toolCall.toolCallId)) {
+                  pendingCustomToolCalls.push({
+                    toolCallId: toolCall.toolCallId,
+                    toolName: toolCall.toolName,
+                    input: toolCall.input as Record<string, unknown>,
+                    tokensIn,
+                    tokensOut,
+                    stopReason,
+                  });
+                }
+                continue;
+              }
               const awaitsConfirmation = confirmTools.has(toolCall.toolName) && !resultIds.has(toolCall.toolCallId);
               if (awaitsConfirmation) {
                 confirmationGroupId ??= `confirm_${nanoid(16)}`;
@@ -387,6 +426,33 @@ export class DefaultStrategy implements AgentStrategy {
       }
 
       const guarded = guard.finish();
+      for (const pendingCall of pendingCustomToolCalls) {
+        const matches = guarded.decisions.filter(
+          (decision) => decision.toolCallId === pendingCall.toolCallId && decision.name === pendingCall.toolName,
+        );
+        if (matches.length !== 1) continue;
+
+        const authority = guard.takeDecision(matches[0].internalId);
+        if (!authority || !authority.value || typeof authority.value !== 'object' || Array.isArray(authority.value)) continue;
+
+        customToolCallIds.add(pendingCall.toolCallId);
+        const customUseEvent = eventLog.append(session.id, {
+          type: 'agent.custom_tool_use',
+          content: [{
+            type: 'tool_use',
+            id: pendingCall.toolCallId,
+            name: pendingCall.toolName,
+            input: authority.value as Record<string, unknown>,
+          }] as ContentBlock[],
+          tokensIn: pendingCall.tokensIn,
+          tokensOut: pendingCall.tokensOut,
+          modelUsed,
+          stopReason: pendingCall.stopReason,
+          metadata: { custom_tool: true },
+        });
+        broadcast(customUseEvent);
+      }
+
       for (const pendingCall of pendingConfirmationCalls) {
         const matches = guarded.decisions.filter(
           (decision) => decision.toolCallId === pendingCall.toolCallId && decision.name === pendingCall.toolName,
@@ -430,8 +496,14 @@ export class DefaultStrategy implements AgentStrategy {
       const pendingConfirm = pending.filter(
         (c: any) => confirmTools.has(c.toolName) && confirmableToolCallIds.has(c.toolCallId),
       );
+      // A persisted custom tool call is also parked work: the runtime is waiting
+      // for the caller's result, so the session is actionable in the same way an
+      // approval is.
+      const pendingCustom = pending.filter(
+        (c: any) => customTools.has(c.toolName) && customToolCallIds.has(c.toolCallId),
+      );
 
-      if (pendingConfirm.length > 0 && config.onRequiresAction) {
+      if ((pendingConfirm.length > 0 || pendingCustom.length > 0) && config.onRequiresAction) {
         config.onRequiresAction();
       }
 

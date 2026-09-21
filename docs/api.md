@@ -511,10 +511,7 @@ through the same endpoint:
 }
 ```
 
-The runtime currently supports the event protocol and Console/SDK result
-submission. First-class custom tool registration and discovery is still a
-planned extension point; until then, clients should treat custom tool use ids as
-opaque ids emitted by the session event stream.
+The runtime supports the whole loop rather than only the event protocol. A declared custom tool is exposed to the model with its description and input schema, a call to it is persisted as an `agent.custom_tool_use` event which parks the session in `requires_action`, and the caller answers with `user.custom_tool_result` naming the `custom_tool_use_id`, after which the turn resumes with that result as the model-facing tool result. The runtime never executes a custom tool itself and never fabricates a result for one, so the caller is the only thing that can answer a call — which is why a result naming a call that is not pending, and a second result for a call that already has one, are each refused with `400 invalid_request_error` instead of being appended.
 
 Send and stream a message:
 

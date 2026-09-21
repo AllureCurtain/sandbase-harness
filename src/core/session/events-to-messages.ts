@@ -208,6 +208,27 @@ export function eventsToMessages(
         break;
       }
 
+      case 'user.custom_tool_result': {
+        // The result is an inbound event, but it is the model-facing tool result
+        // for the preceding agent.custom_tool_use call, so it projects as a tool
+        // result rather than as user input.
+        flushAssistant();
+        const customToolCallId = typeof event.metadata?.custom_tool_use_id === 'string'
+          ? event.metadata.custom_tool_use_id
+          : undefined;
+        if (customToolCallId) {
+          const toolName = toolNameById.get(customToolCallId) ?? 'unknown';
+          pendingTools.push({
+            type: 'tool-result',
+            toolCallId: customToolCallId,
+            toolName,
+            output: contentBlocksToToolOutput(event.content),
+            ...(event.metadata?.is_error === true ? { isError: true } : {}),
+          });
+        }
+        break;
+      }
+
       // Skip non-context events
       case 'agent.message_stream_start':
       case 'agent.message_chunk':
@@ -230,7 +251,6 @@ export function eventsToMessages(
 
       case 'user.interrupt':
       case 'user.tool_confirmation':
-      case 'user.custom_tool_result':
       case 'session.status_idle':
       case 'session.status_running':
       case 'session.status_rescheduled':
@@ -291,6 +311,17 @@ function extractText(content?: ContentBlock[]): string {
 }
 
 /** Flatten content blocks to the text a model reads, for non-text carriers. */
+function contentBlocksToToolOutput(content?: ContentBlock[]): ToolResultPart['output'] {
+  if (!content || content.length === 0) return { type: 'text', value: '' };
+  if (content.every((block) => block.type === 'text')) {
+    return {
+      type: 'text',
+      value: content.map((block) => (block.type === 'text' ? block.text : '')).join('\n'),
+    };
+  }
+  return { type: 'json', value: content };
+}
+
 function contentBlocksToText(content?: ContentBlock[]): string {
   if (!content) return '';
   return content

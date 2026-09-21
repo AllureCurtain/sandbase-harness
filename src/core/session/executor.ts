@@ -31,7 +31,7 @@ import { SandboxLifecycle, type SandboxLifecycleLogger } from './sandbox-lifecyc
 import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver } from './tool-resolver.js';
-import { getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import { getCustomToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import {
   assertPiAgentCanExecute,
   assertPiEnvironmentCanExecute,
@@ -188,7 +188,10 @@ export class DefaultSessionExecutor implements SessionExecutor {
     // 5. Build tools: built-in sandbox tools, MCP tools, delegation tools, and
     // confirm-required stripping.
     const tools = await this.toolResolver.resolveTools(session, agent, sandbox);
-    const confirmTools = getToolsRequiringConfirmation(agent);
+    // A custom tool call is parked work, not executable work: the runtime
+    // surfaces it and waits for the caller's result, so it is routed through the
+    // same requires_action path an approval takes.
+    const confirmTools = [...getToolsRequiringConfirmation(agent), ...getCustomToolNames(agent)];
 
     // 6. Execute strategy
     const context: StrategyContext = {
@@ -200,6 +203,10 @@ export class DefaultSessionExecutor implements SessionExecutor {
       model,
       ...(this.deps.skillsDir ? { skillDirs: this.skillDirsFor(agent) } : {}),
       tools,
+      // Names the strategy must expose but never execute. Derived from the same
+      // list that feeds confirmTools so the two cannot disagree about which
+      // tools are caller-executed.
+      customToolNames: new Set(getCustomToolNames(agent)),
       sandbox,
       eventLog: eventLogger,
       broadcast, // real SSE broadcast wired from SessionManager
