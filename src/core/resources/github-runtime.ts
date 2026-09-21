@@ -1,0 +1,175 @@
+/**
+ * Host-side wiring for GitHub repository materialization.
+ *
+ * {@link materializeGithubRepository} states *what* mounting a repository
+ * means; this module supplies the host capabilities it needs — spawning git,
+ * walking a directory, reading and deleting files. Keeping the two apart is
+ * what lets the materializer be tested without a real clone while production
+ * still runs the real thing.
+ *
+ * The git invocation is the security-relevant half. A token reaches git only
+ * through {@link gitAuthEnv} (the environment), never through argv: argv is
+ * visible to any process that can list processes, and a command line also tends
+ * to be echoed back in error messages. Every byte of git output is additionally
+ * passed through the session sanitizer before it leaves this module.
+ */
+
+import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
+import { join, relative } from 'node:path';
+import type { SandboxInstance } from '@/types/sandbox.js';
+import {
+  materializeGithubRepository,
+  GIT_TIMEOUT_MS,
+  sanitizeGitOutput,
+  type GithubRepositoryResource,
+  type MaterializeDeps,
+  type MaterializeResult,
+} from './github-materializer.js';
+
+export interface GithubRuntimeOptions {
+  /** Root directory cached checkouts and temporary clones live under. */
+  cacheRoot: string;
+  /** Workspace data dir, used to decrypt a stored authorization token. */
+  dataDir?: string;
+}
+
+/** Directories never copied into a sandbox from a checkout. */
+const EXCLUDED_DIRS = new Set(['.git']);
+
+/** How many bytes of git output to retain before truncating a message. */
+const MAX_OUTPUT_CHARS = 4_000;
+
+/**
+ * Run git with the token in the environment.
+ *
+ * Resolves rather than rejects on a non-zero exit: a failed clone is an
+ * expected outcome the materializer reports as a domain result, not an
+ * exceptional condition for the caller to unwrap. Only a spawn failure (for
+ * example, git not installed) rejects.
+ */
+function runGit(
+  args: string[],
+  opts: { cwd?: string; env?: Record<string, string>; timeoutMs?: number },
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  if (opts.cwd) mkdirSync(opts.cwd, { recursive: true });
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, {
+      cwd: opts.cwd,
+      // A caller-supplied env is additive: PATH and the rest of the parent
+      // environment still have to reach git for it to find its own helpers.
+      env: { ...process.env, ...(opts.env ?? {}) },
+      windowsHide: true,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      resolve({
+        exitCode: 124,
+        stdout: stdout.slice(-MAX_OUTPUT_CHARS),
+        stderr: `${stderr.slice(-MAX_OUTPUT_CHARS)}\ngit command timed out after ${opts.timeoutMs ?? GIT_TIMEOUT_MS}ms`,
+      });
+    }, opts.timeoutMs ?? GIT_TIMEOUT_MS);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < MAX_OUTPUT_CHARS * 2) stdout += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < MAX_OUTPUT_CHARS * 2) stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        exitCode: code ?? 1,
+        stdout: stdout.slice(-MAX_OUTPUT_CHARS),
+        stderr: stderr.slice(-MAX_OUTPUT_CHARS),
+      });
+    });
+  });
+}
+
+/** Recursively list files under a directory, relative to it, dirs excluded. */
+function listFilesRecursive(root: string, current = root): string[] {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(current, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const files: string[] = [];
+  for (const entry of entries) {
+    const absolute = join(current, entry.name);
+    if (entry.isDirectory()) {
+      if (EXCLUDED_DIRS.has(entry.name)) continue;
+      files.push(...listFilesRecursive(root, absolute));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    files.push(relative(root, absolute));
+  }
+  return files;
+}
+
+/**
+ * Build the production {@link MaterializeDeps}.
+ *
+ * Exported so a composition test can assert the wiring without importing the
+ * whole runtime, and so `SandboxLifecycle` receives a materializer bound to the
+ * same host primitives the rest of the runtime uses.
+ */
+export function createGithubMaterializeDeps(options: GithubRuntimeOptions): MaterializeDeps {
+  return {
+    cacheRoot: options.cacheRoot,
+    dataDir: options.dataDir,
+    runGit,
+    removeDir: (path: string) => {
+      rmSync(path, { recursive: true, force: true });
+    },
+    listFiles: async (path: string) => listFilesRecursive(path),
+    readFile: async (path: string) => readFileSync(path, 'utf8'),
+  };
+}
+
+/**
+ * A materializer bound to a fixed {@link MaterializeDeps}.
+ *
+ * No database handle is passed: a repository's identity lives on the session
+ * resource, and the cache key is derived from the URL and revision alone.
+ */
+export function createGithubMaterializer(options: GithubRuntimeOptions) {
+  const deps = createGithubMaterializeDeps(options);
+  mkdirSync(join(options.cacheRoot, 'github-repositories'), { recursive: true });
+
+  return async (
+    resource: GithubRepositoryResource,
+    sandbox: SandboxInstance,
+  ): Promise<MaterializeResult> => {
+    const result = await materializeGithubRepository(resource, sandbox, deps);
+    // Belt-and-braces: the materializer sanitizes its own messages, but this is
+    // the last hop before the string can reach an event or a log line.
+    if (!result.ok) {
+      const token = typeof resource.authorization_token === 'string'
+        ? resource.authorization_token
+        : '';
+      return { ok: false, message: sanitizeGitOutput(result.message, token) };
+    }
+    return result;
+  };
+}

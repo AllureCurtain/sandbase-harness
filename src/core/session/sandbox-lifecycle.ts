@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import {
   type SandboxProvider,
   type SandboxInstance,
@@ -7,19 +8,59 @@ import {
 import type { Session } from '@/types/session.js';
 import { UnknownSandboxProviderError, type SandboxProviderRegistry } from '@/sandbox/registry.js';
 import type { SnapshotManager } from './snapshot-manager.js';
+import { FILE_MOUNT_ROOT, resolveFileMountPath } from './file-mount-path.js';
+import {
+  materializeGithubRepository,
+  type GithubRepositoryResource,
+  type MaterializeDeps,
+  type MaterializeResult,
+} from '@/core/resources/github-materializer.js';
 
 /** Minimal warn sink so the lifecycle can report capability gaps. */
 export interface SandboxLifecycleLogger {
   warn(msg: string, fields?: Record<string, unknown>): void;
 }
 
+export type FileArtifactReader = (fileId: string) => Buffer | Promise<Buffer>;
+
+/**
+ * Mounts a `github_repository` resource into a fresh sandbox.
+ *
+ * Injected rather than constructed here so the lifecycle stays free of host
+ * process concerns (git, the filesystem, secret decryption) and so tests can
+ * drive materialization without a real clone. The default wiring lives in the
+ * runtime composition, which is where a real `runGit` belongs.
+ */
+export type GithubRepositoryMaterializer = (
+  resource: GithubRepositoryResource,
+  sandbox: SandboxInstance,
+) => Promise<MaterializeResult>;
+
 export interface SandboxLifecycleDeps {
   sandboxProvider: SandboxProvider;
   sandboxRegistry?: SandboxProviderRegistry;
   resolveEnvironmentConfig?: (environmentId: string) => EnvironmentConfig | undefined;
   snapshots?: SnapshotManager;
+  /** Reads active file resources without exposing host storage paths. */
+  fileArtifactReader?: FileArtifactReader;
+  /**
+   * Mounts github_repository resources. Absent in an embedder that never
+   * attaches a repository; a session that *does* attach one then fails loudly
+   * rather than starting with an empty mount.
+   */
+  githubMaterializer?: GithubRepositoryMaterializer;
   logger?: SandboxLifecycleLogger;
 }
+
+/** Result of one provisioning pass, exposed so callers can surface mounts. */
+export interface MaterializedSessionResources {
+  /** Absolute paths mounted from github_repository resources, in order. */
+  repositories: string[];
+  /** Skill directory names discovered across all mounted repositories. */
+  skills: string[];
+}
+
+export type { MaterializeDeps, GithubRepositoryResource, MaterializeResult };
 
 /** A provisioned sandbox plus the backend that produced it. */
 interface BoundSandbox {
@@ -29,6 +70,16 @@ interface BoundSandbox {
 
 export class SandboxLifecycle {
   private readonly bound = new Map<string, BoundSandbox>();
+  /** Prevent concurrent callers from provisioning/materializing twice. */
+  private readonly provisioning = new Map<string, Promise<SandboxInstance>>();
+  /**
+   * Skills discovered in mounted repositories, keyed by session.
+   *
+   * A repository's `.claude/skills` enters the agent's instruction boundary at
+   * session start, so the names must be reachable by the context builder
+   * without re-listing the sandbox on every turn.
+   */
+  private readonly repositorySkills = new Map<string, string[]>();
   /**
    * Backends whose lack of isolation has already been reported.
    *
@@ -39,6 +90,18 @@ export class SandboxLifecycle {
   private readonly reportedUnisolated = new Set<string>();
 
   constructor(private readonly deps: SandboxLifecycleDeps) {}
+
+  /**
+   * The sandbox currently bound to a session, or `undefined` when none is.
+   *
+   * Deliberately does not provision. The tool-output overflow contract needs to
+   * know whether a sandbox exists before it tells the model to read an overflow
+   * file back; provisioning one lazily here would make a read path allocate
+   * execution resources as a side effect.
+   */
+  get(sessionId: string): SandboxInstance | undefined {
+    return this.bound.get(sessionId)?.sandbox;
+  }
 
   /**
    * Provision an extra sandbox for a session-scoped side task (a delegated
@@ -59,22 +122,104 @@ export class SandboxLifecycle {
     const existing = this.bound.get(session.id);
     if (existing) return existing.sandbox;
 
+    const pending = this.provisioning.get(session.id);
+    if (pending) return pending;
+
+    const operation = this.provisionAndMaterialize(session);
+    this.provisioning.set(session.id, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.provisioning.get(session.id) === operation) this.provisioning.delete(session.id);
+    }
+  }
+
+  private async provisionAndMaterialize(session: Session): Promise<SandboxInstance> {
     const envConfig = this.resolveEnvironmentConfig(session);
     const provider = this.resolveProvider(envConfig.sandbox_provider);
     this.reportCapabilityGaps(session, envConfig, provider);
 
     const sandbox = await provider.provision(session.id, envConfig);
-
-    if (this.snapshotsSupported(envConfig, provider) && this.deps.snapshots && sandbox.hostWorkDir) {
-      try {
-        this.deps.snapshots.restoreLatest(session.id, sandbox.hostWorkDir);
-      } catch {
-        // best-effort restore
+    try {
+      if (this.snapshotsSupported(envConfig, provider) && this.deps.snapshots && sandbox.hostWorkDir) {
+        try {
+          this.deps.snapshots.restoreLatest(session.id, sandbox.hostWorkDir);
+        } catch {
+          // best-effort restore
+        }
       }
+
+      await this.materializeFileResources(session, sandbox);
+      await this.materializeGithubResources(session, sandbox);
+      this.bound.set(session.id, { sandbox, provider });
+      return sandbox;
+    } catch (err) {
+      // A provisioned sandbox must never survive a failed restore/materialize
+      // phase, otherwise a later retry could observe a partially initialized
+      // workspace. Preserve the original error if cleanup also fails.
+      try {
+        await sandbox.cleanup();
+      } catch {
+        // best-effort failure cleanup
+      }
+      throw err;
+    }
+  }
+
+  private async materializeFileResources(session: Session, sandbox: SandboxInstance): Promise<void> {
+    const resources = session.resources ?? [];
+    const fileResources = resources.filter((resource) => resource.type === 'file');
+    if (fileResources.length === 0) return;
+    if (!this.deps.fileArtifactReader) {
+      throw new Error('File session resources require an artifact reader');
     }
 
-    this.bound.set(session.id, { sandbox, provider });
-    return sandbox;
+    for (const resource of fileResources) {
+      const fileId = typeof resource.file_id === 'string' ? resource.file_id : '';
+      if (!fileId) throw new Error('File session resource is missing file_id');
+      const mountPath = sandboxPathForMount(resource.mount_path, fileId);
+      const bytes = await this.deps.fileArtifactReader(fileId);
+      await sandbox.writeFile(mountPath, bytes);
+    }
+  }
+
+  /**
+   * Clone and mount every `github_repository` resource attached to a session.
+   *
+   * A materialization failure is fatal to the turn rather than a warning: the
+   * repository root is part of the agent's instruction boundary, and a session
+   * that silently starts without the skills it declared would run against a
+   * different contract than the caller asked for. The lifecycle's caller
+   * already unwinds the sandbox on a throw from this phase.
+   */
+  private async materializeGithubResources(session: Session, sandbox: SandboxInstance): Promise<void> {
+    const resources = (session.resources ?? []).filter(
+      (resource) => resource.type === 'github_repository',
+    ) as unknown as GithubRepositoryResource[];
+    if (resources.length === 0) return;
+
+    const materializer = this.deps.githubMaterializer;
+    if (!materializer) {
+      throw new Error('GitHub repository session resources require a repository materializer');
+    }
+
+    const skills = new Set<string>();
+    for (const resource of resources) {
+      const result = await materializer(resource, sandbox);
+      if (!result.ok) throw new Error(result.message);
+      for (const skill of result.skills) skills.add(skill);
+    }
+    if (skills.size > 0) this.repositorySkills.set(session.id, [...skills]);
+  }
+
+  /**
+   * Skill names discovered under a mounted repository's `.claude/skills`.
+   *
+   * Empty until the session's sandbox has been provisioned, which is the point
+   * at which a repository actually exists to scan.
+   */
+  discoveredRepositorySkills(sessionId: string): string[] {
+    return this.repositorySkills.get(sessionId) ?? [];
   }
 
   snapshotAfterTurn(session: Session, sandbox: SandboxInstance): void {
@@ -97,6 +242,7 @@ export class SandboxLifecycle {
     if (!entry) return;
 
     this.bound.delete(sessionId);
+    this.repositorySkills.delete(sessionId);
     try {
       await entry.sandbox.cleanup();
     } catch {
@@ -186,4 +332,38 @@ export class SandboxLifecycle {
     if (type === this.deps.sandboxProvider.type) return this.deps.sandboxProvider;
     throw new UnknownSandboxProviderError(type, [this.deps.sandboxProvider.type]);
   }
+}
+
+/**
+ * Resolve the sandbox path a file resource is materialized to.
+ *
+ * A row written by the current build stores the canonical logical path
+ * (`/data.csv`); a row written by an earlier build stored the internal
+ * `/uploads/...` spelling. Both converge through the shared mapper so an
+ * existing workspace keeps working while the public field stays canonical.
+ */
+function sandboxPathForMount(value: unknown, fileId: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return resolveFileMountPath(undefined, fileId).sandboxPath!;
+  }
+
+  const legacyRelative = legacyUploadsRelative(value);
+  if (legacyRelative !== undefined) return `${FILE_MOUNT_ROOT}/${legacyRelative}`;
+
+  const resolved = resolveFileMountPath(value, fileId);
+  if (!resolved.ok) throw new Error(`File session resource ${resolved.message}`);
+  return resolved.sandboxPath!;
+}
+
+/** Recognize the pre-canonical `/uploads/...` spelling and return its relative part. */
+function legacyUploadsRelative(value: string): string | undefined {
+  if (!value.startsWith('/uploads/')) return undefined;
+  if (value.includes('\\') || value.includes('\u0000')) {
+    throw new Error('File session resource mount_path must not contain a backslash or NUL byte');
+  }
+  const relative = posix.normalize(value.slice(1));
+  if (!relative.startsWith('uploads/') || relative === 'uploads' || relative.endsWith('/')) {
+    throw new Error('File session resource mount_path must stay under /uploads/');
+  }
+  return relative.slice('uploads/'.length);
 }
