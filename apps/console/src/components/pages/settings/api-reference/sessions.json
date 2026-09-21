@@ -297,5 +297,121 @@
         "description": "True when the session was deleted."
       }
     ]
+  },
+  {
+    "id": "session-resources-list",
+    "group": "Sessions",
+    "title": "List session resources",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/resources",
+    "summary": "List the resource instances attached to a session. Each instance carries its own sesrsc_ id, so it can be addressed without rewriting the session payload.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionResourceInstance[]",
+        "description": "Attached resources ordered by position. A github_repository credential never includes its authorization_token."
+      }
+    ]
+  },
+  {
+    "id": "session-resources-add",
+    "group": "Sessions",
+    "title": "Add a session resource",
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/resources",
+    "summary": "Attach a file or github_repository resource to a running session. A memory_store can only be attached when the session is created, because memories are part of the context the session was built with.",
+    "parameters": [
+      {
+        "name": "type",
+        "type": "string",
+        "required": true,
+        "description": "file or github_repository. memory_store is refused here with invalid_request."
+      },
+      {
+        "name": "file_id",
+        "type": "string",
+        "description": "Required for a file resource."
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "description": "Required for a github_repository resource. Must be https://github.com/<owner>/<repo>."
+      },
+      {
+        "name": "authorization_token",
+        "type": "string",
+        "description": "Required for a github_repository resource. Write-only: it is never echoed in any response."
+      },
+      {
+        "name": "mount_path",
+        "type": "string",
+        "description": "Optional sandbox mount path. Defaults to /workspace/<repo-name>."
+      },
+      {
+        "name": "checkout",
+        "type": "object",
+        "description": "Optional {type:branch,name} or {type:commit,sha}."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "The new resource instance id, e.g. sesrsc_ab12cd34ef56gh78."
+      }
+    ]
+  },
+  {
+    "id": "session-resources-get",
+    "group": "Sessions",
+    "title": "Get a session resource",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/resources/{resource_id}",
+    "summary": "Read one resource instance by its own sesrsc_ id.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionResourceInstance",
+        "description": "The resource instance. Write-only credential material is absent, not masked."
+      }
+    ]
+  },
+  {
+    "id": "session-resources-update",
+    "group": "Sessions",
+    "title": "Rotate a github authorization token",
+    "method": "PATCH",
+    "path": "/v1/sessions/{session_id}/resources/{resource_id}",
+    "summary": "Replace the authorization_token of a github_repository resource on a running session. Only that field is updatable; changing the repository, checkout, or mount path requires a new session.",
+    "parameters": [
+      {
+        "name": "authorization_token",
+        "type": "string",
+        "required": true,
+        "description": "The replacement token. Any other field is refused with invalid_request rather than ignored."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionResourceInstance",
+        "description": "The updated instance. The token is never echoed."
+      }
+    ]
+  },
+  {
+    "id": "session-resources-delete",
+    "group": "Sessions",
+    "title": "Remove a session resource",
+    "method": "DELETE",
+    "path": "/v1/sessions/{session_id}/resources/{resource_id}",
+    "summary": "Detach a file or github_repository resource from a session. A memory_store resource cannot be removed.",
+    "response": [
+      {
+        "name": "status",
+        "type": "string",
+        "description": "deleted once the instance is detached."
+      }
+    ]
   }
 ]

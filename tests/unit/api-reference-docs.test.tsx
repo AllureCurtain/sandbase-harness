@@ -42,6 +42,7 @@ describe('API reference docs', () => {
       'resources.ts': '/v1',
       'runtime.ts': '/v1/x',
       'settings.ts': '/v1/x/settings',
+      'session-resources.ts': '/v1/sessions',
       'sessions.ts': '/v1/sessions',
       'runs.ts': '/v1/runs',
       'skills.ts': '/v1/skills',
@@ -80,7 +81,7 @@ describe('API reference docs', () => {
       'Operations',
       'Worker',
     ]));
-    expect(Array.from(methods)).toEqual(expect.arrayContaining(['GET', 'POST', 'PUT', 'DELETE']));
+    expect(Array.from(methods)).toEqual(expect.arrayContaining(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']));
     expect(API_REFERENCE_DOCS.some((endpoint) => !endpoint.id.includes('create'))).toBe(true);
     expect(API_REFERENCE_DOCS.some((endpoint) => endpoint.id.includes('delete'))).toBe(true);
     expect(API_REFERENCE_DOCS.some((endpoint) => endpoint.id === 'settings-validate')).toBe(true);
@@ -147,7 +148,7 @@ describe('API reference docs', () => {
       expect(endpoint.title, endpoint.id).toBeTruthy();
       expect(endpoint.summary, endpoint.id).toBeTruthy();
       expect(endpoint.path, endpoint.id).toMatch(/^\/v1\//);
-      expect(['GET', 'POST', 'PUT', 'DELETE']).toContain(endpoint.method);
+      expect(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).toContain(endpoint.method);
       expect(Array.isArray(endpoint.response), endpoint.id).toBe(true);
 
       for (const field of [...(endpoint.headers ?? []), ...(endpoint.parameters ?? []), ...endpoint.response]) {

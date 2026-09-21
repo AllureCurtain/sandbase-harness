@@ -107,7 +107,7 @@ export function normalizeFileResource(deps: ServerDeps, resource: Record<string,
   return { ok: true, value: { type: 'file', file_id: fileId, mount_path: mount.mountPath } };
 }
 
-function normalizeGithubRepositoryResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
+export function normalizeGithubRepositoryResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
   const rawUrl = readString(resource.url);
   const authorizationToken = readString(resource.authorization_token);
   if (!rawUrl) return { ok: false, message: `resources[${index}].url is required` };

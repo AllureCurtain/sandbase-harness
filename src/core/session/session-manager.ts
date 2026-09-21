@@ -393,9 +393,17 @@ export class SessionManager {
    * transaction discards the row and every event appended before it, so a
    * rejected batch never leaves a session or a partial history behind.
    */
-  createWithInitialEvents(params: CreateSessionParams, events: UserEvent[]): Session {
+  createWithInitialEvents(params: CreateSessionParams & {
+    /** Resource instances to attach inside the same transaction. */
+    attachResources?: (sessionId: string) => void;
+  }, events: UserEvent[]): Session {
     const session = this.db.transaction(() => {
       const created = this.create(params);
+      // Attachment runs inside the transaction so a failure discards the session
+      // row and every event appended before it: a session that claims a resource
+      // it does not hold is worse than no session.
+      params.attachResources?.(created.id);
+
       // Validate against the real row, not a synthetic id: admission checks
       // read the durable session and its log, so they only mean anything once
       // the row exists. Inside the transaction a throw discards the row and
