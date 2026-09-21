@@ -8,6 +8,142 @@ export interface ApiPage<T extends { id: string }> {
   last_id: string | null;
 }
 
+export interface ApiCursorPage<T> {
+  data: T[];
+  prev_page: string | null;
+  next_page: string | null;
+}
+
+/**
+ * Encode a cursor for a canonical collection.
+ *
+ * The payload is the sort state the page was produced from, so a cursor cannot
+ * be replayed against a different ordering. It is base64url-encoded rather than
+ * encrypted because it carries no secret; the opacity is there to keep callers
+ * from constructing one, not to hide anything.
+ */
+export function encodeCursor(state: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(state), 'utf8').toString('base64url');
+}
+
+export interface DecodedCursor {
+  ok: boolean;
+  state?: Record<string, unknown>;
+}
+
+/** Decode a cursor, rejecting anything that is not a well-formed object. */
+export function decodeCursor(cursor: string): DecodedCursor {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false };
+    return { ok: true, state: parsed as Record<string, unknown> };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Normalize a collection's filter into a stable, comparable token.
+ *
+ * Keys are sorted and empty values dropped, so two requests that filter
+ * identically produce the same token — otherwise a cursor would be rejected for
+ * a difference the caller cannot observe (an omitted `status` versus an empty
+ * one). The result is what gets stored in the cursor, which is why it must be
+ * canonical rather than merely equal.
+ */
+export function normalizeCollectionFilter(
+  filter: Record<string, string | undefined | null>,
+): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const key of Object.keys(filter).sort()) {
+    const value = filter[key];
+    if (value !== undefined && value !== null && value !== '') normalized[key] = value;
+  }
+  return normalized;
+}
+
+/**
+ * Why a decoded cursor cannot be replayed against this query, or `undefined`
+ * when it can.
+ *
+ * The published contract says a cursor encodes the sort request that produced
+ * it and must not be reused across a different `order` or an incompatible
+ * filter. Enforcing only the ordering half was a silent-corruption path: the
+ * same cursor replayed under a different filter is accepted by a page-number
+ * scheme, and the caller reads a page that never existed for that filter.
+ */
+export function cursorQueryMismatch(
+  state: Record<string, unknown> | undefined,
+  expected: { order?: string; filter?: Record<string, string> },
+): string | undefined {
+  if (expected.order !== undefined) {
+    const order = state?.order;
+    if (typeof order === 'string' && order !== expected.order) {
+      return 'next_page was issued for a different ordering.';
+    }
+  }
+  if (expected.filter !== undefined) {
+    const filter = state?.filter;
+    if (filter !== undefined) {
+      if (typeof filter !== 'object' || filter === null || Array.isArray(filter)) {
+        return 'next_page was issued for a different filter.';
+      }
+      const actual = normalizeCollectionFilter(filter as Record<string, string>);
+      if (JSON.stringify(actual) !== JSON.stringify(expected.filter)) {
+        return 'next_page was issued for a different filter.';
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Build a canonical cursor page from a slice and its continuation state.
+ *
+ * `prev` is supplied by the caller because a forward-only scan cannot infer it;
+ * passing `null` is honest for the first page rather than inventing a cursor
+ * that would not resolve.
+ */
+export function cursorPageOf<T>(
+  data: T[],
+  cursors: { prev?: string | null; next?: string | null },
+): ApiCursorPage<T> {
+  return {
+    data,
+    prev_page: cursors.prev ?? null,
+    next_page: cursors.next ?? null,
+  };
+}
+
+export interface CollectionPager<T> {
+  list(items: T[]): ApiCursorPage<T> | ApiPage<T & { id: string }>;
+  /** Render directly on a Hono context, preserving the optional status code. */
+  json(c: { json: (body: unknown, status?: number) => Response }, items: T[], status?: number): Response;
+}
+
+/**
+ * Build a pager for one collection under one envelope.
+ *
+ * Cursors are `null` in both shapes here: these operations collections are
+ * returned as a complete result set, and inventing a `next_page` that a caller
+ * could follow into an empty page would be worse than admitting the end. The
+ * parameter is kept so the canonical shape is produced by the same function
+ * that will carry real cursors once a collection is actually windowed.
+ */
+export function collectionPager<T extends { id: string }>(
+  shape: 'canonical' | 'legacy',
+): CollectionPager<T> {
+  return {
+    list(items) {
+      return shape === 'canonical' ? cursorPageOf(items, {}) : pageOf(items);
+    },
+    json(c, items, status) {
+      const body = shape === 'canonical' ? cursorPageOf(items, {}) : pageOf(items);
+      return status === undefined ? c.json(body) : c.json(body, status);
+    },
+  };
+}
+
 export interface ApiAgent {
   id: string;
   type: 'agent';
