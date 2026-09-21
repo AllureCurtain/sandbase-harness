@@ -186,6 +186,15 @@
 
 ### Fixes
 
+- Anchors the inbound `/v1` rate-limit window to the request that opened it
+  instead of to the wall-clock minute. Every bucket used to be cleared at each
+  minute boundary, so two writes 10 ms apart that fell on opposite sides of
+  `12:01:00` were both allowed and a one-write budget was spent twice inside 60
+  seconds. A window now runs a full minute from its first counted request, so a
+  burst straddling a boundary is throttled, and `Retry-After` reports the time
+  until the caller's own window expires rather than the time to the next minute.
+  Buckets, budgets, exemptions, and the 429 body are unchanged.
+
 - Keeps OpenAI-compatible streaming sessions alive when a gateway fragments a
   tool call across many SSE deltas and emits an empty or missing
   `tool_calls[].type`. The runtime rewrites only that field on the wire, so

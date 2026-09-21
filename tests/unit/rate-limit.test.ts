@@ -103,6 +103,35 @@ describe('inbound rate limiter middleware', () => {
     expect((await app.request('/v1/thing')).status).toBe(200);
   });
 
+  it('holds one budget across a wall-clock minute boundary', async () => {
+    // The window is anchored to the request that opened it. Aligning it to the
+    // wall-clock minute instead clears every bucket at the boundary, which lets
+    // a burst straddling it spend a one-write budget twice inside 60 seconds.
+    let now = Date.parse('2026-09-15T00:00:59.995Z');
+    const app = appWith(createInboundRateLimiter({ enabled: true, readPerMinute: 100, writePerMinute: 1 }, () => now));
+    expect((await app.request('/v1/thing', { method: 'POST' })).status).toBe(200);
+
+    now += 10; // 00:01:00.005 — the next wall-clock minute, same 60-second span
+    const straddling = await app.request('/v1/thing', { method: 'POST' });
+    expect(straddling.status).toBe(429);
+    expect(Number(straddling.headers.get('Retry-After'))).toBe(60);
+
+    now += 59_990; // 00:01:59.995 — exactly WINDOW_MS after the window opened
+    expect((await app.request('/v1/thing', { method: 'POST' })).status).toBe(200);
+  });
+
+  it('reports Retry-After as the window the caller is inside', async () => {
+    const now = Date.parse('2026-09-15T00:00:30.000Z');
+    const app = appWith(createInboundRateLimiter({ enabled: true, readPerMinute: 100, writePerMinute: 1 }, () => now));
+    expect((await app.request('/v1/thing', { method: 'POST' })).status).toBe(200);
+
+    const throttled = await app.request('/v1/thing', { method: 'POST' });
+    expect(throttled.status).toBe(429);
+    // The caller's own window still has a full minute to run; the minute
+    // boundary is 30s away and is not what it is waiting for.
+    expect(Number(throttled.headers.get('Retry-After'))).toBe(60);
+  });
+
   it('bypasses all counting while disabled', async () => {
     const app = appWith(createInboundRateLimiter({ enabled: false, readPerMinute: 1, writePerMinute: 1 }, () => T0));
     for (let i = 0; i < 5; i += 1) expect((await app.request('/v1/thing', { method: 'POST' })).status).toBe(200);

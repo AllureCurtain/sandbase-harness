@@ -159,7 +159,10 @@ released.
 ### Rate limits
 
 Inbound `/v1` throttling is a single-process fixed one-minute window with
-independent credential buckets:
+independent credential buckets. Each window is anchored to the request that
+opened it and expires one minute later, so a burst that straddles a wall-clock
+minute boundary is still counted against one budget rather than being allowed
+twice:
 
 | Request class | Methods | Default budget |
 | --- | --- | --- |
