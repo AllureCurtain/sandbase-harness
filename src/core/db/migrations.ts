@@ -749,6 +749,30 @@ CREATE TABLE pi_session_state (
 );
 `;
 
+const M033_SESSION_RESOURCE_INSTANCES = `
+CREATE TABLE session_resource_instances (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  mount_path TEXT,
+  /** Cleartext-safe projection of the resource, with secrets encrypted. */
+  config TEXT NOT NULL,
+  /** Encrypted-only fields, kept separate so a projection cannot leak them. */
+  secret TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE INDEX idx_session_resource_instances_session
+  ON session_resource_instances(session_id, position);
+CREATE UNIQUE INDEX idx_session_resource_instances_live
+  ON session_resource_instances(session_id, position)
+  WHERE deleted_at IS NULL;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -782,4 +806,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 30, name: '030_event_metadata', sql: M030_EVENT_METADATA },
   { version: 31, name: '031_session_loop_engine', sql: M031_SESSION_LOOP_ENGINE },
   { version: 32, name: '032_pi_session_state', sql: M032_PI_SESSION_STATE },
+  { version: 33, name: '033_session_resource_instances', sql: M033_SESSION_RESOURCE_INSTANCES },
 ];

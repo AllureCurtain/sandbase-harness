@@ -3115,6 +3115,11 @@ label.searchBox input {
   background: var(--danger-soft);
 }
 
+.methodPATCH {
+  color: var(--accent, var(--info));
+  background: var(--accent-soft, var(--info-soft));
+}
+
 .snippetHeader {
   min-height: 38px;
   display: flex;

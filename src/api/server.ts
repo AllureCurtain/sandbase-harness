@@ -17,6 +17,7 @@ import { resourceRoutes } from './routes/resources.js';
 import { skillsRoutes } from './routes/skills.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
 import { extendedRoutes } from './routes/extended.js';
+import { sessionResourceRoutes } from './routes/session-resources.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
 import { createCmaRequestAdmissionMiddleware } from './cma-admission.js';
@@ -176,6 +177,7 @@ app.route('/v1/runs', runsRoutes(deps));
 
   // SSE streaming
   app.route('/v1/sessions', streamRoutes(deps));
+  app.route('/v1/sessions', sessionResourceRoutes(deps));
 
   // Runtime extension endpoints
   app.route('/v1/x', extendedRoutes(deps));

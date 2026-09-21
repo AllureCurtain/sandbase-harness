@@ -886,6 +886,29 @@ curl -X POST http://127.0.0.1:3000/v1/sessions/SESSION_ID/artifacts \
 Text, Markdown, JSON, YAML, HTML, and SVG artifacts include inline previews in
 metadata responses. Raw storage paths are never returned.
 
+### Session resources
+
+A resource attached to a session is a per-session instance with its own
+`sesrsc_` id, so it can be addressed, updated, and detached without rewriting
+the session payload. Attachment is additive and reversible: detaching a resource
+from one session leaves it attached to every other session that holds it.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/sessions/{session_id}/resources` | List the session's resource instances in position order. |
+| `POST` | `/v1/sessions/{session_id}/resources` | Attach a file or github_repository resource to a session. |
+| `GET` | `/v1/sessions/{session_id}/resources/{resource_id}` | Read one resource instance. |
+| `PATCH` | `/v1/sessions/{session_id}/resources/{resource_id}` | Rotate a github_repository authorization token. |
+| `DELETE` | `/v1/sessions/{session_id}/resources/{resource_id}` | Detach a resource from the session. |
+
+A `memory_store` resource can only be attached when the session is created,
+because memories are part of the context the session was built with; attaching
+one later is refused with `400 invalid_request_error`, and a `memory_store`
+instance cannot be detached. A github_repository `authorization_token` is
+write-only and is never echoed in any response, and rotating it is the only
+updatable field: changing the repository, checkout, or mount path requires a new
+resource instance.
+
 ## Skills
 
 Skills are reusable instruction packages. See [Skills](skills.md) for package
