@@ -3,6 +3,11 @@ import type { ContentBlock } from '@/types/cma-protocol.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { resolveFileMountPath } from '@/core/session/file-mount-path.js';
 import { checkMemoryInstructions } from '@/core/memory/semantics.js';
+import {
+  normalizeRepoMountPath,
+  parseCheckout,
+  parseGithubRepositoryUrl,
+} from '@/core/resources/github-repository.js';
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
@@ -103,31 +108,38 @@ export function normalizeFileResource(deps: ServerDeps, resource: Record<string,
 }
 
 function normalizeGithubRepositoryResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
-  const url = readString(resource.url);
+  const rawUrl = readString(resource.url);
   const authorizationToken = readString(resource.authorization_token);
-  const mountPath = readString(resource.mount_path);
-  if (!url) return { ok: false, message: `resources[${index}].url is required` };
+  if (!rawUrl) return { ok: false, message: `resources[${index}].url is required` };
   if (!authorizationToken) return { ok: false, message: `resources[${index}].authorization_token is required` };
-  if (mountPath && !mountPath.startsWith('/')) return { ok: false, message: `resources[${index}].mount_path must start with /` };
-  const normalized: Record<string, unknown> = {
-    type: 'github_repository',
-    url,
-    authorization_token: {
-      type: 'encrypted_secret',
-      ...encryptSecret(authorizationToken, deps.workspace?.dataDir),
+
+  // The URL is the mount's identity: a URL that does not resolve to exactly
+  // `https://github.com/<owner>/<repo>` would mount something other than what
+  // the caller named, and repository skills from it would enter the agent's
+  // trusted instruction boundary unreviewed.
+  const parsedUrl = parseGithubRepositoryUrl(rawUrl);
+  if (!parsedUrl.ok) return { ok: false, message: `resources[${index}].${parsedUrl.message}` };
+
+  const checkout = parseCheckout(resource.checkout);
+  if (!checkout.ok) return { ok: false, message: `resources[${index}].${checkout.message}` };
+
+  const mountPath = normalizeRepoMountPath(resource.mount_path, parsedUrl.value.mountPath);
+  if (!mountPath.ok) return { ok: false, message: `resources[${index}].${mountPath.message}` };
+
+  return {
+    ok: true,
+    value: {
+      type: 'github_repository',
+      url: parsedUrl.value.url,
+      repository: parsedUrl.value.repository,
+      mount_path: mountPath.value,
+      ...(checkout.value ? { checkout: checkout.value } : {}),
+      authorization_token: {
+        type: 'encrypted_secret',
+        ...encryptSecret(authorizationToken, deps.workspace?.dataDir),
+      },
     },
   };
-  if (resource.checkout !== undefined) {
-    if (
-      typeof resource.checkout !== 'string'
-      && (!resource.checkout || typeof resource.checkout !== 'object' || Array.isArray(resource.checkout))
-    ) {
-      return { ok: false, message: `resources[${index}].checkout must be a string or object` };
-    }
-    normalized.checkout = resource.checkout;
-  }
-  if (mountPath) normalized.mount_path = mountPath;
-  return { ok: true, value: normalized };
 }
 
 function normalizeMemoryStoreResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
