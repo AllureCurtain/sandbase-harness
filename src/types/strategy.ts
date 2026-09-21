@@ -45,6 +45,8 @@ export interface StrategyContext {
   /** Constructed only for strategies that require the AI SDK model transport. */
   model?: LanguageModel;
   tools: Record<string, CoreTool>;
+  /** Names resolved from custom tools. They are exposed to the model but never executed locally. */
+  customToolNames?: ReadonlySet<string>;
   sandbox: SandboxInstance;
   eventLog: EventLogWriter;
   broadcast: (event: SessionEvent) => void;

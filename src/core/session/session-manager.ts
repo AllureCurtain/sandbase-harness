@@ -310,6 +310,13 @@ export class SessionManager {
     const confirmationMetadata = event.type === 'user.tool_confirmation'
       ? getConfirmationMetadata(event, this.eventLogger.getEvents(sessionId))
       : undefined;
+    // A custom tool result is the only thing that can answer a custom tool call,
+    // so it is validated against the log before it is appended — an id naming no
+    // pending call, or a second result for a call already answered, is refused
+    // rather than letting a caller inject an answer into a session.
+    const customToolResultMetadata = event.type === 'user.custom_tool_result'
+      ? getCustomToolResultMetadata(event, this.eventLogger.getEvents(sessionId))
+      : undefined;
 
     // Resuming after failure, or sending a fresh message while a tool call is
     // still awaiting approval: the log may hold an agent.tool_use with no
@@ -325,7 +332,7 @@ export class SessionManager {
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as any).content : undefined,
-      metadata: confirmationMetadata,
+      metadata: confirmationMetadata ?? customToolResultMetadata,
     });
     this.broadcast(sessionId, logged);
 
@@ -417,9 +424,13 @@ export class SessionManager {
    * half of `sendEvent` — everything except starting the model loop.
    */
   private appendUserEventInTransaction(sessionId: string, event: UserEvent): void {
+    const customToolResultMetadata = event.type === 'user.custom_tool_result'
+      ? getCustomToolResultMetadata(event, this.eventLogger.getEvents(sessionId))
+      : undefined;
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as { content?: ContentBlock[] }).content : undefined,
+      metadata: customToolResultMetadata,
     });
     this.broadcast(sessionId, logged);
   }
@@ -962,4 +973,61 @@ function errorCodeOf(error: unknown): string | undefined {
   if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : undefined;
+}
+
+/**
+ * Validate and project a caller's answer to a pending custom tool call.
+ *
+ * The runtime never executes a custom tool, so `user.custom_tool_result` is the
+ * only thing that can answer one — which also makes it the only inbound event
+ * that could inject an answer into a session the caller does not own, or answer
+ * a call twice. The call id is checked against the log before the event is
+ * appended: an id that names no `agent.custom_tool_use` is refused, and so is a
+ * second result for a call that already has one. The id rides in `metadata`
+ * because the log has no per-type payload column, and `toApiEvent` projects it
+ * back to the top-level field the published contract defines.
+ */
+function getCustomToolResultMetadata(
+  event: Extract<UserEvent, { type: 'user.custom_tool_result' }>,
+  events: SessionEvent[],
+): Record<string, unknown> {
+  if (typeof event.custom_tool_use_id !== 'string' || event.custom_tool_use_id.trim().length === 0) {
+    throw new Error('Invalid custom tool result: custom_tool_use_id must be a non-empty string');
+  }
+  if (!Array.isArray(event.content) || event.content.length === 0 || event.content.some((block) => !isValidCustomResultBlock(block))) {
+    throw new Error('Invalid custom tool result: content must be a non-empty array of text, image, or document blocks');
+  }
+  if (event.is_error !== undefined && typeof event.is_error !== 'boolean') {
+    throw new Error('Invalid custom tool result: is_error must be a boolean');
+  }
+
+  let pending = false;
+  for (const loggedEvent of events) {
+    if (loggedEvent.type === 'agent.custom_tool_use') {
+      const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
+        | { type: 'tool_use'; id: string } | undefined;
+      if (block?.id === event.custom_tool_use_id) pending = true;
+    }
+    if (loggedEvent.type === 'user.custom_tool_result'
+      && loggedEvent.metadata?.custom_tool_use_id === event.custom_tool_use_id) {
+      throw new Error('Invalid custom tool result: the custom tool call is not pending');
+    }
+  }
+
+  if (!pending) {
+    throw new Error('Invalid custom tool result: custom_tool_use_id does not reference a pending custom tool call');
+  }
+
+  return {
+    custom_tool_use_id: event.custom_tool_use_id,
+    ...(event.is_error !== undefined ? { is_error: event.is_error } : {}),
+  };
+}
+
+function isValidCustomResultBlock(block: unknown): boolean {
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return false;
+  const record = block as Record<string, unknown>;
+  if (record.type === 'text') return typeof record.text === 'string';
+  if (record.type === 'image' || record.type === 'document') return Boolean(record.source && typeof record.source === 'object');
+  return false;
 }
