@@ -211,11 +211,13 @@ describe('API authentication', () => {
         'missing anthropic-version',
         { 'x-api-key': 'secret-key-1', 'anthropic-beta': 'managed-agents-2026-04-01' },
         'Missing required header: anthropic-version.',
+        'missing_anthropic_version',
       ],
       [
         'missing anthropic-beta',
         { 'x-api-key': 'secret-key-1', 'anthropic-version': '2023-06-01' },
         'Missing required header: anthropic-beta.',
+        'missing_anthropic_beta',
       ],
       [
         'unsupported anthropic-version',
@@ -225,6 +227,7 @@ describe('API authentication', () => {
           'anthropic-beta': 'managed-agents-2026-04-01',
         },
         'Unsupported anthropic-version. Expected "2023-06-01".',
+        'unsupported_anthropic_version',
       ],
       [
         'unsupported anthropic-beta',
@@ -234,6 +237,7 @@ describe('API authentication', () => {
           'anthropic-beta': 'managed-agents-2025-01-01',
         },
         'Unsupported anthropic-beta. Expected "managed-agents-2026-04-01".',
+        'unsupported_anthropic_beta',
       ],
       [
         'malformed comma-separated anthropic-beta',
@@ -243,12 +247,15 @@ describe('API authentication', () => {
           'anthropic-beta': 'managed-agents-2026-04-01,,another-compatible-beta',
         },
         'Malformed anthropic-beta header. Provide comma-separated beta identifiers.',
+        'malformed_anthropic_beta',
       ],
-    ])('rejects %s before CMA business logic', async (_caseName, headers, message) => {
+    ])('rejects %s before CMA business logic', async (_caseName, headers, message, code) => {
       const res = await ctx.app.request('/v1/agents', { headers });
       expect(res.status).toBe(400);
+      // The code is part of the published contract, so the wire value is
+      // pinned here rather than read from the module under test.
       expect(await res.json()).toEqual({
-        error: { type: 'invalid_request', message },
+        error: { type: 'invalid_request', code, message },
       });
     });
 
@@ -267,6 +274,7 @@ describe('API authentication', () => {
       expect(await rejected.json()).toEqual({
         error: {
           type: 'invalid_request',
+          code: 'unsupported_anthropic_beta',
           message: 'Unsupported anthropic-beta. Expected "agent-memory-2026-07-22".',
         },
       });
@@ -299,6 +307,7 @@ describe('API authentication', () => {
       expect(await combinedBetas.json()).toEqual({
         error: {
           type: 'invalid_request',
+          code: 'conflicting_memory_store_beta',
           message: 'Do not combine managed-agents and agent-memory beta headers for memory-store requests.',
         },
       });

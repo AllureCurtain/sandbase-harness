@@ -140,6 +140,22 @@ Error responses:
 Common error types are `invalid_request`, `not_found`, `conflict`,
 `not_available`, and `internal_error`.
 
+A rejected compatibility request also carries a stable `error.code`, so a
+client can branch on the cause instead of matching the message text. The
+admission codes are:
+
+| Code | Cause |
+| --- | --- |
+| `missing_anthropic_version` | A compatibility caller omitted `anthropic-version`. |
+| `unsupported_anthropic_version` | `anthropic-version` is present but not the supported value. |
+| `missing_anthropic_beta` | A compatibility caller omitted `anthropic-beta`. |
+| `malformed_anthropic_beta` | `anthropic-beta` is not comma-separated identifiers. |
+| `unsupported_anthropic_beta` | The beta does not match the resource family being addressed. |
+| `conflicting_memory_store_beta` | Both memory-store betas were sent on a memory-store request. |
+
+These values are part of the published contract and will not change once
+released.
+
 ### Rate limits
 
 Inbound `/v1` throttling is a single-process fixed one-minute window with
