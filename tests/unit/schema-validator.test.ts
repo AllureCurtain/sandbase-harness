@@ -44,6 +44,10 @@ describe('Agent Definition Schema Validation', () => {
               { name: 'read', enabled: true },
             ],
           },
+          // Each declared MCP server is bound by a toolset, which is what the
+          // server/toolset cross-check requires.
+          { type: 'mcp_toolset', mcp_server_name: 'filesystem', configs: [] },
+          { type: 'mcp_toolset', mcp_server_name: 'github', configs: [] },
         ],
         max_turns: 50,
         temperature: 0.7,

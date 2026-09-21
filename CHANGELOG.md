@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Cross-checks an agent definition's `mcp_servers` against the `mcp_toolset`
+  entries that bind it. A toolset naming an undeclared server, a declared server
+  no toolset references, and a duplicate server name are each refused with a
+  message naming the offending entry. Previously all three saved successfully and
+  then silently did nothing at execution time. Two toolsets may still bind the same
+  declared server.
 - Evaluates a scheduled deployment's cron expression in the deployment's own
   timezone instead of UTC. The same wall time resolves to a different instant in
   a different zone, and the difference moves across the year for a zone that
