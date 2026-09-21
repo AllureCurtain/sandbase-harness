@@ -773,6 +773,28 @@ CREATE UNIQUE INDEX idx_session_resource_instances_live
   WHERE deleted_at IS NULL;
 `;
 
+const M034_MEMORY_VERSIONS = `
+CREATE TABLE memory_versions (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  content TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  content_size_bytes INTEGER NOT NULL,
+  change TEXT NOT NULL,
+  session_id TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (store_id) REFERENCES memory_stores(id)
+);
+
+CREATE INDEX idx_memory_versions_memory
+  ON memory_versions(store_id, memory_id, version DESC);
+CREATE UNIQUE INDEX idx_memory_versions_unique
+  ON memory_versions(store_id, memory_id, version);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -807,4 +829,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 31, name: '031_session_loop_engine', sql: M031_SESSION_LOOP_ENGINE },
   { version: 32, name: '032_pi_session_state', sql: M032_PI_SESSION_STATE },
   { version: 33, name: '033_session_resource_instances', sql: M033_SESSION_RESOURCE_INSTANCES },
+  { version: 34, name: '034_memory_versions', sql: M034_MEMORY_VERSIONS },
 ];

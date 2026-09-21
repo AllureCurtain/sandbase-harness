@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { cursorPageOf, pageOf } from '../standard.js';
 import {
   applyMemoryListScope,
   checkMemorySize,
   checkStoreCapacity,
+  memoryContentBytes,
   memoryContentHash,
   evaluateContentPrecondition,
   validateMemoryListScope,
@@ -106,6 +107,7 @@ export function memoryStoreRoutes(deps: ServerDeps) {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ).run(id, storeId, path, content, JSON.stringify(stringRecordField(body.value.metadata)), now, now);
       deps.db.prepare('UPDATE memory_stores SET updated_at = datetime(\'now\') WHERE id = ?').run(storeId);
+      recordMemoryVersion(deps, storeId, id, path, content, 'created', now);
       const row = deps.db.prepare('SELECT * FROM memory_records WHERE id = ?').get(id) as unknown as MemoryRecordRow;
       return c.json(toMemory(row), 201);
     } catch (err: any) {
@@ -159,6 +161,7 @@ export function memoryStoreRoutes(deps: ServerDeps) {
         storeId,
       );
       deps.db.prepare('UPDATE memory_stores SET updated_at = datetime(\'now\') WHERE id = ?').run(storeId);
+      recordMemoryVersion(deps, storeId, memoryId, path, content, 'updated', new Date().toISOString());
       const row = deps.db.prepare('SELECT * FROM memory_records WHERE id = ? AND store_id = ?').get(memoryId, storeId) as unknown as MemoryRecordRow;
       return c.json(toMemory(row));
     } catch (err: any) {
@@ -176,12 +179,96 @@ export function memoryStoreRoutes(deps: ServerDeps) {
     if (!existing) return notFound(c, 'Memory not found');
     deps.db.prepare('UPDATE memory_records SET archived_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ? AND store_id = ?').run(memoryId, storeId);
     deps.db.prepare('UPDATE memory_stores SET updated_at = datetime(\'now\') WHERE id = ?').run(storeId);
+    recordMemoryVersion(deps, storeId, memoryId, existing.path, existing.content, 'deleted', new Date().toISOString());
     return c.json({ deleted: true, id: memoryId });
   });
 
   app.post('/memory_stores/:id/archive', (c) => archiveResource(c, deps, 'memory_stores', (row) => toMemoryStore(row, deps)));
 
+  // Every write records a version, so the history of a memory is reconstructable
+  // without diffing snapshots of the store.
+  app.get('/memory_stores/:id/memory_versions', (c) => {
+    const storeId = c.req.param('id');
+    const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(storeId);
+    if (!store) return notFound(c, 'Memory store not found');
+    const memoryId = c.req.query('memory_id');
+    const rows = (memoryId
+      ? deps.db.prepare(
+        'SELECT * FROM memory_versions WHERE store_id = ? AND memory_id = ? ORDER BY version DESC',
+      ).all(storeId, memoryId)
+      : deps.db.prepare(
+        'SELECT * FROM memory_versions WHERE store_id = ? ORDER BY created_at DESC',
+      ).all(storeId)) as unknown as MemoryVersionRow[];
+    return c.json(cursorPageOf(rows.map(toMemoryVersion), {}));
+  });
+
+  app.get('/memory_stores/:id/memory_versions/:versionId', (c) => {
+    const storeId = c.req.param('id');
+    const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(storeId);
+    if (!store) return notFound(c, 'Memory store not found');
+    const row = deps.db.prepare(
+      'SELECT * FROM memory_versions WHERE id = ? AND store_id = ?',
+    ).get(c.req.param('versionId'), storeId) as unknown as MemoryVersionRow | undefined;
+    return row ? c.json(toMemoryVersion(row)) : notFound(c, 'Memory version not found');
+  });
+
   return app;
+}
+
+/**
+ * Append a memory version.
+ *
+ * `content` is captured as it was written, so a later redaction can replace the
+ * stored text without losing the fact that a version existed. Numbering is per
+ * memory and monotonic, and the unique index refuses a second writer claiming a
+ * version that already exists rather than letting it overwrite the first.
+ */
+function recordMemoryVersion(
+  deps: ServerDeps,
+  storeId: string,
+  memoryId: string,
+  path: string,
+  content: string,
+  change: 'created' | 'updated' | 'deleted',
+  now: string,
+  sessionId?: string,
+): void {
+  const next = deps.db.prepare(
+    'SELECT COALESCE(MAX(version), 0) + 1 AS version FROM memory_versions WHERE store_id = ? AND memory_id = ?',
+  ).get(storeId, memoryId) as unknown as { version: number } | undefined;
+  deps.db.prepare(
+    `INSERT INTO memory_versions
+       (id, store_id, memory_id, version, path, content, content_sha256, content_size_bytes, change, session_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `memver_${nanoid(18)}`,
+    storeId,
+    memoryId,
+    next?.version ?? 1,
+    path,
+    content,
+    memoryContentHash(content),
+    memoryContentBytes(content),
+    change,
+    sessionId ?? null,
+    now,
+  );
+}
+
+function toMemoryVersion(row: MemoryVersionRow) {
+  return {
+    id: row.id,
+    type: 'memory_version',
+    store_id: row.store_id,
+    memory_id: row.memory_id,
+    version: row.version,
+    path: row.path,
+    content_sha256: row.content_sha256,
+    content_size_bytes: row.content_size_bytes,
+    change: row.change,
+    session_id: row.session_id,
+    created_at: row.created_at,
+  };
 }
 
 function memoryStoreSelect(where = '') {
@@ -263,6 +350,20 @@ interface MemoryStoreRow {
   updated_at: string;
   archived_at: string | null;
   memory_count?: number;
+}
+
+interface MemoryVersionRow {
+  id: string;
+  store_id: string;
+  memory_id: string;
+  version: number;
+  path: string;
+  content: string;
+  content_sha256: string;
+  content_size_bytes: number;
+  change: string;
+  session_id: string | null;
+  created_at: string;
 }
 
 interface MemoryRecordRow {

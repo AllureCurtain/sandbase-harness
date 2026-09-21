@@ -207,5 +207,57 @@
         "description": "Created or updated memory_store resource."
       }
     ]
+  },
+  {
+    "id": "memory-versions-list",
+    "group": "Memory",
+    "title": "List memory versions",
+    "method": "GET",
+    "path": "/v1/memory_stores/{memory_store_id}/memory_versions",
+    "summary": "List the recorded versions of the memories in a store, newest first. Pass memory_id to read the history of one memory alone. A memory is overwritten in place, so without these rows nothing could say what a path held before or attribute a change to the session that made it.",
+    "parameters": [
+      {
+        "name": "memory_id",
+        "type": "string",
+        "description": "Optional. Restricts the listing to the version history of one memory."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "MemoryVersion[]",
+        "description": "Recorded versions. Each carries its version number, the content hash and byte size as written, the change kind, and the session that made it."
+      }
+    ]
+  },
+  {
+    "id": "memory-versions-get",
+    "group": "Memory",
+    "title": "Get a memory version",
+    "method": "GET",
+    "path": "/v1/memory_stores/{memory_store_id}/memory_versions/{version_id}",
+    "summary": "Read one recorded version by its own memver_ id.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "The version id."
+      },
+      {
+        "name": "version",
+        "type": "number",
+        "description": "Per-memory monotonic version number."
+      },
+      {
+        "name": "content_sha256",
+        "type": "string",
+        "description": "Digest of the content as it was written, so a version can be verified without trusting the row."
+      },
+      {
+        "name": "change",
+        "type": "string",
+        "description": "created, updated, or deleted."
+      }
+    ]
   }
 ]
