@@ -30,6 +30,9 @@ export const INBOUND_RATE_LIMIT_DEFAULTS = {
   writePerMinute: 300,
 } as const;
 
+/** Length of one fixed window in milliseconds. */
+const WINDOW_MS = 60_000;
+
 type AuthPosture = boolean | (() => boolean);
 
 /** Resolve explicit override, environment, then the current auth posture. */
@@ -63,10 +66,20 @@ export function createInboundRateLimiter(
   policy: InboundRateLimitPolicy,
   now: () => number = Date.now,
 ): InboundRateLimiter {
-  let windowStart = 0;
+  let windowStart = Number.NEGATIVE_INFINITY;
   let counters = new Map<string, number>();
 
   const countFor = (identity: string, kind: 'read' | 'write') => counters.get(`${identity}:${kind}`) ?? 0;
+
+  /**
+   * A window is anchored to the request that opened it and expires WINDOW_MS
+   * later. Aligning windows to the wall-clock minute instead clears every
+   * bucket at each boundary, so a burst that straddles it spends the allowance
+   * twice inside 60 seconds. Testing against `windowStart + WINDOW_MS` rather
+   * than an elapsed difference also keeps a clock that jumps backwards inside
+   * the current window instead of handing out a fresh allowance.
+   */
+  const inWindow = (at: number) => at < windowStart + WINDOW_MS;
 
   const middleware: MiddlewareHandler = async (c, next) => {
     // CORS handles OPTIONS before this route middleware. Keep preflight out of
@@ -80,16 +93,15 @@ export function createInboundRateLimiter(
     const kind = requestKind(c.req.method);
     const limit = kind === 'read' ? policy.readPerMinute : policy.writePerMinute;
     const current = now();
-    const start = Math.floor(current / 60_000) * 60_000;
-    if (start !== windowStart) {
-      windowStart = start;
+    if (!inWindow(current)) {
+      windowStart = current;
       counters = new Map();
     }
 
     const identity = callerIdentity(c);
     const key = `${identity}:${kind}`;
     const used = countFor(identity, kind);
-    const retryAfterSeconds = Math.max(1, Math.ceil((windowStart + 60_000 - current) / 1000));
+    const retryAfterSeconds = Math.max(1, Math.ceil((windowStart + WINDOW_MS - current) / 1000));
 
     if (used >= limit) {
       return c.json(
@@ -118,7 +130,7 @@ export function createInboundRateLimiter(
   return {
     middleware,
     used: (identity, kind, at) => {
-      if (at !== undefined && Math.floor(at / 60_000) * 60_000 !== windowStart) return 0;
+      if (at !== undefined && !inWindow(at)) return 0;
       return countFor(identity, kind);
     },
   };
