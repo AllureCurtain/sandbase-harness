@@ -6,7 +6,7 @@ import { McpManager, type McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orchestrator/agent-orchestrator.js';
 import type { EventLogger } from './event-logger.js';
 import type { DelegationService } from './delegation-service.js';
-import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, mcpDiscoveredToolAdmitted, resolveToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 
@@ -62,7 +62,11 @@ export class ToolResolver {
       };
     }
 
-    for (const name of getToolsRequiringConfirmation(agent)) {
+    // Derived from the resolved map rather than only from the declaration: an MCP
+    // server exposes its tool list at connect time, so a discovered tool the
+    // agent never named appears in no configs entry and a declaration-only list
+    // cannot gate it.
+    for (const name of resolveToolsRequiringConfirmation(agent, Object.keys(tools))) {
       if (tools[name]) {
         tools[name] = { ...tools[name], execute: undefined };
       }
@@ -352,7 +356,11 @@ export class ToolResolver {
       return this.mcpToolCache.get(sessionId) ?? {};
     }
 
-    const manager = new McpManager();
+    const manager = new McpManager({
+      // A server's tool list is only known after connect, so the owning
+      // toolset's admission rule is applied here rather than to a declared list.
+      admitTool: (serverName, toolName) => mcpDiscoveredToolAdmitted(agent, serverName, toolName),
+    });
     const tools = await manager.connectAll(agent.mcp_servers);
     this.mcpManagers.set(sessionId, manager);
     this.mcpToolCache.set(sessionId, tools);
