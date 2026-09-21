@@ -12,6 +12,12 @@ import { pageOf, toApiAgent } from '../standard.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { validateAgentDefinition } from '@/core/agent/schema.js';
+import { parseObject } from './resource-utils.js';
+import {
+  agentDefinitionsEqual,
+  applyAgentUpdatePatch,
+  validateAgentUpdateRequest,
+} from '@/core/agent/update.js';
 import {
   loadActiveAgentRows,
   loadAgentRowById,
@@ -79,7 +85,7 @@ export function agentsRoutes(deps: ServerDeps) {
     return c.json(pageOf(versions));
   });
 
-  app.put('/:id', async (c) => {
+  const updateAgent = async (c: any) => {
     let body: unknown;
     try {
       body = await c.req.json();
@@ -88,8 +94,36 @@ export function agentsRoutes(deps: ServerDeps) {
     }
 
     const id = c.req.param('id');
-    const expectedVersion = expectedVersionFromBody(body);
-    const result = validateAgentDefinition(body);
+    const existing = activeAgentRow(deps, id);
+    if (!existing) {
+      return c.json({ error: { type: 'not_found', message: `Agent not found: ${id}` } }, 404);
+    }
+
+    // Partial-update semantics: validate the fields the body actually carries,
+    // merge them onto the stored definition, then revalidate the merged result
+    // so a request that changes one side of a coupled pair is judged on the
+    // pair it produces.
+    const patch = validateAgentUpdateRequest(body);
+    if (!patch.valid) {
+      return c.json({ error: { type: 'invalid_request', message: 'Invalid agent update', details: patch.errors } }, 400);
+    }
+    if (patch.expectedVersion !== undefined && patch.expectedVersion !== (existing.version ?? 1)) {
+      return c.json({
+        error: {
+          type: 'conflict',
+          message: `Agent ${id} is at version ${existing.version ?? 1}; expected version ${patch.expectedVersion}`,
+        },
+      }, 409);
+    }
+
+    const current = parseObject(existing.definition) as Record<string, unknown>;
+    const merged = applyAgentUpdatePatch(current as never, patch.fields);
+    if (agentDefinitionsEqual(current, merged)) {
+      // No field actually changed, so no new immutable version is written.
+      return c.json(toApiAgent(existing.definition as never, agentRowMeta(deps, id)));
+    }
+
+    const result = validateAgentDefinition(merged);
     if (!result.valid || !result.data) {
       return c.json({ error: { type: 'invalid_request', message: 'Invalid agent definition', details: result.errors } }, 400);
     }
@@ -100,18 +134,6 @@ export function agentsRoutes(deps: ServerDeps) {
     } catch (error) {
       if (error instanceof UnsupportedCapabilityError) return unsupportedCapability(c, error);
       throw error;
-    }
-    const existing = activeAgentRow(deps, id);
-    if (!existing) {
-      return c.json({ error: { type: 'not_found', message: `Agent not found: ${id}` } }, 404);
-    }
-    if (expectedVersion !== undefined && expectedVersion !== (existing.version ?? 1)) {
-      return c.json({
-        error: {
-          type: 'conflict',
-          message: `Agent ${id} is at version ${existing.version ?? 1}; expected version ${expectedVersion}`,
-        },
-      }, 409);
     }
 
     deps.db.prepare(`
@@ -132,7 +154,12 @@ export function agentsRoutes(deps: ServerDeps) {
     refreshAgentsFromDb(deps.db, deps.agents);
 
     return c.json(toApiAgent(agent, agentRowMeta(deps, id)));
-  });
+  };
+
+  // Partial-update semantics rather than a full replace: a `PUT` that silently
+  // cleared every field the body omitted would be a data-loss path, and the
+  // Console editor only ever shows a subset of the definition.
+  app.put('/:id', updateAgent);
 
   app.post('/:id/archive', (c) => {
     const id = c.req.param('id');

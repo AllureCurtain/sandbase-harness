@@ -1,0 +1,550 @@
+/**
+ * Agent resource partial-update contract.
+ *
+ * Covers `PATCH /v1/agents/{id}` and the unified `PUT` semantics: omitted
+ * fields keep their stored value, list fields replace wholesale when present,
+ * metadata merges per key with `null` deleting, `name`/`model` cannot be
+ * cleared, `expected_version` stays an optimistic precondition, and a no-op
+ * update never mints a new version.
+ */
+
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from '@/api/server.js';
+import { Database } from '@/core/db/database.js';
+import { SessionManager, type SessionExecutor } from '@/core/session/session-manager.js';
+import { ManagedAgentsClient } from '@/sdk/client.js';
+import type { AgentDefinition } from '@/types/agent.js';
+
+type TestContext = ReturnType<typeof createTestApp>;
+
+const richAgent = {
+  name: 'Contract agent',
+  model: 'gpt-4o',
+  system: 'Original system.',
+  description: 'Original description.',
+  mcp_servers: [{ type: 'url', name: 'tools-server', url: 'https://mcp.example.com/mcp' }],
+  // `custom` tool entries are not part of this change, so the fixture uses the
+  // shapes `main` accepts. The MCP toolset is kept because the merged-definition
+  // revalidation must still catch a broken server/toolset pair.
+  tools: [
+    { type: 'mcp_toolset', mcp_server_name: 'tools-server', configs: [] },
+    {
+      type: 'agent_toolset_20260401',
+      configs: [{ name: 'read' }, { name: 'bash' }],
+    },
+  ],
+  skills: [{ type: 'custom', skill_id: 'research' }],
+  metadata: { team: 'platform', tier: 'gold', owner: 'qa' },
+  max_turns: 12,
+  temperature: 0.3,
+  strategy: 'default',
+};
+
+function createTestApp() {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ma-agent-update-'));
+  const db = new Database(join(tmpDir, 'test.db'));
+  db.runMigrations();
+  db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+
+  const sessionManager = new SessionManager(db);
+  const executor: SessionExecutor = { async *execute() {} };
+  sessionManager.setExecutor(executor);
+
+  const agents: AgentDefinition[] = [];
+  const app = createServer({
+    db,
+    sessionManager,
+    agents,
+    reloadAgents: () => ({ agents: [], errors: [] }),
+  });
+  return { app, db, tmpDir, agents };
+}
+
+const contexts: TestContext[] = [];
+
+function context(): TestContext {
+  const created = createTestApp();
+  contexts.push(created);
+  return created;
+}
+
+afterEach(() => {
+  for (const opened of contexts.splice(0)) {
+    opened.db.close();
+    rmSync(opened.tmpDir, { recursive: true, force: true });
+  }
+});
+
+async function request(
+  app: ReturnType<typeof createServer>,
+  method: string,
+  path: string,
+  body?: unknown,
+) {
+  const res = await app.request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const json = await res.json() as any;
+  return { res, body: json };
+}
+
+async function seedAgent(ctx: TestContext, definition: Record<string, unknown> = richAgent) {
+  const created = await request(ctx.app, 'POST', '/v1/agents', definition);
+  expect(created.res.status).toBe(201);
+  return created.body as { id: string; version: number };
+}
+
+function versionRows(ctx: TestContext, agentId: string): number[] {
+  return (ctx.db
+    .prepare('SELECT version FROM agent_versions WHERE agent_id = ? ORDER BY version ASC')
+    .all(agentId) as Array<{ version: number }>).map((row) => row.version);
+}
+
+function storedRow(ctx: TestContext, agentId: string) {
+  return ctx.db
+    .prepare('SELECT name, definition, version, status, archived_at FROM agents WHERE id = ?')
+    .get(agentId) as { name: string; definition: string; version: number; status: string; archived_at: string | null };
+}
+
+function sdkClient(ctx: TestContext) {
+  return new ManagedAgentsClient({
+    baseUrl: 'http://managed-agents.test',
+    fetch: async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.toString());
+      return ctx.app.request(`${url.pathname}${url.search}`, init);
+    },
+  });
+}
+
+describe('PUT /v1/agents/:id partial update', () => {
+  it('keeps every field the body omits when only system changes', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const updated = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'New system.' });
+    expect(updated.res.status).toBe(200);
+    expect(updated.body.version).toBe(agent.version + 1);
+    expect(updated.body.system).toBe('New system.');
+    expect(updated.body.name).toBe('Contract agent');
+    expect(updated.body.model).toBe('gpt-4o');
+    expect(updated.body.description).toBe('Original description.');
+    expect(updated.body.tools).toHaveLength(2);
+    expect(updated.body.skills).toEqual([{ type: 'custom', skill_id: 'research' }]);
+    expect(updated.body.metadata).toEqual({ team: 'platform', tier: 'gold', owner: 'qa' });
+
+    const got = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+    expect(got.body.system).toBe('New system.');
+    expect(got.body.tools).toHaveLength(2);
+  });
+
+  it('updates description alone and model alone without touching the rest', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const described = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      description: 'Only the description changed.',
+    });
+    expect(described.res.status).toBe(200);
+    expect(described.body.description).toBe('Only the description changed.');
+    expect(described.body.system).toBe('Original system.');
+    // max_turns is a local-only field that never appears in the CMA agent
+    // shape; preservation is observable on the stored definition.
+    expect(JSON.parse(storedRow(ctx, agent.id).definition).max_turns).toBe(12);
+
+    const modeled = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      model: { id: 'gpt-5', speed: 'fast' },
+    });
+    expect(modeled.res.status).toBe(200);
+    expect(modeled.body.model).toBe('gpt-5');
+    // The server echoes the derived config whole: id and speed both visible.
+    expect(modeled.body.model_config).toEqual({ id: 'gpt-5', speed: 'fast' });
+    expect(modeled.body.system).toBe('Original system.');
+    expect(modeled.body.tools).toHaveLength(2);
+
+    // A bare string model replaces the derived config too: no stale speed
+    // may keep pointing at the previous model.
+    const reverts = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { model: 'gpt-4o' });
+    expect(reverts.body.model).toBe('gpt-4o');
+    expect(reverts.body.model_config).toBeUndefined();
+  });
+
+  it('keeps max_turns, temperature and strategy that the Console editor never shows', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    // Exactly the shape `AgentEditModal` puts on the wire: the draft fields
+    // and nothing else.
+    const saved = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      name: 'Contract agent',
+      model: 'gpt-4o',
+      description: 'Original description.',
+      system: 'Console edited this.',
+      mcp_servers: richAgent.mcp_servers,
+      tools: richAgent.tools,
+      skills: richAgent.skills,
+      metadata: { team: 'platform', tier: 'platinum', owner: null },
+    });
+    expect(saved.res.status).toBe(200);
+    expect(saved.body.system).toBe('Console edited this.');
+    // The draft fields the editor never shows stay on the stored definition.
+    const stored = JSON.parse(storedRow(ctx, agent.id).definition);
+    expect(stored.max_turns).toBe(12);
+    expect(stored.temperature).toBe(0.3);
+    expect(stored.strategy).toBe('default');
+    // A key the operator deleted in the editor arrives as an explicit null.
+    expect(saved.body.metadata).toEqual({ team: 'platform', tier: 'platinum' });
+  });
+
+  it('replaces list fields wholesale when present and keeps them when omitted', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const replaced = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      skills: [{ type: 'anthropic', skill_id: 'pdf' }, { type: 'custom', skill_id: 'research' }],
+    });
+    expect(replaced.res.status).toBe(200);
+    expect(replaced.body.skills).toEqual([
+      { type: 'anthropic', skill_id: 'pdf' },
+      { type: 'custom', skill_id: 'research' },
+    ]);
+    expect(replaced.body.tools).toHaveLength(2);
+
+    // tools and mcp_servers are one contract: replacing the wiring means
+    // sending both halves, and the merged definition is what gets validated.
+    const rewired = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      tools: [{ type: 'agent_toolset_20260401' }],
+      mcp_servers: [],
+    });
+    expect(rewired.res.status).toBe(200);
+    expect(rewired.body.tools).toEqual([{ type: 'agent_toolset_20260401', configs: [] }]);
+    expect(rewired.body.mcp_servers).toEqual([]);
+    expect(rewired.body.skills).toHaveLength(2);
+  });
+
+  it('clears list fields with an empty array or null', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const emptied = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      skills: [],
+    });
+    expect(emptied.res.status).toBe(200);
+    expect(emptied.body.skills).toEqual([]);
+    expect(emptied.body.tools).toHaveLength(2);
+
+    const nulled = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      tools: null,
+      mcp_servers: null,
+    });
+    expect(nulled.res.status).toBe(200);
+    expect(nulled.body.tools).toEqual([]);
+    expect(nulled.body.mcp_servers).toEqual([]);
+  });
+
+  it('merges metadata per key, deletes keys on explicit null, and clears all on null', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const merged = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      metadata: { tier: 'silver', contact: 'oncall', owner: null },
+    });
+    expect(merged.res.status).toBe(200);
+    expect(merged.body.metadata).toEqual({ team: 'platform', tier: 'silver', contact: 'oncall' });
+
+    const cleared = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { metadata: null });
+    expect(cleared.res.status).toBe(200);
+    expect(cleared.body.metadata).toEqual({});
+
+    const refilled = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { metadata: { only: 'one' } });
+    expect(refilled.body.metadata).toEqual({ only: 'one' });
+
+    // The server schema accepts any JSON metadata value; the API projection
+    // stringifies it on the way out.
+    const typed = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { metadata: { priority: 5 } });
+    expect(typed.res.status).toBe(200);
+    expect(typed.body.metadata).toEqual({ only: 'one', priority: '5' });
+  });
+
+  it('clears system and description but never name or model', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    // Clearing `system` maps to the empty string per the update contract, but
+    // the merged definition is revalidated against the full schema, which
+    // requires a non-empty system prompt. The clear is therefore refused
+    // rather than the schema being relaxed to allow a prompt-less agent.
+    const clearedSystem = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: null });
+    expect(clearedSystem.res.status).toBe(400);
+    expect((await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body.system).toBe('Original system.');
+
+    const emptySystem = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Back to work.' });
+    expect(emptySystem.body.system).toBe('Back to work.');
+
+    const clearedDescription = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { description: null });
+    expect(clearedDescription.body.description).toBe('');
+
+    const nullName = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { name: null });
+    expect(nullName.res.status).toBe(400);
+    expect(nullName.body.error.details).toContainEqual({
+      path: 'name',
+      message: 'Agent name cannot be cleared; send a new name or omit the field',
+    });
+
+    const nullModel = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { model: null });
+    expect(nullModel.res.status).toBe(400);
+    expect(nullModel.body.error.details).toContainEqual(expect.objectContaining({
+      path: 'model',
+      message: expect.stringContaining('cannot be cleared'),
+    }));
+
+    for (const body of [{ name: '' }, { model: '' }]) {
+      const rejected = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, body);
+      expect(rejected.res.status).toBe(400);
+      expect(rejected.body.error.details[0].path).toBe(Object.keys(body)[0]);
+    }
+    const unchanged = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+    expect(unchanged.body.name).toBe('Contract agent');
+    expect(unchanged.body.model).toBe('gpt-4o');
+  });
+
+  it('enforces expected_version as an optimistic precondition', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const conflict = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      system: 'Never stored.',
+      expected_version: 7,
+    });
+    expect(conflict.res.status).toBe(409);
+    expect(conflict.body.error.message).toContain('is at version 1; expected version 7');
+    expect(versionRows(ctx, agent.id)).toEqual([1]);
+
+    const applied = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      system: 'Stored with a precondition.',
+      expected_version: agent.version,
+    });
+    expect(applied.res.status).toBe(200);
+    expect(applied.body.version).toBe(2);
+    expect(applied.body.system).toBe('Stored with a precondition.');
+
+    // A numeric string is the tolerated spelling of a real precondition.
+    const stringVersion = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      description: 'Guarded by a string version.',
+      expected_version: '2',
+    });
+    expect(stringVersion.res.status).toBe(200);
+    expect(stringVersion.body.version).toBe(3);
+  });
+
+  it('rejects a malformed expected_version instead of treating it as absent', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    for (const malformed of [0, -3, 1.5, 'abc', '', true, {}, [], null]) {
+      const rejected = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+        system: 'Would have been an unguarded write.',
+        expected_version: malformed,
+      });
+      expect(rejected.res.status, JSON.stringify(malformed)).toBe(400);
+      expect(rejected.body.error.details).toContainEqual({
+        path: 'expected_version',
+        message: 'expected_version must be a positive integer',
+      });
+    }
+    // Nothing stored: the version is untouched and no snapshot was written.
+    expect(storedRow(ctx, agent.id).version).toBe(1);
+    expect(versionRows(ctx, agent.id)).toEqual([1]);
+  });
+
+  it('lets exactly one of two writers sharing an expected_version land', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const [first, second] = await Promise.all([
+      request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Writer A.', expected_version: 1 }),
+      request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Writer B.', expected_version: 1 }),
+    ]);
+    const responses = [first, second];
+    const landed = responses.filter((r) => r.res.status === 200);
+    const clashed = responses.filter((r) => r.res.status === 409);
+    expect(landed).toHaveLength(1);
+    expect(clashed).toHaveLength(1);
+    expect(landed[0].body.version).toBe(2);
+    expect(clashed[0].body.error.type).toBe('conflict');
+
+    // One commit means exactly one new snapshot, with no duplicate or skipped
+    // version numbers.
+    expect(versionRows(ctx, agent.id)).toEqual([1, 2]);
+    const row = storedRow(ctx, agent.id);
+    expect(row.version).toBe(2);
+    expect(JSON.parse(row.definition).system).toMatch(/^Writer [AB]\.$/);
+  });
+
+  it('serializes two unguarded writers into contiguous versions', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const [first, second] = await Promise.all([
+      request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { description: 'Unguarded one.' }),
+      request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { description: 'Unguarded two.' }),
+    ]);
+    expect(first.res.status).toBe(200);
+    expect(second.res.status).toBe(200);
+    expect([first.body.version, second.body.version].sort()).toEqual([2, 3]);
+    expect(versionRows(ctx, agent.id)).toEqual([1, 2, 3]);
+    expect(storedRow(ctx, agent.id).version).toBe(3);
+  });
+
+  it('rejects updates to an archived agent over both verbs', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+    const archived = await request(ctx.app, 'POST', `/v1/agents/${agent.id}/archive`, {});
+    expect(archived.res.status).toBe(200);
+
+    for (const method of ['PUT', 'PUT']) {
+      const rejected = await request(ctx.app, method, `/v1/agents/${agent.id}`, { system: 'Resurrect.' });
+      expect(rejected.res.status).toBe(404);
+    }
+    const row = storedRow(ctx, agent.id);
+    expect(row.status).toBe('archived');
+    expect(row.version).toBe(1);
+    expect(JSON.parse(row.definition).system).toBe('Original system.');
+  });
+
+  it('does not create a version for an update with no actual change', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+    const rowBefore = storedRow(ctx, agent.id);
+    const before = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+
+    const sameSystem = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Original system.' });
+    expect(sameSystem.res.status).toBe(200);
+    expect(sameSystem.body.version).toBe(1);
+
+    const empty = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {});
+    expect(empty.res.status).toBe(200);
+    expect(empty.body.version).toBe(1);
+
+    const ghostDelete = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      metadata: { never_existed: null },
+    });
+    expect(ghostDelete.res.status).toBe(200);
+    expect(ghostDelete.body.version).toBe(1);
+
+    // A no-op must not fake progress: timestamps stay exactly as stored.
+    expect(sameSystem.body.updated_at).toBe(before.body.updated_at);
+    expect(empty.body.created_at).toBe(before.body.created_at);
+    expect(versionRows(ctx, agent.id)).toEqual([1]);
+    expect(storedRow(ctx, agent.id).definition).toBe(rowBefore.definition);
+  });
+
+  it('applies the same partial semantics through PUT', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const updated = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'PUT partial.' });
+    expect(updated.res.status).toBe(200);
+    expect(updated.body.system).toBe('PUT partial.');
+    expect(updated.body.description).toBe('Original description.');
+    expect(updated.body.tools).toHaveLength(2);
+    expect(updated.body.metadata).toEqual({ team: 'platform', tier: 'gold', owner: 'qa' });
+  });
+
+  it('rejects unknown fields instead of silently discarding them', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const rejected = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { nickname: 'slippy' });
+    expect(rejected.res.status).toBe(400);
+    expect(rejected.body.error.details).toContainEqual({
+      path: 'nickname',
+      message: 'Unknown agent update field "nickname"',
+    });
+    expect(storedRow(ctx, agent.id).version).toBe(1);
+  });
+
+  it('keeps capability admission, MCP wiring, and roster validation on the merged definition', async () => {
+    const ctx = context();
+    const plain = await seedAgent(ctx, {
+      name: 'Plain agent',
+      model: 'gpt-4o',
+      system: 'Stay offline.',
+    });
+    // `web_fetch` executes behind the address guard, so capability admission
+    // no longer refuses it. `web_search` still has no provider.
+    const searchAttempt = await request(ctx.app, 'PUT', `/v1/agents/${plain.id}`, {
+      tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'web_search' }] }],
+    });
+    expect(searchAttempt.res.status).toBe(400);
+    expect(searchAttempt.body.error.type).toBe('unsupported_capability');
+    expect(JSON.stringify(searchAttempt.body)).toContain('web_search');
+    expect((await request(ctx.app, 'GET', `/v1/agents/${plain.id}`)).body.tools).toEqual([]);
+
+    // A domain list on a tool that does execute is accepted by admission and
+    // validated by the grammar rather than refused.
+    const fetchAttempt = await request(ctx.app, 'PUT', `/v1/agents/${plain.id}`, {
+      tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'web_fetch', allowed_domains: ['example.com'] }] }],
+    });
+    expect(fetchAttempt.res.status).toBe(200);
+
+    const agent = await seedAgent(ctx);
+    const dangling = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      tools: [{ type: 'mcp_toolset', mcp_server_name: 'ghost-server' }],
+    });
+    expect(dangling.res.status).toBe(400);
+    expect(JSON.stringify(dangling.body)).toContain('undeclared MCP server');
+
+    // The roster field is not part of this change, so it is rejected as an
+    // unknown field rather than silently discarded.
+    const rosterAttempt = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: plain.id }] },
+    });
+    expect(rosterAttempt.res.status).toBe(400);
+    expect(rosterAttempt.body.error.details).toContainEqual({
+      path: 'multiagent',
+      message: 'Unknown agent update field "multiagent"',
+    });
+  });
+
+  it('keeps response, stored row, versions, list, and the in-memory cache consistent', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    const first = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Version two.' });
+    const second = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Version three.' });
+    expect(second.body.version).toBe(3);
+
+    const got = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+    expect(got.body.version).toBe(3);
+    expect(got.body.system).toBe('Version three.');
+
+    const list = await request(ctx.app, 'GET', '/v1/agents');
+    const listed = list.body.data.find((item: any) => item.id === agent.id);
+    expect(listed.version).toBe(3);
+    expect(listed.system).toBe('Version three.');
+
+    const versions = await request(ctx.app, 'GET', `/v1/agents/${agent.id}/versions`);
+    expect(versions.body.data.map((item: any) => item.version)).toEqual([3, 2, 1]);
+    expect(versions.body.data[0].system).toBe('Version three.');
+    expect(versions.body.data[2].system).toBe('Original system.');
+
+    const row = storedRow(ctx, agent.id);
+    expect(row.version).toBe(3);
+    expect(JSON.parse(row.definition).system).toBe('Version three.');
+    expect(versionRows(ctx, agent.id)).toEqual([1, 2, 3]);
+
+    const cached = ctx.agents.find((item) => item.name === 'Contract agent');
+    expect(cached?.system).toBe('Version three.');
+
+    // The snapshot taken at create time is untouched by later updates.
+    const firstVersion = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+    expect(firstVersion.body.version).toBe(3);
+    expect(versions.body.data.find((item: any) => item.version === 1).tools).toHaveLength(2);
+  });
+
+});
