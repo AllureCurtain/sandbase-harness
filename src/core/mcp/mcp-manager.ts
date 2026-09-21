@@ -34,34 +34,14 @@ export function reconnectDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
 }
 
-/** Prefix every MCP-provided tool carries in the runtime tool map. */
-export const MCP_TOOL_PREFIX = 'mcp_';
-
-/** Runtime tool name for one of a server's tools: `mcp_<server>_<tool>`. */
-export function mcpToolName(serverName: string, toolName: string): string {
-  return `${MCP_TOOL_PREFIX}${serverName}_${toolName}`;
-}
-
 /**
- * Recover the MCP server identity behind a runtime tool name.
- *
- * The runtime name is `mcp_<server>_<tool>`, which is ambiguous on its own
- * because both segments may contain underscores. Resolving it against the
- * declared server names and preferring the longest match makes the answer
- * deterministic for the agents we actually run, and returns `undefined` rather
- * than guessing when nothing matches. Events use this so a tool call can be
- * attributed to a server even when two servers expose the same tool name.
+ * The runtime naming rule now lives in `tool-naming.ts` so the permission layer
+ * can reuse it without importing the MCP client stack. Re-exported here so an
+ * existing importer of this module keeps working.
  */
-export function resolveMcpServerName(toolName: string, serverNames: readonly string[]): string | undefined {
-  if (!toolName.startsWith(MCP_TOOL_PREFIX)) return undefined;
-  let best: string | undefined;
-  for (const name of serverNames) {
-    if (!name) continue;
-    if (!toolName.startsWith(`${MCP_TOOL_PREFIX}${name}_`)) continue;
-    if (best === undefined || name.length > best.length) best = name;
-  }
-  return best;
-}
+export { MCP_TOOL_PREFIX, mcpToolName, mcpServerToolPrefix, resolveMcpServerName } from './tool-naming.js';
+
+import { mcpToolName } from './tool-naming.js';
 
 export interface McpServerStatus {
   name: string;
@@ -80,12 +60,31 @@ interface McpClient {
  * Manages the lifecycle of MCP client connections for a single session/agent.
  * One instance per session; call close() on session teardown.
  */
+export interface McpManagerOptions {
+  /**
+   * Admission rule for a tool the server actually exposed.
+   *
+   * A server's tool list is only known after `tools/list`, so the agent's
+   * declared `configs` cannot decide admission on their own. The caller supplies
+   * the rule (derived from the owning `mcp_toolset`) so a discovered tool the
+   * operator disabled, or one that should be approval-gated, is filtered at
+   * discovery rather than shipped and hoped to be gated later. Absent means
+   * "admit everything", which keeps direct `McpManager` construction usable.
+   */
+  admitTool?: (serverName: string, toolName: string) => boolean;
+}
+
 export class McpManager {
+  private readonly admitTool: ((serverName: string, toolName: string) => boolean) | undefined;
   private clients = new Map<string, McpClient>();
   private serverConfigs = new Map<string, McpServerConfig>();
   private statuses: McpServerStatus[] = [];
   /** Current live (un-namespaced) tool defs per server, refreshed on reconnect. */
   private liveTools = new Map<string, Record<string, any>>();
+
+  constructor(options: McpManagerOptions = {}) {
+    this.admitTool = options.admitTool;
+  }
   /** Sleep function (injectable for tests). */
   private sleepFn: (ms: number) => Promise<void> = sleep;
 
@@ -113,6 +112,9 @@ export class McpManager {
         this.liveTools.set(server.name, result.tools);
         let count = 0;
         for (const toolName of Object.keys(result.tools)) {
+          // A denied tool is dropped here rather than shipped and gated later:
+          // shipping it invites the model to call something the operator forbade.
+          if (this.admitTool && !this.admitTool(server.name, toolName)) continue;
           merged[mcpToolName(server.name, toolName)] = this.wrapTool(server.name, toolName);
           count++;
         }
@@ -177,6 +179,7 @@ export class McpManager {
         const tools: Record<string, unknown> = {};
         let count = 0;
         for (const toolName of Object.keys(result.tools)) {
+          if (this.admitTool && !this.admitTool(serverName, toolName)) continue;
           tools[mcpToolName(serverName, toolName)] = this.wrapTool(serverName, toolName);
           count++;
         }

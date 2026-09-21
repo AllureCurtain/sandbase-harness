@@ -360,6 +360,19 @@ server; that is a legitimate fan-out of one transport across two tool groups.
 Whether a bound server is reachable, and whether it actually exposes the tools its
 toolset configs name, is checked at connection time rather than at save time.
 
+An MCP tool is governed by the permission policy of the toolset that binds its
+server. When nothing is configured, the toolset kind supplies the default: an
+`mcp_toolset` requires approval and the built-in toolset does not, because an MCP
+server is third-party surface and a call to it reaches the user before it runs.
+An explicit `permission_policy` on a tool config, or a `default_config` on the
+toolset, overrides that default in both directions. A tool the server exposed
+but the agent never named is admitted under the same default rather than under
+no rule at all: it carries no local `execute` until the caller approves it, and
+it appears in the confirmation list the runtime matches against the model-visible
+name. A tool the operator marked `never_allow` is not admitted at all rather than
+shipped and gated, because shipping it would invite the model to call something
+the operator forbade.
+
 ### Custom tools
 
 A custom tool is declared as an independent `tools[]` entry carrying `type: "custom"`, with `name`, `description`, and `input_schema`. The legacy `custom_toolset` grouping is still accepted on write, with `parameters` accepted as an alias for `input_schema`, and is projected back as flat canonical `custom` entries, so a client reading an agent sees one shape regardless of how it was written. A tool the legacy grouping disables — a config with `enabled: false`, or every config under a `default_config` of `enabled: false` — is dropped rather than translated into a policy. A canonical entry carrying a `permission_policy` is refused with `400 invalid_request_error`: the caller executes the tool and decides whether to run it, so a policy field would claim governance the runtime does not have. A name that collides with a built-in tool, a name declared twice across both shapes, and a malformed input schema are each refused with a message naming the offending entry.
