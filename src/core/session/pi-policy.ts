@@ -113,10 +113,15 @@ export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdm
  * CLI to bypass an agent's confirmation or denial declaration.
  */
 export function assertPiAgentCanExecute(agent: AgentDefinition): void {
-  const declaredConfigs = (agent.tools ?? []).flatMap((toolset) => [
-    ...(toolset.default_config ? [toolset.default_config] : []),
-    ...(toolset.configs ?? []),
-  ]);
+  // A canonical custom entry carries no permission policy by design, so there is
+  // nothing here for Pi to refuse; the legacy grouping still can carry one.
+  const declaredConfigs = (agent.tools ?? []).flatMap((toolset) => {
+    if (toolset.type === 'custom') return [];
+    return [
+      ...(toolset.default_config ? [toolset.default_config] : []),
+      ...(toolset.configs ?? []),
+    ];
+  });
   if (declaredConfigs.some((config) => config.permission_policy?.type === 'always_ask')) {
     throw new PiAlwaysAskUnsupportedError();
   }

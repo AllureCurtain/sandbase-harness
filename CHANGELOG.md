@@ -4,6 +4,7 @@
 
 ### Added
 
+- Accepts a custom tool either as a canonical `custom` entry in `tools[]` or in the legacy `custom_toolset` grouping, and projects one canonical shape on every agent response. The canonical entry carries `name`, `description`, and `input_schema`, with `parameters` still accepted as a legacy alias. A tool the legacy grouping disables is dropped rather than translated into a policy, and a canonical entry carrying a `permission_policy` is refused because the caller executes the tool and decides whether to run it, so a policy field would claim governance the runtime does not hold. A name that collides with a built-in tool, a name declared twice across both shapes, and a malformed input schema are each refused with a message naming the offending entry. `getCustomToolNames`, `getCustomToolConfigs`, `canonicalToConfig`, and `findCustomToolConfig` report the same tool set for both wire shapes.
 - Publishes stable admission error codes on rejected compatibility requests.
   `error.code` now names the cause (`missing_anthropic_version`,
   `unsupported_anthropic_version`, `missing_anthropic_beta`,

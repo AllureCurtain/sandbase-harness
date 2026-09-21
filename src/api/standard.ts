@@ -261,6 +261,30 @@ export function agentId(name: string): string {
   return `agent_${slug || 'untitled'}`;
 }
 
+/**
+ * Project an agent's tools to the canonical wire shape.
+ *
+ * A legacy `custom_toolset` grouping is flattened to independent canonical
+ * `custom` entries, dropping a tool the grouping disabled or denied rather than
+ * echoing the grouping back as written. Every other toolset passes through.
+ */
+function toApiToolsets(toolsets: AgentToolset[]): AgentToolset[] {
+  return toolsets.flatMap((toolset): AgentToolset[] => {
+    if (toolset.type === 'custom') return [toolset];
+    if (toolset.type !== 'custom_toolset') return [toolset];
+    const defaultEnabled = toolset.default_config?.enabled !== false;
+    return (toolset.configs ?? [])
+      .filter((config) => (config.enabled ?? defaultEnabled) !== false)
+      .filter((config) => config.permission_policy?.type !== 'never_allow')
+      .map((config) => ({
+        type: 'custom' as const,
+        name: config.name,
+        description: config.description,
+        input_schema: config.parameters ?? config.input_schema!,
+      }));
+  });
+}
+
 export function toApiAgent(
   agent: AgentDefinition,
   dates?: {
@@ -280,7 +304,7 @@ export function toApiAgent(
     system: agent.system,
     model: agent.model,
     ...(agent.model_config && agent.model_config.speed !== 'standard' ? { model_config: agent.model_config } : {}),
-    tools: agent.tools ?? [],
+    tools: toApiToolsets(agent.tools ?? []),
     mcp_servers: toApiMcpServers(agent.mcp_servers ?? []),
     skills: agent.skills ?? [],
     metadata: parseStringRecord(agent.metadata),

@@ -107,7 +107,49 @@ export interface WebUserLocation {
   timezone?: string;
 }
 
-export type AgentToolset = BuiltinAgentToolset | McpToolset;
+export type AgentToolset = BuiltinAgentToolset | McpToolset | CustomToolset | CanonicalCustomTool;
+
+export interface JsonSchema {
+  type?: string;
+  [key: string]: unknown;
+}
+
+export interface CustomToolConfig extends AgentToolConfig {
+  /** Stable model-visible name for the externally executed tool. */
+  name: string;
+  /** Human-readable description sent to the model. */
+  description: string;
+  /** JSON Schema for the tool input. `input_schema` is accepted on ingress. */
+  parameters: JsonSchema;
+  input_schema?: JsonSchema;
+}
+
+/**
+ * Canonical CMA custom tool declaration.
+ *
+ * The published contract inlines an independent `tools[]` entry instead of
+ * grouping custom tools under a toolset. It deliberately carries no permission
+ * policy: the caller executes the tool and decides whether to run it, so a
+ * policy field would claim governance the runtime does not have. SandBase
+ * accepts this shape on ingress and projects it back on every agent response.
+ */
+export interface CanonicalCustomTool {
+  type: 'custom';
+  name: string;
+  description: string;
+  /** Canonical JSON Schema field name. `parameters` is accepted as a legacy alias. */
+  input_schema: JsonSchema;
+  parameters?: JsonSchema;
+  /** Legacy-only: accepted from `custom_toolset` input, never projected canonically. */
+  enabled?: boolean;
+}
+
+/** Legacy SandBase grouping of custom tools. Accepted on ingress, projected as {@link CanonicalCustomTool}. */
+export interface CustomToolset {
+  type: 'custom_toolset';
+  configs?: CustomToolConfig[];
+  default_config?: AgentToolConfig;
+}
 
 export interface BuiltinAgentToolset {
   type: 'agent_toolset_20260401';
