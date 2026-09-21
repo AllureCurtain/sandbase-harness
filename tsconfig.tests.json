@@ -33,6 +33,7 @@
     "tests/unit/agent-modals.test.tsx",
     "tests/unit/console-pages.test.ts",
     "tests/unit/console-tool-confirmation.test.ts",
+    "tests/unit/console-tool-permission.test.tsx",
     "tests/unit/credential-modals.test.tsx",
     "tests/unit/runtime-settings-forms.test.tsx",
     "tests/unit/session-modals.test.tsx",

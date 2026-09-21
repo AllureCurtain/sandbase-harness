@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { postJson } from '../../api';
 import { EmptyState, FilterSelect, MetricCard, StatusPill, Toolbar } from '../Common';
 import { formatDate, formatDateShort, formatUsage, shortId } from '../../lib/format';
-import type { Agent, AgentTab, ConsoleData, McpToolset, Session } from '../../types';
+import type { Agent, AgentTab, AgentToolset, ConsoleData, McpToolset, Session, ToolPermission } from '../../types';
 
 export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; onNewAgent: () => void; onOpenAgent: (agent: Agent) => void }) {
   const [query, setQuery] = useState('');
@@ -190,9 +190,44 @@ export function AgentDetail({
   );
 }
 
+/**
+ * The policy that actually governs a toolset.
+ *
+ * Explicit configuration always wins. When nothing is configured the toolset
+ * kind supplies the default — `agent_toolset_20260401` allows by default,
+ * `mcp_toolset` asks by default — so showing "not configured" would understate
+ * what the runtime enforces. Third-party MCP servers being gated by default is
+ * the fact an operator most needs to see here, which is why the kind default is
+ * rendered rather than left blank.
+ *
+ * Derived locally rather than imported from the runtime so the Console bundle
+ * stays free of the server's dependency graph.
+ */
+export function effectiveToolsetPermission(toolset: AgentToolset | undefined): ToolPermission {
+  if (!toolset) return 'always_allow';
+  return toolset.default_config?.permission_policy?.type
+    ?? (toolset.type === 'agent_toolset_20260401' ? 'always_allow' : 'always_ask');
+}
+
+const PERMISSION_LABELS: Record<ToolPermission, string> = {
+  always_allow: 'Always allow',
+  always_ask: 'Always ask',
+  never_allow: 'Never allow',
+};
+
+/** Compact badge for the effective policy, read-only in this view. */
+export function PermissionBadge({ policy }: { policy: ToolPermission }) {
+  return (
+    <span className={`permissionBadge permission-${policy}`}>{PERMISSION_LABELS[policy]}</span>
+  );
+}
+
 function AgentConfigTab({ agent }: { agent: Agent }) {
   const builtinToolCount = toolNames(agent).length;
   const mcpToolsets = agent.tools.filter((toolset): toolset is McpToolset => toolset.type === 'mcp_toolset');
+  const builtinPolicy = effectiveToolsetPermission(
+    agent.tools.find((toolset) => toolset.type === 'agent_toolset_20260401'),
+  );
   return (
     <div className="detailStack">
       <div className="versionRow">
@@ -211,6 +246,7 @@ function AgentConfigTab({ agent }: { agent: Agent }) {
               <strong>Built-in tools</strong>
               <span>agent_toolset_20260401</span>
             </div>
+            <PermissionBadge policy={builtinPolicy} />
           </div>
           <div className="toolsetRow">
             <span><ChevronDown size={16} />Tool permissions <b>{builtinToolCount}</b></span>
@@ -225,6 +261,7 @@ function AgentConfigTab({ agent }: { agent: Agent }) {
                 <strong>{toolset.mcp_server_name}</strong>
                 <span>mcp_toolset</span>
               </div>
+              <PermissionBadge policy={effectiveToolsetPermission(toolset)} />
             </div>
           </div>
         ))}

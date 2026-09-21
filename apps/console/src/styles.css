@@ -3454,10 +3454,38 @@ label.searchBox input {
 
 .toolsetHeader {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   gap: 12px;
   padding: 18px;
   align-items: center;
+}
+
+/*
+ * Effective permission policy per toolset. Rendered here because the policy is
+ * not obvious from the definition: an MCP toolset asks by default even when no
+ * `default_config` is written, and an operator reading this page otherwise has
+ * no way to tell a gated third-party server from an ungated one.
+ */
+.permissionBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.permissionBadge.permission-always_ask {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.permissionBadge.permission-never_allow {
+  text-decoration: line-through;
 }
 
 .toolsetHeader strong,

@@ -269,6 +269,7 @@
 
 ### Console
 
+- Shows the effective permission policy on each toolset header of the agent page. The policy is not visible in the definition — an `mcp_toolset` requires approval even when no `default_config` is written — so the page previously showed an MCP server's name and nothing about how its tools would be treated, and hardcoded "Always allow" for the built-in toolset. An operator can now tell a gated third-party server from an ungated one, and a reader checking the claim that the Console shows "Always Allow" has UI evidence for it. The badge carries the policy in its text and in a class name, so the policies are distinguishable without relying on colour alone.
 - Improves the staged conversation experience with streaming message
   projection, resource selection, safe Markdown rendering, tool confirmation
   states, and event metadata needed by the Console.
