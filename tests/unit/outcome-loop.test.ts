@@ -1,0 +1,126 @@
+/**
+ * The outcome loop's control flow.
+ *
+ * `contracts/anthropic-cma/sessions.md` §2 says an outcome iterates until the
+ * rubric is satisfied, the budget is spent, or the session is interrupted. These
+ * tests pin the three things that decide whether the loop is honest: the budget
+ * is the only thing that can stop a `needs_revision` from starting another turn,
+ * a failure in the turn itself is never graded, and an interrupt ends the outcome
+ * instead of leaving an evaluation open.
+ */
+
+import { describe, it, expect } from 'vitest';
+import { OutcomeInterruptedError, runOutcomeLoop } from '@/core/outcomes/loop.js';
+import type { SessionEvent } from '@/types/session.js';
+import type { OutcomeGrade } from '@/core/outcomes/grader.js';
+
+/** A scripted run: turns and grades are consumed in order. */
+function harness(grades: OutcomeGrade[], opts: { abortAfterEvaluations?: number } = {}) {
+  const spans: Array<{ type: string; metadata: Record<string, unknown> }> = [];
+  const revisions: string[] = [];
+  const turns: string[] = [];
+  let gradeIndex = 0;
+  let turnCount = 0;
+
+  return {
+    spans,
+    revisions,
+    turns,
+    input: {
+      outcomeId: 'outc_loop',
+      request: { description: 'Ship a working endpoint', maxIterations: grades.length },
+      rubric: '- returns 200',
+      grader: {
+        grade: async () => {
+          const grade = grades[Math.min(gradeIndex, grades.length - 1)];
+          gradeIndex += 1;
+          return grade;
+        },
+      },
+      logger: {
+        append: (span: { type: string; metadata: Record<string, unknown> }) => {
+          spans.push(span);
+          return { id: `sevt_${spans.length}` } as SessionEvent;
+        },
+      },
+      appendRevision: (text: string) => {
+        revisions.push(text);
+        return { id: `sevt_rev_${revisions.length}` } as SessionEvent;
+      },
+      runTurn: async function* () {
+        turnCount += 1;
+        turns.push(`turn ${turnCount}`);
+        yield { id: `sevt_turn_${turnCount}` } as SessionEvent;
+      },
+      readTranscript: () => `assistant: attempt ${turnCount}`,
+      isAborted: () => opts.abortAfterEvaluations !== undefined && gradeIndex >= opts.abortAfterEvaluations,
+    },
+  };
+}
+
+const satisfied: OutcomeGrade = { result: 'satisfied', explanation: 'The endpoint returns 200.' };
+const revise: OutcomeGrade = { result: 'needs_revision', explanation: 'The response body is empty.' };
+
+describe('runOutcomeLoop', () => {
+  it('stops at the first satisfied verdict without revising', async () => {
+    const run = harness([satisfied]);
+    const result = await runOutcomeLoop(run.input);
+
+    expect(result).toEqual({ result: 'satisfied', iterations: 1, explanation: 'The endpoint returns 200.' });
+    expect(run.turns).toHaveLength(0);
+    expect(run.revisions).toEqual([]);
+    expect(run.spans.map((span) => span.type)).toEqual([
+      'span.outcome_evaluation_start',
+      'span.outcome_evaluation_ongoing',
+      'span.outcome_evaluation_end',
+    ]);
+    expect(run.spans.at(-1)?.metadata).toMatchObject({ iteration: 0, result: 'satisfied' });
+  });
+
+  it('feeds the explanation back and iterates until the rubric is satisfied', async () => {
+    const run = harness([revise, satisfied]);
+    const result = await runOutcomeLoop(run.input);
+
+    expect(result.result).toBe('satisfied');
+    expect(result.iterations).toBe(2);
+    expect(run.turns).toEqual(['turn 1']);
+    expect(run.revisions).toHaveLength(1);
+    expect(run.revisions[0]).toContain('The response body is empty.');
+    expect(run.revisions[0]).toContain('Ship a working endpoint');
+    expect(run.spans.map((span) => span.metadata.iteration)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(run.spans.at(-1)?.metadata).toMatchObject({ result: 'satisfied' });
+  });
+
+  it('reports the spent budget instead of asking for a revision it cannot run', async () => {
+    const run = harness([revise, revise]);
+    const result = await runOutcomeLoop(run.input);
+
+    expect(result).toEqual({
+      result: 'max_iterations_reached',
+      iterations: 2,
+      explanation: 'The response body is empty.',
+    });
+    // The last allowed evaluation reports the budget, not another revision…
+    expect(run.spans.at(-1)?.metadata).toMatchObject({ iteration: 1, result: 'max_iterations_reached' });
+    // …and the agent still gets one final turn to settle its answer.
+    expect(run.turns).toEqual(['turn 1', 'turn 2']);
+    expect(run.revisions.at(-1)).toContain('iteration budget for this outcome is spent');
+  });
+
+  it('ends an interrupted outcome as interrupted, without leaving an evaluation open', async () => {
+    const run = harness([revise, satisfied], { abortAfterEvaluations: 1 });
+    await expect(runOutcomeLoop(run.input)).rejects.toBeInstanceOf(OutcomeInterruptedError);
+
+    expect(run.spans.map((span) => span.type)).toEqual([
+      'span.outcome_evaluation_start',
+      'span.outcome_evaluation_ongoing',
+      'span.outcome_evaluation_end',
+      // The interrupt is published as one further end event, with no start id
+      // because that evaluation never began.
+      'span.outcome_evaluation_end',
+    ]);
+    expect(run.spans.at(-1)?.metadata).toMatchObject({ result: 'interrupted', outcome_evaluation_start_id: '', iteration: 1 });
+    // No revision was appended for the iteration that never ran.
+    expect(run.revisions).toHaveLength(0);
+  });
+});

@@ -44,6 +44,16 @@ export interface OutcomeEvaluationInput {
   readTranscript: () => string;
   grader: OutcomeGrader;
   logger: OutcomeSpanLogger;
+  /**
+   * Whether the iteration budget is spent.
+   *
+   * A `needs_revision` verdict is then published as `max_iterations_reached`
+   * instead: asking for another revision the loop cannot run would be a promise
+   * the runtime does not keep, and a client reading the span would wait for a
+   * turn that never comes. The verdict itself is unchanged — the budget, not the
+   * grader, decides that no more work follows.
+   */
+  budgetSpent?: boolean;
 }
 
 export interface OutcomeEvaluation {
@@ -69,7 +79,8 @@ export async function runOutcomeEvaluation(input: OutcomeEvaluationInput): Promi
       rubric: input.rubric,
       transcript: input.readTranscript(),
     });
-    const result: OutcomeEvaluationResult = grade.result;
+    const result: OutcomeEvaluationResult =
+      input.budgetSpent === true && grade.result === 'needs_revision' ? 'max_iterations_reached' : grade.result;
     input.logger.append({
       type: 'span.outcome_evaluation_end',
       metadata: {
