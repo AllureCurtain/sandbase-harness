@@ -5,12 +5,16 @@ import { pageOf } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
+  parseCredentialAuth,
+  toCanonicalCredential,
+  type CredentialInjectionLocation,
+} from '@/core/credentials/canonical-credential.js';
+import {
   appendCredentialAuditEvent,
   listCredentialAuditEvents,
 } from '@/core/credentials/audit.js';
 import {
   archiveResource,
-  arrayOfStrings,
   conflict,
   invalid,
   notFound,
@@ -72,19 +76,26 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
     if (!vault) return notFound(c, 'Credential vault not found');
 
-    const authType = stringField(body.value.auth_type);
-    if (!isCredentialAuthType(authType)) return invalid(c, 'auth_type must be one of mcp_oauth, bearer_token, environment_variable');
+    // One parser for both wire shapes: the canonical nested `auth` object is the
+    // published profile, and the flat spelling stays accepted as a local alias.
+    // A payload supplying both is refused rather than merged, so a flat field can
+    // never silently override a nested one.
+    const parsed = parseCredentialAuth(body.value);
+    if (!parsed.ok) return invalid(c, parsed.message);
+    const credential = parsed.value;
+    // The parser records a canonical `environment_variable` with no `secret_value`
+    // as "no value supplied"; the route refuses it, because a credential whose
+    // secret was never set is an unusable row.
+    if (credential.authType === 'environment_variable' && !credential.secretValue) {
+      return invalid(c, 'secret_value is required');
+    }
 
-    const mcpServerUrl = stringField(body.value.mcp_server_url);
-    const variableName = stringField(body.value.variable_name);
-    const secretValue = typeof body.value.value === 'string' ? body.value.value : '';
-    if (authType === 'mcp_oauth' && !mcpServerUrl) return invalid(c, 'mcp_server_url is required');
-    if (authType === 'bearer_token' && !secretValue) return invalid(c, 'value is required');
-    if (authType === 'environment_variable' && (!variableName || !secretValue)) return invalid(c, 'variable_name and value are required');
-
-    const injectionLocations = parseCredentialInjectionLocations(body.value.injection_locations);
-    if (!injectionLocations.ok) return invalid(c, injectionLocations.message);
-    const encryptedSecret = secretValue ? encryptSecret(secretValue, deps.workspace?.dataDir) : { ciphertext: '', nonce: '', tag: '' };
+    // `auth.networking` is the canonical spelling for the policy; the flat shape
+    // carried `network`. Both run through the same normalizer as before.
+    const networkValue = credential.networking ?? body.value.network;
+    const encryptedSecret = credential.secretValue
+      ? encryptSecret(credential.secretValue, deps.workspace?.dataDir)
+      : { ciphertext: '', nonce: '', tag: '' };
     const id = `vcrd_${nanoid(18)}`;
     const now = new Date().toISOString();
     deps.db.prepare(
@@ -95,14 +106,14 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     ).run(
       id,
       vaultId,
-      stringField(body.value.name) ?? '',
-      authType,
-      mcpServerUrl ?? null,
-      variableName ?? null,
-      secretHint(secretValue),
-      JSON.stringify(normalizeCredentialNetwork(body.value.network)),
-      JSON.stringify(injectionLocations.value),
-      JSON.stringify(stringRecordField(body.value.metadata)),
+      credential.displayName,
+      credential.authType,
+      credential.mcpServerUrl ?? null,
+      credential.secretName ?? null,
+      secretHint(credential.secretValue ?? ''),
+      JSON.stringify(normalizeCredentialNetwork(networkValue)),
+      JSON.stringify(credential.legacyInjectionTokens ?? injectionTokens(credential.injectionLocation)),
+      JSON.stringify(credential.metadata),
       encryptedSecret.ciphertext,
       encryptedSecret.nonce,
       encryptedSecret.tag,
@@ -111,7 +122,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     );
     deps.db.prepare('UPDATE credential_vaults SET updated_at = datetime(\'now\') WHERE id = ?').run(vaultId);
     const row = deps.db.prepare('SELECT * FROM credential_records WHERE id = ?').get(id) as unknown as CredentialRow;
-    return c.json(toCredential(row), 201);
+    return c.json(withWarnings(toCredential(row), parsed.warnings), 201);
   });
 
   app.post('/credential-vaults/:id/credentials/:credentialId/archive', (c) => updateCredentialState(c, deps, 'archived'));
@@ -278,11 +289,29 @@ function listCredentials(deps: ServerDeps, vaultId: string) {
 }
 
 function toCredential(row: CredentialRow) {
+  const displayName = row.name ?? '';
   return {
+    ...toCanonicalCredential({
+      id: row.id,
+      vaultId: row.vault_id,
+      displayName,
+      authType: row.auth_type,
+      mcpServerUrl: row.mcp_server_url,
+      secretName: row.variable_name,
+      injectionLocation: readCanonicalInjectionLocation(row),
+      metadata: stringRecordField(parseObject(row.metadata)),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }),
+    // The local fields stay beside the canonical projection. A Console page renders
+    // and searches on `auth_type` / `name` / `variable_name`
+    // (`apps/console/src/components/pages/CredentialPages.tsx`,
+    // `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them,
+    // so removing them is a Console migration rather than a wire change. `id` is
+    // repeated here because the canonical projection is an index-signature record,
+    // which contributes no named properties to the spread.
     id: row.id,
-    type: 'credential',
-    vault_id: row.vault_id,
-    name: row.name ?? '',
+    name: displayName,
     auth_type: row.auth_type,
     mcp_server_url: row.mcp_server_url ?? '',
     variable_name: row.variable_name ?? '',
@@ -290,26 +319,41 @@ function toCredential(row: CredentialRow) {
     network: parseObject(row.network),
     injection_locations: parseStringArray(row.injection_locations),
     status: row.status === 'deleted' ? 'deleted' : row.archived_at ? 'archived' : row.status,
-    metadata: parseObject(row.metadata),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
     last_used_at: row.last_used_at ?? null,
     archived_at: row.archived_at ?? null,
   };
 }
 
-function parseCredentialInjectionLocations(value: unknown): { ok: true; value: string[] } | { ok: false; message: string } {
-  const locations = arrayOfStrings(value);
-  const allowed = new Set(['request_headers', 'request_body']);
-  const invalidLocation = locations.find((location) => !allowed.has(location));
-  if (invalidLocation) {
-    return { ok: false, message: 'injection_locations must contain only request_headers or request_body' };
-  }
-  return { ok: true, value: Array.from(new Set(locations)) };
+/** The local token list for a canonical `injection_location`. */
+function injectionTokens(location: CredentialInjectionLocation | undefined): string[] {
+  if (!location) return [];
+  const tokens: string[] = [];
+  if (location.header) tokens.push('request_headers');
+  if (location.body) tokens.push('request_body');
+  return tokens;
 }
 
-function isCredentialAuthType(value: unknown): value is 'mcp_oauth' | 'bearer_token' | 'environment_variable' {
-  return value === 'mcp_oauth' || value === 'bearer_token' || value === 'environment_variable';
+/** Attach creation warnings only when there are some, so the key stays absent otherwise. */
+function withWarnings(credential: Record<string, unknown>, warnings: string[]): Record<string, unknown> {
+  return warnings.length > 0 ? { ...credential, warnings } : credential;
+}
+
+/**
+ * The canonical `injection_location` of a stored row.
+ *
+ * The row keeps the local token list, so a credential written before the
+ * canonical profile existed still projects a location. An empty list has no
+ * canonical reading — the profile refuses a pair with both positions disabled —
+ * so the field is omitted rather than sent as false/false.
+ */
+function readCanonicalInjectionLocation(row: CredentialRow): CredentialInjectionLocation | undefined {
+  if (row.auth_type !== 'environment_variable') return undefined;
+  const tokens = parseStringArray(row.injection_locations);
+  const location = {
+    header: tokens.includes('request_headers'),
+    body: tokens.includes('request_body'),
+  };
+  return location.header || location.body ? location : undefined;
 }
 
 function normalizeCredentialNetwork(value: unknown) {

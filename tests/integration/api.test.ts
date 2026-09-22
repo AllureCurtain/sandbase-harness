@@ -2276,6 +2276,9 @@ description: Uploaded from a compressed package.
         {
           name: 'Bearer MCP',
           auth_type: 'bearer_token',
+          // A static_bearer is keyed by its server URL in the canonical profile,
+          // so the flat alias needs it too; the assertions below are unchanged.
+          mcp_server_url: 'https://mcp.example.com/mcp',
           value: 'secret-bearer-token',
           network: { type: 'unrestricted', allowed_hosts: ['api.example.com'] },
           injection_locations: ['request_headers', 'request_headers', 'request_body'],
