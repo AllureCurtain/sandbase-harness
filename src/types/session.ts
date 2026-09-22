@@ -4,7 +4,7 @@
  * Core session state machine types and event log types.
  */
 
-import type { CMAEventType, ContentBlock } from './cma-protocol.js';
+import type { CMAEventType, ContentBlock, SessionBudget } from './cma-protocol.js';
 import type { AgentDefinition } from './agent.js';
 
 // ============================================================
@@ -70,6 +70,12 @@ export interface Session {
     tokensIn: number;
     tokensOut: number;
   };
+  /**
+   * Spending ceiling. `undefined` means the session never had one and `null`
+   * means it had one removed — two states the contract treats differently, so
+   * they must stay distinguishable here.
+   */
+  budget?: SessionBudget | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -114,6 +120,11 @@ export interface CreateSessionParams {
   vaultIds?: string[];
   title?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Spending ceiling. Only settable here: the contract refuses to attach a
+   * budget to a session that was created without one.
+   */
+  budget?: SessionBudget;
 }
 
 export interface ListSessionsParams {

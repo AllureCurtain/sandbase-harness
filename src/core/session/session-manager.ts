@@ -17,6 +17,23 @@ import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
 import { findOrphanedToolUses } from './session-recovery.js';
 import { rowToSession, type SessionRow } from './session-records.js';
 import { buildSessionUsageSnapshot } from './session-usage.js';
+import {
+  BUDGET_ERROR_CODES,
+  BUDGET_SETTLEMENT_EVENT_LIST,
+  budgetError,
+  budgetReached,
+  budgetCapMicrocents,
+  isSettlementEvent,
+  serializeBudget,
+  sessionSpend,
+  unpricedDeclaredModels,
+  type SessionSpend,
+} from './session-budget.js';
+import {
+  costProfileFromEnv,
+  declaredModels,
+  type CostProfile,
+} from './cost-profile.js';
 import { canTransition, isTerminal } from './state-machine.js';
 import type {
   Session,
@@ -27,7 +44,12 @@ import type {
   ListSessionsParams,
   PaginatedResult,
 } from '@/types/session.js';
-import type { ContentBlock, SessionErrorRetryStatus, UserEvent } from '@/types/cma-protocol.js';
+import type {
+  ContentBlock,
+  SessionBudget,
+  SessionErrorRetryStatus,
+  UserEvent,
+} from '@/types/cma-protocol.js';
 import {
   LOOP_ENGINE_INVALID_CODE,
   LOOP_ENGINE_UNSUPPORTED_CODE,
@@ -89,6 +111,13 @@ export class SessionManager {
   private executionChains = new Map<string, Promise<void>>();
   /** Per-session abort controller for the currently running turn. */
   private abortControllers = new Map<string, AbortController>();
+  /**
+   * List prices budgets are metered against. Configuration, not policy: it
+   * comes from the operator (an empty profile by default, which prices nothing),
+   * and a session that names an unpriced model is refused a budget rather than
+   * metered against an invented rate.
+   */
+  private costProfile: CostProfile = costProfileFromEnv();
 
   constructor(
     private readonly db: Database,
@@ -126,6 +155,176 @@ export class SessionManager {
   }
 
   /**
+   * Install the list-price profile budgets are metered against.
+   *
+   * Replaced wholesale rather than merged: a partial merge would price some
+   * models from the new rates and leave others at the old ones, which reads as
+   * an intermittent budget failure rather than a misconfiguration.
+   */
+  setCostProfile(profile: CostProfile): void {
+    this.costProfile = profile;
+  }
+
+  getCostProfile(): CostProfile {
+    return this.costProfile;
+  }
+
+  /**
+   * Consumed list cost for a session, derived from its durable log.
+   *
+   * Derived on every read instead of accumulated into a counter: this runtime
+   * already records exactly one `span.model_request_end` per model request, so a
+   * second running total could only disagree with it, and a cached one would not
+   * survive the process that wrote it.
+   */
+  getSessionSpend(sessionId: string): SessionSpend {
+    return sessionSpend(this.db, sessionId, this.costProfile, this.eventLogger.getEvents(sessionId));
+  }
+
+  /**
+   * Whether the session has reached its declared ceiling.
+   *
+   * A session that never had a budget, or had one removed, is never exhausted:
+   * the ceiling exists only for as long as the budget does.
+   */
+  isBudgetExhausted(sessionId: string): boolean {
+    const session = this.get(sessionId);
+    return session ? this.budgetExhaustedFor(session) : false;
+  }
+
+  private budgetExhaustedFor(session: Session): boolean {
+    if (!session.budget) return false;
+    return budgetReached(this.getSessionSpend(session.id), session.budget);
+  }
+
+  /**
+   * Build the documented `session.usage` payload for a session.
+   *
+   * `list_cost` is omitted when any model the session used has no list price: a
+   * lower bound reported as the total would understate spend to a client that is
+   * choosing a new cap. `budget` is always present — `null` when the session has
+   * none — because the runtime holds that answer.
+   */
+  buildUsagePayload(sessionId: string): {
+    input_tokens: number;
+    output_tokens: number;
+    active_seconds: number;
+    list_cost?: number;
+    budget: SessionBudget | null;
+    server_tool_use: { web_search_requests: number; web_fetch_requests: number };
+  } {
+    return this.usagePayloadFor(sessionId, this.eventLogger.getEvents(sessionId));
+  }
+
+  /** Shared with the snapshot the status transition already loaded the log for. */
+  private usagePayloadFor(sessionId: string, events: SessionEvent[]): {
+    input_tokens: number;
+    output_tokens: number;
+    active_seconds: number;
+    list_cost?: number;
+    budget: SessionBudget | null;
+    server_tool_use: { web_search_requests: number; web_fetch_requests: number };
+  } {
+    const session = this.get(sessionId);
+    const snapshot = buildSessionUsageSnapshot(events, {
+      tokensIn: session?.usage?.tokensIn,
+      tokensOut: session?.usage?.tokensOut,
+    });
+    const spend = sessionSpend(this.db, sessionId, this.costProfile, events);
+
+    return {
+      ...snapshot,
+      ...(spend.meterable ? { list_cost: spend.cents } : {}),
+      budget: session?.budget ?? null,
+      // Genuinely zero, not unknown: this runtime has no built-in web tool, so
+      // there is no request it could have failed to count.
+      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+    };
+  }
+
+  /**
+   * Move or remove a session's budget.
+   *
+   * Only the budget is updatable here; the remaining session fields (title,
+   * metadata, agent) belong to the session-update behaviour. The contract's
+   * rules all live in this one method because they are all one question: how a
+   * ceiling may move relative to what has already been consumed.
+   */
+  update(sessionId: string, params: { budget?: SessionBudget | null }): Session {
+    const session = this.get(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (params.budget === undefined) return session;
+
+    // A budget is attachable at creation only, so "never had one" is a refusal
+    // rather than a default. Removing one is final for the same reason: the
+    // contract refuses to re-attach after a removal, which is why the removal is
+    // recorded in the column as `null` rather than by clearing it.
+    if (session.budget === undefined) {
+      throw budgetError(
+        BUDGET_ERROR_CODES.notAttachable,
+        `Session ${sessionId} has no budget: a budget can only be attached when the session is created`,
+      );
+    }
+    if (session.budget === null) {
+      throw budgetError(
+        BUDGET_ERROR_CODES.notAttachable,
+        `Session ${sessionId} had its budget removed: a budget cannot be re-added`,
+      );
+    }
+
+    if (params.budget === null) {
+      this.persistBudget(sessionId, null);
+      return this.get(sessionId) ?? session;
+    }
+
+    const spend = this.getSessionSpend(sessionId);
+    if (!spend.meterable) {
+      throw budgetError(
+        BUDGET_ERROR_CODES.modelWithoutListPrice,
+        `Session ${sessionId} consumed ${spend.unpricedModels.join(', ')}, which has no list price, so its budget cannot be changed`,
+      );
+    }
+    // Strictly greater: a cap equal to what was consumed would leave the session
+    // paused forever, because the next request could never be admitted.
+    if (spend.microcents >= budgetCapMicrocents(params.budget)) {
+      throw budgetError(
+        BUDGET_ERROR_CODES.belowConsumed,
+        `The new budget must be greater than the session's consumed list cost (${spend.cents} cents)`,
+      );
+    }
+
+    this.persistBudget(sessionId, params.budget);
+    return this.get(sessionId) ?? session;
+  }
+
+  /** `null` records a removal, which is a different state from "never had one". */
+  private persistBudget(sessionId: string, budget: SessionBudget | null): void {
+    this.db.prepare(
+      `UPDATE sessions SET budget = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(serializeBudget(budget), sessionId);
+  }
+
+  /**
+   * Refuse a work-starting event once the session has spent its ceiling.
+   *
+   * The refusal is structured and names the events that are still accepted, so a
+   * client learns what it may send instead of retrying the event that was just
+   * rejected. Because only settlement events get past this point, the turn queue
+   * is never given work while the session is at its cap — which is what makes
+   * "the next model request does not start" true rather than merely intended.
+   */
+  private assertBudgetAdmitsEvent(session: Session, event?: UserEvent): void {
+    if (!event || isSettlementEvent(event.type)) return;
+    if (!this.budgetExhaustedFor(session)) return;
+    throw budgetError(
+      BUDGET_ERROR_CODES.reached,
+      `Session ${session.id} has reached its budget. Only events that settle work already in flight are accepted: ${BUDGET_SETTLEMENT_EVENT_LIST}`,
+    );
+  }
+
+  /**
    * Register the session executor (called once during server init).
    */
   setExecutor(executor: SessionExecutor): void {
@@ -152,12 +351,29 @@ export class SessionManager {
       assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default'));
     }
 
+    // A budget can only be metered when the model the session runs has a list
+    // price. Refusing before the row is inserted is what keeps a refused budget
+    // from leaving an unbudgeted session behind, which would look like the
+    // ceiling had been accepted and then silently not applied.
+    if (params.budget) {
+      const unpriced = unpricedDeclaredModels(
+        this.costProfile,
+        declaredModels([agentSnapshot.definition.model]),
+      );
+      if (unpriced.length > 0) {
+        throw budgetError(
+          BUDGET_ERROR_CODES.modelWithoutListPrice,
+          `Agent ${agentSnapshot.name} runs ${unpriced.join(', ')}, which has no list price, so the session cannot be given a budget`,
+        );
+      }
+    }
+
     const stmt = this.db.prepare(`
       INSERT INTO sessions (
         id, agent_id, agent_name, agent_version, agent_definition, loop_engine,
-        environment_id, status, title, context_id, resources, vault_ids, metadata
+        environment_id, status, title, context_id, resources, vault_ids, metadata, budget
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -173,6 +389,10 @@ export class SessionManager {
       JSON.stringify(params.resources ?? []),
       JSON.stringify(params.vaultIds ?? []),
       params.metadata ? JSON.stringify(params.metadata) : null,
+      // A session created without a budget stores SQL NULL, not the JSON literal
+      // `null`: only a removal writes that, so "never had one" and "had one
+      // removed" stay distinguishable in the column.
+      params.budget ? serializeBudget(params.budget) : null,
     );
 
     return {
@@ -189,6 +409,7 @@ export class SessionManager {
       resources: params.resources,
       vaultIds: params.vaultIds,
       metadata: params.metadata,
+      budget: params.budget,
       createdAt: now,
       updatedAt: now,
     };
@@ -289,6 +510,10 @@ export class SessionManager {
     // Existing Pi rows can predate the creation guard. Reject them before
     // repair/persistence or queuing so a resumed turn cannot bypass policy.
     this.assertPiSessionCanExecute(session, event);
+    // Checked after the engine policy so an unsupported engine keeps its own
+    // error code: a client that must switch engines should hear that, not a
+    // budget refusal it cannot act on.
+    this.assertBudgetAdmitsEvent(session, event);
     return session;
   }
 

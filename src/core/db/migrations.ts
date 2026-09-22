@@ -795,6 +795,19 @@ CREATE UNIQUE INDEX idx_memory_versions_unique
   ON memory_versions(store_id, memory_id, version);
 `;
 
+/**
+ * The session budget.
+ *
+ * Stored as JSON in one nullable column rather than as amount/currency columns
+ * because the value is a published wire object that is echoed back verbatim, and
+ * because `NULL` is needed for a third state: a session that had a budget and
+ * had it removed. An absent row value means "never had one", which the contract
+ * treats differently from "removed".
+ */
+const M035_SESSION_BUDGET = `
+ALTER TABLE sessions ADD COLUMN budget TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -830,4 +843,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 32, name: '032_pi_session_state', sql: M032_PI_SESSION_STATE },
   { version: 33, name: '033_session_resource_instances', sql: M033_SESSION_RESOURCE_INSTANCES },
   { version: 34, name: '034_memory_versions', sql: M034_MEMORY_VERSIONS },
+  { version: 35, name: '035_session_budget', sql: M035_SESSION_BUDGET },
 ];

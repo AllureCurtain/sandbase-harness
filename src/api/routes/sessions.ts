@@ -34,6 +34,7 @@ import {
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
 import { normalizeInitialEvents } from './initial-events.js';
+import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
 import {
   isLoopEngineAdmissionError,
@@ -89,6 +90,22 @@ export function sessionsRoutes(deps: ServerDeps) {
       return invalidWithCode(c, initialEvents.code ?? 'invalid_initial_events', initialEvents.message ?? 'initial_events is invalid');
     }
 
+    // A budget is attachable here and nowhere else, so a malformed one has to
+    // fail before the row exists: otherwise the session would be created
+    // unbudgeted and the client would learn about the typo from a spend number
+    // that never stopped.
+    const budget = parseSessionBudget(body.budget);
+    if (!budget.ok) {
+      return invalidWithCode(c, budget.code ?? 'budget_invalid_shape', budget.message ?? 'budget is invalid');
+    }
+    if (budget.remove) {
+      return invalidWithCode(
+        c,
+        BUDGET_ERROR_CODES.invalidShape,
+        'budget cannot be null when the session is created: a session that has no budget has nothing to remove',
+      );
+    }
+
     try {
       const session = sessionManager.createWithInitialEvents({
         agent: agentRef.id,
@@ -100,6 +117,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         vaultIds: vaultIds.value,
         contextId: memoryScopeFromResources(resources.value),
         metadata,
+        ...(budget.budget ? { budget: budget.budget } : {}),
       }, initialEvents.events ?? []);
       return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)), 201);
     } catch (err) {
@@ -107,6 +125,11 @@ export function sessionsRoutes(deps: ServerDeps) {
         return unsupportedCapability(c, err);
       }
       if (isLoopEngineAdmissionError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
+      // Every budget refusal is a 400: the request was well formed and asked
+      // for something the contract does not allow, never an internal failure.
+      if (isBudgetError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
       if (isPiSessionAdmissionError(err)) {
@@ -308,6 +331,13 @@ export function sessionsRoutes(deps: ServerDeps) {
           message: err.message,
         } }, 400);
       }
+      // A session at its ceiling refuses the event that would start the next
+      // model request. That is a well-formed request asking for something the
+      // contract forbids, so it answers 400 with its own code rather than
+      // letting the message-sniffing fallbacks below call it a runtime fault.
+      if (isBudgetError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
       if (err.message?.includes('not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
       }
@@ -375,6 +405,11 @@ export function sessionsRoutes(deps: ServerDeps) {
           message: err.message,
         } }, 400);
       }
+      // Same refusal as the events route: the ceiling is a client error, and a
+      // streaming response cannot be converted into one after it has opened.
+      if (isBudgetError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
       throw err;
     }
 
@@ -392,6 +427,9 @@ export function sessionsRoutes(deps: ServerDeps) {
             code: err.code,
             message: err.message,
           } }, 400);
+        }
+        if (isBudgetError(err)) {
+          return invalidWithCode(c, err.code, err.message);
         }
         if (err.message?.includes('not found')) {
           return c.json({ error: { type: 'not_found', message: err.message } }, 404);

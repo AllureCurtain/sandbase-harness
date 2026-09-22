@@ -146,8 +146,8 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'budget',
     id: 'session-budget',
-    status: 'planned',
-    reason: 'Designed but not implemented: nothing prices model consumption and no session accepts a budget, so a session has no spending ceiling and usage reports neither a list cost nor a budget.',
+    status: 'partial',
+    reason: 'Consumption is priced in integer microcents from the append-only log, and a session may declare a max_list_cost ceiling at creation. At the ceiling the next work-starting event is refused with budget_reached while events that settle work already in flight are still accepted, so the next model request does not start. Two deviations are deliberate: prices come from an operator-supplied cost profile rather than official list prices, so a session whose model the profile cannot price is refused a budget and usage.list_cost is withheld while any used model is unpriced; and reaching the ceiling refuses the event instead of transitioning the session to a paused state, because the published thread-level budget_reached signal belongs to the thread surface, which this runtime does not implement.',
     contract: 'contracts/anthropic-cma/budget.md',
   },
   {

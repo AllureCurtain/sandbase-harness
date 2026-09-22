@@ -741,6 +741,47 @@ partial history behind:
 The creation response does not echo `initial_events`; list the session's events
 to confirm what was written.
 
+### Declaring a spending ceiling
+
+`POST /v1/sessions` accepts an optional `budget`, so a runaway loop stops at a
+cost the client chose:
+
+```json
+{
+  "agent": "agent_echo-agent",
+  "budget": { "type": "limit", "max_list_cost": { "amount": "500", "currency": "USD" } }
+}
+```
+
+`amount` is an integer number of cents written as a string — `"25.00"`, `"0"`,
+and `"0125"` are all rejected — and `currency` is `USD`. The budget can only be
+set at creation: the runtime refuses to attach one to a session that was created
+without it, refuses to re-attach one after a removal, and refuses a cap at or
+below what the session has already consumed.
+
+Cost is priced from an operator-supplied profile (`MANAGED_AGENTS_COST_PROFILE`),
+not from vendor prices, so a model the profile does not list has no list price.
+A budgeted session that would run an unpriced model is refused rather than
+metered against an invented rate. With no profile configured, no model is priced
+and no session can be budgeted.
+
+| Rejection | Error code |
+| --- | --- |
+| `amount` is not a positive integer string, or has a leading zero | `budget_invalid_amount` |
+| `currency` is not `USD` | `budget_invalid_currency` |
+| `type` is not `limit`, the shape is wrong, or `budget` is `null` | `budget_invalid_shape` |
+| The session's model has no list price in the configured profile | `budget_model_without_list_price` |
+
+Once a session has reached its ceiling, an event that would start new model work
+is refused with `budget_reached`, and only events that settle work already in
+flight are accepted — the refusal names them. This stops the *next* model
+request rather than aborting one in progress: the request that crossed the cap
+has already completed and been charged.
+
+The creation response reports the budget back as `budget`, or omits the field
+when the session has none. A session whose budget was removed reports `null`
+instead, which is how a client tells "never had one" from "had one removed".
+
 ### MCP tool identity
 
 `agent.mcp_tool_use` and `agent.mcp_tool_result` events carry the MCP server
@@ -760,24 +801,28 @@ client can settle the finished turn before it observes the idle transition:
   "usage": {
     "input_tokens": 5000,
     "output_tokens": 3200,
-    "active_seconds": 12.5
+    "active_seconds": 12.5,
+    "list_cost": 7,
+    "budget": { "type": "limit", "max_list_cost": { "amount": "500", "currency": "USD" } },
+    "server_tool_use": { "web_search_requests": 0, "web_fetch_requests": 0 }
   }
 }
 ```
 
 `active_seconds` is the wall-clock time the harness loop was executing the
 session, derived from the `session.status_running` → `session.status_idle`
-intervals in the durable log. Fields this runtime cannot report truthfully are
-omitted rather than sent as zero, because a `0` reads as "supported, currently
-zero":
+intervals in the durable log. `list_cost` is withheld when it cannot be
+computed in full, because a lower bound reported as the total would understate
+spend to a client that is choosing a new cap; the remaining fields are always
+present, because the runtime holds a true value for each:
 
 | Field | Status |
 | --- | --- |
 | `input_tokens`, `output_tokens` | Reported from the session's aggregate token counters. |
 | `active_seconds` | Reported. Single-threaded session, so "at least one thread running" is the sum of the turn intervals. |
-| `list_cost` | Omitted. No cost model is implemented. |
-| `budget` | Omitted. Session budgets are explicitly unsupported. |
-| `server_tool_use` | Omitted. No built-in web tools exist. |
+| `list_cost` | Accumulated list cost in whole cents, priced from the operator's cost profile. Omitted when any model the session used has no list price. |
+| `budget` | The session's budget, or `null` when it has none. |
+| `server_tool_use` | Reported. Both counters are zero: no built-in web tool exists to count. |
 
 `active_seconds` appears only on the snapshot event. The session envelope keeps
 its accumulated token counters and does not recompute activity time per

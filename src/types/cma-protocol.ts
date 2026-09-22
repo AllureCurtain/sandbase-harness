@@ -290,11 +290,36 @@ export interface SessionDeletedEvent extends EventBase {
 }
 
 /**
+ * A money amount in the published wire form: an integer number of cents written
+ * as a string, so the value never passes through a float.
+ */
+export interface MonetaryAmount {
+  amount: string;
+  currency: 'USD';
+}
+
+/**
+ * A session's optional spending ceiling. The published contract defines exactly
+ * one budget type; any other value is refused rather than ignored.
+ */
+export interface SessionBudget {
+  type: 'limit';
+  max_list_cost: MonetaryAmount;
+}
+
+/**
  * Usage snapshot for a session, emitted immediately before every
- * `session.status_idle`. Fields the runtime cannot report truthfully are
- * omitted rather than sent as zero: no `list_cost` (no cost model), no
- * `budget` (session budgets are explicitly unsupported), and no
- * `server_tool_use` (no built-in web tools).
+ * `session.status_idle`.
+ *
+ * `list_cost` is present only when a cost profile priced every model the
+ * session used. It is omitted — never reported as a zero or a partial total —
+ * when some model has no list price, because a lower bound presented as the
+ * total would understate spend to a caller who is choosing a new cap.
+ *
+ * `budget` echoes the session's budget, or `null` when it has none: this
+ * runtime holds that value, so "no budget" is a fact it can state rather than
+ * one it must leave out. `server_tool_use` reports the built-in web-tool
+ * counters, and both are genuinely zero because no built-in web tool runs.
  */
 export interface SessionUsageEvent extends EventBase {
   type: 'session.usage';
@@ -303,6 +328,14 @@ export interface SessionUsageEvent extends EventBase {
     output_tokens: number;
     /** Wall-clock seconds the harness loop was executing this session. */
     active_seconds: number;
+    /** Accumulated list cost in whole cents; omitted when incomplete. */
+    list_cost?: number;
+    /** The session's budget echo, or `null` when it has none. */
+    budget?: SessionBudget | null;
+    server_tool_use?: {
+      web_search_requests: number;
+      web_fetch_requests: number;
+    };
   };
 }
 

@@ -1,5 +1,6 @@
 import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
 import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
+import type { SessionBudget } from '@/types/cma-protocol.js';
 
 export interface ApiPage<T extends { id: string }> {
   data: T[];
@@ -184,6 +185,14 @@ export interface ApiSession {
   status: 'idle' | 'running' | 'requires_action' | 'terminated' | 'failed' | 'cancelled' | 'timed_out' | 'cleanup_pending';
   resources: ApiSessionResource[];
   vault_ids: string[];
+  /**
+   * Spending ceiling. Omitted entirely when the session never had one, and
+   * `null` when it had one removed — the contract treats those as different
+   * states, so a single "no budget" value would lose the distinction. A session
+   * may acquire a budget only at creation, which is why a session that never had
+   * one can never report `null` here.
+   */
+  budget?: SessionBudget | null;
   usage: {
     input_tokens: number;
     output_tokens: number;
@@ -227,13 +236,22 @@ export interface ApiEvent {
   mcp_tool_use_id?: string;
   /**
    * Usage snapshot carried by `session.usage`. Emitted immediately before
-   * `session.status_idle`. Cost, budget, and server-tool counters are omitted
-   * rather than reported as zero.
+   * `session.status_idle`. `list_cost` is present only when a cost profile
+   * priced every model the session used — a partial total is withheld rather
+   * than reported as one. `budget` echoes the session's budget, or `null` when
+   * it has none, and `server_tool_use` counts the built-in web tools, of which
+   * this runtime has none.
    */
   usage?: {
     input_tokens: number;
     output_tokens: number;
     active_seconds: number;
+    list_cost?: number;
+    budget?: SessionBudget | null;
+    server_tool_use?: {
+      web_search_requests: number;
+      web_fetch_requests: number;
+    };
   };
   model_used?: string;
   tokens_in?: number;
@@ -330,6 +348,9 @@ export function toApiSession(session: Session, agent?: AgentDefinition): ApiSess
     status: toApiSessionStatus(session.status),
     resources: parseJsonArray<Record<string, unknown>>(session.resources).map(toApiSessionResource),
     vault_ids: parseJsonArray(session.vaultIds),
+    // Spread rather than assigned, so a session that never had a budget omits
+    // the field instead of reporting `null` — which would claim a removal.
+    ...(session.budget !== undefined ? { budget: session.budget } : {}),
     usage: {
       input_tokens: session.usage?.tokensIn ?? 0,
       output_tokens: session.usage?.tokensOut ?? 0,

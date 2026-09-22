@@ -94,15 +94,18 @@ describe('capability matrix', () => {
     ]));
   });
 
-  it('marks the designed session budget as planned rather than implemented', () => {
-    // Session budget is neither a non-goal nor a shipped behaviour: the design
-    // is published as budget.md, while nothing in the runtime prices model
-    // consumption or enforces a ceiling. `partial` would claim enforcement that
-    // does not exist, and `not_applicable` would deny work that is scheduled.
-    expect(capabilityEntry('session-budget').status).toBe('planned');
+  it('marks the session budget as implemented with its deviations named', () => {
+    // The budget now prices consumption and refuses the next model request at
+    // the ceiling, so `planned` would understate it. It is still not
+    // `supported`: the price source is operator-supplied rather than official,
+    // and a reached ceiling refuses the event instead of pausing the session.
+    expect(capabilityEntry('session-budget').status).toBe('partial');
     expect(capabilityEntry('session-budget').contract).toBe('contracts/anthropic-cma/budget.md');
-    // The entry has to say what is missing, not only carry a status.
-    expect(capabilityEntry('session-budget').reason.toLowerCase()).toContain('not implemented');
+    // A `partial` without a readable deviation is indistinguishable from
+    // `supported`, so the specific limitations are pinned rather than trusted.
+    const reason = capabilityEntry('session-budget').reason.toLowerCase();
+    expect(reason).toContain('cost profile');
+    expect(reason).toContain('pause');
   });
 
   it('covers the areas that are described by prose contracts but easy to omit', () => {

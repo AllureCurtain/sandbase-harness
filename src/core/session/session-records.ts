@@ -1,5 +1,6 @@
 import type { AgentDefinition } from '@/types/agent.js';
 import type { Session, SessionStatus } from '@/types/session.js';
+import { deserializeBudget } from './session-budget.js';
 
 export interface SessionRow {
   id: string;
@@ -15,6 +16,8 @@ export interface SessionRow {
   resources: string;
   vault_ids: string;
   metadata: string | null;
+  /** `null` for a session that never had a budget; `'null'` for a removal. */
+  budget: string | null;
   sandbox_type: string | null;
   sandbox_state: string | null;
   usage_tokens_in: number;
@@ -42,6 +45,7 @@ export function rowToSession(row: SessionRow): Session {
     sandboxType: row.sandbox_type ?? undefined,
     sandboxState: row.sandbox_state ? JSON.parse(row.sandbox_state) : undefined,
     usage: { tokensIn: row.usage_tokens_in, tokensOut: row.usage_tokens_out },
+    budget: deserializeBudget(row.budget),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
     completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
