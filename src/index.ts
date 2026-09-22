@@ -169,6 +169,7 @@ async function startServer(opts: StartServerOptions) {
       sandboxProviders: sandboxRegistry.listTypes(),
       memory: memory ? memory.name : 'disabled',
       authEnabled: runtimeApiAuth.hasApiKeys(),
+      version: VERSION,
     },
     listRuntimeModels: () => modelRegistry.listRuntimeInfo(),
     registerModelProvider: (config) => modelRegistry.register(config),

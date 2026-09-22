@@ -808,6 +808,38 @@ const M035_SESSION_BUDGET = `
 ALTER TABLE sessions ADD COLUMN budget TEXT;
 `;
 
+/**
+ * Persist handoff bundles so a bundle can be handed out by id rather than
+ * rebuilt on every read. The payload is stored whole and immutably: a bundle is
+ * evidence of one session at one moment, so re-deriving it on read would let
+ * later session activity silently change a bundle someone already received.
+ *
+ * `payload_sha256` is denormalized out of the payload so a listing can show the
+ * integrity digest without parsing every bundle.
+ */
+const M036_HANDOFF_BUNDLES = `
+CREATE TABLE handoff_bundles (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  label TEXT,
+  schema_version TEXT NOT NULL,
+  replay_mode TEXT NOT NULL,
+  includes_message_content INTEGER NOT NULL DEFAULT 0,
+  includes_file_content INTEGER NOT NULL DEFAULT 0,
+  event_count INTEGER NOT NULL DEFAULT 0,
+  file_count INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL,
+  payload_sha256 TEXT NOT NULL,
+  signature_key_id TEXT NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE INDEX idx_handoff_bundles_session ON handoff_bundles(session_id, created_at DESC);
+CREATE INDEX idx_handoff_bundles_created ON handoff_bundles(created_at DESC, id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -844,4 +876,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 33, name: '033_session_resource_instances', sql: M033_SESSION_RESOURCE_INSTANCES },
   { version: 34, name: '034_memory_versions', sql: M034_MEMORY_VERSIONS },
   { version: 35, name: '035_session_budget', sql: M035_SESSION_BUDGET },
+  { version: 36, name: '036_handoff_bundles', sql: M036_HANDOFF_BUNDLES },
 ];
