@@ -204,6 +204,13 @@ reference forms, and the tri-state override rule.
   agent's context, the completed turn is graded, the span triple reaches the
   event log in order, and a runtime with no provider records
   `outcome_evaluator_unavailable` with `retry_status: not_retryable`.
+- `tests/unit/outcome-loop.test.ts` and `tests/integration/outcome-loop.test.ts` —
+  the revision loop: a `needs_revision` verdict appended as a real `user.message`
+  with the executor re-entered for it, the spent budget reported as
+  `max_iterations_reached` with one final settling turn, an interrupt closing the
+  outcome as `interrupted` with no `session.error` (including one that lands inside
+  a revision turn and one that stops for a tool confirmation), and
+  `outcome_grader_unavailable` as a 400 on both ingress paths with nothing written.
 - `tests/unit/cma-event-contract.test.ts` — `initial_events` validation: the
   whitelist, the 50-event ceiling, the `user.define_outcome` defaulting and its
   rejection cases, and the projection that lifts the payload out of the metadata

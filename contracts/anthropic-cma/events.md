@@ -114,6 +114,14 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   graded with the span triple on the event listing, and a runtime with no
   provider records `session.error` with `outcome_evaluator_unavailable` and
   `retry_status: not_retryable`.
+- `tests/unit/outcome-loop.test.ts` — the loop's span bookkeeping: one triple per
+  evaluation with `iteration` counting from 0, the budget verdict on the last
+  allowed evaluation, one revision message per revision, and the interrupt close
+  carrying an empty `outcome_evaluation_start_id`.
+- `tests/integration/outcome-loop.test.ts` — the same through a session: the
+  revision `user.message` in the event listing, the executor re-entered for it,
+  the status a stop leaves behind, and the admission refusal that keeps a declared
+  outcome off a runtime with no grader.
 
 ## 7. Status
 
