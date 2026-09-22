@@ -123,6 +123,11 @@ describe('capability matrix', () => {
     expect(capabilityEntry('webhook-subscriptions').status).toBe('partial');
     expect(capabilityEntry('scheduled-deployment-timers').status).toBe('partial');
     expect(capabilityEntry('outcome-evaluation').status).toBe('supported');
+    // The loop was `partial` while a `needs_revision` verdict drove nothing. It
+    // is `supported` only because the revision loop, the budget verdicts and the
+    // fail-closed refusal of a declaration on a grader-less runtime are all in
+    // the tree, so the status is pinned rather than trusted.
+    expect(capabilityEntry('outcome-grading').status).toBe('supported');
     expect(capabilityEntry('memory-multi-mount').status).toBe('supported');
   });
 

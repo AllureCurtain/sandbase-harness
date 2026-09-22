@@ -38,10 +38,18 @@ Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.
   cannot run, so a client waiting on it cannot hang on an outcome that is already
   over. Each carries `outcome_id` and `iteration` (`0` is the evaluation of the
   declared outcome, `n` the re-evaluation after the n-th revision). The end event
-  adds `result` (`satisfied | needs_revision | failed` after a grading pass),
-  `explanation`, and the id of the start event it closes. The `ongoing` event
-  carries no partial verdict: the grader's reasoning is opaque, and progress that
-  cannot be observed would be invented.
+  adds `result`, `explanation`, and the id of the start event it closes. `result`
+  is `satisfied | needs_revision | failed` after a grading pass, and
+  `max_iterations_reached` when the grader asked for a revision that the spent
+  budget cannot run. The `ongoing` event carries no partial verdict: the grader's
+  reasoning is opaque, and progress that cannot be observed would be invented.
+- An interrupt closes the outcome with one further `span.outcome_evaluation_end`
+  carrying `result: "interrupted"` and an empty `outcome_evaluation_start_id`. The
+  close is not tied to one evaluation, and the empty id is what keeps it
+  distinguishable from the end event of an evaluation that actually ran.
+- A revision is a real `user.message`: the grader's explanation is appended to the
+  same log, so the next turn reads its instruction from the log rather than from
+  memory, and a replayed session reconstructs the same sequence.
 - A `user.define_outcome` payload rides in `metadata` and is projected back into
   the agent's context as the turn's instruction; the event has no content blocks
   of its own.
@@ -106,6 +114,14 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   graded with the span triple on the event listing, and a runtime with no
   provider records `session.error` with `outcome_evaluator_unavailable` and
   `retry_status: not_retryable`.
+- `tests/unit/outcome-loop.test.ts` — the loop's span bookkeeping: one triple per
+  evaluation with `iteration` counting from 0, the budget verdict on the last
+  allowed evaluation, one revision message per revision, and the interrupt close
+  carrying an empty `outcome_evaluation_start_id`.
+- `tests/integration/outcome-loop.test.ts` — the same through a session: the
+  revision `user.message` in the event listing, the executor re-entered for it,
+  the status a stop leaves behind, and the admission refusal that keeps a declared
+  outcome off a runtime with no grader.
 
 ## 7. Status
 

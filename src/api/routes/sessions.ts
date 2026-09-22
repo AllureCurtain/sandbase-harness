@@ -36,6 +36,7 @@ import {
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
 import { normalizeDefineOutcome, normalizeInitialEvents } from './initial-events.js';
 import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
+import { isOutcomeGraderUnavailableError } from '@/core/outcomes/loop.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
 import {
   isLoopEngineAdmissionError,
@@ -143,6 +144,13 @@ export function sessionsRoutes(deps: ServerDeps) {
       // formed and asked for a configuration the contract does not allow, and
       // the session row was never inserted.
       if (isAgentOverrideError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
+      // A declared outcome on a runtime that composes no grader is refused
+      // before the session row exists: accepting it would promise a measurement
+      // the runtime can never make, and the session would hold an outcome that
+      // nothing can end.
+      if (isOutcomeGraderUnavailableError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
       if (isPiSessionAdmissionError(err)) {
@@ -390,6 +398,12 @@ export function sessionsRoutes(deps: ServerDeps) {
       // contract forbids, so it answers 400 with its own code rather than
       // letting the message-sniffing fallbacks below call it a runtime fault.
       if (isBudgetError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
+      // Same answer for a declared outcome the runtime cannot ever evaluate: a
+      // well-formed request asking for something the contract forbids, not a
+      // runtime fault.
+      if (isOutcomeGraderUnavailableError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
       if (err.message?.includes('not found')) {

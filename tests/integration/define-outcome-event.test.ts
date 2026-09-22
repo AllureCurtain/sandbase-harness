@@ -46,9 +46,18 @@ describe('user.define_outcome over the API', () => {
       JSON.stringify({ name: 'echo-agent', model: 'gpt-4o', system: 'You are a test agent.', tools: [] }),
     );
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    // A declared outcome is admissible only on a runtime that can measure it, so
+    // this file registers a grader: its subject is the wire shape of the event,
+    // and the refusal a grader-less runtime answers is pinned in
+    // tests/integration/outcome-loop.test.ts. No executor is registered, so
+    // nothing grades here.
+    const sessionManager = new SessionManager(db);
+    sessionManager.setOutcomeGrader({
+      grade: async () => ({ result: 'satisfied', explanation: 'nothing to check' }),
+    });
     app = createServer({
       db,
-      sessionManager: new SessionManager(db),
+      sessionManager,
       agents: [],
       reloadAgents: () => ({ agents: [], errors: [] }),
       consoleRoot: null,

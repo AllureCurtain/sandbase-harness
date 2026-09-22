@@ -58,8 +58,15 @@ import {
 import type { AgentDefinition, AgentOverrides } from '@/types/agent.js';
 import { agentOverrideError, applyAgentOverrides } from '@/core/agent/overrides.js';
 import { OUTCOME_EVALUATOR_UNAVAILABLE_CODE, type OutcomeGrader } from '@/core/outcomes/grader.js';
-import { OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE } from '@/core/outcomes/contract.js';
-import { runOutcomeEvaluation } from '@/core/outcomes/evaluation.js';
+import {
+  DEFAULT_OUTCOME_MAX_ITERATIONS,
+  OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE,
+} from '@/core/outcomes/contract.js';
+import {
+  OutcomeInterruptedError,
+  outcomeGraderUnavailableError,
+  runOutcomeLoop,
+} from '@/core/outcomes/loop.js';
 import { outcomeTranscript } from './outcome-transcript.js';
 import {
   runtimeCapabilityRegistry,
@@ -349,6 +356,21 @@ export class SessionManager {
   }
 
   /**
+   * Refuse a declared outcome on a runtime that composes no grader.
+   *
+   * The refusal is deliberately at admission rather than at the end of the first
+   * iteration: acceptance would promise a measurement the runtime can never make,
+   * and the session would run an outcome that has no way to end. Once a grader is
+   * registered — as every runtime with a model registry does — the check admits
+   * the event and the loop is the thing that grades it.
+   */
+  private assertOutcomeGraderAdmitsEvent(event?: UserEvent): void {
+    if (event?.type !== 'user.define_outcome') return;
+    if (this.outcomeGrader) return;
+    throw outcomeGraderUnavailableError();
+  }
+
+  /**
    * Register the session executor (called once during server init).
    */
   setExecutor(executor: SessionExecutor): void {
@@ -571,6 +593,10 @@ export class SessionManager {
     // error code: a client that must switch engines should hear that, not a
     // budget refusal it cannot act on.
     this.assertBudgetAdmitsEvent(session, event);
+    // Checked last because it is the only one of the three the runtime can never
+    // satisfy later: a declared outcome is measured by a grader, and a runtime
+    // that composes none would accept an event it can never evaluate.
+    this.assertOutcomeGraderAdmitsEvent(event);
     return session;
   }
 
@@ -1088,18 +1114,33 @@ export class SessionManager {
   }
 
   /**
-   * Measure a declared outcome against its rubric, once.
+   * Drive a declared outcome: work, measure, revise, until it ends.
+   *
+   * The turn that carried the declaration has already run, so the first
+   * iteration measures it. Every later iteration appends the grader's
+   * explanation as a real `user.message` and re-enters the executor with it, so
+   * the revision is visible in the log and the next turn re-reads its context
+   * from it rather than from anything held in memory.
    *
    * The rubric is resolved before grading, and both the resolved text and the
-   * transcript come from the durable log, so a resumed session evaluates what was
-   * actually recorded rather than what happened to be in memory. The span triple
-   * is appended to that same log, which is what makes the evaluation replayable.
+   * transcript come from the durable log, so a resumed session drives what was
+   * actually recorded. Every span triple is appended to that same log, which is
+   * what makes the outcome replayable.
+   *
+   * An outcome that stops without a verdict — the caller interrupted it, or a
+   * turn left the session waiting on a tool confirmation — closes as
+   * `interrupted` rather than as a verdict about a deliverable nobody finished.
    */
-  private async evaluateDeclaredOutcome(
+  private async runDeclaredOutcomeLoop(
     sessionId: string,
     event: Extract<UserEvent, { type: 'user.define_outcome' }>,
+    abortController: AbortController,
+    turnState: { requiresAction: boolean },
   ): Promise<void> {
     const grader = this.outcomeGrader;
+    // Admission refuses a declared outcome on a runtime with no grader, so this
+    // is unreachable through the event paths. A direct caller that bypassed
+    // admission gets no invented verdict.
     if (!grader) return;
 
     const rubric = event.rubric.type === 'text'
@@ -1113,10 +1154,13 @@ export class SessionManager {
       throw error;
     }
 
-    await runOutcomeEvaluation({
+    let revision: string | undefined;
+    await runOutcomeLoop({
       outcomeId: `outc_${nanoid(16)}`,
-      iteration: 0,
-      description: event.description,
+      request: {
+        description: event.description,
+        maxIterations: event.max_iterations ?? DEFAULT_OUTCOME_MAX_ITERATIONS,
+      },
       rubric,
       grader,
       logger: {
@@ -1129,8 +1173,63 @@ export class SessionManager {
           return logged;
         },
       },
+      appendRevision: (text) => {
+        revision = text;
+        return this.appendOutcomeRevision(sessionId, text);
+      },
+      runTurn: () => this.runOutcomeTurn(sessionId, abortController, revision, turnState),
       readTranscript: () => outcomeTranscript(this.eventLogger.getEvents(sessionId)),
+      isAborted: () => abortController.signal.aborted || turnState.requiresAction,
     });
+  }
+
+  /**
+   * Append the grader's feedback as a real `user.message`.
+   *
+   * A revision the agent cannot read back would not be a revision: the next turn
+   * projects its context from the log, so the explanation has to be an event
+   * there rather than a prompt assembled in memory.
+   */
+  private appendOutcomeRevision(sessionId: string, text: string): SessionEvent {
+    const logged = this.eventLogger.append(sessionId, {
+      type: 'user.message',
+      content: [{ type: 'text', text }],
+    });
+    this.broadcast(sessionId, logged);
+    return logged;
+  }
+
+  /**
+   * Run one revision turn inside an outcome.
+   *
+   * This re-enters the executor with the revision as the triggering event — the
+   * same call the session's own first turn made — under the same abort
+   * controller, so an interrupt reaches the running turn instead of only being
+   * noticed between iterations. The turn is not going through the execution
+   * queue, so its events are broadcast here.
+   */
+  private async *runOutcomeTurn(
+    sessionId: string,
+    abortController: AbortController,
+    revision: string | undefined,
+    turnState: { requiresAction: boolean },
+  ): AsyncIterable<SessionEvent> {
+    if (!this.executor) return;
+    const running = this.get(sessionId);
+    if (!running || isTerminal(running.status)) return;
+    const revisionEvent: UserEvent = {
+      type: 'user.message',
+      content: [{ type: 'text', text: revision ?? '' }],
+    };
+    for await (const evt of this.executor.execute(running, revisionEvent, {
+      abortSignal: abortController.signal,
+      broadcast: (e) => this.broadcast(sessionId, e),
+      onRequiresAction: () => {
+        turnState.requiresAction = true;
+      },
+    })) {
+      this.broadcast(sessionId, evt);
+    }
   }
 
   /**
@@ -1152,7 +1251,10 @@ export class SessionManager {
 
     const abortController = new AbortController();
     this.abortControllers.set(sessionId, abortController);
-    let requiresAction = false;
+    // Shared with the outcome loop: a revision turn that stops for a tool
+    // confirmation ends the outcome (it cannot drive another turn while the
+    // session waits), and the status below still says `requires_action`.
+    const turnState = { requiresAction: false };
 
     try {
       const running = this.get(sessionId)!;
@@ -1160,26 +1262,35 @@ export class SessionManager {
         abortSignal: abortController.signal,
         broadcast: (e) => this.broadcast(sessionId, e),
         onRequiresAction: () => {
-          requiresAction = true;
+          turnState.requiresAction = true;
         },
       })) {
         this.broadcast(sessionId, evt);
       }
 
-      // A declared outcome is measured once the turn it instructed has finished.
-      // The turn itself already ran, so only the grading pass is added: without
-      // it the session would hold a rubric that nothing ever applied. A grading
-      // pass that cannot run throws, which surfaces below as this session's own
-      // error rather than as an outcome silently left unjudged.
+      // A declared outcome is driven once the turn it instructed has finished.
+      // The turn itself already ran, so the loop measures it, appends the
+      // grader's feedback as a revision whenever another iteration is owed, and
+      // re-enters the executor for it. A grading pass that cannot run throws,
+      // which surfaces below as this session's own error rather than as an
+      // outcome silently left unjudged.
       if (event.type === 'user.define_outcome') {
-        await this.evaluateDeclaredOutcome(sessionId, event);
+        try {
+          await this.runDeclaredOutcomeLoop(sessionId, event, abortController, turnState);
+        } catch (err) {
+          // An interrupt that stopped the outcome is not a session error: the
+          // loop closed the outcome's own end span as `interrupted`, and the
+          // status decision below already says where the session is. Recording
+          // a `session.error` here would report a stop the caller asked for.
+          if (!(err instanceof OutcomeInterruptedError)) throw err;
+        }
       }
 
       // Turn finished. If a tool needs confirmation → requires_action;
       // otherwise go idle (paused), awaiting next input.
       const current = this.get(sessionId);
       if (current && current.status === 'running') {
-        this.updateStatus(sessionId, requiresAction ? 'requires_action' : 'paused');
+        this.updateStatus(sessionId, turnState.requiresAction ? 'requires_action' : 'paused');
       }
     } catch (err) {
       const errorCode = errorCodeOf(err);
