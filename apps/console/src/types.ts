@@ -1,3 +1,16 @@
+/**
+ * The canonical envelope: a `/v1` collection the pagination contract has converted.
+ *
+ * `contracts/anthropic-cma/pagination.md` §2 maps the two envelopes and §4 names the
+ * collections still on the local one.
+ */
+export type CursorPage<T> = {
+  data: T[];
+  prev_page: string | null;
+  next_page: string | null;
+};
+
+/** The local envelope: `/v1/x` collections, and `/v1` collections not converted yet. */
 export type Page<T> = {
   data: T[];
   has_more: boolean;

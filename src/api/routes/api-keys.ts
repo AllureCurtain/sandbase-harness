@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { cursorPageOf } from '../standard.js';
 import {
   archiveManagedApiKey,
   configuredApiKeyRecords,
@@ -16,7 +16,7 @@ export function apiKeysRoutes(deps: ServerDeps) {
       ...listManagedApiKeys(deps.db),
       ...configuredApiKeyRecords(deps.apiKeys ?? []),
     ];
-    return c.json(pageOf(data));
+    return c.json(cursorPageOf(data, {}));
   });
 
   app.post('/', async (c) => {

@@ -387,7 +387,7 @@ export class ManagedAgentsClient {
 class AgentsResource {
   constructor(private readonly client: ManagedAgentsClient) {}
 
-  list(): Promise<{ data: AgentSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  list(): Promise<{ data: AgentSummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', '/v1/agents');
   }
 
@@ -434,7 +434,7 @@ class AgentsResource {
     });
   }
 
-  versions(id: string): Promise<{ data: AgentSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  versions(id: string): Promise<{ data: AgentSummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', `/v1/agents/${encodeURIComponent(id)}/versions`);
   }
 
@@ -600,7 +600,7 @@ class SessionsResource {
 class FilesResource {
   constructor(private readonly client: ManagedAgentsClient) {}
 
-  list(): Promise<{ data: WorkspaceFileSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  list(): Promise<{ data: WorkspaceFileSummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', '/v1/files');
   }
 
@@ -624,7 +624,7 @@ class FilesResource {
 class ApiKeysResource {
   constructor(private readonly client: ManagedAgentsClient) {}
 
-  list(): Promise<{ data: ApiKeySummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  list(): Promise<{ data: ApiKeySummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', '/v1/api-keys');
   }
 
@@ -668,7 +668,7 @@ class SettingsResource {
 class EnvironmentsResource {
   constructor(private readonly client: ManagedAgentsClient) {}
 
-  list(): Promise<{ data: EnvironmentSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  list(): Promise<{ data: EnvironmentSummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', '/v1/environments');
   }
 
@@ -706,7 +706,7 @@ class EnvironmentsResource {
     return this.client.request('POST', `/v1/environments/${encodeURIComponent(id)}/archive`, {});
   }
 
-  workerKeys(id: string): Promise<{ data: EnvironmentWorkerKeySummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  workerKeys(id: string): Promise<{ data: EnvironmentWorkerKeySummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', `/v1/environments/${encodeURIComponent(id)}/worker-keys`);
   }
 

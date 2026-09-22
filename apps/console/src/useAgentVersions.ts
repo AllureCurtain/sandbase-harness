@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getPage } from './api';
+import { getCursorPage } from './api';
 import type { Agent } from './types';
 
 /**
@@ -24,7 +24,7 @@ export function useAgentVersions(agentId: string | null): {
     let cancelled = false;
     setLoading(true);
     setError('');
-    getPage<Agent>(`/v1/agents/${encodeURIComponent(agentId)}/versions`)
+    getCursorPage<Agent>(`/v1/agents/${encodeURIComponent(agentId)}/versions`)
       .then((page) => {
         if (!cancelled) setVersions(Array.isArray(page?.data) ? page.data : []);
       })

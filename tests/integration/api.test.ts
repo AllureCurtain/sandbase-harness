@@ -1159,15 +1159,17 @@ describe('Managed Agents API', () => {
       // complete set, so both cursors are null and no local field is present, plus
       // the windowed skills listing, whose cursor can be followed.
       const cursorCollectionPaths = [
+        '/v1/agents',
+        '/v1/api-keys',
         '/v1/credential-vaults',
+        '/v1/environments',
+        '/v1/files',
         '/v1/memory_stores',
         '/v1/skills',
       ];
       // Still on the local envelope, named in the contract's §4 difference row.
       const collectionPaths = [
-        '/v1/agents',
         '/v1/sessions',
-        '/v1/environments',
         '/v1/x/templates',
       ];
 
@@ -1950,7 +1952,7 @@ description: Uploaded from a compressed package.
 
       const { res, body } = await getJson('/v1/files');
       expect(res.status).toBe(200);
-      expectPage(body);
+      expectCursorPage(body);
       const listed = body.data.find((file: any) => file.id === create.body.id);
       expect(listed).toBeDefined();
       expect(JSON.stringify(body)).not.toContain('.managed-agents');
