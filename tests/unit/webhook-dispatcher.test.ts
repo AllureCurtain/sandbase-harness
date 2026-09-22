@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
-import { dispatchWebhookEvent, retryDueWebhookDeliveries } from '@/core/operations/webhook-dispatcher.js';
+import { dispatchWebhookEvent, retryDueWebhookDeliveries, signPayload } from '@/core/operations/webhook-dispatcher.js';
+import { mintAndStoreWebhookSecret } from '@/core/operations/webhook-secrets.js';
 import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
 
 describe('webhook dispatcher', () => {
@@ -168,5 +169,52 @@ describe('webhook dispatcher', () => {
         body: String(init.body),
       }));
     });
+  });
+
+  it('signs each endpoint with its own secret and leaves a legacy row on the old key', async () => {
+    const dataDir = join(tmpDir, 'data');
+    const insert = db.prepare(
+      `INSERT INTO webhooks (id, name, url, events, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run('wh_fresh', 'Fresh', 'https://example.com/fresh', JSON.stringify(['*']), fixedNow.toISOString(), fixedNow.toISOString());
+    insert.run('wh_legacy', 'Legacy', 'https://example.com/legacy', JSON.stringify(['*']), fixedNow.toISOString(), fixedNow.toISOString());
+    // Only the first endpoint has a minted secret; the second is what a row
+    // written before M038 looks like.
+    const minted = mintAndStoreWebhookSecret(db, 'wh_fresh', dataDir);
+
+    const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
+    await dispatchWebhookEvent(db, { event: 'turn_complete', data: {} }, {
+      secret: 'legacy-key',
+      dataDir,
+      fetchImpl,
+      now: () => fixedNow,
+    });
+
+    const calls = (fetchImpl as any).mock.calls as Array<[string, any]>;
+    const fresh = calls.find(([url]) => url === 'https://example.com/fresh')!;
+    const legacy = calls.find(([url]) => url === 'https://example.com/legacy')!;
+
+    // The minted endpoint signs with the value its receiver was given...
+    expect(fresh[1].headers['X-Managed-Agents-Signature']).toBe(signPayload(String(fresh[1].body), minted));
+    expect(fresh[1].headers['webhook-signature']).toBe(signWebhookDelivery({
+      secret: minted,
+      id: fresh[1].headers['webhook-id'],
+      timestamp: fresh[1].headers['webhook-timestamp'],
+      body: String(fresh[1].body),
+    }));
+    // ...and not with the value the runtime used before per-endpoint secrets, so
+    // one endpoint's key is not another endpoint's key.
+    expect(fresh[1].headers['X-Managed-Agents-Signature']).not.toBe(signPayload(String(fresh[1].body), 'legacy-key'));
+
+    // A row with no stored secret keeps the legacy derivation, so upgrading does
+    // not invalidate a receiver that verifies today.
+    expect(legacy[1].headers['X-Managed-Agents-Signature']).toBe(signPayload(String(legacy[1].body), 'legacy-key'));
+    expect(legacy[1].headers['webhook-signature']).toBe(signWebhookDelivery({
+      secret: 'legacy-key',
+      id: legacy[1].headers['webhook-id'],
+      timestamp: legacy[1].headers['webhook-timestamp'],
+      body: String(legacy[1].body),
+    }));
   });
 });

@@ -6,6 +6,7 @@ import {
 } from './webhook-signature.js';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
+import { resolveWebhookSigningSecret, type StoredWebhookSecret } from './webhook-secrets.js';
 
 export type WebhookDispatchEvent = {
   event: string;
@@ -15,7 +16,10 @@ export type WebhookDispatchEvent = {
 };
 
 export type WebhookDispatchOptions = {
+  /** The key a subscription with no stored secret is signed with. */
   secret: string;
+  /** Workspace data directory holding the key material for stored secrets. */
+  dataDir?: string;
   fetchImpl?: typeof fetch;
   maxAttempts?: number;
   now?: () => Date;
@@ -56,7 +60,7 @@ export async function retryDueWebhookDeliveries(
 ): Promise<WebhookDeliveryResult[]> {
   const nowIso = (opts.now?.() ?? new Date()).toISOString();
   const rows = db.prepare(
-    `SELECT d.*, w.url
+    `SELECT d.*, w.url, w.secret_ciphertext, w.secret_nonce, w.secret_tag
      FROM webhook_deliveries d
      JOIN webhooks w ON w.id = d.webhook_id
      WHERE d.status = 'pending_retry'
@@ -81,7 +85,10 @@ async function attemptDelivery(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult> {
   const payloadJson = JSON.stringify(payload);
-  const signature = signPayload(payloadJson, opts.secret);
+  // Each endpoint is signed with its own secret; a subscription written before
+  // per-endpoint secrets existed falls back to the caller's value.
+  const signingSecret = resolveWebhookSigningSecret(webhook, opts.secret, opts.dataDir);
+  const signature = signPayload(payloadJson, signingSecret);
   const id = `whd_${nanoid(18)}`;
   const createdAt = (opts.now?.() ?? new Date()).toISOString();
   // The published header set is keyed by the delivery id and the timestamp the
@@ -95,7 +102,7 @@ async function attemptDelivery(
     payloadJson,
     signature,
     opts.fetchImpl,
-    { ...deliveryIdentity, secret: opts.secret },
+    { ...deliveryIdentity, secret: signingSecret },
   );
   const nextRetry = nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
@@ -126,7 +133,7 @@ async function retryDelivery(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult> {
   const attemptCount = row.attempt_count + 1;
-  const signature = signPayload(row.payload, opts.secret);
+  const signature = signPayload(row.payload, resolveWebhookSigningSecret(row, opts.secret, opts.dataDir));
   const attemptTime = opts.now?.() ?? new Date();
   // A retry is another attempt at the same delivery, so it carries the same
   // published header set as the first attempt: `webhook-id` stays the delivery
@@ -265,7 +272,7 @@ function parseStringArray(value: string | null): string[] {
   }
 }
 
-type WebhookRow = {
+type WebhookRow = StoredWebhookSecret & {
   id: string;
   url: string;
   events: string;
@@ -282,7 +289,7 @@ type DeliveryRow = {
   next_retry_at: string | null;
 };
 
-type RetryDeliveryRow = DeliveryRow & {
+type RetryDeliveryRow = DeliveryRow & StoredWebhookSecret & {
   url: string;
   event: string;
   payload: string;
