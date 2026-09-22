@@ -92,6 +92,19 @@ MCP URL binding:
 
 GitHub resource boundary:
 
+Session execution:
+
+- `DefaultSessionExecutor` resolves the session's vaults once per turn with
+  `resolveSessionCredentialInjections`, injects the resulting `environment` into
+  the sandbox command environment, redacts every value a sandbox tool hands back,
+  and clears the retained values when the turn ends.
+- A shell command declares no target host, so only credentials the policy admits
+  without one reach the environment. A `limited` credential is denied for a shell
+  command exactly as it is denied for any other call without a target host.
+- The delegated child path is **not** covered: `DelegationService` builds its own
+  sandbox tools and does not thread credentials, so a sub-agent receives no vault
+  environment. Nothing is injected into model requests either.
+
 - A `github_repository.authorization_token` is a separate encrypted
   session-resource secret, matching the official CMA GitHub resource shape. It
   is not resolved from `vault_ids`; Vault credentials are used for MCP and
@@ -104,8 +117,10 @@ GitHub resource boundary:
 Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
 the `injection_location` create rules and the both-fields-resolved read
-projection, and rotation that preserves identity. There is no credential update
-route: structural fields are locked, so a change means archive and recreate.
+projection, rotation that preserves identity, and the session path that injects a
+vault's environment into its own sandbox commands and redacts what they return.
+There is no credential update route: structural fields are locked, so a change
+means archive and recreate.
 
 ## 4. Differences
 
@@ -116,6 +131,7 @@ route: structural fields are locked, so a change means archive and recreate.
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
+| Delegated execution | A session's vault environment reaches its own sandbox commands, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
 
 ## 5. Reason for the difference
 
@@ -140,6 +156,9 @@ route: structural fields are locked, so a change means archive and recreate.
   round trip with its resolved `injection_location`, the `static_bearer` name on
   the wire, the `refresh` warning, the mixed-shape refusal, the legacy flat alias,
   the missing-field refusals, and that no response carries the secret.
+- `tests/integration/credential-execution.test.ts` — the executor resolves the
+  session's vault, the bash tool receives `{env: {TOKEN: …}}`, the string the
+  strategy sees is redacted, and no persisted event carries the secret.
 - `tests/unit/credential-policy.test.ts` — network policy normalization.
 - `tests/unit/credential-redaction.test.ts` — secret material never appears in
   a response.
