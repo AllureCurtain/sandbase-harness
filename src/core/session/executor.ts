@@ -141,6 +141,9 @@ export class DefaultSessionExecutor implements SessionExecutor {
       webFetch: deps.webFetch,
       memoryMount: deps.memoryMount,
       memoryStoreName: deps.memoryStoreName,
+      // The same resolver the turn uses for sandbox commands, so a vault reaches
+      // an MCP server by the same policy decision that governs a shell command.
+      resolveCredentialInjections: deps.resolveCredentialInjections,
     });
   }
 

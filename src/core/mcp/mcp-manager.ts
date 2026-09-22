@@ -72,10 +72,32 @@ export interface McpManagerOptions {
    * "admit everything", which keeps direct `McpManager` construction usable.
    */
   admitTool?: (serverName: string, toolName: string) => boolean;
+  /**
+   * Environment a stdio server's process should receive in addition to the
+   * `env` its own configuration declares.
+   *
+   * The caller supplies this so a session's Vault material reaches the server
+   * without the agent definition ever carrying it: a value an agent writes into
+   * `env` is configuration, not an operator-authorized credential. The returned
+   * record is copied into the spawn environment and then emptied, so this
+   * manager does not retain the values past the process start. Absent means
+   * "declare nothing extra".
+   */
+  resolveEnvironment?: (server: McpServerConfig) => Record<string, string> | undefined;
+  /**
+   * Scrub a tool result before the strategy hands it to the model.
+   *
+   * A server that echoes the credential it was given would otherwise put the
+   * secret into the transcript, and only the caller knows what it injected, so
+   * the rule has to come from there. Absent means "return the result unchanged".
+   */
+  redactResult?: (serverName: string, result: unknown) => unknown;
 }
 
 export class McpManager {
   private readonly admitTool: ((serverName: string, toolName: string) => boolean) | undefined;
+  private readonly resolveEnvironment: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
+  private readonly redactResult: ((serverName: string, result: unknown) => unknown) | undefined;
   private clients = new Map<string, McpClient>();
   private serverConfigs = new Map<string, McpServerConfig>();
   private statuses: McpServerStatus[] = [];
@@ -84,6 +106,8 @@ export class McpManager {
 
   constructor(options: McpManagerOptions = {}) {
     this.admitTool = options.admitTool;
+    this.resolveEnvironment = options.resolveEnvironment;
+    this.redactResult = options.redactResult;
   }
   /** Sleep function (injectable for tests). */
   private sleepFn: (ms: number) => Promise<void> = sleep;
@@ -141,7 +165,7 @@ export class McpManager {
         const tool = this.liveTools.get(serverName)?.[toolName];
         if (!tool?.execute) throw new Error(`MCP tool "${toolName}" unavailable`);
         try {
-          return await tool.execute(args);
+          return this.scrub(serverName, await tool.execute(args));
         } catch (err) {
           if (!isConnectionError(err)) throw err;
           // Connection likely dropped — reconnect and retry once.
@@ -149,10 +173,18 @@ export class McpManager {
           if (!ok) throw err;
           const fresh = this.liveTools.get(serverName)?.[toolName];
           if (!fresh?.execute) throw err;
-          return await fresh.execute(args);
+          return this.scrub(serverName, await fresh.execute(args));
         }
       },
     };
+  }
+
+  /**
+   * Apply the caller's scrubbing rule, if any, to a result the model is about
+   * to see. Kept as one method so the retry path cannot skip it.
+   */
+  private scrub(serverName: string, result: unknown): unknown {
+    return this.redactResult ? this.redactResult(serverName, result) : result;
   }
 
   /**
@@ -246,15 +278,23 @@ export class McpManager {
 
   private async createClient(server: McpServerConfig): Promise<McpClient> {
     let transport;
+    // Credential material contributed by the resolver, kept only until the
+    // process has started.
+    let injectedEnv: Record<string, string> | undefined;
     if (server.type === 'stdio') {
       if (!server.command) {
         throw new Error(`MCP server "${server.name}": stdio transport requires "command"`);
       }
-      const env = server.env ? resolveEnvVarsDeep(server.env, false) : undefined;
+      const configuredEnv = server.env ? resolveEnvVarsDeep(server.env, false) : {};
+      injectedEnv = this.resolveEnvironment?.(server);
+      // Vault values win over the agent's own configuration: an agent must not
+      // be able to replace an operator-authorized credential with a value of its
+      // own choosing.
+      const env = { ...configuredEnv, ...(injectedEnv ?? {}) };
       transport = new StdioClientTransport({
         command: server.command,
         args: server.args ?? [],
-        env,
+        env: Object.keys(env).length > 0 ? env : undefined,
       });
     } else {
       if (!server.url) {
@@ -265,7 +305,14 @@ export class McpManager {
     }
 
     const client = new Client({ name: 'sandbase-harness', version: '1.0.0' });
-    await client.connect(transport);
+    try {
+      await client.connect(transport);
+    } finally {
+      // The values were needed only to start the process. Emptying them here
+      // keeps this manager from holding credential material for the rest of the
+      // session; a reconnect resolves them again through the same option.
+      clearInjectedEnvironment(injectedEnv);
+    }
 
     return {
       async tools() {
@@ -288,6 +335,17 @@ export class McpManager {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Empty the record a credential resolver handed over.
+ *
+ * The record is the manager's copy for one spawn attempt, so it is cleared
+ * rather than left reachable from a long-lived object.
+ */
+function clearInjectedEnvironment(env?: Record<string, string>): void {
+  if (!env) return;
+  for (const key of Object.keys(env)) delete env[key];
 }
 
 /** Heuristic: does this error indicate a dropped/broken MCP connection? */

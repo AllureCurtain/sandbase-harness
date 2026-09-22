@@ -69,11 +69,10 @@ Rotation:
   identity, `auth_type`, name, network policy, and injection locations are
   preserved. The prior ciphertext is overwritten, so the old secret is not
   recoverable from this runtime once rotation succeeds.
-- When the rotated Vault is referenced by active Sessions, the runtime asks
-  each Session's MCP manager to close and reconnect its configured transports.
-  The next MCP tool call therefore uses the newly resolved credential without
-  recreating the Session. Reconnect failures do not roll back the committed
-  rotation; the MCP status remains the source of truth for degraded servers.
+- A rotation is a wire-level operation on the credential: it replaces the stored
+  secret and appends an audit event. It does not reconnect a live MCP transport,
+  so a server process that has already started keeps the value it was spawned
+  with until it is reconnected; that boundary is recorded in §4.
 
 `injection_location`:
 
@@ -86,9 +85,13 @@ Rotation:
 
 MCP URL binding:
 
-- `mcpServerUrlMatches` canonicalizes both sides before comparing. If no
-  credential matches a declared MCP server, the connection is attempted without
-  authentication rather than failing the session.
+- `mcpServerUrlMatches` canonicalizes both sides before comparing: scheme and
+  host case, a default port, and a single trailing slash are normalized, and a
+  different path, subdomain, or non-default port is a mismatch. The rule is
+  implemented and unit-tested as a stored-field rule, but it is **not** applied
+  when a connection is made: no credential keyed by `mcp_server_url` is attached
+  to any transport, so the connection is always attempted without one rather than
+  failing the session. See §4.
 
 GitHub resource boundary:
 
@@ -101,6 +104,10 @@ Session execution:
 - A shell command declares no target host, so only credentials the policy admits
   without one reach the environment. A `limited` credential is denied for a shell
   command exactly as it is denied for any other call without a target host.
+- The same resolved `environment` starts a stdio MCP server the agent declares,
+  and a vault value wins over the `env` the agent configured itself. Values an MCP
+  tool returns are scrubbed the way a sandbox tool's return value is, and the
+  resolver's bundle is cleared after each use so nothing outlives the call.
 - The delegated child path is **not** covered: `DelegationService` builds its own
   sandbox tools and does not thread credentials, so a sub-agent receives no vault
   environment. Nothing is injected into model requests either.
@@ -118,7 +125,8 @@ Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
 the `injection_location` create rules and the both-fields-resolved read
 projection, rotation that preserves identity, and the session path that injects a
-vault's environment into its own sandbox commands and redacts what they return.
+vault's environment into its own sandbox commands and into a stdio MCP server the
+agent declares, redacting what each of them returns.
 There is no credential update route: structural fields are locked, so a change
 means archive and recreate.
 
@@ -131,7 +139,9 @@ means archive and recreate.
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
-| Delegated execution | A session's vault environment reaches its own sandbox commands, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
+| Delegated execution | A session's vault environment reaches its own sandbox commands and a stdio MCP server it declares, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
+| MCP url credentials | A `static_bearer` or `mcp_oauth` credential is keyed by `mcp_server_url` and the matching canonicalizer is unit-tested, but nothing attaches either type to a url-transport server: an SSE connection is made with no `Authorization` header. The published contract describes the keying and the match; the connection side is absent here rather than approximated. |
+| MCP rotation reconnect | A rotation does not reconnect live transports, so a stdio server keeps the environment it was spawned with. The published contract expects the next MCP tool call to use the newly resolved credential; here it uses the new value only after a reconnect. The transport is not part of the credential resource, so nothing else in this contract depends on it. |
 
 ## 5. Reason for the difference
 
@@ -164,9 +174,12 @@ means archive and recreate.
   a response.
 - `tests/integration/api.test.ts` — vault and credential CRUD, rotation,
   and canonical response shape.
-- `tests/integration/mcp.test.ts` — a real stdio MCP server receives the
-  session's Vault environment credential, and an in-place rotation refreshes the
-  live transport so the existing tool wrapper uses the new value.
+- `tests/integration/mcp.test.ts` — a real stdio MCP server reports the value it
+  was started with, proving the session's Vault environment credential reached the
+  process and that the agent's own `env` value lost to it; the same case under a
+  `limited` credential shows the refusal reaching the audit trail instead. The
+  rotation half of the published expectation is not asserted here because the
+  reconnect it needs is recorded as absent in §4.
 - `tests/integration/credential-rotation.test.ts` — the rotation route notifies
   every active Session that references the rotated Vault.
 

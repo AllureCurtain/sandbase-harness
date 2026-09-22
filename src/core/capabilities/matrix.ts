@@ -315,7 +315,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'credentials',
     id: 'credential-injection-execution',
     status: 'partial',
-    reason: 'A turn on a session that attaches a vault injects its unrestricted environment variables into the sandbox command environment, redacts every value a sandbox tool hands back, and clears the retained values when the turn ends. Two deviations: the delegated child path builds its own sandbox tools and does not thread credentials, so a sub-agent receives no vault environment; and nothing is injected into model requests, so a credential authenticates an outbound call rather than a completion.',
+    reason: 'A turn on a session that attaches a vault injects its unrestricted environment variables into the sandbox command environment and into any stdio MCP server the agent declares (a vault value wins over the value the agent configured), redacts every value a sandbox tool hands back and every value an MCP tool returns, and clears the retained values when the turn ends. Three deviations: the delegated child path builds its own sandbox tools and does not thread credentials, so a sub-agent receives no vault environment; nothing is injected into model requests, so a credential authenticates an outbound call rather than a completion; and a url-transport MCP server receives nothing, because the `mcp_server_url` keying rule that matches a `static_bearer` or `mcp_oauth` credential to a declared server is a stored field and a canonicalizer with no caller on the connection path.',
     contract: 'contracts/anthropic-cma/credentials.md',
   },
   {
