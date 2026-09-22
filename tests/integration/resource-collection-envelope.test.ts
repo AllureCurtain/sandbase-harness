@@ -54,6 +54,17 @@ describe('resource collection envelope', () => {
     expect(body.next_page, label).toBeNull();
   }
 
+  /**
+   * The canonical envelope without claiming the page is complete.
+   *
+   * `expectCursorPage` asserts both cursors are `null`, which is right for a
+   * collection that returns its whole result and wrong for a windowed one: the
+   * session listing's first page has a `next_page`.
+   */
+  function expectCursorEnvelope(body: any, label: string) {
+    expect(Object.keys(body).sort(), label).toEqual(['data', 'next_page', 'prev_page']);
+  }
+
   /** A runtime holding one vault with one credential, and one memory store. */
   async function setupApp(): Promise<{ vaultId: string; credentialId: string }> {
     tmpDir = mkdtempSync(join(tmpdir(), 'ma-resource-envelope-'));
@@ -167,19 +178,69 @@ describe('resource collection envelope', () => {
     expect(truncated.body.next_page).not.toBeNull();
   });
 
-  it('leaves the session listing and the windowed work-item listing on the local envelope', async () => {
+  it('leaves the windowed work-item listing on the local envelope', async () => {
     await setupApp();
 
-    // `sessions` is windowed by a page-number cursor and is the next collection to
-    // convert; the work-item listing is windowed by `limit` with no continuation and
-    // carries a `counts` object, so it is an extension shape rather than a canonical
-    // collection.
-    for (const path of ['/v1/sessions', '/v1/environments/env_default/work-items']) {
-      const { res, body } = await get(path);
-      expect([200, 503], path).toContain(res.status);
-      if (res.status !== 200) continue;
-      expect(typeof body.has_more, path).toBe('boolean');
-      expect(body, path).not.toHaveProperty('prev_page');
+    // The work-item listing windows by `limit` with no continuation and carries a
+    // `counts` object, so it is an extension shape rather than a canonical collection.
+    // `sessions` used to be here too; it now serves a page cursor.
+    const { res, body } = await get('/v1/environments/env_default/work-items');
+    expect([200, 503], 'work items').toContain(res.status);
+    if (res.status !== 200) return;
+    expect(typeof body.has_more, 'work items').toBe('boolean');
+    expect(body, 'work items').not.toHaveProperty('prev_page');
+  });
+
+  it('walks the session listing through its page cursor', async () => {
+    await setupApp();
+    // Three sessions, one per page at `limit=1`, so both directions are exercised.
+    const insert = db!.prepare(
+      "INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, created_at, updated_at) VALUES (?, 'agent_envelope', 'envelope-agent', 'env_default', 'paused', ?, ?)",
+    );
+    for (const [index, stamp] of ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '2026-01-03T00:00:00.000Z'].entries()) {
+      insert.run(`sess_envelope_${index}`, stamp, stamp);
     }
+
+    const first = await get('/v1/sessions?limit=1');
+    expect(first.res.status).toBe(200);
+    expectCursorEnvelope(first.body, 'sessions page 1');
+    expect(first.body.data).toHaveLength(1);
+    expect(first.body.prev_page).toBeNull();
+    expect(first.body.next_page).not.toBeNull();
+
+    const second = await get(`/v1/sessions?limit=1&page=${encodeURIComponent(first.body.next_page)}`);
+    expect(second.res.status).toBe(200);
+    expect(second.body.data[0].id).not.toBe(first.body.data[0].id);
+    expect(second.body.prev_page).not.toBeNull();
+
+    const back = await get(`/v1/sessions?limit=1&page=${encodeURIComponent(second.body.prev_page)}`);
+    expect(back.res.status).toBe(200);
+    expect(back.body.data[0].id).toBe(first.body.data[0].id);
+
+    // A page number is no longer the parameter: the cursor replaced it, and a value
+    // that is not one of this collection's cursors is refused rather than read as
+    // "page one".
+    const malformed = await get('/v1/sessions?page=2');
+    expect(malformed.res.status).toBe(400);
+    expect(malformed.body.error.type).toBe('invalid_request');
+  });
+
+  it('binds a session cursor to the filter it was issued for', async () => {
+    await setupApp();
+    const insert = db!.prepare(
+      "INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, created_at, updated_at) VALUES (?, 'agent_envelope', 'envelope-agent', 'env_default', 'paused', ?, ?)",
+    );
+    insert.run('sess_filter_a', '2026-02-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z');
+    insert.run('sess_filter_b', '2026-02-02T00:00:00.000Z', '2026-02-02T00:00:00.000Z');
+
+    const filtered = await get('/v1/sessions?limit=1&agent_id=agent_envelope');
+    expect(filtered.body.next_page).not.toBeNull();
+
+    const mismatch = await get(`/v1/sessions?limit=1&agent_id=agent_missing&page=${encodeURIComponent(filtered.body.next_page)}`);
+    expect(mismatch.res.status).toBe(400);
+    expect(mismatch.body.error.message).toContain('different filter');
+
+    const same = await get(`/v1/sessions?limit=1&agent_id=agent_envelope&page=${encodeURIComponent(filtered.body.next_page)}`);
+    expect(same.res.status).toBe(200);
   });
 });

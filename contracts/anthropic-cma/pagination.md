@@ -33,18 +33,17 @@ Source: Claude Managed Agents public documentation plus `src/api/standard.ts`.
 - A collection's envelope therefore follows the mount, not the handler: the
   operations router is mounted at `/v1` and `/v1/x` with different shapes, and a
   handler that emitted its own envelope could not do that.
-- Converted to the canonical envelope so far: every operations collection
-  (`/v1/webhooks`, `/v1/scheduled-deployments`, `/v1/outcomes`, their nested
-  `deliveries` / `runs` and the session outcome listing); the resource collections
-  that return their whole set (`/v1/agents` with its versions, `/v1/api-keys`,
-  `/v1/credential-vaults` with its credentials, `/v1/environments` with its worker
-  keys, `/v1/files` and `/v1/memory_stores` with its memories); the two windowed
-  listings that carry a followable cursor (`/v1/skills` and both credential audit
-  listings); plus the two listing routes that already used `cursorPageOf`
-  (`/v1/memory_stores/{id}/memory_versions` and `/v1/sessions/{id}/resources`).
-  `sessions` is the collection still on the local envelope; §4 also records the
-  windowed work-item listing, which is an extension shape rather than a canonical
-  collection.
+- Converted to the canonical envelope so far: **every** canonical `/v1` collection.
+  The operations set (`/v1/webhooks`, `/v1/scheduled-deployments`, `/v1/outcomes`,
+  their nested `deliveries` / `runs` and the session outcome listing); the resource
+  collections that return their whole set (`/v1/agents` with its versions,
+  `/v1/api-keys`, `/v1/credential-vaults` with its credentials, `/v1/environments`
+  with its worker keys, `/v1/files` and `/v1/memory_stores` with its memories); the
+  windowed listings that carry a followable cursor (`/v1/sessions`, `/v1/skills` and
+  both credential audit listings); and the two listing routes that already used
+  `cursorPageOf` (`/v1/memory_stores/{id}/memory_versions` and
+  `/v1/sessions/{id}/resources`). §4 records the one listing that is an extension
+  shape rather than a canonical collection.
 - `cursorPageOf` takes `prev` from the caller rather than inferring it: a
   forward-only scan cannot know its predecessor, and inventing one would
   produce a cursor that does not resolve.
@@ -70,18 +69,21 @@ or filter.
 | Difference | Detail |
 | --- | --- |
 | Extension envelope | `/v1/x` collections return `{data, has_more, first_id, last_id}`. The published contract has no such envelope. |
-| Collections still on the local envelope under `/v1` | `sessions` is built with `pageOf`, so it carries `has_more` / `first_id` / `last_id` while the contract puts canonical collections on cursors. Its window is a 1-based page number, so converting it means issuing a real cursor for that position rather than the null-cursor step the complete-set collections took. |
 | The work-item listing is an extension shape | `/v1/environments/{id}/work-items` spreads the local envelope and adds a `counts` object, and it windows by `limit` with no continuation, so it is neither the canonical envelope nor a plain local one. It is a runtime extension (see `docs/api-matrix.md`) and stays as it is. |
 | Null cursors on complete result sets | Most canonical collections return `next_page: null` and `prev_page: null` because the full set is returned unwindowed. A real cursor is produced when a collection is windowed — `/v1/sessions`, `/v1/sessions/:id/events`, `/v1/skills`, the credential audit listings and `/v1/memory_stores/{id}/memory_versions`. |
 | Cursor payload visibility | SandBase cursors are readable base64url JSON, not opaque binary. They carry no secret, so the opacity is present to discourage construction rather than to conceal data. The published contract does not specify an encoding. |
 | Cursor position is a page, not a sort key | `/v1/sessions` stores a 1-based page number, so the scan is redone from that page. A concurrent insert or delete shifts what a later page contains. A keyset cursor naming the last delivered row's sort key would not. The offset cursors (`/v1/skills`, the audit listings, the memory versions) have the same property for the same reason: the backing store pages by offset. |
 | Cursor semantics are not uniform | Four shapes exist across the surface: `/v1/sessions` carries `{order, filter, page}`, `/v1/sessions/:id/events` carries `{session_id, after_id}`, `/v1/skills` and the audit listings carry `{offset, filter}`, and the remaining resource listings carry `{offset}` alone because they return everything in one page. All are canonical envelopes, but a cursor is only meaningful in the collection that issued it, which `cursorQueryMismatch` enforces where a filter is bound. |
 
-`order` **is** bound, and since the filter binding was added it covers filters too:
-`/v1/sessions` records the ordering and the normalized `agent_id` / `status` /
-`include_archived` in every cursor it issues and rejects a replay that does not
-match (`cursorQueryMismatch`). The remaining gap is the position scheme, not the
-query binding.
+Every canonical `/v1` collection now serves the canonical envelope; the only listing
+shape that is neither canonical nor a plain `/v1/x` extension is the work-item row
+above. `order` **is** bound, and the filter binding covers the query's own filters:
+`/v1/sessions` records `created_at DESC` and the normalized `agent_id` / `status` in
+every cursor it issues and rejects a replay that does not match
+(`cursorQueryMismatch`). The remaining gap is the position scheme, not the query
+binding. An earlier revision of this document listed `include_archived` among the
+bound filters; that parameter does not exist on this runtime's session listing, and
+the cursor records only what the query actually filters on.
 
 ## 5. Reason for the difference
 
@@ -117,10 +119,11 @@ query binding.
   collection follows the same rule as its parent.
 - `tests/integration/resource-collection-envelope.test.ts` — the collections that
   return their whole set carry exactly `{data, prev_page: null, next_page: null}`,
-  including the nested agent versions and environment worker keys, the audit listings
-  are asserted to carry a cursor once a `limit` cuts the trail, and `sessions` plus the
-  windowed work-item listing are asserted to still return the local shape so the
-  difference rows cannot drift from the tree.
+  including the nested agent versions and environment worker keys; the session listing
+  walks forward through `next_page` and back through `prev_page`, refuses a page number
+  where a cursor belongs and a cursor issued for another filter; the audit listings
+  carry a cursor once a `limit` cuts the trail; and the windowed work-item listing is
+  asserted to still return the local shape so the difference row cannot drift.
 - `tests/unit/sdk-client.test.ts` — the SDK's mocked collections answer the canonical
   envelope, so a declared return type cannot drift from the wire it describes.
 - `tests/integration/followable-cursor-collections.test.ts` — `/v1/skills` walks

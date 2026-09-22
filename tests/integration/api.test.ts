@@ -755,7 +755,7 @@ describe('Managed Agents API', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.data.length).toBeLessThanOrEqual(2);
-      expect(body.has_more).toBeDefined();
+      expectCursorPage(body);
     });
   });
 
@@ -1165,11 +1165,11 @@ describe('Managed Agents API', () => {
         '/v1/environments',
         '/v1/files',
         '/v1/memory_stores',
+        '/v1/sessions',
         '/v1/skills',
       ];
-      // Still on the local envelope, named in the contract's §4 difference row.
+      // Still on the local envelope: the `/v1/x` mirror of the operations surface.
       const collectionPaths = [
-        '/v1/sessions',
         '/v1/x/templates',
       ];
 

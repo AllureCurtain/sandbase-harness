@@ -18,7 +18,7 @@ import type { SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
-import { pageOf, toApiEvent, toApiSession } from '../standard.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, pageOf, toApiEvent, toApiSession } from '../standard.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { isTerminal } from '@/core/session/state-machine.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
@@ -148,11 +148,28 @@ export function sessionsRoutes(deps: ServerDeps) {
 
   // GET / - List sessions
   app.get('/', (c) => {
-    const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10) || 1);
     const rawLimit = parseInt(c.req.query('limit') ?? '20', 10) || 20;
     const pageSize = Math.min(1000, Math.max(1, rawLimit)); // cap at 1000
     const status = c.req.query('status');
     const agentIdFilter = c.req.query('agent_id');
+
+    // The window is a 1-based page number, so the cursor carries that number together
+    // with the ordering and the normalized filter that produced it: replaying a cursor
+    // under a different `agent_id` or `status` would otherwise address a page that
+    // never existed for that query. A malformed cursor is refused rather than read as
+    // "page one", which is how a client loops over the same window.
+    const filter = normalizeCollectionFilter({ agent_id: agentIdFilter, status });
+    const rawPage = c.req.query('page');
+    const decoded = rawPage === undefined ? { ok: true as const, state: undefined } : decodeCursor(rawPage);
+    if (!decoded.ok) {
+      return c.json({ error: { type: 'invalid_request', message: 'page must be a cursor returned by this endpoint' } }, 400);
+    }
+    const mismatch = cursorQueryMismatch(decoded.state, { order: SESSION_LIST_ORDER, filter });
+    if (mismatch) return c.json({ error: { type: 'invalid_request', message: mismatch } }, 400);
+    const page = readSessionPage(decoded.state);
+    if (page === undefined) {
+      return c.json({ error: { type: 'invalid_request', message: 'page must be a cursor returned by this endpoint' } }, 400);
+    }
 
     const result = sessionManager.list({
       page,
@@ -161,7 +178,11 @@ export function sessionsRoutes(deps: ServerDeps) {
       ...internalStatusFilter(status),
     });
     const sessions = result.data.map((session) => toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)));
-    return c.json(pageOf(sessions, result.hasMore));
+    const cursorState = { order: SESSION_LIST_ORDER, filter };
+    return c.json(cursorPageOf(sessions, {
+      prev: page > 1 ? encodeCursor({ ...cursorState, page: page - 1 }) : null,
+      next: result.hasMore ? encodeCursor({ ...cursorState, page: page + 1 }) : null,
+    }));
   });
 
   // GET /:id - Get session detail
@@ -557,6 +578,19 @@ function internalStatusFilter(status: string | undefined) {
     default:
       return {};
   }
+}
+
+/** The ordering the session listing is issued under, recorded in every cursor it hands out. */
+const SESSION_LIST_ORDER = 'created_at DESC';
+
+/**
+ * The page a session cursor names, or `undefined` when the state is not one of this
+ * collection's cursors. An absent state is the first page rather than a rejection.
+ */
+function readSessionPage(state?: Record<string, unknown>): number | undefined {
+  if (!state) return 1;
+  const page = state.page;
+  return typeof page === 'number' && Number.isInteger(page) && page >= 1 ? page : undefined;
 }
 
 function findAgentById(deps: ServerDeps, id: string): AgentDefinition | undefined {

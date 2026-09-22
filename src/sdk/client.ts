@@ -461,11 +461,19 @@ class SessionsResource {
     return this.client.request('GET', `/v1/sessions/${encodeURIComponent(id)}`);
   }
 
-  list(opts?: { page?: number; limit?: number; status?: string }): Promise<{ data: SessionSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  /**
+   * List sessions.
+   *
+   * `page` is the cursor a previous call returned in `next_page` / `prev_page`, not a
+   * page number: the collection serves the canonical envelope, and a cursor carries
+   * the page together with the ordering and filter it was issued under.
+   */
+  list(opts?: { page?: string; limit?: number; status?: string; agentId?: string }): Promise<{ data: SessionSummary[]; prev_page: string | null; next_page: string | null }> {
     const q = new URLSearchParams();
-    if (opts?.page) q.set('page', String(opts.page));
+    if (opts?.page) q.set('page', opts.page);
     if (opts?.limit) q.set('limit', String(opts.limit));
     if (opts?.status) q.set('status', opts.status);
+    if (opts?.agentId) q.set('agent_id', opts.agentId);
     const qs = q.toString();
     return this.client.request('GET', `/v1/sessions${qs ? `?${qs}` : ''}`);
   }
