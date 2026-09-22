@@ -15,6 +15,11 @@ import { createLogger, InMemoryLogStore } from '@/core/observability/logger.js';
 import { composeRuntimeFromSettings } from '@/core/runtime/composition.js';
 import { activateRuntimeSettings, getOrSeedRuntimeSettings, saveRuntimeSettings } from '@/core/settings/store.js';
 import { ModelRegistry } from '@/model/registry.js';
+import {
+  CAPABILITY_AREAS,
+  CAPABILITY_STATUSES,
+  CMA_CAPABILITY_MATRIX,
+} from '@/core/capabilities/matrix.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { RuntimeModelInfo } from '@/types/model.js';
@@ -396,6 +401,47 @@ describe('Managed Agents API', () => {
       expect(rejectedSession.body.error).toEqual(rejectedAgent.body.error);
       expect((db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(sessionCountBefore);
       db.prepare('DELETE FROM agents WHERE id = ?').run('agent_legacy-web');
+    });
+
+    it('serves the contract matrix beside the runtime tool inventory', async () => {
+      const { res, body } = await getJson('/v1/x/capabilities');
+      expect(res.status).toBe(200);
+      expect(body.type).toBe('capability_inventory');
+      // The inventory half keeps its shape and its status codes.
+      expect(body.capabilities).toContainEqual({ id: 'read', kind: 'tool', status: 'available' });
+
+      const contract = body.contract;
+      expect(contract.type).toBe('capability_matrix');
+      expect(contract.statuses).toEqual([...CAPABILITY_STATUSES]);
+      // The served entry count agrees with the matrix data, so the endpoint cannot
+      // serve a stale subset of it.
+      expect(contract.capabilities).toHaveLength(CMA_CAPABILITY_MATRIX.length);
+
+      const areas = new Set<string>(CAPABILITY_AREAS);
+      const statuses = new Set<string>(CAPABILITY_STATUSES);
+      for (const entry of contract.capabilities) {
+        expect(areas.has(entry.area), `unknown contract area ${entry.area}`).toBe(true);
+        expect(statuses.has(entry.status), `unknown status ${entry.status}`).toBe(true);
+        if (entry.status !== 'supported') {
+          expect(entry.reason, `${entry.id} carries no reason`).toBeTruthy();
+        }
+        expect(entry.contract.startsWith('contracts/anthropic-cma/')).toBe(true);
+        expect(existsSync(join(process.cwd(), entry.contract)), `${entry.contract} is missing`).toBe(true);
+      }
+
+      // Every area the matrix declares is represented in the response. Areas carry
+      // more than one entry, so the property is coverage rather than a single entry.
+      for (const area of CAPABILITY_AREAS) {
+        expect(
+          contract.capabilities.some((entry: { area: string }) => entry.area === area),
+          `no entry for contract area ${area}`,
+        ).toBe(true);
+      }
+
+      // The summary describes the entries the response actually carries.
+      const derived: Record<string, number> = Object.fromEntries(CAPABILITY_STATUSES.map((status) => [status, 0]));
+      for (const entry of contract.capabilities) derived[entry.status] += 1;
+      expect(contract.summary).toEqual(derived);
     });
 
     it('accepts standard agent refs, resources, vault ids, and redacts repository tokens', async () => {

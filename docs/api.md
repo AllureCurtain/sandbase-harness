@@ -1402,7 +1402,7 @@ Extension endpoints expose local runtime operations.
 | --- | --- | --- |
 | `GET` | `/v1/x/health` | Health check. |
 | `GET` | `/v1/x/runtime` | Runtime status. |
-| `GET` | `/v1/x/capabilities` | Truthful inventory of locally executable built-in capabilities. |
+| `GET` | `/v1/x/capabilities` | Truthful inventory of locally executable built-in capabilities, plus the CMA contract matrix. |
 | `GET` | `/v1/x/workspace` | Workspace paths and metadata. |
 | `GET` | `/v1/x/settings` | Read the versioned Settings V2 runtime document. |
 | `POST` | `/v1/x/settings/validate` | Validate a complete Settings V2 document without saving. |
@@ -1453,7 +1453,9 @@ configuration metadata only:
 
 `GET /v1/x/capabilities` is the source of truth for built-in tool availability.
 It returns stable capability records with a `status` and, when unavailable, a
-human-readable `reason`:
+human-readable `reason`. The same response carries the CMA contract matrix under
+`contract`, so a client reads local executability and protocol coverage from one
+call instead of inferring one from the other:
 
 ```json
 {
@@ -1466,9 +1468,28 @@ human-readable `reason`:
       "status": "unavailable",
       "reason": "No safe executable implementation is available in this runtime."
     }
-  ]
+  ],
+  "contract": {
+    "type": "capability_matrix",
+    "statuses": ["supported", "partial", "unavailable", "planned", "not_applicable", "unverified"],
+    "summary": { "supported": 28, "partial": 10, "unavailable": 2, "planned": 0, "not_applicable": 3, "unverified": 1 },
+    "capabilities": [
+      {
+        "area": "capabilities",
+        "id": "capability-inventory-endpoint",
+        "status": "supported",
+        "reason": "/v1/x/capabilities returns the runtime capability inventory for Console and client consumption.",
+        "contract": "contracts/anthropic-cma/capabilities.md"
+      }
+    ]
+  }
 }
 ```
+
+Both arrays are abridged above; a real response carries every capability record
+and every matrix entry. Each matrix entry names its `area`, its `status`, a
+`reason` whenever the status is not `supported`, and the `contract` document that
+carries the seven-section detail for that behaviour.
 
 Agent create/update and session creation reject enabled unavailable capabilities
 with `400 unsupported_capability` before an agent or session is persisted. In

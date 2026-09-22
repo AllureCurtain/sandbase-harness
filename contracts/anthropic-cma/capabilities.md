@@ -85,6 +85,9 @@ from "deliberately out of scope".
   unsupported-capability rejection path.
 - `tests/unit/loop-engine-truthfulness.test.ts` — "no feature is reported as
   available when it cannot execute" cases across engines.
+- `tests/integration/api.test.ts` — the HTTP response serves both inventories; the
+  served matrix is checked for its entry count, an entry for every contract area, a
+  `reason` on every non-`supported` entry, and a `contract` path that exists on disk.
 
 ## 7. Status
 
