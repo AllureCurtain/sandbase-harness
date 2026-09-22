@@ -33,7 +33,7 @@ import {
   normalizeVaultIds,
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
-import { normalizeInitialEvents } from './initial-events.js';
+import { normalizeDefineOutcome, normalizeInitialEvents } from './initial-events.js';
 import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
 import {
@@ -317,6 +317,26 @@ export function sessionsRoutes(deps: ServerDeps) {
           },
           400,
         );
+      }
+      // A `user.define_outcome` payload is normalized here rather than stored as sent:
+      // the default budget has to be filled in before the event is durable, and a
+      // payload the runtime will not honour must be refused at admission. The
+      // normalized event replaces the caller's object in the batch this route forwards.
+      if (event.type === 'user.define_outcome') {
+        const outcome = normalizeDefineOutcome(event);
+        if (!outcome.ok) {
+          return c.json(
+            {
+              error: {
+                type: 'invalid_request',
+                code: 'invalid_define_outcome',
+                message: `user.define_outcome.${outcome.message}`,
+              },
+            },
+            400,
+          );
+        }
+        events[events.indexOf(event)] = outcome.event;
       }
     }
 

@@ -1,4 +1,5 @@
 import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
+import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { SessionBudget } from '@/types/cma-protocol.js';
 
@@ -253,6 +254,16 @@ export interface ApiEvent {
       web_fetch_requests: number;
     };
   };
+  /**
+   * `user.define_outcome` payload, lifted from the metadata carrier.
+   *
+   * The event has no `content` blocks, so the description, the rubric and the
+   * iteration budget are the event's whole payload: persisted through metadata and
+   * projected back here rather than sent as an empty `content` array.
+   */
+  description?: string;
+  rubric?: OutcomeRubric;
+  max_iterations?: number;
   model_used?: string;
   tokens_in?: number;
   tokens_out?: number;
@@ -379,6 +390,16 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     : undefined;
   const mcpServerName = metadataString(event, 'mcp_server_name');
   const mcpToolUseId = event.type === 'agent.mcp_tool_result' ? contentToolUseId(event) : undefined;
+  // `user.define_outcome` is persisted through the generic metadata carrier and
+  // projected to its documented top-level fields, on the same route as `session.usage`
+  // and `session.error`.
+  const defineOutcome = event.type === 'user.define_outcome'
+    ? {
+        ...(typeof event.metadata?.description === 'string' ? { description: event.metadata.description } : {}),
+        ...(event.metadata?.rubric ? { rubric: event.metadata.rubric as OutcomeRubric } : {}),
+        ...(typeof event.metadata?.max_iterations === 'number' ? { max_iterations: event.metadata.max_iterations } : {}),
+      }
+    : undefined;
   return {
     id: event.id,
     seq: event.seq,
@@ -390,6 +411,7 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
       : {}),
     ...(usage ? { usage } : {}),
     ...(error ? { error } : {}),
+    ...(defineOutcome ?? {}),
     ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
     ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),

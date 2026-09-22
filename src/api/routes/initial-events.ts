@@ -16,13 +16,28 @@
  * confirms them by listing the session's events.
  */
 
-import type { UserEvent } from '@/types/cma-protocol.js';
+import type { UserDefineOutcomeEvent, UserEvent } from '@/types/cma-protocol.js';
 import { normalizeMessageContent } from './session-normalizers.js';
+import {
+  DEFAULT_OUTCOME_MAX_ITERATIONS,
+  MAX_OUTCOME_MAX_ITERATIONS,
+} from '@/core/outcomes/contract.js';
 
 /** Maximum number of events accepted in one creation call. */
 export const MAX_INITIAL_EVENTS = 50;
 
-const INITIAL_EVENT_TYPES = new Set(['user.message']);
+/**
+ * The published `user.define_outcome` budget, owned by the outcome contract.
+ *
+ * Re-exported here so the ingress validator and any future outcome loop cannot drift
+ * apart on how much work an outcome is allowed to do.
+ */
+export {
+  DEFAULT_OUTCOME_MAX_ITERATIONS,
+  MAX_OUTCOME_MAX_ITERATIONS,
+} from '@/core/outcomes/contract.js';
+
+const INITIAL_EVENT_TYPES = new Set(['user.message', 'user.define_outcome']);
 
 export interface InitialEventsResult {
   ok: boolean;
@@ -69,8 +84,21 @@ export function normalizeInitialEvents(value: unknown): InitialEventsResult {
       return {
         ok: false,
         code: 'invalid_initial_event_type',
-        message: `initial_events[${index}].type must be user.message (got "${String(event.type)}")`,
+        message: `initial_events[${index}].type must be user.message or user.define_outcome (got "${String(event.type)}")`,
       };
+    }
+
+    if (event.type === 'user.define_outcome') {
+      const outcome = normalizeDefineOutcome(event);
+      if (!outcome.ok) {
+        return {
+          ok: false,
+          code: 'invalid_initial_events',
+          message: `initial_events[${index}].${outcome.message}`,
+        };
+      }
+      events.push(outcome.event);
+      continue;
     }
 
     const content = Array.isArray(event.content) && event.content.length === 0
@@ -87,4 +115,70 @@ export function normalizeInitialEvents(value: unknown): InitialEventsResult {
   }
 
   return { ok: true, events };
+}
+
+type DefineOutcomeResult = { ok: true; event: UserDefineOutcomeEvent } | { ok: false; message: string };
+
+/**
+ * Validate a `user.define_outcome` payload.
+ *
+ * `rubric` is a union of an inline text document and a reference to an uploaded file.
+ * `max_iterations` defaults to 3 and is rejected outside 1..20 rather than clamped,
+ * because silently lowering a caller's budget would change how much work the outcome is
+ * allowed to do. Unknown fields are dropped rather than stored, so the admitted event
+ * carries exactly what the projection returns.
+ */
+export function normalizeDefineOutcome(event: Record<string, unknown>): DefineOutcomeResult {
+  const description = typeof event.description === 'string' ? event.description.trim() : '';
+  if (description.length === 0) return { ok: false, message: 'description is required' };
+
+  const rubric = normalizeRubric(event.rubric);
+  if (!rubric.ok) return { ok: false, message: rubric.message };
+
+  let maxIterations = DEFAULT_OUTCOME_MAX_ITERATIONS;
+  if (event.max_iterations !== undefined) {
+    if (typeof event.max_iterations !== 'number' || !Number.isInteger(event.max_iterations)) {
+      return { ok: false, message: 'max_iterations must be an integer' };
+    }
+    if (event.max_iterations < 1 || event.max_iterations > MAX_OUTCOME_MAX_ITERATIONS) {
+      return {
+        ok: false,
+        message: `max_iterations must be between 1 and ${MAX_OUTCOME_MAX_ITERATIONS}`,
+      };
+    }
+    maxIterations = event.max_iterations;
+  }
+
+  return {
+    ok: true,
+    event: {
+      type: 'user.define_outcome',
+      description,
+      rubric: rubric.value,
+      max_iterations: maxIterations,
+    },
+  };
+}
+
+type RubricResult =
+  | { ok: true; value: UserDefineOutcomeEvent['rubric'] }
+  | { ok: false; message: string };
+
+function normalizeRubric(value: unknown): RubricResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, message: 'rubric is required' };
+  }
+  const rubric = value as Record<string, unknown>;
+  if (rubric.type === 'text') {
+    const content = typeof rubric.content === 'string' ? rubric.content.trim() : '';
+    if (content.length === 0) return { ok: false, message: 'rubric.content is required for a text rubric' };
+    return { ok: true, value: { type: 'text', content } };
+  }
+  if (rubric.type === 'file') {
+    if (typeof rubric.file_id !== 'string' || rubric.file_id.length === 0) {
+      return { ok: false, message: 'rubric.file_id is required for a file rubric' };
+    }
+    return { ok: true, value: { type: 'file', file_id: rubric.file_id } };
+  }
+  return { ok: false, message: 'rubric.type must be text or file' };
 }

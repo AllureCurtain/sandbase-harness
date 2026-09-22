@@ -557,6 +557,9 @@ export class SessionManager {
     const customToolResultMetadata = event.type === 'user.custom_tool_result'
       ? getCustomToolResultMetadata(event, this.eventLogger.getEvents(sessionId))
       : undefined;
+    const defineOutcomeMetadata = event.type === 'user.define_outcome'
+      ? defineOutcomeMetadataFor(event)
+      : undefined;
 
     // Resuming after failure, or sending a fresh message while a tool call is
     // still awaiting approval: the log may hold an agent.tool_use with no
@@ -572,7 +575,7 @@ export class SessionManager {
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as any).content : undefined,
-      metadata: confirmationMetadata ?? customToolResultMetadata,
+      metadata: confirmationMetadata ?? customToolResultMetadata ?? defineOutcomeMetadata,
     });
     this.broadcast(sessionId, logged);
 
@@ -686,10 +689,13 @@ export class SessionManager {
     const customToolResultMetadata = event.type === 'user.custom_tool_result'
       ? getCustomToolResultMetadata(event, this.eventLogger.getEvents(sessionId))
       : undefined;
+    const defineOutcomeMetadata = event.type === 'user.define_outcome'
+      ? defineOutcomeMetadataFor(event)
+      : undefined;
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as { content?: ContentBlock[] }).content : undefined,
-      metadata: customToolResultMetadata,
+      metadata: customToolResultMetadata ?? defineOutcomeMetadata,
     });
     this.broadcast(sessionId, logged);
   }
@@ -1284,6 +1290,25 @@ function errorCodeOf(error: unknown): string | undefined {
  * because the log has no per-type payload column, and `toApiEvent` projects it
  * back to the top-level field the published contract defines.
  */
+/**
+ * The metadata carrier for a `user.define_outcome` payload.
+ *
+ * The event carries `description`, `rubric` and `max_iterations` rather than `content`
+ * blocks, and the log has no per-type payload column, so the payload rides in
+ * `metadata` and is projected back to top-level fields by `toApiEvent` — the same
+ * route `session.usage` takes. Dropping it would leave an outcome the runtime cannot
+ * replay after a restart.
+ */
+function defineOutcomeMetadataFor(
+  event: Extract<UserEvent, { type: 'user.define_outcome' }>,
+): Record<string, unknown> {
+  return {
+    description: event.description,
+    rubric: event.rubric,
+    max_iterations: event.max_iterations,
+  };
+}
+
 function getCustomToolResultMetadata(
   event: Extract<UserEvent, { type: 'user.custom_tool_result' }>,
   events: SessionEvent[],

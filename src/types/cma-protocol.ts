@@ -26,6 +26,7 @@ export type CMAEventType =
   | 'user.interrupt'
   | 'user.tool_confirmation'
   | 'user.custom_tool_result'
+  | 'user.define_outcome'
   // Agent events (8)
   | 'agent.message'
   | 'agent.thinking'
@@ -165,11 +166,38 @@ export interface UserCustomToolResultEvent extends EventBase {
   is_error?: boolean;
 }
 
+/**
+ * The document an outcome is graded against.
+ *
+ * A union rather than two optional fields: a text rubric and a file reference are
+ * different inputs, and accepting both would leave a caller unsure which one the
+ * runtime used.
+ */
+export type OutcomeRubric =
+  | { type: 'text'; content: string }
+  | { type: 'file'; file_id: string };
+
+/**
+ * `user.define_outcome` — the client's success criteria for the session.
+ *
+ * The event carries no `content` blocks: its payload is a description, a rubric and an
+ * iteration budget, which the event log persists through its metadata carrier and the
+ * projection lifts back to these top-level fields. `max_iterations` is always present
+ * once the event is admitted, because the ingress normalizer fills the default.
+ */
+export interface UserDefineOutcomeEvent extends EventBase {
+  type: 'user.define_outcome';
+  description: string;
+  rubric: OutcomeRubric;
+  max_iterations: number;
+}
+
 export type UserEvent =
   | UserMessageEvent
   | UserInterruptEvent
   | UserToolConfirmationEvent
-  | UserCustomToolResultEvent;
+  | UserCustomToolResultEvent
+  | UserDefineOutcomeEvent;
 
 // ============================================================
 // Agent Events (emitted during execution)
