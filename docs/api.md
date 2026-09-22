@@ -1292,6 +1292,15 @@ key bytes, and an unprefixed value is used as raw UTF-8, so a subscription writt
 before per-endpoint secrets existed keeps producing valid signatures with the
 runtime's own value.
 
+`POST /v1/webhooks/{webhook_id}/rotate-secret` mints a new secret and returns it
+once. While the window it opens is open, every delivery carries both signatures in
+`webhook-signature`, newest first, so a receiver can install the new value and keep
+verifying with the old one until every deployment has moved;
+`POST /v1/webhooks/{webhook_id}/retire-secret` closes the window and leaves only
+the current secret signing. Nothing closes it automatically, because only the
+operator knows when the last receiver has moved. A second rotation replaces the
+window rather than adding to it.
+
 The legacy `X-Managed-Agents-Signature` header is still sent, so an existing
 receiver keeps working. A retry keeps the same `webhook-id` and signs with its own
 `webhook-timestamp`, so the published header set is continuous across attempts and
@@ -1306,6 +1315,8 @@ a receiver can deduplicate on the id.
 | `POST` | `/v1/webhooks/{webhook_id}/archive` | Archive a webhook subscription. |
 | `GET` | `/v1/webhooks/{webhook_id}/deliveries` | List webhook delivery records. |
 | `POST` | `/v1/webhooks/{webhook_id}/test` | Record a signed test delivery without requiring an external network call. |
+| `POST` | `/v1/webhooks/{webhook_id}/rotate-secret` | Mint a new signing secret and keep the previous one valid until it is retired. |
+| `POST` | `/v1/webhooks/{webhook_id}/retire-secret` | Close the rotation window: only the current secret is accepted afterwards. |
 | `POST` | `/v1/webhooks/dispatch` | Dispatch an event to matching active webhooks. |
 | `POST` | `/v1/webhooks/retry-due` | Retry failed deliveries whose retry time has arrived. |
 

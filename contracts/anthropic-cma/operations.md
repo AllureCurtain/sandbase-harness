@@ -77,6 +77,13 @@ is created `active` (the schema default) and stays `active` until archived.
   derivation — the workspace data-directory value this runtime used before
   per-endpoint secrets existed — because inventing one during the migration would
   silently invalidate every receiver still verifying with the old key.
+- Rotating a subscription mints a new secret and keeps the previous one valid — the
+  `secret_previous_*` columns of `M039` — so every delivery carries both signatures,
+  current first, until `retire-secret` is called. The previous secret is replaced
+  rather than accumulated, so rotating twice without retiring leaves one window
+  rather than a growing list, and rotating a subscription that had no stored secret
+  is the call that takes it off the legacy derivation, which is why the new value is
+  returned by that response alone.
 - `nextRetryAt` is a fixed `2 ** (attempt - 1) * 60` seconds — 60 s, then
   120 s — with `maxAttempts` defaulting to 3 and no jitter.
 - `retryDueWebhookDeliveries` takes `pending_retry` rows whose `next_retry_at`
@@ -156,7 +163,7 @@ records.
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
 | Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
-| Secret rotation | The signature format accepts a space-separated signature list, but no route mints a second secret or retires the first, so an operator cannot open a rotation window. |
+| Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
 | Delivery trigger | Caller-driven `POST /webhooks/dispatch` and `POST /webhooks/retry-due`. There is no background dispatcher and no timer, so an unwatched runtime delivers nothing. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
 | Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`session.updated`, `turn_complete`, `span.*`). |
@@ -209,6 +216,12 @@ records.
   back to it (including from a second handle), a different secret per
   subscription, a test delivery signed with the endpoint's own secret, and a
   subscription written before `M038` still resolving to the legacy key.
+- `tests/integration/webhook-secret-rotation.test.ts` — a rotation returns the new
+  secret once and no read returns either value, a delivery carries the current
+  signature first and the previous one second until `retire-secret` closes the
+  window, a second rotation replaces the window rather than appending to it, an
+  unknown subscription is a 404, and a subscription with no stored secret gains one
+  and leaves the legacy derivation behind.
 - `tests/unit/cron-timezone.test.ts` — the field grammar, the refusal of a
   malformed or out-of-range field and of an unknown zone, the same wall time
   resolving to different instants per zone, the instant moving across a DST

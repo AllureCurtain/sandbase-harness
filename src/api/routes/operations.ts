@@ -6,6 +6,8 @@ import { dispatchWebhookEvent, retryDueWebhookDeliveries, signPayload } from '@/
 import {
   mintAndStoreWebhookSecret,
   resolveWebhookSigningSecret,
+  retireWebhookSecret,
+  rotateWebhookSecret,
   type StoredWebhookSecret,
 } from '@/core/operations/webhook-secrets.js';
 import { nextCronRun, runDueScheduledDeployments, runSchedule, type ScheduleRow } from '@/core/operations/scheduler.js';
@@ -104,6 +106,30 @@ export function operationsRoutes(deps: ServerDeps) {
   });
 
   app.post('/webhooks/:id/archive', (c) => archiveById(c, deps, 'webhooks', toWebhook, 'Webhook not found'));
+
+  // --- Signing-secret rotation window -------------------------------------
+  //
+  // The published scheme expresses a rotation window as a space-separated
+  // `webhook-signature` list, so a rotation can keep the previous secret valid
+  // while receivers migrate. Rotating a subscription that had no stored secret
+  // is also the call that takes it off the legacy derivation, which is why the
+  // new secret is returned here and nowhere else.
+
+  app.post('/webhooks/:id/rotate-secret', (c) => {
+    const row = deps.db.prepare('SELECT * FROM webhooks WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as WebhookRow | undefined;
+    if (!row) return notFound(c, 'Webhook not found');
+    const secretKey = rotateWebhookSecret(deps.db, row.id, deps.workspace?.dataDir);
+    const updated = deps.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(row.id) as WebhookRow;
+    return c.json({ ...toWebhook(updated), secret_key: secretKey });
+  });
+
+  app.post('/webhooks/:id/retire-secret', (c) => {
+    const row = deps.db.prepare('SELECT * FROM webhooks WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as WebhookRow | undefined;
+    if (!row) return notFound(c, 'Webhook not found');
+    retireWebhookSecret(deps.db, row.id);
+    const updated = deps.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(row.id) as WebhookRow;
+    return c.json(toWebhook(updated));
+  });
 
   app.get('/webhooks/:id/deliveries', (c) => {
     const webhook = deps.db.prepare('SELECT id FROM webhooks WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));

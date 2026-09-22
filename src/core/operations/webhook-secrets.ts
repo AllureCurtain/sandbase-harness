@@ -21,6 +21,13 @@ export type StoredWebhookSecret = {
   secret_ciphertext: string | null;
   secret_nonce: string | null;
   secret_tag: string | null;
+  /**
+   * The secret a rotation window keeps signing with. Absent on a row selected
+   * before `M039`, and null until the subscription is rotated.
+   */
+  secret_previous_ciphertext?: string | null;
+  secret_previous_nonce?: string | null;
+  secret_previous_tag?: string | null;
 };
 
 /** Mint one endpoint's secret, store it encrypted, and return it once. */
@@ -54,4 +61,73 @@ export function resolveWebhookSigningSecret(
     },
     dataDir,
   );
+}
+
+/**
+ * Every key a delivery to this endpoint is signed with.
+ *
+ * The current secret comes first, so a receiver reading the first
+ * `webhook-signature` entry verifies against the value it was last given, and the
+ * previous one follows while a rotation window is open. The published scheme
+ * expresses that window as a space-separated list precisely so both can be
+ * accepted during a migration.
+ */
+export function resolveWebhookSigningSecrets(
+  row: StoredWebhookSecret,
+  legacySecret: string,
+  dataDir?: string,
+): string[] {
+  const secrets = [resolveWebhookSigningSecret(row, legacySecret, dataDir)];
+  if (row.secret_previous_ciphertext && row.secret_previous_nonce && row.secret_previous_tag) {
+    secrets.push(decryptSecret(
+      {
+        ciphertext: row.secret_previous_ciphertext,
+        nonce: row.secret_previous_nonce,
+        tag: row.secret_previous_tag,
+      },
+      dataDir,
+    ));
+  }
+  return secrets;
+}
+
+/**
+ * Mint a new secret and keep the current one as the previous, opening a window.
+ *
+ * A subscription that had no stored secret simply gains one: rotation is the
+ * call that moves an endpoint off the legacy derivation, so a receiver still
+ * verifying with that value must be given the new secret in the same change.
+ * The previous secret is replaced rather than accumulated, so rotating twice
+ * without retiring leaves one window rather than a growing list.
+ */
+export function rotateWebhookSecret(db: Database, webhookId: string, dataDir?: string): string {
+  const row = db.prepare(
+    'SELECT secret_ciphertext, secret_nonce, secret_tag FROM webhooks WHERE id = ?',
+  ).get(webhookId) as StoredWebhookSecret | undefined;
+  const secret = generateWebhookSecret();
+  const encrypted = encryptSecret(secret, dataDir);
+  db.prepare(
+    `UPDATE webhooks
+     SET secret_previous_ciphertext = ?, secret_previous_nonce = ?, secret_previous_tag = ?,
+         secret_ciphertext = ?, secret_nonce = ?, secret_tag = ?
+     WHERE id = ?`,
+  ).run(
+    row?.secret_ciphertext ?? null,
+    row?.secret_nonce ?? null,
+    row?.secret_tag ?? null,
+    encrypted.ciphertext,
+    encrypted.nonce,
+    encrypted.tag,
+    webhookId,
+  );
+  return secret;
+}
+
+/** Drop the previous secret, so only the current one is accepted. */
+export function retireWebhookSecret(db: Database, webhookId: string): void {
+  db.prepare(
+    `UPDATE webhooks
+     SET secret_previous_ciphertext = NULL, secret_previous_nonce = NULL, secret_previous_tag = NULL
+     WHERE id = ?`,
+  ).run(webhookId);
 }

@@ -6,7 +6,7 @@ import {
 } from './webhook-signature.js';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
-import { resolveWebhookSigningSecret, type StoredWebhookSecret } from './webhook-secrets.js';
+import { resolveWebhookSigningSecrets, type StoredWebhookSecret } from './webhook-secrets.js';
 
 export type WebhookDispatchEvent = {
   event: string;
@@ -60,7 +60,8 @@ export async function retryDueWebhookDeliveries(
 ): Promise<WebhookDeliveryResult[]> {
   const nowIso = (opts.now?.() ?? new Date()).toISOString();
   const rows = db.prepare(
-    `SELECT d.*, w.url, w.secret_ciphertext, w.secret_nonce, w.secret_tag
+    `SELECT d.*, w.url, w.secret_ciphertext, w.secret_nonce, w.secret_tag,
+            w.secret_previous_ciphertext, w.secret_previous_nonce, w.secret_previous_tag
      FROM webhook_deliveries d
      JOIN webhooks w ON w.id = d.webhook_id
      WHERE d.status = 'pending_retry'
@@ -87,8 +88,10 @@ async function attemptDelivery(
   const payloadJson = JSON.stringify(payload);
   // Each endpoint is signed with its own secret; a subscription written before
   // per-endpoint secrets existed falls back to the caller's value.
-  const signingSecret = resolveWebhookSigningSecret(webhook, opts.secret, opts.dataDir);
-  const signature = signPayload(payloadJson, signingSecret);
+  const signingSecrets = resolveWebhookSigningSecrets(webhook, opts.secret, opts.dataDir);
+  // The legacy body signature follows the current key; the published header set
+  // carries every key a rotation window still accepts.
+  const signature = signPayload(payloadJson, signingSecrets[0]);
   const id = `whd_${nanoid(18)}`;
   const createdAt = (opts.now?.() ?? new Date()).toISOString();
   // The published header set is keyed by the delivery id and the timestamp the
@@ -102,7 +105,7 @@ async function attemptDelivery(
     payloadJson,
     signature,
     opts.fetchImpl,
-    { ...deliveryIdentity, secret: signingSecret },
+    { ...deliveryIdentity, secrets: signingSecrets },
   );
   const nextRetry = nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
@@ -133,7 +136,8 @@ async function retryDelivery(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult> {
   const attemptCount = row.attempt_count + 1;
-  const signature = signPayload(row.payload, resolveWebhookSigningSecret(row, opts.secret, opts.dataDir));
+  const signingSecrets = resolveWebhookSigningSecrets(row, opts.secret, opts.dataDir);
+  const signature = signPayload(row.payload, signingSecrets[0]);
   const attemptTime = opts.now?.() ?? new Date();
   // A retry is another attempt at the same delivery, so it carries the same
   // published header set as the first attempt: `webhook-id` stays the delivery
@@ -142,7 +146,7 @@ async function retryDelivery(
   const attempt = await postWebhook(row.url, row.payload, signature, opts.fetchImpl, {
     id: row.id,
     timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
-    secret: opts.secret,
+    secrets: signingSecrets,
   });
   const nextRetry = nextRetryAt(attempt.ok, attemptCount, opts);
   db.prepare(
@@ -168,7 +172,7 @@ async function postWebhook(
   payload: string,
   signature: string,
   fetchImpl: typeof fetch = fetch,
-  delivery?: { id: string; timestamp: string; secret: string },
+  delivery?: { id: string; timestamp: string; secrets: string[] },
 ) {
   try {
     const res = await fetchImpl(url, {
@@ -184,12 +188,16 @@ async function postWebhook(
           ? {
             [WEBHOOK_HEADERS.id]: delivery.id,
             [WEBHOOK_HEADERS.timestamp]: delivery.timestamp,
-            [WEBHOOK_HEADERS.signature]: webhookDeliverySignature({
-              secret: delivery.secret,
-              id: delivery.id,
-              timestamp: delivery.timestamp,
-              body: payload,
-            }),
+            // Every key the endpoint still accepts, space-separated, which is how
+            // the published scheme expresses a rotation window.
+            [WEBHOOK_HEADERS.signature]: delivery.secrets
+              .map((secret) => webhookDeliverySignature({
+                secret,
+                id: delivery.id,
+                timestamp: delivery.timestamp,
+                body: payload,
+              }))
+              .join(' '),
           }
           : {}),
       },
