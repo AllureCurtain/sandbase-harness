@@ -1294,6 +1294,11 @@ tr[role="button"]:hover td,
   text-transform: capitalize;
 }
 
+.status.unavailable {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .status.active,
 .status.idle {
   background: var(--success-soft);
