@@ -1,0 +1,190 @@
+/**
+ * Integration test: the operations bridge.
+ *
+ * The webhook primitives (signing, delivery records, retry backoff) and the
+ * deployment scheduler both existed and were tested, but nothing projected a
+ * session event to a webhook subscription, and nothing honoured a due schedule
+ * unless a caller POSTed to the route. These assertions pin the wiring: the
+ * broadcast listener, the timers, the composition, and the startup re-arm.
+ *
+ * Adapted from the reviewed snapshot rather than replayed verbatim: the
+ * snapshot seeded a plaintext `secret` column that M038 replaced with an
+ * encrypted per-endpoint secret, and it asserted the published
+ * `{type: "event", ...}` payload envelope where this runtime documents and sends
+ * the local `{type: "webhook_event", ...}` one. Both are stated in the PR.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { Database } from '@/core/db/database.js';
+import { SessionManager } from '@/core/session/session-manager.js';
+import { WEBHOOK_HEADERS, verifyWebhookDelivery } from '@/core/operations/webhook-signature.js';
+import { rearmScheduledDeployments } from '@/core/operations/scheduler.js';
+import {
+  composeOperations,
+  createWebhookEventListener,
+  startOperationsTimers,
+  webhookSigningSecret,
+} from '@/api/operations-bridge.js';
+
+const WEBHOOK_SECRET = webhookSigningSecret(undefined);
+
+describe('Operations bridge (webhooks + scheduled deployments)', () => {
+  let db: Database;
+  let tmpDir: string;
+  let sessionManager: SessionManager;
+  let requests: Array<{ url: string; body: string; headers: Record<string, string> }>;
+
+  /** A fetch double that records every request and answers from a queue. */
+  function recordingFetch(statuses: number[] = []) {
+    const queue = [...statuses];
+    return (async (url: unknown, init: any) => {
+      requests.push({
+        url: String(url),
+        body: String(init?.body ?? ''),
+        headers: { ...(init?.headers as Record<string, string>) },
+      });
+      const status = queue.length > 0 ? queue.shift()! : 204;
+      return new Response(status === 204 ? null : 'body', { status });
+    }) as typeof fetch;
+  }
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'ma-bridge-'));
+    db = new Database(join(tmpDir, 'test.db'));
+    db.runMigrations();
+    db.prepare("INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')").run();
+    db.prepare("INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{}')").run();
+    db.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id) VALUES ('sess_a', 'agent_x', 'x', 'env_a')").run();
+    // No stored secret: this subscription predates per-endpoint secrets, so the
+    // workspace-derived key signs it.
+    db.prepare(
+      `INSERT INTO webhooks (id, name, url, events, description, status, metadata, created_at, updated_at)
+       VALUES ('wh_test', 'local', 'https://hooks.example.test/sessions', '["user.message"]', '', 'active', '{}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    ).run();
+    requests = [];
+    sessionManager = new SessionManager(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('projects a durable session event to a matching subscription', async () => {
+    sessionManager.setBroadcastListener(
+      createWebhookEventListener({ db, webhookSecret: WEBHOOK_SECRET, fetchImpl: recordingFetch() }),
+    );
+
+    await sessionManager.sendEvent('sess_a', {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'hello' }],
+    } as never);
+    await sleep(30);
+
+    expect(requests).toHaveLength(1);
+    const [delivery] = requests;
+    // This runtime's documented envelope, not the published reference one.
+    expect(JSON.parse(delivery.body)).toMatchObject({
+      type: 'webhook_event',
+      event: 'user.message',
+      webhook_id: 'wh_test',
+    });
+    // The published header set, verifiable with the key that signs it.
+    expect(verifyWebhookDelivery({
+      secret: WEBHOOK_SECRET,
+      id: delivery.headers[WEBHOOK_HEADERS.id],
+      timestamp: delivery.headers[WEBHOOK_HEADERS.timestamp],
+      body: delivery.body,
+      signatureHeader: delivery.headers[WEBHOOK_HEADERS.signature],
+    })).toBe(true);
+
+    const rows = db.prepare('SELECT status FROM webhook_deliveries WHERE webhook_id = ?').all('wh_test') as Array<{ status: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('delivered');
+  });
+
+  it('retries a due delivery and runs a due deployment on its timer', async () => {
+    db.prepare(
+      `INSERT INTO webhook_deliveries (id, webhook_id, event, payload, status, status_code, error, signature, attempt_count, next_retry_at, created_at)
+       VALUES ('whd_due', 'wh_test', 'user.message', '{"type":"webhook_event","event":"user.message"}', 'pending_retry', 503, 'HTTP 503', 'sha256=seed', 1, ?, ?)`,
+    ).run(new Date(Date.now() - 5_000).toISOString(), new Date(Date.now() - 10_000).toISOString());
+    db.prepare(
+      `INSERT INTO scheduled_deployments (id, name, agent_id, environment_id, cron, status, next_run_at, created_at, updated_at)
+       VALUES ('sched_due', 'due', 'agent_x', 'env_a', '* * * * *', 'active', ?, datetime('now'), datetime('now'))`,
+    ).run(new Date(Date.now() - 60_000).toISOString());
+
+    const stop = startOperationsTimers({
+      db,
+      sessionManager,
+      webhookSecret: WEBHOOK_SECRET,
+      fetchImpl: recordingFetch(),
+      intervalMs: 15,
+    });
+    await sleep(80);
+    stop();
+
+    // The due delivery was retried by the tick rather than by a caller...
+    expect(requests.some((request) => request.url === 'https://hooks.example.test/sessions')).toBe(true);
+    const delivery = db.prepare('SELECT status, attempt_count FROM webhook_deliveries WHERE id = ?')
+      .get('whd_due') as { status: string; attempt_count: number };
+    expect(delivery.status).toBe('delivered');
+    expect(delivery.attempt_count).toBe(2);
+
+    // ...and the due deployment ran, with no POST to `run-due`.
+    const runs = db.prepare('SELECT id FROM scheduled_deployment_runs WHERE schedule_id = ?').all('sched_due');
+    expect(runs.length).toBeGreaterThan(0);
+  });
+
+  it('composes a listener and a timer, and stopping clears the timer', async () => {
+    const { stopOperationsTimers } = composeOperations({
+      db,
+      sessionManager,
+      webhookSecret: WEBHOOK_SECRET,
+      fetchImpl: recordingFetch(),
+      intervalMs: 15,
+    });
+
+    // The listener half is live: one durable event reaches the subscription.
+    await sessionManager.sendEvent('sess_a', {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'composed' }],
+    } as never);
+    await sleep(30);
+    expect(requests).toHaveLength(1);
+
+    stopOperationsTimers();
+
+    // The timer half is gone: a delivery that is due right now is not retried,
+    // which is what proves the stop function reaches the interval.
+    db.prepare(
+      `INSERT INTO webhook_deliveries (id, webhook_id, event, payload, status, status_code, error, signature, attempt_count, next_retry_at, created_at)
+       VALUES ('whd_after_stop', 'wh_test', 'user.message', '{"type":"webhook_event","event":"user.message"}', 'pending_retry', 503, 'HTTP 503', 'sha256=seed', 1, ?, ?)`,
+    ).run(new Date(Date.now() - 5_000).toISOString(), new Date(Date.now() - 10_000).toISOString());
+    await sleep(60);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('restores a stale forward schedule at startup and leaves a future one alone', () => {
+    const now = new Date('2026-09-22T12:00:00.000Z');
+    const insert = db.prepare(
+      `INSERT INTO scheduled_deployments (id, name, agent_id, environment_id, cron, status, next_run_at, created_at, updated_at)
+       VALUES (?, ?, 'agent_x', 'env_a', '* * * * *', 'active', ?, datetime('now'), datetime('now'))`,
+    );
+    insert.run('sched_stale', 'stale', '2026-09-22T11:00:00.000Z');
+    insert.run('sched_future', 'future', '2026-09-22T13:00:00.000Z');
+
+    expect(rearmScheduledDeployments({ db }, { now })).toBe(1);
+
+    const stale = db.prepare('SELECT next_run_at FROM scheduled_deployments WHERE id = ?')
+      .get('sched_stale') as { next_run_at: string };
+    const future = db.prepare('SELECT next_run_at FROM scheduled_deployments WHERE id = ?')
+      .get('sched_future') as { next_run_at: string };
+    // Scheduled forward, not replayed at the moment the process was down.
+    expect(new Date(stale.next_run_at).getTime()).toBeGreaterThan(now.getTime());
+    expect(future.next_run_at).toBe('2026-09-22T13:00:00.000Z');
+  });
+});
