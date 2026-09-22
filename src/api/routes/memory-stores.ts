@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf, pageOf } from '../standard.js';
+import { cursorPageOf } from '../standard.js';
 import {
   applyMemoryListScope,
   checkMemorySize,
@@ -31,7 +31,7 @@ export function memoryStoreRoutes(deps: ServerDeps) {
 
   app.get('/memory_stores', (c) => {
     const rows = deps.db.prepare(`${memoryStoreSelect('WHERE m.archived_at IS NULL')} ORDER BY m.created_at DESC`).all() as unknown as MemoryStoreRow[];
-    return c.json(pageOf(rows.map((row) => toMemoryStore(row, deps))));
+    return c.json(cursorPageOf(rows.map((row) => toMemoryStore(row, deps)), {}));
   });
 
   app.post('/memory_stores', async (c) => {
@@ -78,7 +78,7 @@ export function memoryStoreRoutes(deps: ServerDeps) {
       prefix: scope.prefix,
       depth: scope.depth,
     });
-    return c.json(pageOf(memories));
+    return c.json(cursorPageOf(memories, {}));
   });
 
   app.post('/memory_stores/:id/memories', async (c) => {

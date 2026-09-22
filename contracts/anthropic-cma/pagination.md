@@ -35,11 +35,14 @@ Source: Claude Managed Agents public documentation plus `src/api/standard.ts`.
   handler that emitted its own envelope could not do that.
 - Converted to the canonical envelope so far: every operations collection
   (`/v1/webhooks`, `/v1/scheduled-deployments`, `/v1/outcomes`, their nested
-  `deliveries` / `runs` and the session outcome listing), plus the two listing
-  routes that already used `cursorPageOf`
-  (`/v1/memory_stores/{id}/memory_versions` and `/v1/sessions/{id}/resources`).
-  The collections that still build their page with `pageOf` under both prefixes are
-  named in §4.
+  `deliveries` / `runs` and the session outcome listing); the resource collections
+  that return their whole set (`/v1/credential-vaults`,
+  `/v1/credential-vaults/{id}/credentials`, `/v1/memory_stores` and
+  `/v1/memory_stores/{id}/memories`); plus the two listing routes that already used
+  `cursorPageOf` (`/v1/memory_stores/{id}/memory_versions` and
+  `/v1/sessions/{id}/resources`). The collections that still build their page with
+  `pageOf` are named in §4, together with the two that cannot be converted by the
+  same mechanical step.
 - `cursorPageOf` takes `prev` from the caller rather than inferring it: a
   forward-only scan cannot know its predecessor, and inventing one would
   produce a cursor that does not resolve.
@@ -65,7 +68,9 @@ or filter.
 | Difference | Detail |
 | --- | --- |
 | Extension envelope | `/v1/x` collections return `{data, has_more, first_id, last_id}`. The published contract has no such envelope. |
-| Collections still on the local envelope under `/v1` | `agents` (and its versions), `skills`, `api-keys`, `environments` (and its worker keys), `files`, `credential-vaults` (and its credentials), `memory_stores` and `sessions` are built with `pageOf`, so they carry `has_more` / `first_id` / `last_id` on both prefixes while the contract puts canonical collections on cursors. Converting one changes a public shape that the SDK types and the Console read, so it is scheduled collection by collection rather than as one wire break. |
+| Collections still on the local envelope under `/v1` | `agents` (and its versions), `skills`, `api-keys`, `environments` (and its worker keys), `files` and `sessions` are built with `pageOf`, so they carry `has_more` / `first_id` / `last_id` while the contract puts canonical collections on cursors. Converting one changes a public shape that the SDK types and the Console read, so it is scheduled collection by collection rather than as one wire break. |
+| `/v1/skills` mixes both spellings | The skills listing returns `has_more` / `first_id` / `last_id` **and** a `next_page` cursor in the same body, which is the failure mode §5 names: a client reading `next_page` and a client reading `has_more` paginate by different rules. It is a windowed collection, so converting it needs cursors that can be followed rather than the null-cursor step the complete-set collections took. |
+| Credential audit listings are truncated without a continuation | `/v1/credential-vaults/{id}/audit` and its credential-scoped sibling window by `limit` and expose no offset or keyset, so neither envelope can describe them truthfully: `next_page: null` would read as "this is all", and the local `has_more` is `false` even when rows were cut. They stay on the local shape until a followable cursor exists. |
 | Null cursors on complete result sets | Most canonical collections return `next_page: null` and `prev_page: null` because the full set is returned unwindowed. A real cursor is only produced when a collection is actually windowed — today that is `/v1/sessions` and `/v1/sessions/:id/events`. |
 | Cursor payload visibility | SandBase cursors are readable base64url JSON, not opaque binary. They carry no secret, so the opacity is present to discourage construction rather than to conceal data. The published contract does not specify an encoding. |
 | Cursor position is a page, not a sort key | `/v1/sessions` stores a 1-based page number, so the scan is redone from that page. A concurrent insert or delete shifts what a later page contains. A keyset cursor naming the last delivered row's sort key would not. |
@@ -96,16 +101,24 @@ query binding.
 
 ## 6. Corresponding tests
 
-- `tests/integration/api.test.ts` — `expectPage` asserts the envelope the
-  collections it covers return today, which is the local
-  `has_more`/`first_id`/`last_id` shape for the resource collections §4 lists;
-  `expectExtensionPage` asserts the `/v1/x` shape. The event-cursor cases pin the
-  `after_id` behaviour and rejection of a cursor issued for another session.
+- `tests/integration/api.test.ts` — `expectPage` asserts the local envelope for the
+  collections §4 still lists; `expectCursorPage` asserts the canonical one for the
+  collections that have moved, so which helper a path uses states where that
+  collection stands rather than what this file finds convenient. The event-cursor
+  cases pin the `after_id` behaviour and rejection of a cursor issued for another
+  session. (An earlier revision of this document also credited the file with an
+  `expectExtensionPage` helper; no such helper exists, and the `/v1/x` shape is
+  asserted inline where it matters.)
 - `tests/integration/operations-collection-envelope.test.ts` — the operations
   collections under `/v1` carry `{data, prev_page, next_page}` and none of the local
   field names; the `/v1/x` mirror carries the local four and neither cursor; an
   action that answers `202` with a collection keeps its status; and a nested
   collection follows the same rule as its parent.
+- `tests/integration/resource-collection-envelope.test.ts` — the four collections
+  that return their whole set carry exactly `{data, prev_page: null, next_page:
+  null}`, the limit-truncated audit listings are asserted to be *still* local with
+  the reason in a comment, and the collections §4 names as unconverted are asserted
+  to still return the local shape so the difference row cannot drift from the tree.
 - `tests/integration/canonical-collection-envelope.test.ts` — enumerates every
   canonical collection and asserts the envelope, asserts the extension
   collections still use the local one, follows a cursor to a second page without
