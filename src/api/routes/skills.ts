@@ -28,7 +28,13 @@ export function skillsRoutes(deps: ServerDeps) {
     if (source && source !== 'custom' && source !== 'anthropic') {
       return c.json({ error: { type: 'invalid_request', message: 'source must be custom or anthropic' } }, 400);
     }
-    return c.json(skillPage(listSkillResources(deps, source as SkillSourceFilter | undefined), c.req.query('limit'), c.req.query('page')));
+    const page = skillPage(listSkillResources(deps, source as SkillSourceFilter | undefined), {
+      limit: c.req.query('limit'),
+      page: c.req.query('page'),
+      source: source as SkillSourceFilter | undefined,
+    });
+    if (!page.ok) return c.json({ error: { type: 'invalid_request', message: page.message } }, 400);
+    return c.json(page.page);
   });
 
   app.post('/', async (c) => {

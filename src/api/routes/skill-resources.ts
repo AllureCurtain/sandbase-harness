@@ -1,4 +1,5 @@
 import type { ServerDeps } from '../server.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, type ApiCursorPage } from '../standard.js';
 import { BUILTIN_SKILLS } from '@/core/skills/catalog.js';
 import { createSkillId, type Skill } from '@/core/skills/loader.js';
 
@@ -27,17 +28,44 @@ export function skillResource(skill: Skill) {
   };
 }
 
-export function skillPage(skills: Skill[], limitQuery?: string, pageQuery?: string) {
-  const limit = Math.max(1, Math.min(Number(limitQuery ?? 20) || 20, 100));
-  const offset = decodePage(pageQuery);
+/**
+ * One canonical page of the skills listing.
+ *
+ * The window is an offset, so the cursor carries that offset **and** the filter
+ * that produced it: replaying a cursor under a different `source` would otherwise
+ * address a page that never existed for that filter. A malformed cursor is refused
+ * rather than read as "page one", because silently starting over is how a client
+ * loops across the same window.
+ *
+ * This replaces a response that carried the local `has_more` / `first_id` /
+ * `last_id` fields *and* a `next_page` cursor at once, which let two clients
+ * paginate by two different rules from the same body.
+ */
+export function skillPage(
+  skills: Skill[],
+  options: { limit?: string; page?: string; source?: SkillSourceFilter },
+): { ok: true; page: ApiCursorPage<ReturnType<typeof skillResource>> } | { ok: false; message: string } {
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
+  const filter = normalizeCollectionFilter({ source: options.source });
+  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
+  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+  const mismatch = cursorQueryMismatch(decoded.state, { filter });
+  if (mismatch) return { ok: false, message: mismatch };
+  const offset = readOffset(decoded.state);
+  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+
   const data = skills.slice(offset, offset + limit).map(skillResource);
   const nextOffset = offset + limit;
+  const prevOffset = offset - limit;
   return {
-    data,
-    has_more: nextOffset < skills.length,
-    next_page: nextOffset < skills.length ? Buffer.from(String(nextOffset)).toString('base64url') : null,
-    first_id: data[0]?.id ?? null,
-    last_id: data.at(-1)?.id ?? null,
+    ok: true,
+    page: cursorPageOf(data, {
+      // A previous page is resolvable here because the position is an offset, so a
+      // caller that walked forward can walk back rather than re-listing from the
+      // start; the first page has none.
+      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
+      next: nextOffset < skills.length ? encodeCursor({ offset: nextOffset, filter }) : null,
+    }),
   };
 }
 
@@ -66,10 +94,14 @@ export function materializeCustomSkill(skill: Skill, displayTitle?: string): Ski
   };
 }
 
-function decodePage(page?: string): number {
-  if (!page) return 0;
-  const parsed = Number(Buffer.from(page, 'base64url').toString('utf8'));
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+/**
+ * The offset a cursor carries, or `undefined` when the state is not a skills
+ * cursor. An absent state is the first page rather than a rejection.
+ */
+function readOffset(state?: Record<string, unknown>): number | undefined {
+  if (!state) return 0;
+  const offset = state.offset;
+  return typeof offset === 'number' && Number.isInteger(offset) && offset >= 0 ? offset : undefined;
 }
 
 function compareSkillsByUpdatedAtDesc(a: Skill, b: Skill): number {

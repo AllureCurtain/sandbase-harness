@@ -91,27 +91,33 @@ export function appendCredentialAuditEvent(
  * A vault-level listing answers "what happened in this vault"; a credential
  * listing answers "what happened to this secret". Both are needed, because a
  * deleted credential still has history but no longer appears in the vault.
+ *
+ * `offset` continues a listing: the ordering ends in `rowid DESC`, so a page
+ * boundary is stable and a caller can walk to the next one. Without it the only
+ * way to see older events was to raise `limit`, and a truncated page looked
+ * identical to a complete one.
  */
 export function listCredentialAuditEvents(
   db: Database,
-  opts: { vaultId: string; credentialId?: string; limit?: number },
+  opts: { vaultId: string; credentialId?: string; limit?: number; offset?: number },
 ): CredentialAuditEvent[] {
   const limit = Math.max(1, Math.min(opts.limit ?? 100, 500));
+  const offset = Math.max(0, opts.offset ?? 0);
   const rows = (opts.credentialId
     ? db.prepare(
       `SELECT *
        FROM credential_audit_events
        WHERE vault_id = ? AND credential_id = ?
        ORDER BY created_at DESC, rowid DESC
-       LIMIT ?`,
-    ).all(opts.vaultId, opts.credentialId, limit)
+       LIMIT ? OFFSET ?`,
+    ).all(opts.vaultId, opts.credentialId, limit, offset)
     : db.prepare(
       `SELECT *
        FROM credential_audit_events
        WHERE vault_id = ?
        ORDER BY created_at DESC, rowid DESC
-       LIMIT ?`,
-    ).all(opts.vaultId, limit)) as unknown as CredentialAuditRow[];
+       LIMIT ? OFFSET ?`,
+    ).all(opts.vaultId, limit, offset)) as unknown as CredentialAuditRow[];
   return rows.map(toCredentialAuditEvent);
 }
 

@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf, pageOf } from '../standard.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
@@ -219,11 +220,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     if (!deps.db.prepare('SELECT id FROM credential_records WHERE id = ? AND vault_id = ?').get(credentialId, vaultId)) {
       return notFound(c, 'Credential not found');
     }
-    return c.json(pageOf(listCredentialAuditEvents(deps.db, {
-      vaultId,
-      credentialId,
-      limit: parseLimit(c.req.query('limit')),
-    })));
+    return auditPage(c, deps, { vaultId, credentialId });
   });
 
   app.get('/credential-vaults/:id/audit', (c) => {
@@ -231,13 +228,57 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
       return notFound(c, 'Credential vault not found');
     }
-    return c.json(pageOf(listCredentialAuditEvents(deps.db, {
-      vaultId,
-      limit: parseLimit(c.req.query('limit')),
-    })));
+    return auditPage(c, deps, { vaultId });
   });
 
   return app;
+}
+
+/**
+ * One canonical page of the credential audit trail.
+ *
+ * The listing is ordered `created_at DESC, rowid DESC`, so the position is an offset
+ * and the cursor carries that offset together with the scope that produced it: a
+ * vault-scoped cursor replayed against a credential listing would address rows that
+ * never belonged to that scope. One row beyond `limit` is read so the page can say
+ * whether another exists instead of claiming the trail ends here.
+ */
+function auditPage(
+  c: Context,
+  deps: ServerDeps,
+  scope: { vaultId: string; credentialId?: string },
+) {
+  // The store defaults to 100 and caps at 500, so the route mirrors the default and
+  // lets the store apply the cap: `limit + 1` is the probe row that says whether a
+  // next page exists.
+  const limit = parseLimit(c.req.query('limit')) ?? 100;
+  const filter = normalizeCollectionFilter({
+    vault_id: scope.vaultId,
+    credential_id: scope.credentialId,
+  });
+  const rawPage = c.req.query('page');
+  const decoded = rawPage === undefined ? { ok: true as const, state: undefined } : decodeCursor(rawPage);
+  if (!decoded.ok) return invalid(c, 'page must be a cursor returned by this endpoint');
+  const mismatch = cursorQueryMismatch(decoded.state, { filter });
+  if (mismatch) return invalid(c, mismatch);
+  const offset = readAuditOffset(decoded.state);
+  if (offset === undefined) return invalid(c, 'page must be a cursor returned by this endpoint');
+
+  const rows = listCredentialAuditEvents(deps.db, { ...scope, limit: limit + 1, offset });
+  const data = rows.slice(0, limit);
+  const hasMore = rows.length > limit;
+  const prevOffset = offset - limit;
+  return c.json(cursorPageOf(data, {
+    prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
+    next: hasMore ? encodeCursor({ offset: offset + limit, filter }) : null,
+  }));
+}
+
+/** The offset an audit cursor carries, or `undefined` for a foreign cursor. */
+function readAuditOffset(state?: Record<string, unknown>): number | undefined {
+  if (!state) return 0;
+  const offset = state.offset;
+  return typeof offset === 'number' && Number.isInteger(offset) && offset >= 0 ? offset : undefined;
 }
 
 /** A credential that can still be used: not archived and not deleted. */

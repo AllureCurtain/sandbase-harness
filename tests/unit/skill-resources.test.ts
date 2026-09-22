@@ -14,16 +14,49 @@ describe('skill resource helpers', () => {
     });
   });
 
-  it('paginates skill resources with opaque page cursors', () => {
-    const page = skillPage([testSkill('a'), testSkill('b'), testSkill('c')], '2');
+  it('paginates skill resources with followable cursors bound to the filter', () => {
+    const skills = [testSkill('a'), testSkill('b'), testSkill('c')];
+    const first = skillPage(skills, { limit: '2' });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
 
-    expect(page.data.map((item) => item.id)).toEqual(['skill_a', 'skill_b']);
-    expect(page.has_more).toBe(true);
-    expect(page.next_page).toBe(Buffer.from('2').toString('base64url'));
+    expect(first.page.data.map((item) => item.id)).toEqual(['skill_a', 'skill_b']);
+    // The first page has no predecessor, and the local field names are gone.
+    expect(first.page.prev_page).toBeNull();
+    expect(first.page.next_page).not.toBeNull();
+    expect(first.page).not.toHaveProperty('has_more');
+    expect(first.page).not.toHaveProperty('first_id');
 
-    const next = skillPage([testSkill('a'), testSkill('b'), testSkill('c')], '2', page.next_page ?? undefined);
-    expect(next.data.map((item) => item.id)).toEqual(['skill_c']);
-    expect(next.has_more).toBe(false);
+    const second = skillPage(skills, { limit: '2', page: first.page.next_page! });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.page.data.map((item) => item.id)).toEqual(['skill_c']);
+    expect(second.page.next_page).toBeNull();
+    // The offset is known, so walking back is possible rather than implied.
+    expect(second.page.prev_page).not.toBeNull();
+
+    const back = skillPage(skills, { limit: '2', page: second.page.prev_page! });
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.page.data.map((item) => item.id)).toEqual(['skill_a', 'skill_b']);
+  });
+
+  it('refuses a page that is not a cursor and one issued for another filter', () => {
+    const skills = [testSkill('a'), testSkill('b'), testSkill('c')];
+
+    // A malformed cursor is rejected rather than read as "page one", which would
+    // silently paginate the same window forever.
+    expect(skillPage(skills, { limit: '2', page: 'not-a-cursor' }).ok).toBe(false);
+
+    const custom = skillPage(skills, { limit: '1', page: undefined, source: 'custom' });
+    expect(custom.ok).toBe(true);
+    if (!custom.ok) return;
+    const cursor = custom.page.next_page ?? custom.page.prev_page;
+    if (cursor) {
+      const mismatch = skillPage(skills, { limit: '1', page: cursor, source: 'anthropic' });
+      expect(mismatch.ok).toBe(false);
+      if (!mismatch.ok) expect(mismatch.message).toContain('different filter');
+    }
   });
 });
 

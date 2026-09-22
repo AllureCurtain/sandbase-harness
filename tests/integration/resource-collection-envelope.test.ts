@@ -2,15 +2,13 @@
  * The canonical envelope for the resource collections that return a complete set.
  *
  * `contracts/anthropic-cma/pagination.md` §2 maps the envelopes and §4 names the
- * collections still on the local one. This file covers the first group of
- * conversions: the Vault, credential, memory-store and memory listings return their
- * whole result, so the honest canonical page is `{data, prev_page: null,
- * next_page: null}` — a synthetic cursor into an empty page would be worse than
- * admitting the end.
+ * collections still on the local one. This file covers the complete-set conversions:
+ * the Vault, credential, memory-store and memory listings return their whole result,
+ * so the honest canonical page is `{data, prev_page: null, next_page: null}` — a
+ * synthetic cursor into an empty page would be worse than admitting the end.
  *
- * The audit listings are deliberately **not** converted here: they are truncated by
- * `limit` with no continuation, so neither envelope can describe them truthfully
- * yet, and they stay on the local shape until that is fixed.
+ * The audit listings started here as an exception and have since moved: they now
+ * carry a real offset cursor, which `followable-cursor-collections.test.ts` covers.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -115,7 +113,7 @@ describe('resource collection envelope', () => {
     expect(memories.body.data).toEqual([]);
   });
 
-  it('leaves the limit-truncated audit listings on the local envelope', async () => {
+  it('serves the audit listings with a cursor rather than a truncated local page', async () => {
     const { vaultId, credentialId } = await setupApp();
     // Two audit events, so a `limit=1` listing really is truncated.
     await post(`/v1/credential-vaults/${vaultId}/credentials/${credentialId}/mark-used`);
@@ -123,23 +121,20 @@ describe('resource collection envelope', () => {
 
     const vaultAudit = await get(`/v1/credential-vaults/${vaultId}/audit`);
     expect(vaultAudit.res.status).toBe(200);
-    expect(vaultAudit.body).toHaveProperty('has_more');
-    expect(vaultAudit.body).not.toHaveProperty('prev_page');
+    expectCursorPage(vaultAudit.body, 'vault audit');
 
-    // The listing is windowed by `limit` with nothing to continue from, which is why
-    // it is not on cursors yet: `next_page: null` would read as "this is all", and the
-    // local envelope does not report the truncation either. Converting it needs a
-    // followable cursor first.
+    // A cut page now says so, which the local envelope could not: `has_more` was
+    // false whether or not rows were left behind.
     const truncated = await get(`/v1/credential-vaults/${vaultId}/audit?limit=1`);
     expect(truncated.res.status).toBe(200);
     expect(truncated.body.data).toHaveLength(1);
-    expect(truncated.body).not.toHaveProperty('prev_page');
+    expect(truncated.body.next_page).not.toBeNull();
   });
 
   it('leaves the SDK-typed collections on the local envelope', async () => {
     await setupApp();
 
-    for (const path of ['/v1/agents', '/v1/skills', '/v1/api-keys', '/v1/environments', '/v1/files', '/v1/sessions']) {
+    for (const path of ['/v1/agents', '/v1/api-keys', '/v1/environments', '/v1/files', '/v1/sessions']) {
       const { res, body } = await get(path);
       expect(res.status, path).toBe(200);
       expect(typeof body.has_more, path).toBe('boolean');
