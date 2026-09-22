@@ -203,6 +203,8 @@
 
 ### Fixes
 
+- Carries the published webhook delivery headers on every attempt. `attemptDelivery` passed a delivery identity to `postWebhook`, and that identity is what adds `webhook-id`, `webhook-timestamp` and `webhook-signature` beside the legacy body signature; `retryDelivery` called the same helper without one, so a retry sent the legacy signature alone and a receiver that verifies the published set had nothing to verify on a retry. A retry now keeps the delivery id — one delivery stays deduplicable across attempts — and signs `<id>.<this attempt's timestamp>.<body>` with the delivery secret, which is what keeps a receiver's freshness window satisfied. The recorded `signature` column still holds the legacy value, so its meaning does not change.
+
 - Anchors the inbound `/v1` rate-limit window to the request that opened it
   instead of to the wall-clock minute. Every bucket used to be cleared at each
   minute boundary, so two writes 10 ms apart that fell on opposite sides of

@@ -127,7 +127,16 @@ async function retryDelivery(
 ): Promise<WebhookDeliveryResult> {
   const attemptCount = row.attempt_count + 1;
   const signature = signPayload(row.payload, opts.secret);
-  const attempt = await postWebhook(row.url, row.payload, signature, opts.fetchImpl);
+  const attemptTime = opts.now?.() ?? new Date();
+  // A retry is another attempt at the same delivery, so it carries the same
+  // published header set as the first attempt: `webhook-id` stays the delivery
+  // id so a receiver can deduplicate, and the timestamp is this attempt's, which
+  // is what keeps the receiver's freshness window satisfied.
+  const attempt = await postWebhook(row.url, row.payload, signature, opts.fetchImpl, {
+    id: row.id,
+    timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
+    secret: opts.secret,
+  });
   const nextRetry = nextRetryAt(attempt.ok, attemptCount, opts);
   db.prepare(
     `UPDATE webhook_deliveries
@@ -141,7 +150,7 @@ async function retryDelivery(
     signature,
     attemptCount,
     nextRetry,
-    attempt.ok ? (opts.now?.() ?? new Date()).toISOString() : null,
+    attempt.ok ? attemptTime.toISOString() : null,
     row.id,
   );
   return rowById(db, row.id);

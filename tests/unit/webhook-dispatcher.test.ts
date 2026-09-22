@@ -113,5 +113,60 @@ describe('webhook dispatcher', () => {
       attempt_count: 2,
       next_retry_at: null,
     });
+
+    // The retry is the same delivery, so it carries the published header set the
+    // first attempt carried: the id is unchanged and the timestamp is this
+    // attempt's, which is what the receiver's freshness window checks.
+    const [, retryInit] = (successfulFetch as any).mock.calls[0];
+    const retryHeaders = retryInit.headers as Record<string, string>;
+    expect(retryHeaders['webhook-id']).toBe(first[0].id);
+    expect(retryHeaders['webhook-timestamp']).toBe(String(Math.floor(new Date('2026-07-23T00:02:00.000Z').getTime() / 1000)));
+    expect(retryHeaders['X-Managed-Agents-Signature']).toMatch(/^sha256=/);
+    expect(retryHeaders['webhook-signature']).toBe(signWebhookDelivery({
+      secret: 'secret',
+      id: retryHeaders['webhook-id'],
+      timestamp: retryHeaders['webhook-timestamp'],
+      body: String(retryInit.body),
+    }));
+  });
+
+  it('keeps one delivery id and re-signs every attempt with its own timestamp', async () => {
+    db.prepare(
+      `INSERT INTO webhooks (id, name, url, events, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('wh_multi', 'Multi', 'https://example.com/multi', JSON.stringify(['turn_failed']), fixedNow.toISOString(), fixedNow.toISOString());
+
+    const secret = 'whsec_MQ==';
+    const attemptOne = vi.fn(async () => ({ status: 503 })) as unknown as typeof fetch;
+    const attemptTwo = vi.fn(async () => ({ status: 503 })) as unknown as typeof fetch;
+    const attemptThree = vi.fn(async () => ({ status: 200 })) as unknown as typeof fetch;
+    const times = [
+      fixedNow,
+      new Date('2026-07-23T00:02:00.000Z'),
+      new Date('2026-07-23T00:05:00.000Z'),
+    ];
+
+    const [first] = await dispatchWebhookEvent(db, { event: 'turn_failed', data: {} }, { secret, fetchImpl: attemptOne, now: () => times[0] });
+    const [second] = await retryDueWebhookDeliveries(db, { secret, fetchImpl: attemptTwo, now: () => times[1] });
+    const [third] = await retryDueWebhookDeliveries(db, { secret, fetchImpl: attemptThree, now: () => times[2] });
+
+    // One delivery across three attempts, so a receiver can deduplicate on the id.
+    expect([second.id, third.id]).toEqual([first.id, first.id]);
+    expect([first.attempt_count, second.attempt_count, third.attempt_count]).toEqual([1, 2, 3]);
+    expect(third).toMatchObject({ status: 'delivered', status_code: 200 });
+
+    const attempts = [attemptOne, attemptTwo, attemptThree];
+    attempts.forEach((fetchImpl, index) => {
+      const [, init] = (fetchImpl as any).mock.calls[0];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['webhook-id']).toBe(first.id);
+      expect(headers['webhook-timestamp']).toBe(String(Math.floor(times[index].getTime() / 1000)));
+      expect(headers['webhook-signature']).toBe(signWebhookDelivery({
+        secret,
+        id: first.id,
+        timestamp: headers['webhook-timestamp'],
+        body: String(init.body),
+      }));
+    });
   });
 });
