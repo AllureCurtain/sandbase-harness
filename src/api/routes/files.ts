@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { cursorPageOf } from '../standard.js';
 import { LocalArtifactStore, type ArtifactStore } from '@/core/storage/artifact-store.js';
 import {
   conflict,
@@ -31,7 +31,7 @@ export function fileRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/files', (c) => {
-    return c.json(pageOf(listFileResources(deps)));
+    return c.json(cursorPageOf(listFileResources(deps), {}));
   });
 
   app.post('/files', async (c) => {

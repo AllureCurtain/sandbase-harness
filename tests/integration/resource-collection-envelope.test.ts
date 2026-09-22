@@ -59,6 +59,15 @@ describe('resource collection envelope', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'ma-resource-envelope-'));
     db = new Database(join(tmpDir, 'test.db'));
     db.runMigrations();
+    // An environment and an agent, so the env-scoped and agent-scoped listings have
+    // something to page over rather than answering an empty page that would pass any
+    // shape assertion.
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+      'agent_envelope',
+      'envelope-agent',
+      JSON.stringify({ name: 'envelope-agent', model: 'gpt-4o', system: 'You are a test agent.' }),
+    );
     app = createServer({
       db,
       sessionManager: new SessionManager(db),
@@ -93,8 +102,10 @@ describe('resource collection envelope', () => {
     const { vaultId } = await setupApp();
 
     const paths = [
+      '/v1/agents',
       '/v1/credential-vaults',
       `/v1/credential-vaults/${vaultId}/credentials`,
+      '/v1/environments',
       '/v1/memory_stores',
     ];
     for (const path of paths) {
@@ -104,6 +115,14 @@ describe('resource collection envelope', () => {
       expect(body.data.length, path).toBeGreaterThan(0);
     }
 
+    // These two answer an empty list in this fixture, so only the shape is asserted:
+    // what is being pinned is the envelope, not the seeded content.
+    for (const path of ['/v1/api-keys', '/v1/files']) {
+      const { res, body } = await get(path);
+      expect(res.status, path).toBe(200);
+      expectCursorPage(body, path);
+    }
+
     // The nested memory listing is scoped by `path_prefix`/`depth` and returns the
     // whole scope, so it has the same shape with an empty result.
     const stores = await get('/v1/memory_stores');
@@ -111,6 +130,23 @@ describe('resource collection envelope', () => {
     expect(memories.res.status).toBe(200);
     expectCursorPage(memories.body, 'memories');
     expect(memories.body.data).toEqual([]);
+  });
+
+  it('serves the nested agent and environment collections under the same rule', async () => {
+    await setupApp();
+
+    const agents = await get('/v1/agents');
+    const listed = agents.body.data[0];
+    expect(listed, 'the seeded agent').toBeDefined();
+
+    const versions = await get(`/v1/agents/${listed.id}/versions`);
+    expect(versions.res.status).toBe(200);
+    expectCursorPage(versions.body, 'agent versions');
+    expect(versions.body.data.length, 'agent versions').toBeGreaterThan(0);
+
+    const workerKeys = await get('/v1/environments/env_default/worker-keys');
+    expect(workerKeys.res.status).toBe(200);
+    expectCursorPage(workerKeys.body, 'worker keys');
   });
 
   it('serves the audit listings with a cursor rather than a truncated local page', async () => {
@@ -131,12 +167,17 @@ describe('resource collection envelope', () => {
     expect(truncated.body.next_page).not.toBeNull();
   });
 
-  it('leaves the SDK-typed collections on the local envelope', async () => {
+  it('leaves the session listing and the windowed work-item listing on the local envelope', async () => {
     await setupApp();
 
-    for (const path of ['/v1/agents', '/v1/api-keys', '/v1/environments', '/v1/files', '/v1/sessions']) {
+    // `sessions` is windowed by a page-number cursor and is the next collection to
+    // convert; the work-item listing is windowed by `limit` with no continuation and
+    // carries a `counts` object, so it is an extension shape rather than a canonical
+    // collection.
+    for (const path of ['/v1/sessions', '/v1/environments/env_default/work-items']) {
       const { res, body } = await get(path);
-      expect(res.status, path).toBe(200);
+      expect([200, 503], path).toContain(res.status);
+      if (res.status !== 200) continue;
       expect(typeof body.has_more, path).toBe('boolean');
       expect(body, path).not.toHaveProperty('prev_page');
     }

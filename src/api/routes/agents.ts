@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf, toApiAgent } from '../standard.js';
+import { cursorPageOf, toApiAgent } from '../standard.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { validateAgentDefinition } from '@/core/agent/schema.js';
@@ -34,7 +34,7 @@ export function agentsRoutes(deps: ServerDeps) {
       const agent = parseAgentDefinitionFromRow(row);
       return agent ? [toApiAgent(agent, agentRowMetaFromRow(row))] : [];
     });
-    return c.json(pageOf(agents));
+    return c.json(cursorPageOf(agents, {}));
   });
 
   // POST / — Create a standard agent definition in SQLite.
@@ -80,9 +80,9 @@ export function agentsRoutes(deps: ServerDeps) {
     }
     const versions = loadAgentVersions(deps, id);
     if (versions.length === 0) {
-      return c.json(pageOf([toApiAgent(agent, agentRowMetaFromRow(row))]));
+      return c.json(cursorPageOf([toApiAgent(agent, agentRowMetaFromRow(row))], {}));
     }
-    return c.json(pageOf(versions));
+    return c.json(cursorPageOf(versions, {}));
   });
 
   const updateAgent = async (c: any) => {

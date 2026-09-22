@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { cursorPageOf, pageOf } from '../standard.js';
 import {
   archiveResource,
   conflict,
@@ -27,7 +27,7 @@ export function environmentRoutes(deps: ServerDeps) {
 
   app.get('/environments', (c) => {
     const rows = deps.db.prepare('SELECT * FROM environments WHERE archived_at IS NULL ORDER BY created_at DESC').all() as unknown as EnvironmentRow[];
-    return c.json(pageOf(rows.map(toEnvironment)));
+    return c.json(cursorPageOf(rows.map(toEnvironment), {}));
   });
 
   app.post('/environments', async (c) => {
@@ -99,7 +99,7 @@ export function environmentRoutes(deps: ServerDeps) {
   app.get('/environments/:id/worker-keys', (c) => {
     const environmentId = activeEnvironmentId(c, deps);
     if (!environmentId) return notFound(c, 'Environment not found');
-    return c.json(pageOf(listEnvironmentWorkerKeys(deps.db, environmentId)));
+    return c.json(cursorPageOf(listEnvironmentWorkerKeys(deps.db, environmentId), {}));
   });
 
   app.post('/environments/:id/worker-keys', async (c) => {

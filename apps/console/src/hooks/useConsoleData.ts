@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getJson, getPage } from '../api';
+import { getCursorPage, getJson, getPage } from '../api';
 import type {
   Agent,
   ApiKey,
@@ -30,10 +30,10 @@ function emptyConsoleData(): ConsoleData {
 
 async function loadBuildDomain(): Promise<Pick<ConsoleData, 'agents' | 'sessions' | 'files' | 'skills' | 'templates'>> {
   const [agents, sessions, files, skills, templates] = await Promise.all([
-    getPage<Agent>('/v1/agents'),
+    getCursorPage<Agent>('/v1/agents'),
     getPage<Session>('/v1/sessions?limit=100'),
-    getPage<WorkspaceFile>('/v1/files'),
-    getPage<Skill>('/v1/skills'),
+    getCursorPage<WorkspaceFile>('/v1/files'),
+    getCursorPage<Skill>('/v1/skills'),
     getPage<Template>('/v1/x/templates'),
   ]);
   return {
@@ -47,9 +47,9 @@ async function loadBuildDomain(): Promise<Pick<ConsoleData, 'agents' | 'sessions
 
 async function loadResourceDomain(): Promise<Pick<ConsoleData, 'environments' | 'vaults' | 'memoryStores'>> {
   const [environments, vaults, memoryStores] = await Promise.all([
-    getPage<Environment>('/v1/environments'),
-    getPage<Vault>('/v1/credential-vaults'),
-    getPage<MemoryStore>('/v1/memory_stores'),
+    getCursorPage<Environment>('/v1/environments'),
+    getCursorPage<Vault>('/v1/credential-vaults'),
+    getCursorPage<MemoryStore>('/v1/memory_stores'),
   ]);
   return {
     environments: environments.data,
@@ -59,15 +59,15 @@ async function loadResourceDomain(): Promise<Pick<ConsoleData, 'environments' | 
 }
 
 async function loadAccessDomain(): Promise<Pick<ConsoleData, 'apiKeys'>> {
-  const apiKeys = await getPage<ApiKey>('/v1/api-keys');
+  const apiKeys = await getCursorPage<ApiKey>('/v1/api-keys');
   return { apiKeys: apiKeys.data };
 }
 
 async function loadOperationsDomain(): Promise<Pick<ConsoleData, 'webhooks' | 'scheduledDeployments' | 'outcomes'>> {
   const [webhooks, scheduledDeployments, outcomes] = await Promise.all([
-    getPage<Webhook>('/v1/webhooks'),
-    getPage<ScheduledDeployment>('/v1/scheduled-deployments'),
-    getPage<Outcome>('/v1/outcomes'),
+    getCursorPage<Webhook>('/v1/webhooks'),
+    getCursorPage<ScheduledDeployment>('/v1/scheduled-deployments'),
+    getCursorPage<Outcome>('/v1/outcomes'),
   ]);
   return {
     webhooks: webhooks.data,

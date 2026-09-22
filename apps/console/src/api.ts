@@ -1,4 +1,4 @@
-import type { Page } from './types';
+import type { CursorPage, Page } from './types';
 
 const API_KEY_STORAGE_KEY = 'managed-agents.api-key';
 
@@ -30,6 +30,17 @@ export async function getText(path: string): Promise<string> {
 
 export async function getPage<T>(path: string): Promise<Page<T>> {
   return getJson<Page<T>>(path);
+}
+
+/**
+ * Fetch a collection the contract serves with cursors.
+ *
+ * The distinction is not cosmetic: which helper a call site uses is the only place the
+ * Console records which envelope that endpoint answers with, so a converted endpoint
+ * left on `getPage` would describe a field the response does not have.
+ */
+export async function getCursorPage<T>(path: string): Promise<CursorPage<T>> {
+  return getJson<CursorPage<T>>(path);
 }
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {

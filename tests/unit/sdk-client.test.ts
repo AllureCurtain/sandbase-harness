@@ -70,12 +70,12 @@ describe('ManagedAgentsClient runtime management resources', () => {
   it('calls environment endpoints', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/v1/environments') && init?.method === 'GET') return jsonResponse(page([]));
+      if (url.endsWith('/v1/environments') && init?.method === 'GET') return jsonResponse(cursorPage([]));
       if (url.endsWith('/v1/environments') && init?.method === 'POST') return jsonResponse(environment('env_docker'));
       if (url.endsWith('/v1/environments/env_docker') && init?.method === 'GET') return jsonResponse(environment('env_docker'));
       if (url.endsWith('/v1/environments/env_docker') && init?.method === 'PUT') return jsonResponse(environment('env_docker'));
       if (url.endsWith('/v1/environments/env_docker/archive') && init?.method === 'POST') return jsonResponse({ ...environment('env_docker'), status: 'archived' });
-      if (url.endsWith('/v1/environments/env_docker/worker-keys') && init?.method === 'GET') return jsonResponse(page([]));
+      if (url.endsWith('/v1/environments/env_docker/worker-keys') && init?.method === 'GET') return jsonResponse(cursorPage([]));
       throw new Error(`Unexpected request: ${url} ${init?.method}`);
     }) as unknown as typeof fetch;
     const client = new ManagedAgentsClient({ baseUrl: 'http://localhost:3000', fetch: fetchImpl });
@@ -106,8 +106,15 @@ function jsonResponse(value: unknown): Response {
   });
 }
 
-function page(data: unknown[]) {
-  return { data, has_more: false, first_id: null, last_id: null };
+/**
+ * A canonical collection page, as the contract defines it for `/v1` collections.
+ *
+ * The SDK's declared return types changed with the wire, so the mocks have to carry
+ * the cursor fields rather than the local ones: a mock that answered `has_more` would
+ * describe an endpoint that no longer exists.
+ */
+function cursorPage(data: unknown[]) {
+  return { data, prev_page: null, next_page: null };
 }
 
 function settings(overrides: { vendor?: string } = {}) {
