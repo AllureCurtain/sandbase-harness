@@ -1,6 +1,6 @@
-import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 import { decryptSecret } from '@/core/security/secrets.js';
+import { appendCredentialAuditEvent } from './audit.js';
 import {
   authorizeCredentialNetwork,
   parseCredentialNetworkPolicy,
@@ -142,26 +142,16 @@ function recordCredentialAudit(
   row: CredentialRecordRow,
   entry: { action: string; actor?: string; metadata: Record<string, unknown>; updateLastUsed: boolean },
 ) {
-  const at = new Date().toISOString();
-  if (entry.updateLastUsed) {
-    db.prepare(
-      `UPDATE credential_records
-       SET last_used_at = ?, updated_at = ?
-       WHERE id = ? AND vault_id = ?`,
-    ).run(at, at, row.id, row.vault_id);
-  }
-  db.prepare(
-    `INSERT INTO credential_audit_events (id, vault_id, credential_id, action, actor, metadata, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    `caud_${nanoid(18)}`,
-    row.vault_id,
-    row.id,
-    entry.action,
-    entry.actor ?? 'runtime',
-    JSON.stringify(entry.metadata),
-    at,
-  );
+  // The one append path, so an injection row and a management row cannot drift
+  // apart. `runtime` stays this boundary's default actor.
+  appendCredentialAuditEvent(db, {
+    vaultId: row.vault_id,
+    credentialId: row.id,
+    action: entry.action,
+    actor: entry.actor ?? 'runtime',
+    metadata: entry.metadata,
+    touchLastUsed: entry.updateLastUsed,
+  });
 }
 
 function parseVaultIds(value: string): string[] {
