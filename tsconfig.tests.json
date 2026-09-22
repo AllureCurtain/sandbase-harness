@@ -42,6 +42,10 @@
     // Imports Console components, so it needs the Console's own type cleanup
     // before it can join the runtime program; vitest still runs it.
     "tests/unit/agent-version-diff.test.tsx",
+    // Same reason as the file above: it renders Console components, so it runs
+    // under vitest while the runtime program stays free of the Console's
+    // pre-existing type errors.
+    "tests/unit/console-agent-capabilities.test.tsx",
     "tests/unit/docs-api.test.ts",
     "tests/integration/console-api-e2e.test.ts"
   ]

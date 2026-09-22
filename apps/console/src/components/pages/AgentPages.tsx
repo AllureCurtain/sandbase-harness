@@ -5,6 +5,11 @@ import { EmptyState, FilterSelect, MetricCard, StatusPill, Toolbar } from '../Co
 import { formatDate, formatDateShort, formatUsage, shortId } from '../../lib/format';
 import { diffAgentVersions, type AgentFieldDiff } from '../../lib/agentVersionDiff';
 import { useAgentVersions } from '../../useAgentVersions';
+import {
+  selectEnabledCapabilities,
+  useRuntimeCapabilities,
+  type RuntimeCapability,
+} from '../../useRuntimeCapabilities';
 import type { Agent, AgentTab, AgentToolset, ConsoleData, McpToolset, Session, ToolPermission } from '../../types';
 
 export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; onNewAgent: () => void; onOpenAgent: (agent: Agent) => void }) {
@@ -243,6 +248,10 @@ function AgentConfigTab({
   // The request is deferred until the operator opens the panel; agentId=null
   // while collapsed keeps the tab free of speculative fetches.
   const { versions, loading: versionsLoading, error: versionsError } = useAgentVersions(versionsOpen ? agent.id : null);
+  // Capability status comes from the runtime's registry, not from copy here:
+  // this build cannot know which built-in tools the local machine can execute.
+  const { capabilities, error: capabilitiesError } = useRuntimeCapabilities();
+  const enabledCapabilities = selectEnabledCapabilities(capabilities, new Set(toolNames(agent)));
   const builtinToolCount = toolNames(agent).length;
   const mcpToolsets = agent.tools.filter((toolset): toolset is McpToolset => toolset.type === 'mcp_toolset');
   const builtinPolicy = effectiveToolsetPermission(
@@ -284,10 +293,17 @@ function AgentConfigTab({
             </div>
             <PermissionBadge policy={builtinPolicy} />
           </div>
-          <div className="toolsetRow">
-            <span><ChevronDown size={16} />Tool permissions <b>{builtinToolCount}</b></span>
-            <span className="allowText"><Check size={16} />Always allow</span>
-          </div>
+          {capabilitiesError ? (
+            <div className="toolsetRow">
+              <span><ChevronDown size={16} />Tool permissions <b>{builtinToolCount}</b></span>
+              <span>Capability status unavailable</span>
+            </div>
+          ) : enabledCapabilities.map((capability) => (
+            <div className="toolsetRow" key={capability.id}>
+              <span><ChevronDown size={16} />{capability.id}</span>
+              <CapabilityStatus capability={capability} />
+            </div>
+          ))}
         </div>
         {mcpToolsets.map((toolset) => (
           <div className="toolsetCard" key={toolset.mcp_server_name}>
@@ -400,6 +416,24 @@ function toolNames(agent: Pick<Agent, 'tools'>): string[] {
     }
   }
   return [...names];
+}
+
+/**
+ * One registry entry as a status row.
+ *
+ * `reason` is rendered as the tooltip rather than as body text: the runtime
+ * writes it for an operator diagnosing a capability, and a row that carried a
+ * paragraph would bury the status it belongs to.
+ */
+export function CapabilityStatus({ capability }: { capability: RuntimeCapability }) {
+  if (capability.status === 'available') {
+    return <span className="allowText"><Check size={16} />Available</span>;
+  }
+  return (
+    <span className="status unavailable" title={capability.reason ?? undefined}>
+      Unavailable
+    </span>
+  );
 }
 
 /**
