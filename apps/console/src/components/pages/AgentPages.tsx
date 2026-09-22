@@ -1,8 +1,10 @@
-import { Box, Check, ChevronDown, Lock, MessageSquare, Monitor, MoreVertical, Pencil, Play, Plus, Server, Sparkles, Zap } from 'lucide-react';
+import { Box, Check, ChevronDown, Copy, FlaskConical, Lock, MessageSquare, Monitor, MoreVertical, Pencil, Play, Plus, Server, Sparkles, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { postJson } from '../../api';
 import { EmptyState, FilterSelect, MetricCard, StatusPill, Toolbar } from '../Common';
 import { formatDate, formatDateShort, formatUsage, shortId } from '../../lib/format';
+import { diffAgentVersions, type AgentFieldDiff } from '../../lib/agentVersionDiff';
+import { useAgentVersions } from '../../useAgentVersions';
 import type { Agent, AgentTab, AgentToolset, ConsoleData, McpToolset, Session, ToolPermission } from '../../types';
 
 export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; onNewAgent: () => void; onOpenAgent: (agent: Agent) => void }) {
@@ -113,7 +115,7 @@ export function AgentDetail({
   tab: AgentTab;
   onTab: (tab: AgentTab) => void;
   onBack: () => void;
-  onEdit: () => void;
+  onEdit: (draft?: Agent) => void;
   onNewSession: () => void;
   onOpenSession: (session: Session) => void;
   onRefresh: () => void;
@@ -147,7 +149,7 @@ export function AgentDetail({
           <p className="agentDescription">{agent.description || 'No description.'}</p>
         </div>
         <div className="agentHeroActions">
-          <button className="secondaryButton largeAction" type="button" onClick={onEdit}>
+          <button className="secondaryButton largeAction" type="button" onClick={() => onEdit()}>
             <Pencil size={18} />
             Edit
           </button>
@@ -158,7 +160,7 @@ export function AgentDetail({
             {menuOpen ? (
               <div className="agentMenu">
                 <button type="button" onClick={onNewSession}><Play size={18} />Start session</button>
-                <button type="button" onClick={onEdit}><Sparkles size={18} />Guided edit</button>
+                <button type="button" onClick={() => onEdit()}><Sparkles size={18} />Guided edit</button>
                 <button type="button" className="dangerMenuItem" onClick={() => void archive()}><Lock size={18} />Archive</button>
               </div>
             ) : null}
@@ -180,7 +182,13 @@ export function AgentDetail({
         ))}
       </div>
 
-      {tab === 'agent' ? <AgentConfigTab agent={agent} /> : null}
+      {tab === 'agent' ? (
+        <AgentConfigTab
+          agent={agent}
+          onRestoreVersion={(version) => onEdit(version)}
+          onTestAgent={onNewSession}
+        />
+      ) : null}
       {tab === 'sessions' ? <AgentSessionsTab sessions={agentSessions} onOpenSession={onOpenSession} /> : null}
       {tab === 'deployments' ? <EmptyState icon={<Server size={22} />} title="Deployments are not configured for this local runtime" /> : null}
       {tab === 'observability' ? (
@@ -222,7 +230,19 @@ export function PermissionBadge({ policy }: { policy: ToolPermission }) {
   );
 }
 
-function AgentConfigTab({ agent }: { agent: Agent }) {
+function AgentConfigTab({
+  agent,
+  onRestoreVersion,
+  onTestAgent,
+}: {
+  agent: Agent;
+  onRestoreVersion: (version: Agent) => void;
+  onTestAgent: () => void;
+}) {
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  // The request is deferred until the operator opens the panel; agentId=null
+  // while collapsed keeps the tab free of speculative fetches.
+  const { versions, loading: versionsLoading, error: versionsError } = useAgentVersions(versionsOpen ? agent.id : null);
   const builtinToolCount = toolNames(agent).length;
   const mcpToolsets = agent.tools.filter((toolset): toolset is McpToolset => toolset.type === 'mcp_toolset');
   const builtinPolicy = effectiveToolsetPermission(
@@ -231,8 +251,24 @@ function AgentConfigTab({ agent }: { agent: Agent }) {
   return (
     <div className="detailStack">
       <div className="versionRow">
-        <button className="filterButton" type="button">Version <strong>v{agent.version}</strong> <ChevronDown size={15} /></button>
+        <button className="filterButton" type="button" aria-expanded={versionsOpen} onClick={() => setVersionsOpen((open) => !open)}>
+          Version <strong>v{agent.version}</strong> <ChevronDown size={15} />
+        </button>
+        <button className="textButton" type="button" onClick={onTestAgent}>
+          <Play size={15} />
+          Test this agent
+        </button>
       </div>
+      {versionsOpen ? (
+        <AgentVersionsPanel
+          agent={agent}
+          versions={versions}
+          loading={versionsLoading}
+          error={versionsError}
+          onRestore={onRestoreVersion}
+          onTest={onTestAgent}
+        />
+      ) : null}
       <div className="systemPreview">
         <pre>{agent.system}</pre>
       </div>
@@ -364,4 +400,137 @@ function toolNames(agent: Pick<Agent, 'tools'>): string[] {
     }
   }
   return [...names];
+}
+
+/**
+ * Side-by-side version diff for one agent. All data comes from the stored
+ * `agent_versions` rows via `GET /v1/agents/:id/versions` — nothing is
+ * inferred from the live agent beyond which version is current. Restoring
+ * hands the old definition back to the edit modal as a draft; testing starts
+ * a session that exercises the currently deployed version.
+ */
+export function AgentVersionsPanel({
+  agent,
+  versions,
+  loading,
+  error,
+  onRestore,
+  onTest,
+}: {
+  agent: Agent;
+  versions: Agent[];
+  loading: boolean;
+  error: string;
+  onRestore: (version: Agent) => void;
+  onTest: () => void;
+}) {
+  const sorted = [...versions].sort((a, b) => a.version - b.version);
+  const [baseVersion, setBaseVersion] = useState<number | null>(null);
+  const [nextVersion, setNextVersion] = useState<number | null>(null);
+  const [onlyChanges, setOnlyChanges] = useState(true);
+
+  const base = sorted.find((item) => item.version === baseVersion) ?? sorted[0];
+  const next = sorted.find((item) => item.version === nextVersion)
+    ?? [...sorted].reverse().find((item) => item.version === agent.version)
+    ?? sorted[sorted.length - 1];
+  const allDiffs = base && next ? diffAgentVersions(base, next) : [];
+  const diffs = onlyChanges ? allDiffs.filter((diff) => diff.kind !== 'unchanged') : allDiffs;
+
+  return (
+    <div className="versionsPanel">
+      {error ? <div className="banner error inlineBanner">{error}</div> : null}
+      {loading ? <p className="emptyInline">Loading stored versions…</p> : null}
+      {!loading && !error && sorted.length === 0 ? (
+        <p className="emptyInline">No stored versions yet. Saving an edit records one automatically.</p>
+      ) : null}
+
+      {sorted.length > 0 ? (
+        <div className="versionList">
+          {sorted.map((version) => (
+            <div className={`versionItem ${version.version === agent.version ? 'current' : ''}`} key={version.version}>
+              <strong>v{version.version}</strong>
+              <span>{formatDate(version.created_at)}{version.version === agent.version ? ' · current' : ''}</span>
+              <button
+                className="textButton"
+                type="button"
+                disabled={version.version === agent.version}
+                title={version.version === agent.version ? 'The current version is already live' : 'Open this definition in the edit modal as a draft'}
+                onClick={() => onRestore(version)}
+              >
+                <Copy size={14} />
+                Restore as draft
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {base && next ? (
+        <>
+          <div className="diffControls">
+            <FilterSelect
+              label="Base"
+              value={String(base.version)}
+              onChange={(value) => setBaseVersion(Number(value))}
+              options={sorted.map((item) => ({ value: String(item.version), label: `v${item.version}` }))}
+            />
+            <FilterSelect
+              label="Compare"
+              value={String(next.version)}
+              onChange={(value) => setNextVersion(Number(value))}
+              options={sorted.map((item) => ({ value: String(item.version), label: `v${item.version}` }))}
+            />
+            <label>
+              <input type="checkbox" checked={!onlyChanges} onChange={(event) => setOnlyChanges(!event.target.checked)} />
+              Show unchanged fields
+            </label>
+          </div>
+          <div className="diffTable">
+            <div className="diffHead">
+              <span>Field</span>
+              <span>v{base.version}{base.version === agent.version ? ' · current' : ''}</span>
+              <span>v{next.version}{next.version === agent.version ? ' · current' : ''}</span>
+            </div>
+            {diffs.map((diff) => (
+              <DiffRow diff={diff} key={diff.field} />
+            ))}
+            {diffs.length === 0 ? (
+              <div className="diffRow">
+                <span className="diffField">No differences</span>
+                <pre className="diffValue">The two versions are identical.</pre>
+                <pre className="diffValue"> </pre>
+              </div>
+            ) : null}
+          </div>
+          <div className="modalActions">
+            <button className="textButton" type="button" onClick={() => onRestore(base)} disabled={base.version === agent.version}>
+              <Copy size={15} />
+              Restore v{base.version} as draft
+            </button>
+            <button className="textButton" type="button" onClick={() => onRestore(next)} disabled={next.version === agent.version}>
+              <Copy size={15} />
+              Restore v{next.version} as draft
+            </button>
+            <button className="secondaryButton" type="button" onClick={onTest}>
+              <FlaskConical size={15} />
+              Test this agent
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function DiffRow({ diff }: { diff: AgentFieldDiff }) {
+  return (
+    <div className={`diffRow ${diff.kind}`}>
+      <span className="diffField">
+        {diff.label}
+        <em className={`diffBadge ${diff.kind}`}>{diff.kind}</em>
+      </span>
+      <pre className="diffValue">{diff.base || '—'}</pre>
+      <pre className="diffValue">{diff.next || '—'}</pre>
+    </div>
+  );
 }
