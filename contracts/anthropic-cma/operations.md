@@ -70,6 +70,13 @@ is created `active` (the schema default) and stays `active` until archived.
   column holds the legacy value, so its meaning does not change with the header
   set. A retry keeps the delivery id and re-signs with its own timestamp, so the
   published header set is continuous across attempts.
+- Each subscription is signed with its own `whsec_` secret, minted by `M038` when
+  the subscription is created and returned by that response only; the row keeps it
+  encrypted with the same AES-256-GCM store the credential vaults use. A
+  subscription written before `M038` holds no secret and keeps the legacy
+  derivation — the workspace data-directory value this runtime used before
+  per-endpoint secrets existed — because inventing one during the migration would
+  silently invalidate every receiver still verifying with the old key.
 - `nextRetryAt` is a fixed `2 ** (attempt - 1) * 60` seconds — 60 s, then
   120 s — with `maxAttempts` defaulting to 3 and no jitter.
 - `retryDueWebhookDeliveries` takes `pending_retry` rows whose `next_retry_at`
@@ -149,6 +156,7 @@ records.
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
 | Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
+| Secret rotation | The signature format accepts a space-separated signature list, but no route mints a second secret or retires the first, so an operator cannot open a rotation window. |
 | Delivery trigger | Caller-driven `POST /webhooks/dispatch` and `POST /webhooks/retry-due`. There is no background dispatcher and no timer, so an unwatched runtime delivers nothing. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
 | Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`session.updated`, `turn_complete`, `span.*`). |
@@ -196,6 +204,11 @@ records.
   subscriptions with a stored signed delivery record, the published header set
   on every attempt with the delivery id unchanged across a two-attempt retry,
   and a failed delivery queued as `pending_retry` and later marked delivered.
+- `tests/integration/webhook-endpoint-secret.test.ts` — the secret returned once at
+  creation and absent from every read, the row holding ciphertext that decrypts
+  back to it (including from a second handle), a different secret per
+  subscription, a test delivery signed with the endpoint's own secret, and a
+  subscription written before `M038` still resolving to the legacy key.
 - `tests/unit/cron-timezone.test.ts` — the field grammar, the refusal of a
   malformed or out-of-range field and of an unknown zone, the same wall time
   resolving to different instants per zone, the instant moving across a DST
@@ -215,12 +228,12 @@ records.
 ## 7. Status
 
 `partial` for both, and the reason is no longer narrow. Cron-in-zone, the
-signature arithmetic and the published headers on every attempt are the aligned
-parts. The published delivery envelope, the entire auto-disable policy, the
-deployment endpoint alias, the pause/unpause surface, the `trigger_context`
-representation, the lifecycle event names and the asymmetric failure split are
-absent, and are listed in §4 so that "covered by a contract" does not read as
-"implemented". Neither entry is `supported`; neither is `unavailable`, because
+signature arithmetic, the per-endpoint secret and the published headers on every
+attempt are the aligned parts. The published delivery envelope, the entire
+auto-disable policy, the deployment endpoint alias, the pause/unpause surface, the
+`trigger_context` representation, the lifecycle event names and the asymmetric
+failure split are absent, and are listed in §4 so that "covered by a contract" does
+not read as "implemented". Neither entry is `supported`; neither is `unavailable`, because
 the resource, the delivery engine, the scheduler and the run records are real
 and exercised by the tests in §6. No claim is made that a client written against
 the published contract works unchanged.

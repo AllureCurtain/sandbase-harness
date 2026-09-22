@@ -853,6 +853,20 @@ const M037_SCHEDULED_TIMEZONE = `
 ALTER TABLE scheduled_deployments ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';
 `;
 
+/**
+ * Per-endpoint webhook signing secrets.
+ *
+ * Nullable by design: a subscription written before this migration has no stored
+ * secret and keeps the legacy derivation, so upgrading does not silently
+ * invalidate a receiver that is verifying today. The three columns match the
+ * shape `credential-vaults` already stores its secrets in.
+ */
+const M038_WEBHOOK_SIGNING_SECRETS = `
+ALTER TABLE webhooks ADD COLUMN secret_ciphertext TEXT;
+ALTER TABLE webhooks ADD COLUMN secret_nonce TEXT;
+ALTER TABLE webhooks ADD COLUMN secret_tag TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -891,4 +905,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 35, name: '035_session_budget', sql: M035_SESSION_BUDGET },
   { version: 36, name: '036_handoff_bundles', sql: M036_HANDOFF_BUNDLES },
   { version: 37, name: '037_scheduled_timezone', sql: M037_SCHEDULED_TIMEZONE },
+  { version: 38, name: '038_webhook_signing_secrets', sql: M038_WEBHOOK_SIGNING_SECRETS },
 ];

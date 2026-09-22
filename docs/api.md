@@ -1239,7 +1239,7 @@ evaluation. Automatic webhook dispatch and cron scheduling remain planned
 background workers.
 
 ### Webhooks
-A first delivery attempt carries the Standard Webhooks v1 headers:
+Every delivery attempt carries the Standard Webhooks v1 headers:
 
 ```text
 webhook-id: <delivery id>
@@ -1253,19 +1253,22 @@ Verification is constant-time, and the signature header may carry several
 space-separated signatures — that is how the spec expresses a rotation window, so
 an operator can roll a secret without dropping in-flight deliveries.
 
-The signing key is derived from the endpoint secret. A `whsec_`-prefixed secret is
-base64-decoded to its key bytes; an unprefixed secret is used as raw UTF-8, so a
-workspace that predates per-endpoint secrets keeps producing valid signatures.
+`POST /v1/webhooks` mints one signing secret per subscription and returns it
+exactly once as `secret_key`; no read path returns it afterwards. The signing key
+is derived from that secret: a `whsec_`-prefixed value is base64-decoded to its
+key bytes, and an unprefixed value is used as raw UTF-8, so a subscription written
+before per-endpoint secrets existed keeps producing valid signatures with the
+runtime's own value.
 
 The legacy `X-Managed-Agents-Signature` header is still sent, so an existing
-receiver keeps working. A retry re-sends that legacy body signature only: the
-published header set is not repeated on a retry, so a receiver should not read a
-missing `webhook-signature` as a forgery.
+receiver keeps working. A retry keeps the same `webhook-id` and signs with its own
+`webhook-timestamp`, so the published header set is continuous across attempts and
+a receiver can deduplicate on the id.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/webhooks` | List webhook subscriptions. |
-| `POST` | `/v1/webhooks` | Create a webhook subscription. |
+| `POST` | `/v1/webhooks` | Create a webhook subscription and mint its signing secret, returned once. |
 | `GET` | `/v1/webhooks/{webhook_id}` | Retrieve a webhook subscription. |
 | `PUT` | `/v1/webhooks/{webhook_id}` | Update a webhook subscription. |
 | `POST` | `/v1/webhooks/{webhook_id}/archive` | Archive a webhook subscription. |

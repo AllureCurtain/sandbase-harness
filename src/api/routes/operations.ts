@@ -1,9 +1,13 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
-import { createHmac } from 'node:crypto';
 import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
-import { dispatchWebhookEvent, retryDueWebhookDeliveries } from '@/core/operations/webhook-dispatcher.js';
+import { dispatchWebhookEvent, retryDueWebhookDeliveries, signPayload } from '@/core/operations/webhook-dispatcher.js';
+import {
+  mintAndStoreWebhookSecret,
+  resolveWebhookSigningSecret,
+  type StoredWebhookSecret,
+} from '@/core/operations/webhook-secrets.js';
 import { nextCronRun, runDueScheduledDeployments, runSchedule, type ScheduleRow } from '@/core/operations/scheduler.js';
 import { isValidTimeZone } from '@/core/operations/cron.js';
 import { evaluateDeterministicOutcome, type OutcomeEvaluationInput, type OutcomeEvaluationResult } from '@/core/operations/outcome-evaluator.js';
@@ -39,8 +43,11 @@ export function operationsRoutes(deps: ServerDeps) {
       now(),
       now(),
     );
+    // The secret is returned by this response and by nothing else. The row keeps
+    // an encrypted copy for signing, and every read path omits it.
+    const secretKey = mintAndStoreWebhookSecret(deps.db, id, deps.workspace?.dataDir);
     const row = deps.db.prepare('SELECT * FROM webhooks WHERE id = ?').get(id) as WebhookRow;
-    return c.json(toWebhook(row), 201);
+    return c.json({ ...toWebhook(row), secret_key: secretKey }, 201);
   });
 
   app.post('/webhooks/dispatch', async (c) => {
@@ -52,12 +59,15 @@ export function operationsRoutes(deps: ServerDeps) {
       event,
       data: objectField(body.value.data),
       id: stringField(body.value.id),
-    }, { secret: webhookSecret(deps) });
+    }, { secret: webhookSecret(deps), dataDir: deps.workspace?.dataDir });
     return c.json(pageOf(deliveries), 202);
   });
 
   app.post('/webhooks/retry-due', async (c) => {
-    const deliveries = await retryDueWebhookDeliveries(deps.db, { secret: webhookSecret(deps) });
+    const deliveries = await retryDueWebhookDeliveries(deps.db, {
+      secret: webhookSecret(deps),
+      dataDir: deps.workspace?.dataDir,
+    });
     return c.json(pageOf(deliveries), 202);
   });
 
@@ -116,7 +126,13 @@ export function operationsRoutes(deps: ServerDeps) {
       created_at: now(),
     };
     const payloadJson = JSON.stringify(payload);
-    const signature = signWebhookPayload(payloadJson, deps.workspace?.dataDir ?? 'managed-agents');
+    // The same derivation a real delivery uses. The raw secret is not the HMAC
+    // key of a `whsec_` value, so signing it directly would produce a signature
+    // the receiver cannot verify.
+    const signature = signPayload(
+      payloadJson,
+      resolveWebhookSigningSecret(webhook, webhookSecret(deps), deps.workspace?.dataDir),
+    );
     const id = `whd_${nanoid(18)}`;
     deps.db.prepare(`
       INSERT INTO webhook_deliveries (
@@ -714,15 +730,11 @@ function textBlocks(blocks: unknown[]): string[] {
   return output;
 }
 
-function signWebhookPayload(payload: string, secret: string) {
-  return `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
-}
-
 function webhookSecret(deps: ServerDeps) {
   return deps.workspace?.dataDir ?? 'managed-agents';
 }
 
-type WebhookRow = {
+type WebhookRow = StoredWebhookSecret & {
   id: string;
   name: string;
   url: string;
