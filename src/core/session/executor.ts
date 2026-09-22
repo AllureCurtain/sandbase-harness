@@ -281,6 +281,17 @@ export class DefaultSessionExecutor implements SessionExecutor {
   }
 
   /**
+   * Reconnect a session's MCP servers through their credential resolver.
+   *
+   * The runtime calls this after a vault rotation, so the next MCP tool call is
+   * authenticated with the value the session holds now rather than the one its
+   * transports were built with.
+   */
+  async refreshSessionMcpCredentials(sessionId: string): Promise<void> {
+    await this.toolResolver.refreshSessionMcpCredentials(sessionId);
+  }
+
+  /**
    * Publish the files an agent wrote under `/mnt/session/outputs`.
    *
    * Only meaningful when a sink is wired: an embedder with no Files API has

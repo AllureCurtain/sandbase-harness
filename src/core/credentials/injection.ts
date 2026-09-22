@@ -69,7 +69,7 @@ export function resolveSessionCredentialInjections(
 ): CredentialInjectionBundle {
   const session = db.prepare('SELECT id, vault_ids FROM sessions WHERE id = ?').get(sessionId) as { id: string; vault_ids: string } | undefined;
   if (!session) throw new Error(`Session not found: ${sessionId}`);
-  const vaultIds = parseVaultIds(session.vault_ids);
+  const vaultIds = parseSessionVaultIds(session.vault_ids);
   const bundle: CredentialInjectionBundle = {
     sessionId,
     vaultIds,
@@ -204,7 +204,14 @@ function matchesDeclaredServer(credentialUrl: string, declaredUrl?: string): boo
   return mcpServerUrlMatches(credentialUrl, declaredUrl);
 }
 
-function parseVaultIds(value: string): string[] {
+/**
+ * Vault ids as stored on a session row.
+ *
+ * Shared so the injection boundary and the rotation notification agree on what a
+ * session references: an unreadable or non-list value means no vault, and an entry
+ * that is not a vault id is ignored rather than treated as a reference.
+ */
+export function parseSessionVaultIds(value: string): string[] {
   try {
     const parsed = JSON.parse(value || '[]');
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.startsWith('vlt_')) : [];

@@ -69,10 +69,12 @@ Rotation:
   identity, `auth_type`, name, network policy, and injection locations are
   preserved. The prior ciphertext is overwritten, so the old secret is not
   recoverable from this runtime once rotation succeeds.
-- A rotation is a wire-level operation on the credential: it replaces the stored
-  secret and appends an audit event. It does not reconnect a live MCP transport,
-  so a server process that has already started keeps the value it was spawned
-  with until it is reconnected; that boundary is recorded in §4.
+- When the rotated Vault is referenced by a live Session, the runtime asks that
+  Session's MCP manager to close and reconnect its configured transports, so the
+  next MCP tool call uses the newly resolved credential without recreating the
+  Session. A reconnect failure does not roll back the committed rotation: the
+  Session is reported in the failure set the caller receives, and the MCP status
+  remains the source of truth for a degraded server.
 
 `injection_location`:
 
@@ -136,7 +138,8 @@ Session execution:
 Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
 the `injection_location` create rules and the both-fields-resolved read
-projection, rotation that preserves identity, and the session path that injects a
+projection, rotation that preserves identity and reconnects the MCP transports of
+the sessions that reference the vault, and the session path that injects a
 vault's environment into its own sandbox commands and into a stdio MCP server the
 agent declares, attaches a `static_bearer` credential to the url-transport server
 whose URL it was keyed to, and redacts what each of them returns.
@@ -153,7 +156,6 @@ means archive and recreate.
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
 | Delegated execution | A session's vault environment reaches its own sandbox commands and a stdio MCP server it declares, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
-| MCP rotation reconnect | A rotation does not reconnect live transports, so a server keeps the credential it was connected with: a stdio server keeps its environment, and a url server keeps the header its transport holds. The published contract expects the next MCP tool call to use the newly resolved credential; here it uses the new value only after a reconnect. The transport is not part of the credential resource, so nothing else in this contract depends on it. |
 
 ## 5. Reason for the difference
 
@@ -192,8 +194,11 @@ means archive and recreate.
   `limited` credential shows the refusal reaching the audit trail instead. A real
   SSE server reports the header it received, which is `Bearer` plus the credential
   keyed to its URL and `none` for a credential keyed elsewhere or for a caller that
-  names no server. The rotation half of the published expectation is not asserted
-  here because the reconnect it needs is recorded as absent in §4.
+  names no server. The transport half of the rotation expectation is asserted in
+  this file too: a row that is rotated in place leaves the connected process holding
+  the previous value until the session is asked to reconnect, after which the same
+  tool wrapper reports the new one; `tests/integration/credential-rotation.test.ts`
+  covers the route that asks for it.
 - `tests/integration/credential-rotation.test.ts` — the rotation route notifies
   every active Session that references the rotated Vault.
 

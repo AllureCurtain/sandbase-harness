@@ -1186,6 +1186,12 @@ curl -X POST http://127.0.0.1:3000/v1/credential-vaults/VAULT_ID/credentials/CRE
   }'
 ```
 
+A rotation also asks every live session that references the vault to close and
+reconnect its MCP transports, so a tool call after the rotation presents the new
+value rather than the one the transport was connected with. A reconnect failure is
+reported to the caller instead of rolling the rotation back, and
+`GET /v1/x/mcp/status?session_id=...` shows a server that did not come back.
+
 Runtime code can use the internal `resolveSessionCredentialInjections` helper to
 resolve scoped credentials for a session. For a `limited` credential, the caller
 must provide a target host and the host must match `allowed_hosts` before the

@@ -308,7 +308,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'credentials',
     id: 'credential-rotation',
     status: 'supported',
-    reason: 'Rotating a secret replaces only the ciphertext and leaves the credential identity unchanged.',
+    reason: 'Rotating a secret replaces only the ciphertext and leaves the credential identity unchanged. The rotate route then asks every live session that references the vault to close and reconnect its MCP transports, so the next tool call is authenticated with the new value rather than the one the transport was built with; a reconnect failure is reported rather than rolled back, and the MCP status stays the source of truth for a degraded server.',
     contract: 'contracts/anthropic-cma/credentials.md',
   },
   {

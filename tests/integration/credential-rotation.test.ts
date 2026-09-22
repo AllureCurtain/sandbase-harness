@@ -21,6 +21,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
+import type { SessionExecutor } from '@/core/session/session-manager.js';
 import { createServer } from '@/api/server.js';
 import { decryptSecret } from '@/core/security/secrets.js';
 import { resolveSessionCredentialInjections } from '@/core/credentials/injection.js';
@@ -29,6 +30,7 @@ describe('Credential rotation and audit (documented routes)', () => {
   let db: Database;
   let tmpDir: string;
   let app: ReturnType<typeof createServer>;
+  let sessionManager: SessionManager;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'ma-cred-'));
@@ -43,9 +45,10 @@ describe('Credential rotation and audit (documented routes)', () => {
       "INSERT INTO sessions (id, agent_id, agent_name, environment_id, vault_ids) VALUES ('sess_v', 'agent_x', 'x', 'env_a', ?)",
     ).run(JSON.stringify(['vlt_test']));
 
+    sessionManager = new SessionManager(db);
     app = createServer({
       db,
-      sessionManager: new SessionManager(db),
+      sessionManager,
       agents: [],
       reloadAgents: () => ({ agents: [], errors: [] }),
       consoleRoot: null,
@@ -246,5 +249,56 @@ describe('Credential rotation and audit (documented routes)', () => {
     expect((await get('/v1/credential-vaults/vlt_missing/credentials/vcrd_x/audit')).res.status).toBe(404);
     expect((await get('/v1/credential-vaults/vlt_test/credentials/vcrd_missing/audit')).res.status).toBe(404);
     expect((await post('/v1/credential-vaults/vlt_missing/credentials/vcrd_x/mark-used')).res.status).toBe(404);
+  });
+
+  /**
+   * The reconnect half of the rotation contract, which the snapshot asserted and a
+   * previous replay had to drop: `contracts/anthropic-cma/credentials.md` §2 promises
+   * that "the runtime asks each Session's MCP manager to close and reconnect its
+   * configured transports", and §6 cites a case for it.
+   */
+  describe('MCP reconnect', () => {
+    it('asks every live session that references the rotated vault, and no other', async () => {
+      const credential = await addCredential();
+      const notified: string[] = [];
+      sessionManager.setExecutor({
+        execute: () => { throw new Error('not used by this case'); },
+        refreshSessionMcpCredentials: async (sessionId: string) => { notified.push(sessionId); },
+      } as unknown as SessionExecutor);
+
+      // `sess_v` from the fixture references `vlt_test`; the other two are the
+      // controls — one references a different vault, one has already finished.
+      db.prepare(
+        "INSERT INTO sessions (id, agent_id, agent_name, environment_id, vault_ids, status) VALUES ('sess_other', 'agent_x', 'x', 'env_a', '[\"vlt_other\"]', 'running')",
+      ).run();
+      db.prepare(
+        "INSERT INTO sessions (id, agent_id, agent_name, environment_id, vault_ids, status) VALUES ('sess_done', 'agent_x', 'x', 'env_a', '[\"vlt_test\"]', 'completed')",
+      ).run();
+
+      const rotated = await post(`/v1/credential-vaults/vlt_test/credentials/${credential.id}/rotate`, {
+        value: 'ghp_rotated',
+      });
+
+      expect(rotated.res.status).toBe(200);
+      expect(notified).toEqual(['sess_v']);
+    });
+
+    it('keeps the rotation committed when a reconnect fails', async () => {
+      const credential = await addCredential();
+      sessionManager.setExecutor({
+        execute: () => { throw new Error('not used by this case'); },
+        refreshSessionMcpCredentials: async () => { throw new Error('server is down'); },
+      } as unknown as SessionExecutor);
+
+      const rotated = await post(`/v1/credential-vaults/vlt_test/credentials/${credential.id}/rotate`, {
+        value: 'ghp_rotated',
+      });
+
+      // The published rule: reconnect failures do not roll back the committed
+      // rotation, because the MCP status is what reports a degraded server.
+      expect(rotated.res.status).toBe(200);
+      expect(storedSecret(credential.id)).toBe('ghp_rotated');
+      expect(auditActions('credential_id = ?', credential.id)).toContain('rotate');
+    });
   });
 });

@@ -201,6 +201,25 @@ export class McpManager {
   }
 
   /**
+   * Reconnect every configured server so a rotated credential is used.
+   *
+   * The declared server configs are unchanged; what changes is that the credential
+   * resolver is consulted again for each new transport, so a rotated Vault secret
+   * reaches a server without recreating the Session. The returned map is built from
+   * the same admission rule `connectAll` applies, and tool wrappers a caller already
+   * holds stay valid because they delegate through `liveTools`, which this refreshes.
+   */
+  async refreshAllCredentials(): Promise<Record<string, unknown>> {
+    const servers = [...this.serverConfigs.values()];
+    await Promise.all(
+      [...this.clients.values()].map((client) => client.close().catch(() => {})),
+    );
+    this.clients.clear();
+    this.liveTools.clear();
+    return this.connectAll(servers);
+  }
+
+  /**
    * Reconnect a server whose connection dropped mid-session (R5.6): retries
    * with exponential backoff (1s→2s→4s…, capped 60s), up to 5 attempts.
    * Returns the reconnected tool set, or null after exhausting attempts.
