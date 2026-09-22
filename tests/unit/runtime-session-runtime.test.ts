@@ -10,6 +10,9 @@ import { bootstrapRuntimeSandboxes } from '@/core/runtime/sandbox-bootstrap.js';
 import { createRuntimeSessionServices } from '@/core/runtime/session-runtime.js';
 import { getOrSeedRuntimeSettings, saveRuntimeSettings } from '@/core/settings/store.js';
 import { LocalArtifactStore } from '@/core/storage/artifact-store.js';
+import { encryptSecret } from '@/core/security/secrets.js';
+import { resolveSessionCredentialInjections } from '@/core/credentials/injection.js';
+import { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { DefaultStrategy } from '@/strategy/default-strategy.js';
 import { DefaultSessionExecutor } from '@/core/session/executor.js';
@@ -19,7 +22,7 @@ import {
   PI_SANDBOX_UNSUPPORTED_MESSAGE,
   PI_USER_EVENT_UNSUPPORTED_CODE,
 } from '@/core/session/pi-policy.js';
-import { sandboxCapabilities, type SandboxProvider } from '@/types/sandbox.js';
+import { sandboxCapabilities, type SandboxInstance, type SandboxProvider } from '@/types/sandbox.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { Session } from '@/types/session.js';
 
@@ -566,6 +569,114 @@ describe('runtime session services', () => {
 
     expect(capturedPrompts.at(-1)).toContain('Relevant Memory');
     expect(capturedPrompts.at(-1)).toContain('prefer Rust');
+    db.close();
+  });
+
+  it('resolves the session vault for a turn so its sandbox command receives it', async () => {
+    const SECRET = 'runtime-vault-demo-secret';
+    const { db, directory, agents, modelRegistry } = makeRuntime({
+      tools: [{
+        type: 'agent_toolset_20260401',
+        default_config: { enabled: true, permission_policy: { type: 'always_allow' } },
+        configs: [{ name: 'bash', enabled: true }],
+      }],
+    });
+    db.prepare(`INSERT INTO credential_vaults (id, name) VALUES ('vlt_runtime', 'runtime vault')`).run();
+    db.prepare(`
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, vault_ids, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('sess_vault', 'agent_assistant', 'assistant', 'env_default', 'running', JSON.stringify(['vlt_runtime']), '{}');
+    const encrypted = encryptSecret(SECRET, directory);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO credential_records (
+        id, vault_id, name, auth_type, variable_name, value_hint, network,
+        injection_locations, secret_ciphertext, secret_nonce, secret_tag, status, metadata, created_at, updated_at
+      ) VALUES ('crd_runtime', 'vlt_runtime', 'runtime token', 'environment_variable', 'TOKEN', '••••cret', ?, '[]', ?, ?, ?, 'active', '{}', ?, ?)`,
+    ).run(
+      JSON.stringify({ type: 'unrestricted', allowed_hosts: [] }),
+      encrypted.ciphertext, encrypted.nonce, encrypted.tag, now, now,
+    );
+
+    // A provider that reports the environment it was handed rather than running a
+    // shell, so the assertion does not depend on the host's expansion semantics.
+    let commandEnv: Record<string, string> | undefined;
+    const provider: SandboxProvider = {
+      type: 'local',
+      capabilities: sandboxCapabilities(),
+      async provision() {
+        return {
+          sessionId: 'sess_vault',
+          async execute(_command: string, options?: { env?: Record<string, string> }) {
+            commandEnv = options?.env;
+            return {
+              exitCode: 0,
+              stdout: `TOKEN=${commandEnv?.TOKEN ?? ''}`,
+              stderr: '',
+              timedOut: false,
+            };
+          },
+          async writeFile() {},
+          async readFile() { return ''; },
+          async listFiles() { return []; },
+          async cleanup() {},
+        } as unknown as SandboxInstance;
+      },
+    };
+    const registry = new SandboxProviderRegistry();
+    registry.register(provider);
+
+    let observed = '';
+    const strategy: AgentStrategy = {
+      name: 'credential-probe',
+      async *execute(context: StrategyContext) {
+        observed = await context.tools.bash.execute!({ command: 'echo $TOKEN' }) as string;
+      },
+    };
+    const services = createRuntimeSessionServices({
+      db,
+      agents,
+      modelRegistry,
+      sandboxProvider: provider,
+      sandboxRegistry: registry,
+      runtimeComposition: {
+        resolveEnvironmentConfig: () => ({
+          name: 'local',
+          sandbox_provider: 'local',
+          timeout: 300,
+        }),
+      },
+      strategy,
+      skills: [],
+      artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
+      defaultMaxSteps: 25,
+      resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db, sessionId, {
+        dataDir: directory,
+        targetHost,
+      }),
+    });
+    const session: Session = {
+      id: 'sess_vault',
+      agentId: 'agent_assistant',
+      agentName: 'assistant',
+      environmentId: 'env_default',
+      vaultIds: ['vlt_runtime'],
+      status: 'running',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    for await (const _event of services.executor.execute(session, {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'run it' }],
+    })) {
+      // no-op
+    }
+
+    // The session's vault reached the command environment…
+    expect(commandEnv).toEqual({ TOKEN: SECRET });
+    // …and the value the strategy sees is scrubbed rather than carried through.
+    expect(observed).toBe('TOKEN=[REDACTED]');
     db.close();
   });
 });

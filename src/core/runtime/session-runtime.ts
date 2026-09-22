@@ -19,6 +19,7 @@ import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
 import type { SandboxLifecycleLogger } from '../session/sandbox-lifecycle.js';
 import type { RuntimeComposition } from './composition.js';
+import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
 
 export interface RuntimeSessionServicesOptions {
   db: Database;
@@ -44,6 +45,16 @@ export interface RuntimeSessionServicesOptions {
   memoryMount?: MemoryMountAdapter;
   artifactStore: ArtifactStore;
   defaultMaxSteps: number;
+  /**
+   * Resolve a session's vault credentials for a turn.
+   *
+   * Optional: a host that embeds these services without a credential store
+   * passes nothing, and a session with no vaults resolves to an empty bundle. The
+   * resolver enforces the network policy before it decrypts anything, so a
+   * credential the turn cannot use arrives in `denied` rather than in the
+   * environment.
+   */
+  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
 }
@@ -89,6 +100,11 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     memoryMount: options.memoryMount ?? new SqliteMemoryMountAdapter(options.db),
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,
+    // Passed through rather than defaulted: the executor resolves a session's
+    // vault per turn only when the host that assembled these services supplied a
+    // credential store, so an embedder with none keeps running sessions that hold
+    // no vault.
+    resolveCredentialInjections: options.resolveCredentialInjections,
     logger: options.logger,
     sessionOutputSink: (sessionId, files) => {
       recordSessionOutputs({

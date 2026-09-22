@@ -100,7 +100,10 @@ Session execution:
 - `DefaultSessionExecutor` resolves the session's vaults once per turn with
   `resolveSessionCredentialInjections`, injects the resulting `environment` into
   the sandbox command environment, redacts every value a sandbox tool hands back,
-  and clears the retained values when the turn ends.
+  and clears the retained values when the turn ends. The resolver is supplied by
+  the runtime composition (`src/index.ts` → `createRuntimeSessionServices` → the
+  executor), so a runtime started by the CLI has the path; an embedder that
+  assembles these services without a credential store runs sessions with no vault.
 - A shell command declares no target host, so only credentials the policy admits
   without one reach the environment. A `limited` credential is denied for a shell
   command exactly as it is denied for any other call without a target host.
