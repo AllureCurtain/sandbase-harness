@@ -90,7 +90,7 @@ export function ConsoleRouteView(props: {
   onOpenEnvironment: (environment: Environment) => void;
   onOpenVault: (vault: Vault) => void;
   onOpenMemoryStore: (store: MemoryStore) => void;
-  onEditAgent: (agent: Agent) => void;
+  onEditAgent: (agent: Agent, draft?: Agent) => void;
   onNewAgent: (template: Template | 'blank') => void;
   onNewSession: (agentId?: string) => void;
   onNewCredential: (vaultId: string) => void;
@@ -110,7 +110,7 @@ export function ConsoleRouteView(props: {
           tab={props.agentTab}
           onTab={props.onAgentTab}
           onBack={() => props.setView('agents')}
-          onEdit={() => props.onEditAgent(agent)}
+          onEdit={(draft) => props.onEditAgent(agent, draft)}
           onNewSession={() => props.onNewSession(agent.id)}
           onOpenSession={props.onOpenSession}
           onRefresh={props.onRefresh}

@@ -15,7 +15,7 @@ export function App() {
   const view = route.view;
   const { data, loading, error, refresh } = useConsoleData();
   const [agentModal, setAgentModal] = useState<Template | null | 'blank'>(null);
-  const [agentEditModal, setAgentEditModal] = useState<Agent | null>(null);
+  const [agentEditModal, setAgentEditModal] = useState<{ agent: Agent; draft?: Agent } | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(route.agentId ?? null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(route.sessionId ?? null);
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(route.environmentId ?? null);
@@ -120,7 +120,7 @@ export function App() {
                 setAgentTab('agent');
                 setRoute('agent-detail', agent.id);
               }}
-              onEditAgent={(agent) => setAgentEditModal(agent)}
+              onEditAgent={(agent, draft) => setAgentEditModal({ agent, draft })}
               onNewAgent={(template) => setAgentModal(template)}
               onNewSession={(agentId) => setSessionModal(agentId ?? '')}
               onOpenSession={(session) => {
@@ -163,7 +163,8 @@ export function App() {
 
       {agentEditModal ? (
         <AgentEditModal
-          agent={agentEditModal}
+          agent={agentEditModal.agent}
+          initialDraft={agentEditModal.draft}
           onClose={() => setAgentEditModal(null)}
           onSaved={() => {
             setAgentEditModal(null);

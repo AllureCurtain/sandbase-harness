@@ -39,6 +39,9 @@
     "tests/unit/session-modals.test.tsx",
     "tests/unit/ui-primitives.test.tsx",
     "tests/unit/api-reference-docs.test.tsx",
+    // Imports Console components, so it needs the Console's own type cleanup
+    // before it can join the runtime program; vitest still runs it.
+    "tests/unit/agent-version-diff.test.tsx",
     "tests/unit/docs-api.test.ts",
     "tests/integration/console-api-e2e.test.ts"
   ]

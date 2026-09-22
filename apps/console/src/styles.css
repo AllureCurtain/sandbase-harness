@@ -7105,3 +7105,197 @@ label.searchBox input {
     padding: 10px 16px;
   }
 }
+
+/* Agent version diff workflow (versions panel, side-by-side diff, draft review) */
+.versionsPanel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.versionList {
+  display: grid;
+  gap: 6px;
+}
+
+.versionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.versionItem.current {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.versionItem strong {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.versionItem span {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diffControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.diffControls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diffTable {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.diffHead,
+.diffRow {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.diffHead {
+  padding: 8px 10px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diffRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.diffRow.unchanged {
+  opacity: 0.55;
+}
+
+.diffField {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diffBadge {
+  width: fit-content;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.diffBadge.changed {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.diffBadge.added {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.diffBadge.removed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.diffValue {
+  margin: 0;
+  padding: 10px;
+  border-left: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.draftReview {
+  display: grid;
+  gap: 10px;
+}
+
+.draftPreviewCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.draftPreviewHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.draftPreviewHead span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.draftPreviewCard pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.validationIssues {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.readyBanner {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .diffHead,
+  .diffRow {
+    grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .diffValue {
+    font-size: 11px;
+  }
+}

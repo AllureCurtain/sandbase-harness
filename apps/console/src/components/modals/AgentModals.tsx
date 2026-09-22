@@ -1,7 +1,8 @@
 import { ChevronDown, FileText } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { postJson, putJson } from '../../api';
+import { validateAgentDraft } from '../../lib/agentVersionDiff';
 import { CodeEditor } from '../CodeEditor';
 import { Modal } from '../Modal';
 import type { Agent, AgentToolset, ConsoleData, SkillRef, Template } from '../../types';
@@ -76,11 +77,14 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
   );
 }
 
-export function AgentEditModal({ agent, onClose, onSaved }: { agent: Agent; onClose: () => void; onSaved: () => void }) {
+export function AgentEditModal({ agent, initialDraft, onClose, onSaved }: { agent: Agent; initialDraft?: Agent; onClose: () => void; onSaved: () => void }) {
   const [format, setFormat] = useState<AgentConfigFormat>('yaml');
-  const [configText, setConfigText] = useState(formatAgentDefinition(agentDraftFromApi(agent), 'yaml'));
+  const [configText, setConfigText] = useState(formatAgentDefinition(agentDraftFromApi(initialDraft ?? agent), 'yaml'));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const parsed = useMemo(() => parseAgentConfigSafely(configText, format), [configText, format]);
+  const issues = useMemo(() => (parsed.ok ? validateAgentDraft(parsed.value) : []), [parsed]);
+  const readyToSave = parsed.ok && issues.length === 0;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -97,7 +101,12 @@ export function AgentEditModal({ agent, onClose, onSaved }: { agent: Agent; onCl
   };
 
   return (
-    <Modal title="Edit agent" onClose={onClose} size="medium">
+    <Modal
+      title="Edit agent"
+      subtitle={initialDraft ? `Draft restored from v${initialDraft.version} — saving records it as a new version.` : undefined}
+      onClose={onClose}
+      size="medium"
+    >
       <form className="agentComposer" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner">{error}</div> : null}
         <AgentConfigEditor
@@ -107,11 +116,64 @@ export function AgentEditModal({ agent, onClose, onSaved }: { agent: Agent; onCl
           onFormat={(next) => convertConfigFormat({ value: configText, format, next, setValue: setConfigText, setFormat, setError })}
           minRows={16}
         />
+        <DraftReview parsed={parsed} issues={issues} />
         <div className="modalActions stickyActions">
-          <button className="darkButton" type="submit" disabled={saving}>Save new version</button>
+          <button
+            className="darkButton"
+            type="submit"
+            disabled={saving || !readyToSave}
+            title={readyToSave ? undefined : 'Fix the parse or validation issues above first'}
+          >
+            Save new version
+          </button>
         </div>
       </form>
     </Modal>
+  );
+}
+
+type ParsedAgentConfig = { ok: true; value: AgentDraft } | { ok: false; error: string };
+
+function parseAgentConfigSafely(value: string, format: AgentConfigFormat): ParsedAgentConfig {
+  try {
+    return { ok: true, value: parseAgentConfig(value, format) as AgentDraft };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * The pre-save gate for both agent modals: renders the parsed draft as the
+ * operator will see it and lists the locally checkable problems before the
+ * save button unlocks. The server re-validates the full schema on save; this
+ * screen only catches what can be known without the round-trip.
+ */
+function DraftReview({ parsed, issues }: { parsed: ParsedAgentConfig; issues: string[] }) {
+  return (
+    <section className="composerSection draftReview" aria-live="polite">
+      <h2>Preview &amp; validate</h2>
+      {!parsed.ok ? (
+        <div className="banner error inlineBanner">Config does not parse yet: {parsed.error}</div>
+      ) : (
+        <>
+          <div className="draftPreviewCard">
+            <div className="draftPreviewHead">
+              <strong>{parsed.value.name || 'Unnamed agent'}</strong>
+              <span>{parsed.value.model || 'no model set'}</span>
+            </div>
+            {parsed.value.description ? <p>{parsed.value.description}</p> : null}
+            <pre>{parsed.value.system}</pre>
+          </div>
+          {issues.length ? (
+            <ul className="validationIssues">
+              {issues.map((issue) => <li key={issue}>{issue}</li>)}
+            </ul>
+          ) : (
+            <div className="readyBanner">Ready to save — local checks pass. The runtime validates the full schema on save.</div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
