@@ -296,7 +296,53 @@
       {
         "name": "data",
         "type": "WebhookDelivery[]",
-        "description": "Deliveries that were retried in this pass. A retry re-signs the stored payload and sends only the legacy `X-Managed-Agents-Signature` header, not the published header set."
+        "description": "Deliveries that were retried in this pass. A retry is another attempt at the same delivery, so it keeps the delivery id and carries the same published header set as the first attempt, re-signed with its own timestamp."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-rotate-secret",
+    "group": "Webhooks",
+    "title": "Rotate webhook signing secret",
+    "method": "POST",
+    "path": "/v1/webhooks/{webhook_id}/rotate-secret",
+    "summary": "Mint a new signing secret and keep the previous one valid, opening a rotation window. Every delivery then carries both signatures in `webhook-signature`, space-separated, so a receiver can migrate without missing a delivery.",
+    "parameters": [
+      {
+        "name": "webhook_id",
+        "type": "string",
+        "required": true,
+        "description": "Webhook subscription id."
+      }
+    ],
+    "response": [
+      {
+        "name": "secret_key",
+        "type": "string",
+        "description": "The new whsec_ secret, returned by this response only. The previous secret stays valid until it is retired."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-retire-secret",
+    "group": "Webhooks",
+    "title": "Retire previous webhook signing secret",
+    "method": "POST",
+    "path": "/v1/webhooks/{webhook_id}/retire-secret",
+    "summary": "Close the rotation window: the previous secret stops being accepted and only the current one signs. The caller decides when, because only they know when every receiver has moved.",
+    "parameters": [
+      {
+        "name": "webhook_id",
+        "type": "string",
+        "required": true,
+        "description": "Webhook subscription id."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Webhook subscription identifier."
       }
     ]
   }

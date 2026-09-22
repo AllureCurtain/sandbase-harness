@@ -867,6 +867,19 @@ ALTER TABLE webhooks ADD COLUMN secret_nonce TEXT;
 ALTER TABLE webhooks ADD COLUMN secret_tag TEXT;
 `;
 
+/**
+ * The previous webhook signing secret, for a rotation window.
+ *
+ * Nullable: a subscription that has never been rotated has no previous secret,
+ * and retiring one clears these columns rather than the current secret. The
+ * three columns mirror the shape `M038` established for the current secret.
+ */
+const M039_WEBHOOK_PREVIOUS_SECRET = `
+ALTER TABLE webhooks ADD COLUMN secret_previous_ciphertext TEXT;
+ALTER TABLE webhooks ADD COLUMN secret_previous_nonce TEXT;
+ALTER TABLE webhooks ADD COLUMN secret_previous_tag TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -906,4 +919,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 36, name: '036_handoff_bundles', sql: M036_HANDOFF_BUNDLES },
   { version: 37, name: '037_scheduled_timezone', sql: M037_SCHEDULED_TIMEZONE },
   { version: 38, name: '038_webhook_signing_secrets', sql: M038_WEBHOOK_SIGNING_SECRETS },
+  { version: 39, name: '039_webhook_previous_secret', sql: M039_WEBHOOK_PREVIOUS_SECRET },
 ];
