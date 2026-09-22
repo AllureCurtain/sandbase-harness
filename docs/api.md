@@ -1303,6 +1303,13 @@ is stored as an absolute instant, so a runtime that was down when a schedule cam
 due still computes the next occurrence from the persisted value rather than from
 when it happened to restart.
 
+The cadence is read from either the flat `cron` and `timezone` fields or the
+canonical `schedule: { "type": "cron", "expression": ..., "timezone": ... }`
+object; both resolve to one expression and one zone, so a canonical client and a
+local one cannot disagree about what a deployment's cadence is. Both fields are
+echoed on every deployment response, and an update that changes the cadence
+re-arms `next_run_at` in the resolved zone unless the update supplies its own.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/scheduled-deployments` | List scheduled deployment plans. |
@@ -1322,6 +1329,7 @@ curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \
     "agent_id": "agent_...",
     "environment_id": "env_...",
     "cron": "0 9 * * 1",
+    "timezone": "Asia/Tokyo",
     "payload": {
       "title": "Daily FDE smoke"
     }
@@ -1329,9 +1337,9 @@ curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \
 ```
 
 Manual and due runs create a session with schedule metadata and store a
-`scheduled_deployment_run` record. The local cron runner computes `next_run_at`
-in UTC for standard five-field cron expressions using `*`, comma lists, ranges,
-and step values.
+`scheduled_deployment_run` record. A cadence is a standard five-field cron
+expression using `*`, comma lists, ranges, and step values, and it is evaluated in
+the deployment's `timezone`.
 
 ### Outcomes
 

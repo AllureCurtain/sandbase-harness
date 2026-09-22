@@ -5,6 +5,7 @@ import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
 import { dispatchWebhookEvent, retryDueWebhookDeliveries } from '@/core/operations/webhook-dispatcher.js';
 import { nextCronRun, runDueScheduledDeployments, runSchedule, type ScheduleRow } from '@/core/operations/scheduler.js';
+import { isValidTimeZone } from '@/core/operations/cron.js';
 import { evaluateDeterministicOutcome, type OutcomeEvaluationInput, type OutcomeEvaluationResult } from '@/core/operations/outcome-evaluator.js';
 
 type JsonObject = Record<string, unknown>;
@@ -148,26 +149,26 @@ export function operationsRoutes(deps: ServerDeps) {
     if (!body.ok) return body.response;
     const name = stringField(body.value.name);
     const agentId = stringField(body.value.agent_id) ?? stringField(body.value.agent);
-    const cron = stringField(body.value.cron);
     if (!name) return invalid(c, 'name is required');
     if (!agentId) return invalid(c, 'agent_id is required');
-    if (!cron) return invalid(c, 'cron is required');
-    if (!looksLikeCron(cron)) return invalid(c, 'cron must contain five fields');
+    const schedule = parseScheduleFields(body.value);
+    if (!schedule.ok) return invalid(c, schedule.message);
     const id = `sched_${nanoid(18)}`;
     deps.db.prepare(`
       INSERT INTO scheduled_deployments (
-        id, name, agent_id, environment_id, cron, payload, status, next_run_at, metadata, created_at, updated_at
+        id, name, agent_id, environment_id, cron, timezone, payload, status, next_run_at, metadata, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
       agentId,
       stringField(body.value.environment_id) ?? null,
-      cron,
+      schedule.expression,
+      schedule.timezone,
       JSON.stringify(objectField(body.value.payload)),
       normalizeScheduleStatus(body.value.status),
-      stringField(body.value.next_run_at) ?? nextCronRun(cron)?.toISOString() ?? null,
+      stringField(body.value.next_run_at) ?? nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null,
       JSON.stringify(objectField(body.value.metadata)),
       now(),
       now(),
@@ -192,21 +193,35 @@ export function operationsRoutes(deps: ServerDeps) {
     const id = c.req.param('id');
     const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
     if (!existing) return notFound(c, 'Scheduled deployment not found');
-    const cron = body.value.cron === undefined ? existing.cron : stringField(body.value.cron);
-    if (!cron || !looksLikeCron(cron)) return invalid(c, 'cron must contain five fields');
+    const storedTimeZone = existing.timezone || 'UTC';
+    const schedule = parseScheduleFields({
+      cron: body.value.cron ?? existing.cron,
+      timezone: body.value.timezone ?? storedTimeZone,
+      schedule: body.value.schedule,
+    });
+    if (!schedule.ok) return invalid(c, schedule.message);
+    // An update that moves the cadence re-arms the next run in the resolved zone
+    // unless the caller supplied one, so changing only the timezone moves the
+    // schedule instead of leaving it at the instant the previous zone produced.
+    const cadenceChanged = schedule.expression !== existing.cron || schedule.timezone !== storedTimeZone;
+    const computedNextRunAt = nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null;
+    const nextRunAt = body.value.next_run_at === undefined
+      ? (cadenceChanged ? computedNextRunAt : existing.next_run_at)
+      : stringField(body.value.next_run_at) ?? computedNextRunAt;
     deps.db.prepare(`
       UPDATE scheduled_deployments
-      SET name = ?, agent_id = ?, environment_id = ?, cron = ?, payload = ?, status = ?,
+      SET name = ?, agent_id = ?, environment_id = ?, cron = ?, timezone = ?, payload = ?, status = ?,
           next_run_at = ?, metadata = ?, updated_at = ?
       WHERE id = ?
     `).run(
       stringField(body.value.name) ?? existing.name,
       stringField(body.value.agent_id) ?? stringField(body.value.agent) ?? existing.agent_id,
       body.value.environment_id === undefined ? existing.environment_id : stringField(body.value.environment_id) ?? null,
-      cron,
+      schedule.expression,
+      schedule.timezone,
       JSON.stringify(body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload)),
       normalizeScheduleStatus(body.value.status ?? existing.status),
-      body.value.next_run_at === undefined ? existing.next_run_at : stringField(body.value.next_run_at) ?? nextCronRun(cron)?.toISOString() ?? null,
+      nextRunAt,
       JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
       now(),
       id,
@@ -437,6 +452,7 @@ function toScheduledDeployment(row: ScheduledDeploymentRow) {
     agent_id: row.agent_id,
     environment_id: row.environment_id ?? null,
     cron: row.cron,
+    timezone: row.timezone || 'UTC',
     payload: parseObject(row.payload),
     status: row.archived_at ? 'archived' : row.status,
     last_run_at: row.last_run_at ?? null,
@@ -590,6 +606,37 @@ function looksLikeCron(value: string) {
   return value.trim().split(/\s+/).length === 5;
 }
 
+type ScheduleFieldsResult =
+  | { ok: true; expression: string; timezone: string }
+  | { ok: false; message: string };
+
+/**
+ * Read the cadence and its zone from either the flat local fields or the
+ * canonical object.
+ *
+ * The published deployments API takes `schedule: { type: 'cron', expression,
+ * timezone }`, while this runtime has always taken a flat `cron` string. Both
+ * are accepted and resolved to one pair, so a canonical client and an existing
+ * local one cannot disagree about what a deployment's cadence is.
+ *
+ * The zone is validated rather than defaulted: an unknown name would make
+ * `nextCronRun` return `null`, and a deployment whose cadence silently stopped
+ * resolving looks identical to one that simply has not come due yet.
+ */
+function parseScheduleFields(value: Record<string, unknown>): ScheduleFieldsResult {
+  const nested = value.schedule && typeof value.schedule === 'object' && !Array.isArray(value.schedule)
+    ? value.schedule as Record<string, unknown>
+    : undefined;
+  const expression = stringField(nested?.expression) ?? stringField(value.cron);
+  if (!expression) return { ok: false, message: 'cron is required' };
+  if (!looksLikeCron(expression)) return { ok: false, message: 'cron must contain five fields' };
+  const timezone = stringField(nested?.timezone) ?? stringField(value.timezone) ?? 'UTC';
+  if (!isValidTimeZone(timezone)) {
+    return { ok: false, message: `timezone must be an IANA time zone identifier (got "${timezone}")` };
+  }
+  return { ok: true, expression, timezone };
+}
+
 function normalizeScheduleStatus(value: unknown): 'active' | 'paused' {
   return value === 'paused' ? 'paused' : 'active';
 }
@@ -709,6 +756,7 @@ type ScheduledDeploymentRow = {
   agent_id: string;
   environment_id: string | null;
   cron: string;
+  timezone: string;
   payload: string;
   status: string;
   last_run_at: string | null;
