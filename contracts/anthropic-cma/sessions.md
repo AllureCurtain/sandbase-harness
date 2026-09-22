@@ -39,9 +39,14 @@ Status projection (`toApiSessionStatus`):
 
 - At most 50 events (`MAX_INITIAL_EVENTS`).
 - Only `user.message` and `user.define_outcome` are accepted; any other type is
-  rejected with `invalid_initial_events` and names the offending index.
+  rejected with `invalid_initial_event_type` and names the offending index.
 - `user.message` requires a string or content-block array; a malformed payload
   is rejected rather than coerced.
+- `user.define_outcome` requires a `description` and a `rubric`, which is either
+  `{type: "text", content}` or `{type: "file", file_id}`; `max_iterations` defaults to
+  3 and is rejected outside 1..20 rather than clamped. A malformed payload is reported
+  as `invalid_initial_events` with the index and the offending field. The admitted
+  event is normalized, so the log holds the default rather than an absent budget.
 - The creation response deliberately does not echo `initial_events`: the events
   are observable on the session's own event stream, and echoing them would
   suggest they are session state rather than accepted input.
@@ -91,8 +96,13 @@ the 50-event ceiling, and the initial event type whitelist.
 - `tests/unit/session-resource-instances.test.ts` — resource attach, list,
   delete, and the memory-store at-creation rule.
 - `tests/unit/cma-event-contract.test.ts` — `initial_events` validation: the
-  whitelist, the 50-event ceiling, the `user.define_outcome` defaulting, and the
-  rejection of an unknown type by index.
+  whitelist, the 50-event ceiling, the `user.define_outcome` defaulting and its
+  rejection cases, and the projection that lifts the payload out of the metadata
+  carrier.
+- `tests/integration/define-outcome-event.test.ts` — the same contract over the
+  wire: an initial outcome reaches the log and returns projected on the event
+  listing, a live malformed outcome is refused with `invalid_define_outcome` while
+  a valid one is stored, and a rejected creation leaves no session behind.
 - `tests/integration/initial-events-transaction.test.ts` — the transaction
   boundary: a rejected initial event leaves no session row and no attached
   resource behind, a successful batch creates the session and delivers every

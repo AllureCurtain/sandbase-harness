@@ -734,6 +734,28 @@ start the agent loop in the same call that creates the session:
 }
 ```
 
+`user.define_outcome` is the other accepted type: it carries the session's success
+criteria instead of a message.
+
+```json
+{
+  "agent": "agent_echo-agent",
+  "initial_events": [{
+    "type": "user.define_outcome",
+    "description": "Ship a working endpoint",
+    "rubric": { "type": "text", "content": "The endpoint returns 200" },
+    "max_iterations": 5
+  }]
+}
+```
+
+`rubric` is either `{ "type": "text", "content": "..." }` or
+`{ "type": "file", "file_id": "file_..." }`, and `max_iterations` defaults to 3 and is
+capped at 20 — a value outside that range is rejected rather than lowered, because
+quietly shrinking the budget would change how much work the outcome may do. The
+admitted event is normalized before it is written, and its payload is projected back
+onto the event listing as top-level `description`, `rubric` and `max_iterations` fields.
+
 A non-empty list produces a session whose status is `running` and whose event
 log already contains every supplied event, in order. An absent field and an
 empty array behave the same way: the session is created idle.
@@ -747,8 +769,13 @@ partial history behind:
 | `initial_events` is not an array | `invalid_initial_events` |
 | More than 50 events | `too_many_initial_events` |
 | An element is not an object | `invalid_initial_events` |
-| An element's `type` is not `user.message` | `invalid_initial_event_type` |
+| An element's `type` is neither `user.message` nor `user.define_outcome` | `invalid_initial_event_type` |
 | A message `content` is neither a string nor an array of content blocks | `invalid_initial_events` |
+| An outcome lacks a `description`, has a malformed `rubric`, or sets `max_iterations` outside 1..20 | `invalid_initial_events` |
+
+The same normalization runs on a live event: `POST /v1/sessions/{id}/events` with a
+malformed `user.define_outcome` answers `400` with code `invalid_define_outcome` and
+writes nothing.
 
 The creation response does not echo `initial_events`; list the session's events
 to confirm what was written.
