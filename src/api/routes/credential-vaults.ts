@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { cursorPageOf, pageOf } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
@@ -32,7 +32,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
 
   app.get('/credential-vaults', (c) => {
     const rows = deps.db.prepare(`${vaultSelect('WHERE v.archived_at IS NULL')} ORDER BY v.created_at DESC`).all() as unknown as VaultRow[];
-    return c.json(pageOf(rows.map((row) => toVault(row, deps))));
+    return c.json(cursorPageOf(rows.map((row) => toVault(row, deps)), {}));
   });
 
   app.post('/credential-vaults', async (c) => {
@@ -66,7 +66,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   app.get('/credential-vaults/:id/credentials', (c) => {
     const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!vault) return notFound(c, 'Credential vault not found');
-    return c.json(pageOf(listCredentials(deps, c.req.param('id'))));
+    return c.json(cursorPageOf(listCredentials(deps, c.req.param('id')), {}));
   });
 
   app.post('/credential-vaults/:id/credentials', async (c) => {

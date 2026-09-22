@@ -175,6 +175,22 @@ describe('Managed Agents API', () => {
     expect(body.last_id === null || typeof body.last_id === 'string').toBe(true);
   }
 
+  /**
+   * The canonical envelope, for the collections the contract has converted.
+   *
+   * `contracts/anthropic-cma/pagination.md` §4 names the collections still on the
+   * local shape, so which helper a path uses is a statement about the contract
+   * rather than about this file's convenience.
+   */
+  function expectCursorPage(body: any) {
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.prev_page === null || typeof body.prev_page === 'string').toBe(true);
+    expect(body.next_page === null || typeof body.next_page === 'string').toBe(true);
+    expect(body).not.toHaveProperty('has_more');
+    expect(body).not.toHaveProperty('first_id');
+    expect(body).not.toHaveProperty('last_id');
+  }
+
   describe('GET /', () => {
     it('returns server info', async () => {
       const res = await app.request('/');
@@ -1139,15 +1155,26 @@ describe('Managed Agents API', () => {
 
   describe('standard API page contracts', () => {
     it('returns standard page envelopes for collection endpoints', async () => {
+      // Converted to the canonical envelope: the collections that return their
+      // complete set, so both cursors are null and no local field is present.
+      const cursorCollectionPaths = [
+        '/v1/credential-vaults',
+        '/v1/memory_stores',
+      ];
+      // Still on the local envelope, named in the contract's §4 difference row.
       const collectionPaths = [
         '/v1/agents',
         '/v1/sessions',
         '/v1/environments',
-        '/v1/credential-vaults',
-        '/v1/memory_stores',
         '/v1/skills',
         '/v1/x/templates',
       ];
+
+      for (const path of cursorCollectionPaths) {
+        const { res, body } = await getJson(path);
+        expect(res.status, path).toBe(200);
+        expectCursorPage(body);
+      }
 
       for (const path of collectionPaths) {
         const { res, body } = await getJson(path);
@@ -2318,7 +2345,7 @@ description: Uploaded from a compressed package.
 
       const activeRes = await app.request(`/v1/credential-vaults/${vault.id}/credentials`);
       const active = await activeRes.json();
-      expectPage(active);
+      expectCursorPage(active);
       expect(active.data.map((item: any) => item.id)).toEqual([createdCredentials[2].id]);
 
       const archiveVaultRes = await app.request(`/v1/credential-vaults/${vault.id}/archive`, { method: 'POST' });
@@ -2486,7 +2513,7 @@ description: Uploaded from a compressed package.
 
       const memoriesRes = await app.request(`/v1/memory_stores/${store.id}/memories`);
       const memories = await memoriesRes.json();
-      expectPage(memories);
+      expectCursorPage(memories);
       expect(memories.data).toEqual([]);
 
       const archiveStoreRes = await app.request(`/v1/memory_stores/${store.id}/archive`, { method: 'POST' });
