@@ -19,7 +19,7 @@ import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
 import type { SandboxLifecycleLogger } from '../session/sandbox-lifecycle.js';
 import type { RuntimeComposition } from './composition.js';
-import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
+import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
 
 export interface RuntimeSessionServicesOptions {
   db: Database;
@@ -54,7 +54,7 @@ export interface RuntimeSessionServicesOptions {
    * credential the turn cannot use arrives in `denied` rather than in the
    * environment.
    */
-  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
+  resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
 }

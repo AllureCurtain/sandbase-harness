@@ -34,7 +34,7 @@ import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver, type SandboxCredentials } from './tool-resolver.js';
 import { createCredentialRedactor, clearCredentialInjectionBundle } from '@/core/credentials/redaction.js';
-import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
+import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
 import { getCustomToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import {
   assertPiAgentCanExecute,
@@ -90,9 +90,10 @@ export interface ExecutorDeps {
    * Optional: a runtime with no vault store passes nothing, and a session with no
    * vaults resolves to an empty bundle. The resolver enforces the network policy
    * before it decrypts anything, so a credential this turn cannot use arrives in
-   * `denied` rather than in the environment.
+   * `denied` rather than in the environment. The target names what the call is
+   * addressed to; a shell command names nothing.
    */
-  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
+  resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   /**
    * Publish the files an agent wrote under the session output directory.
    *

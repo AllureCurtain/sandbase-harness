@@ -650,9 +650,9 @@ describe('runtime session services', () => {
       skills: [],
       artifactStore: new LocalArtifactStore(join(directory, 'artifacts')),
       defaultMaxSteps: 25,
-      resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db, sessionId, {
+      resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db, sessionId, {
         dataDir: directory,
-        targetHost,
+        ...target,
       }),
     });
     const session: Session = {

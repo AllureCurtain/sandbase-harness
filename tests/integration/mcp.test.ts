@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { McpManager, reconnectDelay } from '@/core/mcp/mcp-manager.js';
 import { Database } from '@/core/db/database.js';
 import { encryptSecret } from '@/core/security/secrets.js';
@@ -244,9 +245,9 @@ describe('MCP integration', () => {
       } as unknown as AgentDefinition;
       const resolver = new ToolResolver({
         delegationService: { buildDelegationTools: () => ({}) } as never,
-        resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db!, sessionId, {
+        resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db!, sessionId, {
           dataDir: tmpDir,
-          targetHost,
+          ...target,
         }),
       });
       resolvers.push(resolver);
@@ -286,6 +287,189 @@ describe('MCP integration', () => {
       expect(JSON.stringify(result)).not.toContain(SECRET);
       const actions = db!.prepare('SELECT action FROM credential_audit_events').all() as { action: string }[];
       expect(actions.map((row) => row.action)).toContain('runtime_denied');
+    });
+  });
+
+  /**
+   * The network half of the credential contract: a credential keyed by
+   * `mcp_server_url` authenticates the endpoint it names and no other.
+   *
+   * Such a credential rides request headers, so the case needs a server on the
+   * other end of a socket to report what arrived; the fixture is started
+   * in-process so its port is known before the server is declared and it is torn
+   * down with the case. `contracts/anthropic-cma/credentials.md` §3 lists the URL
+   * keying as aligned while the connection side had no caller at all.
+   */
+  describe('url credential scoping', () => {
+    const SECRET = 'sse-vault-demo-secret';
+    const resolvers: ToolResolver[] = [];
+    let db: Database | undefined;
+    let tmpDir: string | undefined;
+    let session: Session | undefined;
+    let sseServer: { url: string; close: () => Promise<void> } | undefined;
+
+    afterEach(async () => {
+      if (session) {
+        for (const resolver of resolvers.splice(0)) await resolver.cleanupSession(session.id);
+      }
+      db?.close();
+      db = undefined;
+      if (tmpDir) {
+        rmSync(tmpDir, { recursive: true, force: true });
+        tmpDir = undefined;
+      }
+      if (sseServer) {
+        await sseServer.close();
+        sseServer = undefined;
+      }
+      session = undefined;
+    });
+
+    /**
+     * A session whose vault holds one MCP credential keyed to `credentialUrl`.
+     *
+     * The row is written the way the published routes write one: the canonical
+     * `static_bearer` / `mcp_oauth` shapes record the URL and no injection
+     * locations, so the assertion exercises the shape an operator actually creates
+     * rather than a hand-tuned token list.
+     */
+    function setupVault(credentialUrl: string, authType: 'bearer_token' | 'mcp_oauth' = 'bearer_token'): void {
+      tmpDir = mkdtempSync(join(tmpdir(), 'ma-mcp-url-'));
+      db = new Database(join(tmpDir, 'test.db'));
+      db.runMigrations();
+      db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_url', 'local', '{}')`);
+      db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_url', 'mcp-agent', '{}')`);
+      db.exec(`INSERT INTO credential_vaults (id, name) VALUES ('vlt_url', 'MCP url vault')`);
+      db.exec(`INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, vault_ids) VALUES ('sess_url', 'agent_url', 'mcp-agent', 'env_url', 'running', '["vlt_url"]')`);
+      const encrypted = encryptSecret(SECRET, tmpDir);
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO credential_records (
+          id, vault_id, name, auth_type, mcp_server_url, variable_name, value_hint, network,
+          injection_locations, secret_ciphertext, secret_nonce, secret_tag, status, metadata, created_at, updated_at
+        ) VALUES ('crd_url', 'vlt_url', 'MCP bearer', ?, ?, null, '••••cret', ?, '[]', ?, ?, ?, 'active', '{}', ?, ?)`,
+      ).run(
+        authType,
+        credentialUrl,
+        JSON.stringify({ type: 'unrestricted', allowed_hosts: [] }),
+        encrypted.ciphertext, encrypted.nonce, encrypted.tag, now, now,
+      );
+      session = {
+        id: 'sess_url',
+        agentId: 'agent_url',
+        agentName: 'mcp-agent',
+        environmentId: 'env_url',
+        status: 'running',
+        vaultIds: ['vlt_url'],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as unknown as Session;
+    }
+
+    /** Resolve the tool map a turn would use for one declared MCP server. */
+    async function toolsFor(mcpServer: Record<string, unknown>): Promise<Record<string, any>> {
+      const agent = {
+        name: 'mcp-agent',
+        model: 'gpt-4o-mini',
+        system: 'use the vault',
+        mcp_servers: [mcpServer],
+        tools: [{
+          type: 'mcp_toolset',
+          mcp_server_name: mcpServer.name,
+          default_config: { permission_policy: { type: 'always_allow' } },
+        }],
+      } as unknown as AgentDefinition;
+      const resolver = new ToolResolver({
+        delegationService: { buildDelegationTools: () => ({}) } as never,
+        resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db!, sessionId, {
+          dataDir: tmpDir,
+          ...target,
+        }),
+      });
+      resolvers.push(resolver);
+      const sandbox = {
+        async writeFile() {},
+        async readFile() { return ''; },
+        async listFiles() { return []; },
+        async execute() { return { exitCode: 0, stdout: '', stderr: '' }; },
+        async destroy() {},
+      } as unknown as SandboxInstance;
+      return await resolver.resolveTools(session!, agent, sandbox) as Record<string, any>;
+    }
+
+    /** Start the in-process SSE server the URL cases connect to. */
+    async function startSseServer(): Promise<string> {
+      const module = await import(
+        pathToFileURL(join(import.meta.dirname, '../fixtures/sse-credential-mcp-server.mjs')).href
+      ) as { startSseCredentialMcpServer: () => Promise<{ url: string; close: () => Promise<void> }> };
+      sseServer = await module.startSseCredentialMcpServer();
+      return sseServer.url;
+    }
+
+    it('sends a credential keyed by the declared server url as a request header', async () => {
+      const url = await startSseServer();
+      setupVault(url);
+
+      const tools = await toolsFor({ name: 'scoped', type: 'url', url });
+      const result = await tools['mcp_scoped_report_auth'].execute({});
+
+      // The server reports the header it received on the wire…
+      expect(JSON.stringify(result)).toContain('AUTHORIZATION=Bearer [REDACTED]');
+      // …and the secret itself never reaches the strategy.
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
+    it('attaches a stored mcp_oauth access token to the server it names', async () => {
+      const url = await startSseServer();
+      setupVault(url, 'mcp_oauth');
+
+      const tools = await toolsFor({ name: 'scoped', type: 'url', url });
+      const result = await tools['mcp_scoped_report_auth'].execute({});
+
+      // The access token of an `mcp_oauth` credential is presented the same way a
+      // `static_bearer` token is: this runtime holds no refresh loop, but it does
+      // hold the token, and a stored credential that is never presented is not an
+      // authentication path at all.
+      expect(JSON.stringify(result)).toContain('AUTHORIZATION=Bearer [REDACTED]');
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
+    it('does not send it to a server the credential does not name', async () => {
+      const url = await startSseServer();
+      // The same host and port with a different path: the published rule treats a
+      // different path as a genuine mismatch rather than something to normalize.
+      setupVault(url.replace(/\/sse$/, '/other'));
+
+      const tools = await toolsFor({ name: 'scoped', type: 'url', url });
+      const result = await tools['mcp_scoped_report_auth'].execute({});
+
+      expect(JSON.stringify(result)).toContain('AUTHORIZATION=none');
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
+    it('leaves a url-keyed credential out of a caller that names no server', async () => {
+      setupVault('http://127.0.0.1:9/sse');
+
+      // A stdio server is declared without a URL, so the credential cannot apply.
+      // Its tool also sees no environment, because a bearer token is not an
+      // environment variable however it is stored.
+      const tools = await toolsFor({
+        name: 'credential',
+        type: 'stdio',
+        command: 'node',
+        args: [CREDENTIAL_SERVER],
+      });
+      const result = await tools['mcp_credential_echo_env'].execute({});
+      expect(JSON.stringify(result)).toContain('TOKEN=missing');
+
+      // The boundary agrees, and an inapplicable credential is not a refusal, so
+      // no denial is recorded for it either.
+      const bundle = resolveSessionCredentialInjections(db!, session!.id);
+      expect(bundle.request_headers).toEqual({});
+      expect(bundle.denied).toHaveLength(0);
+      const actions = db!.prepare('SELECT action FROM credential_audit_events').all() as { action: string }[];
+      expect(actions.map((row) => row.action)).not.toContain('runtime_denied');
+      expect(actions.map((row) => row.action)).not.toContain('runtime_inject');
     });
   });
 });

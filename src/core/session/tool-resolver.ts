@@ -1,4 +1,4 @@
-import type { AgentDefinition } from '@/types/agent.js';
+import type { AgentDefinition, McpServerConfig } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
@@ -16,7 +16,7 @@ import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 import type { SecretRedactor } from '@/core/credentials/redaction.js';
 import { clearCredentialInjectionBundle, createCredentialRedactor } from '@/core/credentials/redaction.js';
-import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
+import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
 
 /**
  * Vault-derived material one turn's sandbox tools use.
@@ -49,9 +49,11 @@ export interface ToolResolverDeps {
    * Optional: a runtime with no vault store passes nothing, and an agent whose
    * servers are all anonymous needs nothing. The resolver enforces the network
    * policy before it decrypts anything, so a credential this session cannot use
-   * comes back in `denied` rather than in the environment.
+   * comes back in `denied` rather than in the environment. The caller names the
+   * server it is connecting to, because a credential keyed by `mcp_server_url`
+   * only applies to the endpoint it names.
    */
-  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
+  resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
 }
 
 export interface ToolConfirmationResolution {
@@ -436,19 +438,23 @@ export class ToolResolver {
       return this.mcpToolCache.get(sessionId) ?? {};
     }
 
-    // A stdio server is a local process rather than an outbound call, so no
-    // target host is claimed: exactly as for a shell command, an `unrestricted`
-    // credential is injected and a `limited` one is denied by the policy.
+    // A stdio server is a local process rather than an outbound call, so it names
+    // neither a host nor a URL: exactly as for a shell command, an `unrestricted`
+    // credential is injected and a `limited` one is denied by the policy. A url
+    // server names both, so the policy can check its host and a credential keyed by
+    // `mcp_server_url` can be matched against the endpoint it was minted for.
     const resolveCredentials = this.deps.resolveCredentialInjections
-      ? () => this.deps.resolveCredentialInjections!(sessionId)
+      ? (server: McpServerConfig) => this.deps.resolveCredentialInjections!(sessionId, server.type === 'url' && server.url
+        ? { targetHost: server.url, mcpServerUrl: server.url }
+        : undefined)
       : undefined;
     const manager = new McpManager({
       // A server's tool list is only known after connect, so the owning
       // toolset's admission rule is applied here rather than to a declared list.
       admitTool: (serverName, toolName) => mcpDiscoveredToolAdmitted(agent, serverName, toolName),
       resolveEnvironment: resolveCredentials
-        ? () => {
-          const bundle = resolveCredentials();
+        ? (server) => {
+          const bundle = resolveCredentials(server);
           const environment = { ...bundle.environment };
           // The bundle belongs to this connect: the copy above is what the server
           // process receives, and the manager empties that copy after the spawn.
@@ -456,12 +462,26 @@ export class ToolResolver {
           return environment;
         }
         : undefined,
+      resolveHeaders: resolveCredentials
+        ? (server) => {
+          const bundle = resolveCredentials(server);
+          const headers = { ...bundle.request_headers };
+          // Same lifetime rule as the environment: the transport keeps the copy it
+          // presents on every request, the resolver's record does not survive it.
+          clearCredentialInjectionBundle(bundle);
+          return headers;
+        }
+        : undefined,
       redactResult: resolveCredentials
-        ? (_serverName, result) => {
+        ? (serverName, result) => {
+          // The scrub has to know which server produced the value, because a
+          // credential keyed by `mcp_server_url` applies to one endpoint only.
+          const server = (agent.mcp_servers ?? []).find((candidate) => candidate.name === serverName);
+          if (!server) return result;
           // Resolved per call rather than captured once, so what gets scrubbed is
           // the value the session holds now; cleared immediately afterwards so
           // neither the redactor nor its bundle outlives the call.
-          const bundle = resolveCredentials();
+          const bundle = resolveCredentials(server);
           const redactor = createCredentialRedactor(bundle);
           try {
             return redactor(result);

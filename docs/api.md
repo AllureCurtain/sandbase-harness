@@ -1197,13 +1197,16 @@ does not update `last_used_at`. Explicit `unrestricted` is the only policy that
 can inject without a target host. The helper is an injection-boundary contract,
 and the runtime's own turn path is a caller of it: `src/index.ts` builds a
 resolver from it and hands that to the executor, which uses the no-host form for a
-shell command and for a stdio MCP server, because neither names a host. Host-scoped
-outbound callers — web tools, custom tools and a url-transport MCP server — still
-need to propagate target-host context before universal enforcement can be claimed.
-A stdio MCP server is one caller of that no-host form: the session's `unrestricted`
+shell command and for a stdio MCP server, because neither names a host. A
+url-transport MCP server is the host-scoped form: the declared URL is passed as the
+target host and as the `mcp_server_url` the credential has to be keyed by, so a
+`static_bearer` credential authenticates the endpoint it names and no other, and one
+keyed elsewhere is inapplicable to the call rather than refused for it. Web tools and
+custom tools still name no host, so universal enforcement cannot be claimed for them.
+A stdio MCP server is a caller of the no-host form: the session's `unrestricted`
 environment variables are passed to its process and an MCP tool's return value is
 scrubbed, while a `limited` credential is denied for it the same way it is denied
-for a shell command. A url-transport server is passed no credential at all.
+for a shell command.
 
 ### Memory limits, scope, and preconditions
 

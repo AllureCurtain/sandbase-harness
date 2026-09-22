@@ -1,6 +1,7 @@
 import type { Database } from '@/core/db/database.js';
 import { decryptSecret } from '@/core/security/secrets.js';
 import { appendCredentialAuditEvent } from './audit.js';
+import { mcpServerUrlMatches } from './canonical-credential.js';
 import {
   authorizeCredentialNetwork,
   parseCredentialNetworkPolicy,
@@ -37,15 +38,34 @@ export type CredentialInjectionBundle = {
 };
 
 /**
+ * What a caller knows about the call it is about to make.
+ *
+ * Both fields are optional because a shell command names neither: it declares no
+ * target host and connects to no MCP server, so only credentials the policy
+ * admits without a host reach it.
+ */
+export type CredentialInjectionTarget = {
+  /** Host the call is addressed to; a URL is accepted and normalized. */
+  targetHost?: string | null;
+  /** Declared MCP server URL, when the caller is connecting to one. */
+  mcpServerUrl?: string;
+};
+
+/**
  * Resolve attached credentials at the injection boundary.
  *
  * Network authorization happens before decryptCredential. Limited credentials
  * without a target host are denied rather than treated as unrestricted.
+ *
+ * A credential keyed by `mcp_server_url` is additionally scoped to the server it
+ * names: it is skipped unless the caller declares that server, and skipped rather
+ * than denied, because a credential for another endpoint is not applicable to this
+ * call rather than refused for it.
  */
 export function resolveSessionCredentialInjections(
   db: Database,
   sessionId: string,
-  opts: { dataDir?: string; actor?: string; metadata?: Record<string, string>; targetHost?: string | null } = {},
+  opts: CredentialInjectionTarget & { dataDir?: string; actor?: string; metadata?: Record<string, string> } = {},
 ): CredentialInjectionBundle {
   const session = db.prepare('SELECT id, vault_ids FROM sessions WHERE id = ?').get(sessionId) as { id: string; vault_ids: string } | undefined;
   if (!session) throw new Error(`Session not found: ${sessionId}`);
@@ -71,6 +91,13 @@ export function resolveSessionCredentialInjections(
   ).all(...vaultIds) as CredentialRecordRow[];
 
   for (const row of rows) {
+    // A credential keyed by `mcp_server_url` belongs to one server, so a caller
+    // that names no server — or a different one — must not receive it: attaching
+    // it would hand this endpoint a token minted for another. Not being applicable
+    // is not a refusal, so nothing is recorded for it and, because the check sits
+    // above the decrypt call, the secret is not even decrypted.
+    if (row.mcp_server_url && !matchesDeclaredServer(row.mcp_server_url, opts.mcpServerUrl)) continue;
+
     const authorization = authorizeCredentialNetwork(parseCredentialNetworkPolicy(row.network), opts.targetHost);
     if (!authorization.allowed) {
       bundle.denied.push({
@@ -104,9 +131,19 @@ export function resolveSessionCredentialInjections(
     if (row.auth_type === 'environment_variable' && row.variable_name && secret) {
       bundle.environment[row.variable_name] = secret;
     }
-    if (row.auth_type === 'bearer_token' && secret) {
-      if (locations.includes('request_headers')) bundle.request_headers.Authorization = `Bearer ${secret}`;
-      if (locations.includes('request_body')) bundle.request_body[row.name || row.id] = secret;
+    if (row.auth_type === 'bearer_token' || row.auth_type === 'mcp_oauth') {
+      // Both canonical MCP types are keyed by `mcp_server_url`, and their create
+      // shapes record no `injection_locations`, so for a keyed row an empty list
+      // means "not specified" rather than "nowhere": the request header is the only
+      // channel a url transport offers, which is what the keying promises. A list
+      // that was given is still respected as written, including one that enables
+      // the body only, so a keyed credential never gains a position its record
+      // explicitly excluded.
+      const headerAllowed = row.mcp_server_url !== null
+        ? locations.length === 0 || locations.includes('request_headers')
+        : locations.includes('request_headers');
+      if (secret && headerAllowed) bundle.request_headers.Authorization = `Bearer ${secret}`;
+      if (secret && locations.includes('request_body')) bundle.request_body[row.name || row.id] = secret;
     }
     bundle.credentials.push({
       id: row.id,
@@ -154,6 +191,19 @@ function recordCredentialAudit(
   });
 }
 
+/**
+ * Whether a credential keyed by `mcp_server_url` applies to the server a caller
+ * declared.
+ *
+ * A caller that names no server cannot claim such a credential, and the check is
+ * explicit rather than left to the comparison, because two unparseable URLs would
+ * otherwise compare equal and attach a credential to an endpoint it does not name.
+ */
+function matchesDeclaredServer(credentialUrl: string, declaredUrl?: string): boolean {
+  if (!declaredUrl) return false;
+  return mcpServerUrlMatches(credentialUrl, declaredUrl);
+}
+
 function parseVaultIds(value: string): string[] {
   try {
     const parsed = JSON.parse(value || '[]');
@@ -178,6 +228,8 @@ type CredentialRecordRow = {
   vault_id: string;
   name: string;
   auth_type: string;
+  /** Declared for the credential types keyed to a server; null otherwise. */
+  mcp_server_url: string | null;
   variable_name: string | null;
   value_hint: string;
   network: string;
