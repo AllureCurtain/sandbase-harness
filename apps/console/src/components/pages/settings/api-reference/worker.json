@@ -162,5 +162,38 @@
         "description": "The revoked key, carrying key_prefix and status."
       }
     ]
+  },
+  {
+    "id": "environment-work-items-list",
+    "group": "Worker",
+    "title": "List environment work items",
+    "method": "GET",
+    "path": "/v1/environments/{id}/work-items",
+    "summary": "Inspects recent self-hosted work items for one environment together with that environment's status counts. An environment with no configured work queue is refused rather than answered with an empty page.",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "required": true,
+        "description": "Environment id."
+      },
+      {
+        "name": "limit",
+        "type": "number",
+        "description": "Optional page size. An unusable value falls back to the queue default, and the queue clamps the result to at most 200."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "array",
+        "description": "Recent work items for this environment, newest first, in the same shape a worker receives from the claim route."
+      },
+      {
+        "name": "counts",
+        "type": "object",
+        "description": "Work item counts per status for this environment."
+      }
+    ]
   }
 ]

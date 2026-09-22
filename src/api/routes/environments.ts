@@ -133,7 +133,48 @@ export function environmentRoutes(deps: ServerDeps) {
     return c.json(revoked);
   });
 
+  // --- Self-hosted work queue (R9.14) --------------------------------------
+  //
+  // The inspecting side of the same protocol whose consuming side is
+  // `POST /v1/x/worker/claim`, and published in `docs/api.md` and
+  // `docs/api-matrix.md`. `WorkQueue.list`/`stats` already answer the question
+  // for one environment. Without a configured queue the route refuses instead of
+  // answering an empty page, because "this runtime has no queue" and "this queue
+  // has no work" must not read the same.
+
+  app.get('/environments/:id/work-items', (c) => {
+    const environmentId = activeEnvironmentId(c, deps);
+    if (!environmentId) return notFound(c, 'Environment not found');
+    const queue = deps.workQueue;
+    if (!queue) {
+      return c.json({
+        error: {
+          type: 'work_queue_unavailable',
+          message: 'This runtime has no self-hosted work queue configured.',
+        },
+      }, 503);
+    }
+    return c.json({
+      ...pageOf(queue.list({ environmentId, limit: parseLimit(c.req.query('limit')) })),
+      counts: queue.stats({ environmentId }),
+    });
+  });
+
   return app;
+}
+
+/**
+ * A usable positive `limit` query value.
+ *
+ * An unusable value falls back to the queue's own default rather than being
+ * refused, which is how the extension routes in `runtime.ts` already treat a
+ * malformed pagination hint.
+ */
+function parseLimit(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.trunc(parsed);
 }
 
 /** The environment id when it names a live (non-archived) environment. */
