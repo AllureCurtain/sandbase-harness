@@ -184,9 +184,10 @@ app.route('/v1/runs', runsRoutes(deps));
   // Runtime extension endpoints
   app.route('/v1/x', extendedRoutes(deps));
   // Operations are part of the documented public API. Keep the legacy /v1/x
-  // mount for compatibility with clients that adopted the preview paths.
+  // mount for compatibility with clients that adopted the preview paths: the
+  // canonical prefix serves the canonical envelope, the mirror the local one.
   app.route('/v1', operationsRoutes(deps));
-  app.route('/v1/x', operationsRoutes(deps));
+  app.route('/v1/x', operationsRoutes(deps, { pageShape: 'legacy' }));
 
   // Self-hosted sandbox worker endpoints (R9.14)
   if (deps.workQueue) {

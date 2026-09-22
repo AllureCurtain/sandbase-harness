@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { pageOf } from '../standard.js';
+import { collectionPager } from '../standard.js';
 import { dispatchWebhookEvent, retryDueWebhookDeliveries, signPayload } from '@/core/operations/webhook-dispatcher.js';
 import {
   mintAndStoreWebhookSecret,
@@ -16,12 +16,26 @@ import { evaluateDeterministicOutcome, type OutcomeEvaluationInput, type Outcome
 
 type JsonObject = Record<string, unknown>;
 
-export function operationsRoutes(deps: ServerDeps) {
+/**
+ * Which envelope this mount serves.
+ *
+ * The same router is mounted twice, and the contract makes the two prefixes
+ * different on purpose: canonical `/v1` collections carry `{data, prev_page,
+ * next_page}` while `/v1/x` is the local surface with existing consumers and keeps
+ * `{data, has_more, first_id, last_id}`. Choosing it per mount rather than per
+ * handler is what stops one response from carrying both spellings.
+ */
+export interface OperationsRoutesOptions {
+  pageShape?: 'canonical' | 'legacy';
+}
+
+export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOptions = {}) {
   const app = new Hono();
+  const collections = collectionPager<{ id: string }>(options.pageShape ?? 'canonical');
 
   app.get('/webhooks', (c) => {
     const rows = deps.db.prepare('SELECT * FROM webhooks WHERE archived_at IS NULL ORDER BY created_at DESC').all() as WebhookRow[];
-    return c.json(pageOf(rows.map(toWebhook)));
+    return collections.json(c, rows.map(toWebhook));
   });
 
   app.post('/webhooks', async (c) => {
@@ -62,7 +76,7 @@ export function operationsRoutes(deps: ServerDeps) {
       data: objectField(body.value.data),
       id: stringField(body.value.id),
     }, { secret: webhookSecret(deps), dataDir: deps.workspace?.dataDir });
-    return c.json(pageOf(deliveries), 202);
+    return collections.json(c, deliveries, 202);
   });
 
   app.post('/webhooks/retry-due', async (c) => {
@@ -70,7 +84,7 @@ export function operationsRoutes(deps: ServerDeps) {
       secret: webhookSecret(deps),
       dataDir: deps.workspace?.dataDir,
     });
-    return c.json(pageOf(deliveries), 202);
+    return collections.json(c, deliveries, 202);
   });
 
   app.get('/webhooks/:id', (c) => {
@@ -135,7 +149,7 @@ export function operationsRoutes(deps: ServerDeps) {
     const webhook = deps.db.prepare('SELECT id FROM webhooks WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!webhook) return notFound(c, 'Webhook not found');
     const rows = deps.db.prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC').all(c.req.param('id')) as WebhookDeliveryRow[];
-    return c.json(pageOf(rows.map(toWebhookDelivery)));
+    return collections.json(c, rows.map(toWebhookDelivery));
   });
 
   app.post('/webhooks/:id/test', async (c) => {
@@ -183,7 +197,7 @@ export function operationsRoutes(deps: ServerDeps) {
 
   app.get('/scheduled-deployments', (c) => {
     const rows = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE archived_at IS NULL ORDER BY created_at DESC').all() as ScheduledDeploymentRow[];
-    return c.json(pageOf(rows.map(toScheduledDeployment)));
+    return collections.json(c, rows.map(toScheduledDeployment));
   });
 
   app.post('/scheduled-deployments', async (c) => {
@@ -221,7 +235,7 @@ export function operationsRoutes(deps: ServerDeps) {
 
   app.post('/scheduled-deployments/run-due', (c) => {
     const runs = runDueScheduledDeployments(deps.db, deps.sessionManager);
-    return c.json(pageOf(runs.map(toScheduledDeploymentRun)), 202);
+    return collections.json(c, runs.map(toScheduledDeploymentRun), 202);
   });
 
   app.get('/scheduled-deployments/:id', (c) => {
@@ -278,7 +292,7 @@ export function operationsRoutes(deps: ServerDeps) {
     const schedule = deps.db.prepare('SELECT id FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!schedule) return notFound(c, 'Scheduled deployment not found');
     const rows = deps.db.prepare('SELECT * FROM scheduled_deployment_runs WHERE schedule_id = ? ORDER BY started_at DESC').all(c.req.param('id')) as ScheduledDeploymentRunRow[];
-    return c.json(pageOf(rows.map(toScheduledDeploymentRun)));
+    return collections.json(c, rows.map(toScheduledDeploymentRun));
   });
 
   app.post('/scheduled-deployments/:id/run', async (c) => {
@@ -305,7 +319,7 @@ export function operationsRoutes(deps: ServerDeps) {
 
   app.get('/outcomes', (c) => {
     const rows = deps.db.prepare('SELECT * FROM outcomes WHERE archived_at IS NULL ORDER BY created_at DESC').all() as OutcomeRow[];
-    return c.json(pageOf(rows.map(toOutcome)));
+    return collections.json(c, rows.map(toOutcome));
   });
 
   app.post('/outcomes', async (c) => {
@@ -379,7 +393,7 @@ export function operationsRoutes(deps: ServerDeps) {
     const session = deps.db.prepare('SELECT id FROM sessions WHERE id = ?').get(c.req.param('id'));
     if (!session) return notFound(c, 'Session not found');
     const rows = deps.db.prepare('SELECT * FROM session_outcomes WHERE session_id = ? ORDER BY created_at DESC').all(c.req.param('id')) as SessionOutcomeRow[];
-    return c.json(pageOf(rows.map(toSessionOutcome)));
+    return collections.json(c, rows.map(toSessionOutcome));
   });
 
   app.post('/sessions/:id/outcomes', async (c) => {

@@ -98,7 +98,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'pagination',
     id: 'opaque-cursors',
     status: 'partial',
-    reason: '/v1 canonical collections all return {data, prev_page, next_page}; /v1/x extension collections still use the local has_more/first_id/last_id envelope, cursors are readable base64url JSON rather than opaque binary, and a windowed page is addressed by page number rather than by a stable sort key.',
+    reason: 'A collection\'s envelope follows the mount: the operations router serves `/v1` with `{data, prev_page, next_page}` and its `/v1/x` mirror with the local `{data, has_more, first_id, last_id}`, chosen through one pager so no handler emits both spellings, and cursors that are readable base64url JSON rather than opaque binary. They are `null` on a complete result set, and a windowed page is addressed by page number rather than by a stable sort key. The resource collections (`agents`, `skills`, `api-keys`, `environments`, `files`, `credential-vaults`, `memory_stores`, `sessions`) still return the local envelope on both prefixes, which the contract records as a difference and which is converted collection by collection because the SDK and the Console read that shape.',
     contract: 'contracts/anthropic-cma/pagination.md',
   },
   {

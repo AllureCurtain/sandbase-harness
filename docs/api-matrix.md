@@ -8,7 +8,11 @@ that every Claude hosted capability exists locally.
 
 - The current public namespace is `/v1`.
 - Resource ids are opaque.
-- Collection responses use `{ data, has_more, first_id, last_id }`.
+- Canonical `/v1` collections use `{ data, prev_page, next_page }` and the `/v1/x`
+  extension collections use `{ data, has_more, first_id, last_id }`. The conversion
+  runs collection by collection, so a collection not yet listed in
+  `contracts/anthropic-cma/pagination.md` §4 still answers with the local envelope
+  under either prefix; the contract names which is which.
 - Errors use `{ error: { type, message } }`. A rejected compatibility
   request also carries a stable `error.code` from the published
   admission-code set.

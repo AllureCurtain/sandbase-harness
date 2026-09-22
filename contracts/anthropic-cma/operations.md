@@ -178,7 +178,7 @@ records.
 | Failure behaviour | Symmetric: every thrown session-creation error records a `failed` run and advances the cadence. No split by error class, no failure class recorded beyond the message, no preflight, no auto-pause, no auto-archive. |
 | Re-arming after downtime | A consequence of the persisted `next_run_at`, not a startup step. A runtime that was down while a slot passed runs those rows only when `run-due` is next called. |
 | Outcome evaluation | The published contract has no deterministic outcome evaluator; `evaluateDeterministicOutcome` is a local extension used by the operations routes. |
-| Collection envelope | Extension collections use the local `has_more` / `first_id` / `last_id` envelope rather than the canonical `{data, prev_page, next_page}` cursors. This is the documented extension-envelope rule, not a per-endpoint choice. |
+| Collection envelope | The operations collections are canonical `/v1` resources: under `/v1` they carry `{data, prev_page, next_page}`, and the `/v1/x` mirror they were first published on keeps the local `has_more` / `first_id` / `last_id` shape for its existing consumers. The shape is chosen per mount rather than per endpoint. |
 
 ## 5. Reason for the difference
 

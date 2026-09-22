@@ -29,8 +29,17 @@ Source: Claude Managed Agents public documentation plus `src/api/standard.ts`.
 - `decodeCursor` rejects anything that is not a well-formed object, so a forged
   or truncated cursor fails rather than being interpreted loosely.
 - `collectionPager(shape, ...)` is the single place the surface chooses its
-  envelope, so handlers serving both prefixes cannot emit both spellings at
-  once.
+  envelope, so handlers serving both prefixes cannot emit both spellings at once.
+- A collection's envelope therefore follows the mount, not the handler: the
+  operations router is mounted at `/v1` and `/v1/x` with different shapes, and a
+  handler that emitted its own envelope could not do that.
+- Converted to the canonical envelope so far: every operations collection
+  (`/v1/webhooks`, `/v1/scheduled-deployments`, `/v1/outcomes`, their nested
+  `deliveries` / `runs` and the session outcome listing), plus the two listing
+  routes that already used `cursorPageOf`
+  (`/v1/memory_stores/{id}/memory_versions` and `/v1/sessions/{id}/resources`).
+  The collections that still build their page with `pageOf` under both prefixes are
+  named in §4.
 - `cursorPageOf` takes `prev` from the caller rather than inferring it: a
   forward-only scan cannot know its predecessor, and inventing one would
   produce a cursor that does not resolve.
@@ -39,11 +48,10 @@ Source: Claude Managed Agents public documentation plus `src/api/standard.ts`.
   than by argument order, and `cursorQueryMismatch` is the single check a
   handler runs before honouring a cursor. Both live beside `encodeCursor` so a
   collection cannot invent its own comparison.
-- No canonical collection handler builds its own pagination. Every `/v1`
-  collection goes through `collectionPager` / `cursorPageOf`, and
-  `tests/integration/canonical-collection-envelope.test.ts` enumerates the
-  collections to assert it — including the resource collections that were
-  converted from a private page-offset scheme.
+- No canonical collection handler builds its own pagination: a converted handler
+  goes through `collectionPager`, and the two listing routes above go through
+  `cursorPageOf` directly. The collections still on the local envelope are the gap
+  recorded in §4 rather than an exception to the rule.
 
 ## 3. Alignment
 
@@ -57,6 +65,7 @@ or filter.
 | Difference | Detail |
 | --- | --- |
 | Extension envelope | `/v1/x` collections return `{data, has_more, first_id, last_id}`. The published contract has no such envelope. |
+| Collections still on the local envelope under `/v1` | `agents` (and its versions), `skills`, `api-keys`, `environments` (and its worker keys), `files`, `credential-vaults` (and its credentials), `memory_stores` and `sessions` are built with `pageOf`, so they carry `has_more` / `first_id` / `last_id` on both prefixes while the contract puts canonical collections on cursors. Converting one changes a public shape that the SDK types and the Console read, so it is scheduled collection by collection rather than as one wire break. |
 | Null cursors on complete result sets | Most canonical collections return `next_page: null` and `prev_page: null` because the full set is returned unwindowed. A real cursor is only produced when a collection is actually windowed — today that is `/v1/sessions` and `/v1/sessions/:id/events`. |
 | Cursor payload visibility | SandBase cursors are readable base64url JSON, not opaque binary. They carry no secret, so the opacity is present to discourage construction rather than to conceal data. The published contract does not specify an encoding. |
 | Cursor position is a page, not a sort key | `/v1/sessions` stores a 1-based page number, so the scan is redone from that page. A concurrent insert or delete shifts what a later page contains. A keyset cursor naming the last delivered row's sort key would not. |
@@ -87,10 +96,16 @@ query binding.
 
 ## 6. Corresponding tests
 
-- `tests/integration/api.test.ts` — `expectPage` asserts canonical collections
-  carry `prev_page`/`next_page` and do not carry `has_more`/`first_id`/`last_id`;
+- `tests/integration/api.test.ts` — `expectPage` asserts the envelope the
+  collections it covers return today, which is the local
+  `has_more`/`first_id`/`last_id` shape for the resource collections §4 lists;
   `expectExtensionPage` asserts the `/v1/x` shape. The event-cursor cases pin the
   `after_id` behaviour and rejection of a cursor issued for another session.
+- `tests/integration/operations-collection-envelope.test.ts` — the operations
+  collections under `/v1` carry `{data, prev_page, next_page}` and none of the local
+  field names; the `/v1/x` mirror carries the local four and neither cursor; an
+  action that answers `202` with a collection keeps its status; and a nested
+  collection follows the same rule as its parent.
 - `tests/integration/canonical-collection-envelope.test.ts` — enumerates every
   canonical collection and asserts the envelope, asserts the extension
   collections still use the local one, follows a cursor to a second page without
