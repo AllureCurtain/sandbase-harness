@@ -174,6 +174,12 @@ export function credentialVaultRoutes(deps: ServerDeps) {
       actor: stringField(body.value.actor),
       metadata: stringRecordField(body.value.metadata),
     });
+    // The rotation is committed above, so every session that references this vault
+    // is asked to rebuild its MCP transports: a transport that keeps the previous
+    // value authenticates with a credential the operator has just replaced, and
+    // waiting for the next restart would leave that gap open. A reconnect failure is
+    // deliberately not rolled back — the MCP status reports a degraded server.
+    await deps.sessionManager.refreshVaultMcpCredentials(vaultId);
     const row = deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ?').get(credentialId, vaultId) as unknown as CredentialRow;
     return c.json(toCredential(row));
   });

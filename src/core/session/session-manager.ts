@@ -12,6 +12,7 @@
 
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
+import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
 import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
 import { findOrphanedToolUses } from './session-recovery.js';
@@ -92,6 +93,12 @@ export interface SessionExecutor {
   execute(session: Session, event: UserEvent, options?: ExecuteOptions): AsyncIterable<SessionEvent>;
   /** Destroy resources (sandbox) bound to a session on terminal state */
   cleanupSession?(sessionId: string): Promise<void>;
+  /**
+   * Reconnect a session's MCP servers after the credential they authenticate with
+   * changed, so the next tool call uses the new value. Optional: an executor with no
+   * MCP support, or one whose session never connected a server, has nothing to do.
+   */
+  refreshSessionMcpCredentials?(sessionId: string): Promise<void>;
 }
 
 type Subscriber = (event: SessionEvent) => void;
@@ -869,6 +876,37 @@ export class SessionManager {
     }
 
     return running.length;
+  }
+
+  /**
+   * Ask every live session that references a vault to reconnect its MCP servers.
+   *
+   * Called after a credential rotation is committed, so the next MCP tool call uses
+   * the new secret without recreating the Session. Best-effort by design: a failure
+   * is reported to the caller rather than thrown, because the rotation is already
+   * committed and the MCP status is the source of truth for a degraded server.
+   */
+  async refreshVaultMcpCredentials(vaultId: string): Promise<{ refreshed: string[]; failed: string[] }> {
+    const refreshed: string[] = [];
+    const failed: string[] = [];
+    if (!this.executor?.refreshSessionMcpCredentials) return { refreshed, failed };
+
+    // The sessions this process still holds MCP connections for: a session in a
+    // terminal state has already had them closed.
+    const rows = this.db
+      .prepare('SELECT id, vault_ids, status FROM sessions')
+      .all() as Array<{ id: string; vault_ids: string; status: string }>;
+    for (const row of rows) {
+      if (isTerminal(row.status as Session['status'])) continue;
+      if (!parseSessionVaultIds(row.vault_ids).includes(vaultId)) continue;
+      try {
+        await this.executor.refreshSessionMcpCredentials(row.id);
+        refreshed.push(row.id);
+      } catch {
+        failed.push(row.id);
+      }
+    }
+    return { refreshed, failed };
   }
 
   /**

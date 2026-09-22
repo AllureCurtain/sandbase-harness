@@ -222,8 +222,8 @@ describe('MCP integration', () => {
       } as unknown as Session;
     }
 
-    /** Resolve the tool map the way a turn does: real resolver, real stdio server. */
-    async function resolveTools(): Promise<Record<string, any>> {
+    /** Resolve the tool map, and the resolver that can reconnect it after a rotation. */
+    async function resolveTools(): Promise<{ tools: Record<string, any>; resolver: ToolResolver }> {
       const agent = {
         name: 'mcp-agent',
         model: 'gpt-4o-mini',
@@ -258,12 +258,13 @@ describe('MCP integration', () => {
         async execute() { return { exitCode: 0, stdout: '', stderr: '' }; },
         async destroy() {},
       } as unknown as SandboxInstance;
-      return await resolver.resolveTools(session, agent, sandbox) as Record<string, any>;
+      return await (resolver.resolveTools(session, agent, sandbox) as Promise<Record<string, any>>)
+        .then((tools) => ({ tools, resolver }));
     }
 
     it('starts a stdio server with the session vault environment and keeps the value out of the result', async () => {
       setupVault({ type: 'unrestricted', allowed_hosts: [] });
-      const tools = await resolveTools();
+      const { tools } = await resolveTools();
 
       const result = await tools['mcp_credential_echo_env'].execute({});
 
@@ -277,7 +278,7 @@ describe('MCP integration', () => {
 
     it('leaves a credential the network policy denies out of the server environment', async () => {
       setupVault({ type: 'limited', allowed_hosts: ['api.example.com'] });
-      const tools = await resolveTools();
+      const { tools } = await resolveTools();
 
       const result = await tools['mcp_credential_echo_env'].execute();
 
@@ -287,6 +288,38 @@ describe('MCP integration', () => {
       expect(JSON.stringify(result)).not.toContain(SECRET);
       const actions = db!.prepare('SELECT action FROM credential_audit_events').all() as { action: string }[];
       expect(actions.map((row) => row.action)).toContain('runtime_denied');
+    });
+
+    it('reconnects the live transport so a rotated value replaces the one it connected with', async () => {
+      setupVault({ type: 'unrestricted', allowed_hosts: [] });
+      const { tools, resolver } = await resolveTools();
+      const echo = tools['mcp_credential_echo_env'] as { execute: () => Promise<unknown> };
+      expect(JSON.stringify(await echo.execute())).toContain('TOKEN=[REDACTED]');
+
+      // Rotate the stored secret the way the rotate route does, then ask the session
+      // to rebuild its transports.
+      const rotated = 'rotated-mcp-vault-secret';
+      const encrypted = encryptSecret(rotated, tmpDir);
+      db!.prepare(
+        `UPDATE credential_records
+         SET secret_ciphertext = ?, secret_nonce = ?, secret_tag = ?, value_hint = ?, updated_at = ?
+         WHERE id = 'crd_mcp'`,
+      ).run(encrypted.ciphertext, encrypted.nonce, encrypted.tag, '••••cret', new Date().toISOString());
+
+      // Before the reconnect the subprocess still holds the value it started with, and
+      // the redactor — resolved per call — no longer knows it, so what comes back is
+      // the stale value rather than a redacted one. That is the gap this closes.
+      const stale = JSON.stringify(await echo.execute());
+
+      await resolver.refreshSessionMcpCredentials(session.id);
+
+      // The same wrapper the strategy already holds now reports the new value, and the
+      // value it was connected with is gone from it.
+      const fresh = JSON.stringify(await echo.execute());
+      expect(fresh).not.toBe(stale);
+      expect(fresh).toContain('TOKEN=[REDACTED]');
+      expect(fresh).not.toContain(SECRET);
+      expect(fresh).not.toContain(rotated);
     });
   });
 

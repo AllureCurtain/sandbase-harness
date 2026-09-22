@@ -425,6 +425,20 @@ export class ToolResolver {
     return tools;
   }
 
+  /**
+   * Reconnect a session's MCP servers through their credential resolver.
+   *
+   * Called when a vault the session references is rotated, so each transport is
+   * rebuilt with the value the session holds now. A session with no connected server
+   * has nothing to refresh and is left alone; the cached tool wrappers stay valid
+   * because they delegate through the manager's live tool map.
+   */
+  async refreshSessionMcpCredentials(sessionId: string): Promise<void> {
+    const manager = this.mcpManagers.get(sessionId);
+    if (!manager) return;
+    this.mcpToolCache.set(sessionId, await manager.refreshAllCredentials());
+  }
+
   private async getOrConnectMcp(
     sessionId: string,
     agent: AgentDefinition,
