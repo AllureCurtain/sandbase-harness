@@ -322,14 +322,14 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'operations',
     id: 'webhook-subscriptions',
     status: 'partial',
-    reason: 'Delivery follows the published contract: reference payload with the event under data.type/data.id, Standard Webhooks v1 signature over id.timestamp.body, one stable event id across a fan-out with a fresh timestamp per attempt, a three-attempt ceiling, 5-120s jittered backoff, all three auto-disable reasons and the reset-on-success rule. Deviations: subscriptions are managed over a local REST surface, the event vocabulary is partly local, the private-address auto-disable is opt-in because this runtime is self-hosted, and the sustained-failure window length is a local choice.',
+    reason: 'Locally implemented, but the delivery behaviour is not the published contract. Subscriptions are managed over REST under /v1/webhooks (with the /v1/x mirror) and delivery is synchronous and on-demand: POST /v1/webhooks/dispatch and POST /v1/webhooks/retry-due must be driven by a caller, and there is no background dispatcher. A first attempt carries the published header names and a Standard Webhooks v1 signature over id.timestamp.body, but the payload is the local {type: "webhook_event", event, webhook_id, data, created_at} envelope rather than the published reference envelope, a retry re-sends only the legacy body signature, no auto-disable or disabled_reason exists (a non-2xx is retried, never a disable), the private-address rule is absent, and the backoff is a fixed 60s/120s rather than jittered.',
     contract: 'contracts/anthropic-cma/operations.md',
   },
   {
     area: 'operations',
     id: 'scheduled-deployment-timers',
     status: 'partial',
-    reason: 'Behaviour follows the published contract: cron evaluated in the deployment timezone, startup through the canonical session path, run records with trigger_context, pause/unpause, the published lifecycle event names, re-arming after downtime, and the asymmetric failure split where a rate limit does not pause but an unrecoverable error does, while the deployment\'s own agent being archived or deleted archives the deployment with no run recorded. Both /v1/deployments (published alias) and /v1/scheduled-deployments (historical local path) use the same handlers; the response remains a documented local scheduled_deployment shape.',
+    reason: 'A stored resource with a cron cadence evaluated in the deployment\'s own IANA timezone, a run record per attempt, and session creation through the canonical SessionManager path. It is not the published deployment contract: there is no /v1/deployments alias, no trigger_context, no pause/unpause routes, no deployment.* lifecycle events, and no failure split — every session-creation error records a failed run and advances the cadence, with no own-agent preflight, auto-pause or auto-archive. Re-arming after downtime follows from the persisted next_run_at rather than a timer: POST /v1/scheduled-deployments/run-due must be driven by a caller.',
     contract: 'contracts/anthropic-cma/operations.md',
   },
   {

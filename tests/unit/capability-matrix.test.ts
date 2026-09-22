@@ -117,8 +117,9 @@ describe('capability matrix', () => {
     expect(capabilityEntry('github-repository-identity-freeze').status).toBe('supported');
     // Webhooks and scheduled deployments *are* covered by the published
     // contract (delivery behaviour, deployment lifecycle), so they are not
-    // extensions and cannot be claimed as plain `supported` while their endpoint
-    // paths and event vocabulary still differ. See operations.md §4.
+    // extensions and cannot be claimed as plain `supported` while the delivery
+    // envelope, the disable policy and the deployment control surface differ.
+    // See operations.md §4.
     expect(capabilityEntry('webhook-subscriptions').status).toBe('partial');
     expect(capabilityEntry('scheduled-deployment-timers').status).toBe('partial');
     expect(capabilityEntry('outcome-evaluation').status).toBe('supported');
@@ -128,11 +129,16 @@ describe('capability matrix', () => {
   it('names the deviation that keeps each operations entry from being supported', () => {
     // `partial` without a readable deviation is indistinguishable from
     // `supported`. Only the two operations entries are pinned here rather than
-    // imposing a wording rule on every partial entry in the matrix.
+    // imposing a wording rule on every partial entry in the matrix. Each pin is
+    // an *absence* — the published auto-disable policy has no implementation at
+    // all, and the published deployment control surface is missing rather than
+    // merely spelled differently. An absence is pinned rather than a topic word
+    // because the earlier wording named both topics while claiming the
+    // behaviour worked, so a topic word would pass on either text.
     expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
-      .toContain('opt-in');
+      .toContain('no auto-disable');
     expect(capabilityEntry('scheduled-deployment-timers').reason.toLowerCase())
-      .toContain('/v1/deployments');
+      .toContain('no pause/unpause');
   });
 
   it('does not claim a canonical capability the runtime only wires through an extension', () => {

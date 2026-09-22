@@ -1239,7 +1239,7 @@ evaluation. Automatic webhook dispatch and cron scheduling remain planned
 background workers.
 
 ### Webhooks
-Every delivery carries the Standard Webhooks v1 headers:
+A first delivery attempt carries the Standard Webhooks v1 headers:
 
 ```text
 webhook-id: <delivery id>
@@ -1258,7 +1258,9 @@ base64-decoded to its key bytes; an unprefixed secret is used as raw UTF-8, so a
 workspace that predates per-endpoint secrets keeps producing valid signatures.
 
 The legacy `X-Managed-Agents-Signature` header is still sent, so an existing
-receiver keeps working.
+receiver keeps working. A retry re-sends that legacy body signature only: the
+published header set is not repeated on a retry, so a receiver should not read a
+missing `webhook-signature` as a forgery.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
