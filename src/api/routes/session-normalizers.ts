@@ -2,7 +2,11 @@ import type { ServerDeps } from '../server.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { resolveFileMountPath } from '@/core/session/file-mount-path.js';
-import { checkMemoryInstructions } from '@/core/memory/semantics.js';
+import {
+  checkMemoryInstructions,
+  defaultMemoryMountPath,
+  MAX_MEMORY_STORES_PER_SESSION,
+} from '@/core/memory/semantics.js';
 import {
   normalizeRepoMountPath,
   parseCheckout,
@@ -62,12 +66,23 @@ export function normalizeResources(deps: ServerDeps, value: unknown): Validation
   if (!Array.isArray(value)) return { ok: false, message: 'resources must be an array' };
 
   const resources: Array<Record<string, unknown>> = [];
+  let memoryStoreCount = 0;
+  const memoryMounts = new Set<string>();
   for (const [index, resource] of value.entries()) {
     if (!resource || typeof resource !== 'object' || Array.isArray(resource)) {
       return { ok: false, message: `resources[${index}] must be an object` };
     }
+    if ((resource as Record<string, unknown>).type === 'memory_store') memoryStoreCount += 1;
+    if (memoryStoreCount > MAX_MEMORY_STORES_PER_SESSION) {
+      return { ok: false, message: `A session may attach at most ${MAX_MEMORY_STORES_PER_SESSION} memory stores` };
+    }
     const normalized = normalizeSessionResource(deps, resource as Record<string, unknown>, index);
     if (!normalized.ok) return normalized;
+    if (normalized.value.type === 'memory_store') {
+      const mountPath = normalized.value.mount_path as string;
+      if (memoryMounts.has(mountPath)) return { ok: false, message: `resources[${index}].mount_path duplicates ${mountPath}` };
+      memoryMounts.add(mountPath);
+    }
     resources.push(normalized.value);
   }
   return { ok: true, value: resources };
@@ -145,17 +160,17 @@ export function normalizeGithubRepositoryResource(deps: ServerDeps, resource: Re
 function normalizeMemoryStoreResource(deps: ServerDeps, resource: Record<string, unknown>, index: number): ValidationResult<Record<string, unknown>> {
   const memoryStoreId = readString(resource.memory_store_id);
   if (!memoryStoreId?.startsWith('memstore_')) return { ok: false, message: `resources[${index}].memory_store_id is required` };
-  const row = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(memoryStoreId);
+  const row = deps.db.prepare('SELECT id, name FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(memoryStoreId) as { id: string; name: string } | undefined;
   if (!row) return { ok: false, message: `Memory store not found: ${memoryStoreId}` };
 
   const access = readString(resource.access);
   if (access && access !== 'read_write' && access !== 'read_only') {
     return { ok: false, message: `resources[${index}].access must be read_write or read_only` };
   }
-  const mountPath = readString(resource.mount_path);
-  if (mountPath && !mountPath.startsWith('/')) return { ok: false, message: `resources[${index}].mount_path must start with /` };
+  const rawMountPath = readString(resource.mount_path);
+  const mountPath = rawMountPath ? normalizeMemoryMountPath(rawMountPath) : defaultMemoryMountPath(row.name);
+  if (!mountPath) return { ok: false, message: `resources[${index}].mount_path is invalid` };
   const instructions = readString(resource.instructions);
-  // The session-level instructions field is capped, and an absent field is not.
   const instructionsCheck = checkMemoryInstructions(instructions);
   if (!instructionsCheck.ok) {
     return { ok: false, message: `resources[${index}].instructions ${instructionsCheck.message}` };
@@ -165,11 +180,18 @@ function normalizeMemoryStoreResource(deps: ServerDeps, resource: Record<string,
     value: {
       type: 'memory_store',
       memory_store_id: memoryStoreId,
+      mount_path: mountPath,
       ...(access ? { access } : {}),
-      ...(mountPath ? { mount_path: mountPath } : {}),
       ...(instructions ? { instructions } : {}),
     },
   };
+}
+
+function normalizeMemoryMountPath(value: string): string | undefined {
+  const normalized = value.replace(/\\/g, '/').replace(new RegExp('/+', 'g'), '/').replace(new RegExp('/+$'), '');
+  if (!normalized.startsWith('/') || normalized === '/' || normalized.includes('\0')) return undefined;
+  if (normalized.split('/').some((segment) => segment === '.' || segment === '..')) return undefined;
+  return normalized;
 }
 
 function readString(value: unknown): string | undefined {

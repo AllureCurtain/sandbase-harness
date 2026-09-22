@@ -43,6 +43,7 @@ that every Claude hosted capability exists locally.
 | Credential audit | `/v1/credential_vaults/{id}/audit` | Supported | Lists rotation/use/audit metadata events. |
 | Memory stores | `/v1/memory_stores` | Supported | Create/list/retrieve/update/archive/delete stores. |
 | Memory records | `/v1/memory_stores/{id}/memories` | Supported | Create/list/update/delete memory records with size/hash metadata. Content is capped at 100 kB measured in bytes, a store holds at most 10,000 memories, `path_prefix` and `depth` scope a list, and a `content_sha256` precondition refuses a stale write and reports the current hash. |
+| Session memory mounts | Session creation `resources[]` | Supported | Mount up to eight memory stores at whole-segment paths; file tools persist mounted reads/writes through `memory_records`, read-only mounts reject writes, and existing-file updates require a content precondition. |
 | Skills | `/v1/skills` | Supported | List built-in/custom skills and upload validated custom ZIPs. |
 | API keys | `/v1/api-keys` | Supported | List/create/delete managed keys; config/env keys are read-only. |
 | Webhooks | `/v1/webhooks` | Advanced | Create/list/update/archive, test deliveries, attempts, and retry due deliveries. Deliveries carry the Standard Webhooks v1 headers, with the signature covering id, timestamp, and body, constant-time verification, and a rotation window. Not needed for the first local run. |

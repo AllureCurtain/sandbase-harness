@@ -483,11 +483,14 @@ Supported session resources:
   {
     "type": "memory_store",
     "memory_store_id": "memstore_abc123",
+    "mount_path": "/mnt/memory/project-notes",
     "access": "read_write",
     "instructions": "Use this for durable project notes."
   }
 ]
 ```
+
+A `memory_store` resource defaults to `/mnt/memory/<slugged-store-name>` when `mount_path` is omitted. Mounted paths are whole-segment paths; traversal and duplicate mount paths are rejected, and a session may attach at most eight stores. The `read`, `write`, `edit`, `glob`, and `grep` tools address mounted content through `memory_records`; read-only mounts reject writes, and shell access is refused while any memory mount is attached because arbitrary shell changes cannot be persisted safely. Updates to existing mounted files require a `precondition_sha256` value so stale content cannot overwrite a newer version.
 
 Only `user.*` events can be appended by clients:
 

@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
 import type { Session, SessionLoopEngine } from '@/types/session.js';
+import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { InMemoryEventLog } from './in-memory-event-log.js';
@@ -33,7 +34,8 @@ export interface DelegationServiceDeps {
    */
   provisionSandbox: (session: Session, sandboxId: string) => Promise<SandboxInstance>;
   composeSystemPrompt: (agent: AgentDefinition) => string;
-  buildSandboxTools: (agent: AgentDefinition, sandbox: SandboxInstance) => Record<string, any>;
+  buildMemoryContext?: (session: Session, agent: AgentDefinition, event: UserEvent) => Promise<string>;
+  buildSandboxTools: (agent: AgentDefinition, sandbox: SandboxInstance, session?: Session) => Record<string, any>;
   resolveSkillDirs?: (agent: AgentDefinition) => string[];}
 
 export class DelegationService {
@@ -149,33 +151,35 @@ export class DelegationService {
       ? undefined
       : this.deps.modelRegistry.createModel(target.model);
     const subSessionId = `subsess_${ctx.chain.join('.')}_${nanoid(8)}`;
+    const childSession: Session = {
+      id: subSessionId,
+      agentId: target.name,
+      agentName: target.name,
+      agentDefinition: target,
+      loopEngine: session.loopEngine ?? 'builtin',
+      environmentId: session.environmentId,
+      resources: session.resources,
+      contextId: session.contextId,
+      status: 'running',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Session;
     // Same backend as the parent session, resolved through the same fail-loud
     // path — a sub-agent must not receive weaker isolation than its parent.
     const sandbox = await this.deps.provisionSandbox(session, subSessionId);
 
     try {
-      const tools = this.deps.buildSandboxTools(target, sandbox);
+      const tools = this.deps.buildSandboxTools(target, sandbox, childSession);
       Object.assign(tools, this.buildDelegationTools(target, ctx, session));
 
       const memLog = new InMemoryEventLog();
       const collected: string[] = [];
 
       const subContext: StrategyContext = {
-        session: {
-          id: subSessionId,
-          agentId: target.name,
-          agentName: target.name,
-          agentDefinition: target,
-          loopEngine: session.loopEngine ?? 'builtin',
-          // Inherit the parent's environment so anything downstream that
-          // resolves configuration from it sees the same backend the
-          // sub-agent's sandbox was provisioned from.
-          environmentId: session.environmentId,
-          status: 'running',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        systemPrompt: this.deps.composeSystemPrompt(target),
+        session: childSession,
+        systemPrompt: this.deps.buildMemoryContext
+          ? await this.deps.buildMemoryContext(childSession, target, { type: 'user.message', content: [{ type: 'text', text: task }] })
+          : this.deps.composeSystemPrompt(target),
         userEvent: { type: 'user.message', content: [{ type: 'text', text: task }] },
         messages: [{ role: 'user', content: [{ type: 'text', text: task }] }] as any,
         modelConfig,

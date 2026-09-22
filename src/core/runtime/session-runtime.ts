@@ -9,6 +9,8 @@ import { SnapshotManager } from '../session/snapshot-manager.js';
 import type { ArtifactStore } from '../storage/artifact-store.js';
 import type { Skill } from '../skills/loader.js';
 import type { MemoryProvider } from '../memory/memory-provider.js';
+import { SqliteMemoryRecordsProvider } from '../memory/sqlite-memory-records-provider.js';
+import { SqliteMemoryMountAdapter, type MemoryMountAdapter } from '../memory/mount-adapter.js';
 import type { ModelRegistry } from '../../model/registry.js';
 import type { SandboxProvider } from '@/types/sandbox.js';
 import type { SandboxProviderRegistry } from '@/sandbox/registry.js';
@@ -35,6 +37,11 @@ export interface RuntimeSessionServicesOptions {
   skills: Skill[];
   skillsDir?: string;
   memory?: MemoryProvider;
+  /** Optional override for API-managed memory_records; defaults to SQLite. */
+  memoryRecords?: MemoryProvider;
+  /** Resolves a store name for legacy resources without persisted mount_path. */
+  memoryStoreName?: (storeId: string) => string | undefined;
+  memoryMount?: MemoryMountAdapter;
   artifactStore: ArtifactStore;
   defaultMaxSteps: number;
   /** Optional sink for sandbox capability-gap warnings. */
@@ -58,6 +65,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
   );
   const eventLogger = sessionManager.getEventLogger();
   const snapshots = new SnapshotManager(options.db, options.artifactStore.path('snapshots'));
+  const memoryRecords = options.memoryRecords ?? new SqliteMemoryRecordsProvider(options.db);
 
   const executor = new DefaultSessionExecutor({
     agents: options.agents,
@@ -73,6 +81,12 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     skills: options.skills,
     skillsDir: options.skillsDir,
     memory: options.memory,
+    memoryRecords,
+    memoryStoreName: options.memoryStoreName ?? ((storeId: string) => {
+      const row = options.db.prepare('SELECT name FROM memory_stores WHERE id = ?').get(storeId) as { name: string } | undefined;
+      return row?.name;
+    }),
+    memoryMount: options.memoryMount ?? new SqliteMemoryMountAdapter(options.db),
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,
     logger: options.logger,

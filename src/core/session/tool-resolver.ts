@@ -2,6 +2,11 @@ import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
+import { memoryBindingForPath, resolveMemoryBindings, type MemoryBinding } from '@/core/memory/bindings.js';
+import type { MemoryMountAdapter } from '@/core/memory/mount-adapter.js';
+import { memoryContentHash } from '@/core/memory/semantics.js';
+import { normalizeMemoryRecordPath } from '@/core/memory/mount-adapter.js';
+import { collectGrepHits, editOnce, mountProviderUnavailable, mountRelativePath, refuseBashOnMemoryMount, type SessionMemoryMount } from './memory-mount-tools.js';
 import { McpManager, type McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orchestrator/agent-orchestrator.js';
 import type { EventLogger } from './event-logger.js';
@@ -19,6 +24,9 @@ export interface ToolResolverDeps {
    * model-facing or API-facing input can relax the guard.
    */
   webFetch?: WebFetchOverrides;
+  /** Path-addressed memory provider. Mount calls fail closed when absent. */
+  memoryMount?: MemoryMountAdapter;
+  memoryStoreName?: (storeId: string) => string | undefined;
 }
 
 export interface ToolConfirmationResolution {
@@ -46,8 +54,10 @@ export class ToolResolver {
     agent: AgentDefinition,
     sandbox: SandboxInstance,
   ): Promise<Record<string, any>> {
+    const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
+    const mount = this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: session.id } : undefined;
     const delegationCtx = rootDelegationContext(agent.name, DEFAULT_MAX_DELEGATION_DEPTH);
-    const tools = this.buildSandboxTools(agent, sandbox);
+    const tools = this.buildSandboxTools(agent, sandbox, bindings, mount);
     Object.assign(tools, await this.getOrConnectMcp(session.id, agent));
     Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx, session));
     // Custom tools are model-visible declarations only. The caller executes them
@@ -132,7 +142,9 @@ export class ToolResolver {
     let resultText: string;
     let isError = false;
     if (event.result === 'allow') {
-      const executableTools = this.buildSandboxTools(agent, sandbox);
+      const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
+      const mount = this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: session.id } : undefined;
+      const executableTools = this.buildSandboxTools(agent, sandbox, bindings, mount);
       Object.assign(executableTools, this.mcpToolCache.get(session.id) ?? {});
       Object.assign(
         executableTools,
@@ -193,25 +205,40 @@ export class ToolResolver {
     return this.mcpManagers.get(sessionId)?.getStatuses() ?? [];
   }
 
-  buildSandboxTools(agent: AgentDefinition, sandbox: SandboxInstance): Record<string, any> {
+  buildSandboxTools(
+    agent: AgentDefinition,
+    sandbox: SandboxInstance,
+    bindings: readonly MemoryBinding[] = [],
+    memoryMount?: SessionMemoryMount,
+  ): Record<string, any> {
     const tools: Record<string, any> = {};
     const enabledTools = new Set(getEnabledToolNames(agent));
+    const mount = memoryMount ?? (this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: 'unknown' } : undefined);
+
+    const mounted = (path: string) => memoryBindingForPath(bindings, path);
+    const mountError = (binding: MemoryBinding): string => mount
+      ? mountProviderUnavailable(binding.mountPath)
+      : mountProviderUnavailable(binding.mountPath);
+    const readMounted = (path: string) => {
+      const binding = mounted(path);
+      if (!binding) return undefined;
+      if (!mount) return mountError(binding);
+      const relative = mountRelativePath(path, binding);
+      const checked = normalizeMemoryRecordPath(relative);
+      if (!checked.ok) return `Error: ${checked.error.message}`;
+      const result = mount.adapter.read(binding.storeId, checked.value);
+      return result.ok ? result.value.content : `Error: ${result.error.message}`;
+    };
 
     if (enabledTools.has('bash')) {
       tools['bash'] = {
         description: 'Execute a shell command in the sandbox',
-        parameters: {
-          type: 'object',
-          properties: {
-            command: { type: 'string', description: 'Shell command to execute' },
-          },
-          required: ['command'],
-        },
+        parameters: { type: 'object', properties: { command: { type: 'string', description: 'Shell command to execute' } }, required: ['command'] },
         execute: async ({ command }: { command: string }) => {
+          const refusal = refuseBashOnMemoryMount(command, bindings);
+          if (refusal) return refusal;
           const result = await sandbox.execute(command);
-          return result.exitCode === 0
-            ? result.stdout
-            : `Error (exit ${result.exitCode}): ${result.stderr}`;
+          return result.exitCode === 0 ? result.stdout : `Error (exit ${result.exitCode}): ${result.stderr}`;
         },
       };
     }
@@ -219,19 +246,11 @@ export class ToolResolver {
     if (enabledTools.has('read')) {
       tools['read'] = {
         description: 'Read a file from the workspace',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string', description: 'File path relative to workspace' },
-          },
-          required: ['path'],
-        },
+        parameters: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace' } }, required: ['path'] },
         execute: async ({ path }: { path: string }) => {
-          try {
-            return await sandbox.readFile(path);
-          } catch (err: any) {
-            return `Error: ${err.message}`;
-          }
+          const mountedContent = readMounted(path);
+          if (mountedContent !== undefined) return mountedContent;
+          try { return await sandbox.readFile(path); } catch (err: any) { return `Error: ${err.message}`; }
         },
       };
     }
@@ -244,10 +263,24 @@ export class ToolResolver {
           properties: {
             path: { type: 'string', description: 'File path relative to workspace' },
             content: { type: 'string', description: 'File content to write' },
+            precondition_sha256: { type: 'string', description: 'Hash of the content last read' },
           },
           required: ['path', 'content'],
         },
-        execute: async ({ path, content }: { path: string; content: string }) => {
+        execute: async ({ path, content, precondition_sha256 }: { path: string; content: string; precondition_sha256?: string }) => {
+          const binding = mounted(path);
+          if (binding) {
+            const relative = mountRelativePath(path, binding);
+            const checked = normalizeMemoryRecordPath(relative);
+            if (!checked.ok) return `Error: ${checked.error.message}`;
+            if (binding.access === 'read_only') return `Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`;
+            if (!mount) return mountError(binding);
+            const result = mount.adapter.upsert(binding.storeId, checked.value, content, {
+              sessionId: mount.sessionId,
+              preconditionSha256: precondition_sha256,
+            });
+            return result.ok ? `Written ${content.length} bytes to ${path} (version ${result.value.version})` : `Error: ${result.error.message}`;
+          }
           await sandbox.writeFile(path, content);
           return `Written ${content.length} bytes to ${path}`;
         },
@@ -257,26 +290,32 @@ export class ToolResolver {
     if (enabledTools.has('edit')) {
       tools['edit'] = {
         description: 'Replace an exact string in a file with new content',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string', description: 'File path relative to workspace' },
-            old_string: { type: 'string', description: 'Exact text to find and replace' },
-            new_string: { type: 'string', description: 'Replacement text' },
-          },
-          required: ['path', 'old_string', 'new_string'],
-        },
+        parameters: { type: 'object', properties: { path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } }, required: ['path', 'old_string', 'new_string'] },
         execute: async ({ path, old_string, new_string }: { path: string; old_string: string; new_string: string }) => {
+          const binding = mounted(path);
+          if (binding) {
+            const relative = mountRelativePath(path, binding);
+            const checked = normalizeMemoryRecordPath(relative);
+            if (!checked.ok) return `Error: ${checked.error.message}`;
+            if (binding.access === 'read_only') return `Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`;
+            if (!mount) return mountError(binding);
+            const current = mount.adapter.read(binding.storeId, checked.value);
+            if (!current.ok) return `Error: ${current.error.message}`;
+            const edited = editOnce(current.value.content, old_string, new_string, path);
+            if (!edited.ok) return edited.message;
+            const result = mount.adapter.update(binding.storeId, mountRelativePath(path, binding), edited.value, {
+              sessionId: mount.sessionId,
+              preconditionSha256: memoryContentHash(current.value.content),
+            });
+            return result.ok ? `Edited ${path} (version ${result.value.version})` : `Error: ${result.error.message}`;
+          }
           try {
             const current = await sandbox.readFile(path);
-            const count = current.split(old_string).length - 1;
-            if (count === 0) return `Error: old_string not found in ${path}`;
-            if (count > 1) return `Error: old_string matches ${count} times in ${path}; provide a more specific string`;
-            await sandbox.writeFile(path, current.replace(old_string, new_string));
+            const edited = editOnce(current, old_string, new_string, path);
+            if (!edited.ok) return edited.message;
+            await sandbox.writeFile(path, edited.value);
             return `Edited ${path}`;
-          } catch (err: any) {
-            return `Error: ${err.message}`;
-          }
+          } catch (err: any) { return `Error: ${err.message}`; }
         },
       };
     }
@@ -284,15 +323,21 @@ export class ToolResolver {
     if (enabledTools.has('glob')) {
       tools['glob'] = {
         description: 'List files in the workspace matching a substring or extension',
-        parameters: {
-          type: 'object',
-          properties: {
-            pattern: { type: 'string', description: 'Substring or extension (e.g. ".ts") to match in file paths' },
-          },
-          required: ['pattern'],
-        },
-        execute: async ({ pattern }: { pattern: string }) => {
-          const files = await sandbox.listFiles('.');
+        parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] },
+        execute: async ({ pattern, path }: { pattern: string; path?: string }) => {
+          const binding = path ? mounted(path) : undefined;
+          if (binding) {
+            if (!mount) return mountError(binding);
+            const result = mount.adapter.list(binding.storeId);
+            if (!result.ok) return `Error: ${result.error.message}`;
+            const relativeScope = mountRelativePath(path!, binding);
+            const files = result.value
+              .filter((file) => relativeScope === '/' || file.path === relativeScope || file.path.startsWith(`${relativeScope.replace(/\/$/, '')}/`))
+              .map((file) => `${binding.mountPath}${file.path}`)
+              .filter((file) => file.includes(pattern));
+            return files.length > 0 ? files.join('\n') : `No files matching "${pattern}"`;
+          }
+          const files = await sandbox.listFiles(path ?? '.');
           const matched = files.filter((file) => file.includes(pattern));
           return matched.length > 0 ? matched.join('\n') : `No files matching "${pattern}"`;
         },
@@ -302,44 +347,34 @@ export class ToolResolver {
     if (enabledTools.has('grep')) {
       tools['grep'] = {
         description: 'Search file contents in the workspace for a substring',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Substring to search for' },
-            path: { type: 'string', description: 'Optional directory to limit search (default: whole workspace)' },
-          },
-          required: ['query'],
-        },
+        parameters: { type: 'object', properties: { query: { type: 'string' }, path: { type: 'string' } }, required: ['query'] },
         execute: async ({ query, path }: { query: string; path?: string }) => {
+          const binding = path ? mounted(path) : undefined;
+          if (binding) {
+            if (!mount) return mountError(binding);
+            const result = mount.adapter.list(binding.storeId);
+            if (!result.ok) return `Error: ${result.error.message}`;
+            const scope = mountRelativePath(path!, binding);
+            const hits: string[] = [];
+            for (const file of result.value) {
+              if (scope !== '/' && file.path !== scope && !file.path.startsWith(`${scope.replace(/\/$/, '')}/`)) continue;
+              collectGrepHits(hits, `${binding.mountPath}${file.path}`, file.content, query);
+            }
+            return hits.length > 0 ? hits.slice(0, 200).join('\n') : `No matches for "${query}"`;
+          }
           const files = await sandbox.listFiles(path ?? '.');
           const hits: string[] = [];
           for (const file of files) {
-            try {
-              const content = await sandbox.readFile(file);
-              const lines = content.split('\n');
-              lines.forEach((line, index) => {
-                if (line.includes(query)) hits.push(`${file}:${index + 1}: ${line.trim()}`);
-              });
-            } catch {
-              // skip unreadable files
-            }
+            try { collectGrepHits(hits, file, await sandbox.readFile(file), query); } catch { /* skip unreadable files */ }
           }
           return hits.length > 0 ? hits.slice(0, 200).join('\n') : `No matches for "${query}"`;
         },
       };
     }
 
-    // `web_fetch` executes here; `web_search` deliberately does not. No search
-    // provider is bundled, so registering a `web_search` executor that scraped
-    // a search engine would be a different tool from the one the contract
-    // describes. `web_search` stays refused by capability admission.
     if (enabledTools.has('web_fetch')) {
-      tools['web_fetch'] = createWebFetchTool({
-        policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'),
-        overrides: this.deps.webFetch,
-      });
+      tools['web_fetch'] = createWebFetchTool({ policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'), overrides: this.deps.webFetch });
     }
-
     return tools;
   }
 
