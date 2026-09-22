@@ -4,7 +4,7 @@ Contract area: `/v1/sessions` — lifecycle, status transitions, initial events,
 resources, budget.
 Status: `supported` for lifecycle and initial events. The session budget is a
 separate contract area with its own status and is not claimed here; see
-`budget.md` and §4.
+`budget.md`.
 Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
 `src/api/standard.ts`, `src/core/session/session-manager.ts`.
 
@@ -68,17 +68,17 @@ the 50-event ceiling, and the initial event type whitelist.
 
 | Difference | Detail |
 | --- | --- |
-| Session budget | Not tracked at all. `session-budget` is not a field SandBase reads, stores, or enforces. |
+| Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | `cleanup_pending` | SandBase exposes this as a distinct status for local sandbox teardown. |
 | Extension endpoints | Session inspection and control endpoints under `/v1/x` are local additions and are excluded from CMA admission. |
 
 ## 5. Reason for the difference
 
-- Session budget is a deliberate non-goal: a self-hosted single-tenant runtime
-  has one operator, so a per-session spend ceiling protects nobody and would add
-  state that can drift from the provider's real billing. Recording this as
-  `not_applicable` keeps it distinguishable from unimplemented work.
+- Session budget has its own contract file rather than a clause here. A ceiling is
+  priced from an operator-supplied profile and enforced at event admission, so it
+  changes what an accepted event is allowed to start — a session-ingress concern
+  whose evidence is a refusal code, not a lifecycle transition.
 - Not echoing `initial_events` avoids presenting accepted input as restatable
   session state; the event stream is the authoritative record.
 - `cleanup_pending` exists because local sandbox teardown is asynchronous and a
@@ -100,5 +100,5 @@ the 50-event ceiling, and the initial event type whitelist.
 
 ## 7. Status
 
-`supported` for lifecycle, status vocabulary, and initial events. Session budget
-is `not_applicable` by design and is listed in the capability matrix as such.
+`supported` for lifecycle, status vocabulary, and initial events. The session
+budget is `partial` in its own contract file, and this file does not claim it.

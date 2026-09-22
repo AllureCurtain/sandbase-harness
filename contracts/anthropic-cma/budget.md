@@ -1,10 +1,10 @@
 # CMA Contract — session budget
 
 Contract area: `max_list_cost` enforcement, usage reporting, pause and resume.
-Status: `planned`. See §7.
-Source: not implemented. The design described here would live in
-`src/core/session/session-budget.ts`, `src/core/session/cost-profile.ts`,
-`src/core/session/session-manager.ts`, and `src/api/standard.ts`.
+Status: `partial`. See §7.
+Source: `src/core/session/session-budget.ts`, `src/core/session/cost-profile.ts`,
+`src/core/session/session-manager.ts`, `src/api/routes/sessions.ts`,
+`src/api/standard.ts`, migration `035_session_budget`.
 
 ---
 
@@ -32,47 +32,56 @@ Source: not implemented. The design described here would live in
 
 ## 2. Current SandBase shape
 
-None of this behaviour is implemented, so there is no current shape to compare
-against. What exists today is the surface the design would have to extend:
-
-- Nothing prices model consumption. `session.usage` is built by
-  `buildSessionUsageSnapshot` in `src/core/session/session-usage.ts`, which
-  reports `input_tokens`, `output_tokens` and `active_seconds` derived from the
-  append-only log, and carries neither `list_cost` nor `budget`.
-- No session accepts a `budget` object, and no code path refuses work because a
-  ceiling was reached. A session therefore has no spending ceiling at all.
-- `docs/api.md` records both fields as omitted, which is the accurate
-  description of the runtime as it stands.
+- `CostProfile` (`src/core/session/cost-profile.ts`) holds integer cents per
+  million tokens per model. `EMPTY_COST_PROFILE` is an explicit zero profile —
+  no model rates, zero runtime and web-search rates — so "this model has no list
+  price" is a different statement from "this model costs nothing". An operator
+  supplies rates through `MANAGED_AGENTS_COST_PROFILE` or `parseCostProfile`.
+- `session-budget.ts` owns the wire value and every refusal rule. Consumption is
+  aggregated from `span.model_request_end` rows — already one canonical usage
+  record per model request — into exact **microcents** (1e-6 cent), so the
+  between-requests comparison never depends on float rounding. Reported cents are
+  that total rounded **up**, so a client reading `list_cost` is never told it
+  spent less than it did.
+- A session may declare a `budget` at creation. The budget is stored in a
+  nullable `sessions.budget` column added by migration `035_session_budget`: SQL
+  NULL means the session never had one, the JSON literal `null` means it had one
+  removed, and anything else is the budget. The two "no budget" states stay
+  distinguishable because the contract refuses differently for each.
+- `assertSessionCanAcceptEvent` — already the admission gate for `POST
+  /v1/sessions/{id}/events`, `POST /v1/sessions/{id}/messages`, both `/v1/runs`
+  entry points, and the internal `sendEvent` path — refuses a work-starting event
+  once the session has reached its ceiling, with the stable code
+  `budget_reached`. Settlement events pass.
+- `session.usage` now carries `list_cost` (whole cents, priced from the profile),
+  `budget` (the value, or `null`), and `server_tool_use`.
+- `manager.update(sessionId, { budget })` implements the raise/remove rules. Only
+  the budget is updatable there; the remaining session fields belong to the
+  session-update behaviour.
 
 ## 3. Alignment
 
-Nothing is aligned yet, because nothing is implemented. These are the published
-clauses an implementation would have to satisfy:
-
-- the budget value shape and its `type: 'limit'` / `max_list_cost` nesting;
-- enforcement between model requests, expressed as an engine stop condition
-  rather than an abort;
-- pause rather than terminate, with the session reporting `budget_reached`;
-- the settlement-event whitelist at the cap;
-- refusing to attach, or to lower below consumed cost;
-- `session.usage` echoing the budget and the accumulated list cost;
-- a shared session-wide ceiling, since delegated runs mirror their
-  `span.model_request_end` onto the same session log.
+| Published clause | State |
+| --- | --- |
+| Budget value shape, `type: 'limit'` / `max_list_cost` nesting | Aligned. `parseSessionBudget` rejects a non-integer amount, a leading zero, an unknown currency, a wrong `type`, and a malformed shape with distinct stable codes. |
+| Enforcement between model requests | Aligned in effect: the event that would start the next request is refused before a turn is queued, so the request never starts. Expressed as event admission rather than an engine stop condition — see §4. |
+| Pause rather than terminate | Not aligned. The event is refused; the session is not transitioned to a paused state and no `stop_reason: budget_reached` is emitted. See §4. |
+| Settlement-event whitelist at the cap | Aligned with a narrower list. See §4. |
+| Refusing to attach, or to lower below consumed cost | Aligned. A budget is attachable at creation only, must be strictly greater than consumed cost, and cannot be re-added after removal. |
+| `session.usage` echoes the budget and the accumulated list cost | Aligned, with `list_cost` withheld when incomplete. See §4. |
+| A shared session-wide ceiling across threads | Not applicable yet: this runtime has no thread surface. Cost is aggregated per session across every `span.model_request_end` row, which is the shape a shared ceiling needs. |
 
 ## 4. Differences
 
-These are the deviations the design intends to make from the published contract.
-They are design decisions, not observations about a running system, because
-there is no running system to observe.
-
 | Difference | Detail |
 | --- | --- |
-| Prices are local, not official | `list_cost` would be computed from an operator-supplied `CostProfile`. SandBase never embeds vendor prices. With the default empty profile, no model is priced and a session cannot be budgeted at all. |
-| Unpriced model ⇒ no budget | A model the profile does not list makes the session unbudgetable (`modelWithoutListPrice`). The published contract has authoritative prices, so the case does not arise for it. |
+| Prices are local, not official | `list_cost` is computed from an operator-supplied `CostProfile`. SandBase never embeds vendor prices. With the default empty profile, no model is priced and a session cannot be budgeted at all. |
+| Unpriced model ⇒ no budget | A model the profile does not list makes the session unbudgetable (`budget_model_without_list_price`). The published contract has authoritative prices, so the case does not arise for it. |
 | `list_cost` withheld when incomplete | When any model used is unpriced, `usage.list_cost` is omitted rather than reported as a lower bound. Reporting a lower bound as a total would understate spend to a caller that is about to choose a new cap. |
-| No `budget_reached` on the thread when the turn also ended | The thread reports `end_turn` whenever the turn completed, and only the session reports `budget_reached`. This matches the published rule for the both-at-once case; the session-level reason is the authoritative pause signal. |
-| No rescheduling | `session.status_rescheduled` / `session.thread_status_rescheduled` would not be emitted, because no transient-error retry schedule exists. |
-| Server-tool cost is always zero | `usage.server_tool_use` reports `{web_search_requests: 0, web_fetch_requests: 0}` unconditionally, because web tool execution is `unavailable`. This is a true statement about local behaviour, not a claim that the tools ran. |
+| The cap refuses the next event instead of pausing the session | The published design pauses the session and reports `budget_reached` on the thread. SandBase refuses the work-starting event with the code `budget_reached` and leaves the session status alone: the pause signal is a thread-level fact, and this runtime has no thread surface to report it on. The consequence the contract cares about — the next model request does not start — holds either way. |
+| The settlement whitelist names three events, not four | The published list also names `user.tool_result`. No client can send that event here — externally executed tool results arrive as `user.custom_tool_result` — and the refusal quotes the list back to the client, so naming an event the API would reject as unknown would be worse than omitting it. |
+| No `session.status_rescheduled` | Not emitted, because no transient-error retry schedule exists. |
+| No budget alerts | `session-budget-alerts` remains a deliberate non-goal, as recorded in the capability matrix. |
 
 ## 5. Reason for the difference
 
@@ -80,32 +89,41 @@ there is no running system to observe.
   embedding a price table would make SandBase assert numbers it cannot verify.
   Making the profile operator-supplied means the spend number is traceable to a
   configuration the operator can inspect, and an *unpriceable* session fails
-  loudly instead of being metered against invented prices. This is why the
-  entry, once implemented, would still be `partial` rather than `supported`:
-  the mechanism would match, the price source deliberately would not.
+  loudly instead of being metered against invented prices. This is the main
+  reason the entry is `partial` rather than `supported`: the mechanism matches,
+  the price source deliberately does not.
 - **Withholding an incomplete total.** A partial cost is worse than none when the
   consumer is choosing a cap: it reads as "this is what you spent" and leads to a
-  budget that is too low. Naming the unpriced models instead lets the operator
-  fix the profile.
+  budget that is too low. Naming the unpriced models instead lets the operator fix
+  the profile.
+- **Refusing the event rather than pausing the session.** The pause vocabulary is
+  thread-scoped (`session.thread_status_idle` with `stop_reason`). Emitting a
+  session-level imitation would put a value in the log that no client could match
+  to the published rule. Shipping the half that is provable — the next request
+  does not start — keeps the observable promise without inventing the rest.
 - **No rescheduling.** Emitting a retry status implies a retry loop. SandBase has
   none, and inventing the event would tell a client to wait for something that
   will not happen.
 
 ## 6. Corresponding tests
 
-None yet, because the behaviour is unimplemented. An implementation is expected
-to add coverage for budget parsing and every refusal code, exact-microcent cost
-arithmetic, unpriced-model naming, exhaustion at the boundary, settlement-event
+`tests/unit/session-budget.test.ts` covers budget parsing and its refusal codes,
+exact-microcent cost arithmetic, unpriced-model naming, exhaustion at the
+boundary (just under the cap keeps running, at the cap stops), settlement-event
 acceptance at the cap, the attach/lower/remove rules, the three-state budget
 (`undefined` / `null` / object), the `session.usage` payload, and derivation from
-the durable log across a restart. Until those exist, the matrix entry stays
-`planned`.
+the durable log across a manager restart.
+`tests/unit/capability-matrix.test.ts` pins this entry's status and the
+deviations its reason names.
 
 ## 7. Status
 
-`planned`. The design is published here and the implementation is scheduled
-work. No part of it is present in the runtime: nothing prices consumption, no
-session accepts a budget, and no ceiling is enforced, so `session.usage` carries
-neither `list_cost` nor `budget`. It is not `partial`, which would claim a
-working mechanism with a documented deviation, and not `not_applicable`, which
-would deny that the work is planned.
+`partial`. The mechanism is implemented: consumption is priced in integer
+microcents from the durable log, a session may declare a ceiling at creation, and
+a session at its ceiling refuses the next work-starting event instead of starting
+another model request. It is not `supported`, because the price source is an
+operator-supplied profile rather than official list prices, and because a reached
+ceiling refuses the event rather than transitioning the session into the
+published paused state — the thread-level `budget_reached` signal needs a thread
+surface this runtime does not have. It is no longer `planned`: the behaviour is
+shipped and covered by tests.

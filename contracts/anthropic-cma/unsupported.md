@@ -83,6 +83,6 @@ Mixed, per the table in §2. Three entries are `not_applicable` by design and tw
 are `unavailable`. Every one is recorded in the capability matrix with its reason
 rather than being omitted. The two entries that used to be here and are no longer
 have their own contract files rather than being withdrawn: threads / coordinator /
-advisor is `partial`, and session budget is `planned`, because its design is
-published while nothing implements it. This file's subject is behaviour that is
-absent, and neither of them is.
+advisor is `partial`, and session budget is `partial` as well, now that it prices
+consumption and refuses the next model request at its ceiling. This file's subject
+is behaviour that is absent, and neither of them is.
