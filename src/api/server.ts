@@ -87,6 +87,8 @@ export interface ServerDeps {
     sandboxProviders: string[];
     memory: string;
     authEnabled: boolean;
+    /** Reported runtime version; quoted by handoff-bundle provenance. */
+    version?: string;
   };
   /** Dynamic runtime model registry; used after dashboard-managed providers change. */
   listRuntimeModels?: () => RuntimeModelInfo[];

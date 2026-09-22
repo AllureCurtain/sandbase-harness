@@ -10,7 +10,7 @@ export type EncryptedSecret = {
 
 export function encryptSecret(value: string, dataDir?: string): EncryptedSecret {
   const nonce = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', resolveSecretKey(dataDir), nonce);
+  const cipher = createCipheriv('aes-256-gcm', resolveSecretKeyMaterial(dataDir), nonce);
   const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
@@ -23,7 +23,7 @@ export function encryptSecret(value: string, dataDir?: string): EncryptedSecret 
 export function decryptSecret(secret: EncryptedSecret, dataDir?: string): string {
   const decipher = createDecipheriv(
     'aes-256-gcm',
-    resolveSecretKey(dataDir),
+    resolveSecretKeyMaterial(dataDir),
     Buffer.from(secret.nonce, 'base64'),
   );
   decipher.setAuthTag(Buffer.from(secret.tag, 'base64'));
@@ -33,7 +33,15 @@ export function decryptSecret(secret: EncryptedSecret, dataDir?: string): string
   ]).toString('utf8');
 }
 
-function resolveSecretKey(dataDir?: string): Buffer {
+/**
+ * The runtime's root secret key material.
+ *
+ * Exported because more than one algorithm derives from it: AES-256-GCM for
+ * stored secrets, and Ed25519 for handoff-bundle attestations. Each caller
+ * domain-separates its own derivation, so the raw bytes never serve two
+ * algorithms directly.
+ */
+export function resolveSecretKeyMaterial(dataDir?: string): Buffer {
   const configuredKey = process.env.MANAGED_AGENTS_SECRET_KEY;
   if (configuredKey) return createHash('sha256').update(configuredKey).digest();
 

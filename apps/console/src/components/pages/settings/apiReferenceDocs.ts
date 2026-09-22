@@ -11,6 +11,7 @@ import runtime_settings from './api-reference/runtime-settings.json';
 import api_keys from './api-reference/api-keys.json';
 import operations from './api-reference/operations.json';
 import worker from './api-reference/worker.json';
+import handoff from './api-reference/handoff.json';
 
 export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(sessions as unknown as ApiReferenceEndpoint[]),
@@ -25,4 +26,5 @@ export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(api_keys as unknown as ApiReferenceEndpoint[]),
   ...(operations as unknown as ApiReferenceEndpoint[]),
   ...(worker as unknown as ApiReferenceEndpoint[]),
+  ...(handoff as unknown as ApiReferenceEndpoint[]),
 ];

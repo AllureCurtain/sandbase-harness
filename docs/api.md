@@ -1407,6 +1407,19 @@ Extension endpoints expose local runtime operations.
 | `GET` | `/v1/x/mcp/status?session_id=...` | MCP connection status for a session. |
 | `POST` | `/v1/x/worker/claim` | Self-hosted sandbox worker claims pending tool-execution work. |
 | `POST` | `/v1/x/worker/complete` | Self-hosted sandbox worker reports completed or failed work. |
+| `POST` | `/v1/x/sessions/{session_id}/handoff-bundle` | Export a session as a replayable handoff bundle. |
+| `GET` | `/v1/x/handoff-bundles?session_id=...&limit=...` | List stored handoff bundles, newest first. |
+| `GET` | `/v1/x/handoff-bundles/{bundle_id}` | Retrieve one stored bundle payload (immutable). |
+
+### Handoff bundles
+
+A handoff bundle is the "hand this session to a person or team" export: the recorded evidence of one session, packaged so a recipient can inspect and replay it without access to this runtime. Three open standards carry the packaging so a recipient can verify it with off-the-shelf tooling: RO-Crate 1.1 (`ro_crate`) describes what is in the package, BagIt (`bagit`, RFC 8493) provides sha512 integrity manifests for every part plus a self-digest of the manifest itself, and an in-toto statement in a DSSE envelope (`attestation`) signs the parts with an Ed25519 key derived from the runtime secret key material. That signature proves the bundle came from this runtime and is intact; it is a local trust root, not a proof of authorship, and a team that needs third-party-verifiable provenance can re-sign the envelope with its own key.
+
+The create request accepts optional `label`, `target_host`, `include_message_content`, and `include_file_content`. Replay semantics are explicit: `replay.mode` is `recorded_replay`, recorded tool outputs are used as stubs, tools are never re-executed, and model requests are never re-issued, while `resume` and `fresh_run` are listed in `unsupported_modes` rather than implied.
+
+Content is excluded by default, mirroring the OTel GenAI content-capture posture: message bodies and file bytes stay out unless `include_message_content` or `include_file_content` is set, and each excluded body is replaced by a byte count and sha256 reference. Credential secrets never enter a bundle — denied and injected credentials are described by metadata only, and any transcript field whose key names a secret is replaced with `[redacted]` and listed in `redaction.scrubbed_fields`.
+
+Bundles are stored immutably: `GET /v1/x/handoff-bundles/{bundle_id}` returns exactly the payload that was stored.
 
 `GET /v1/x/runtime` returns runtime-safe introspection data. Model entries expose
 configuration metadata only:

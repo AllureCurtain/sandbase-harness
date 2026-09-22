@@ -1,0 +1,134 @@
+[
+  {
+    "id": "handoff-create",
+    "group": "Handoff",
+    "title": "Export session handoff bundle",
+    "method": "POST",
+    "path": "/v1/x/sessions/{session_id}/handoff-bundle",
+    "summary": "Package a session as a replayable handoff bundle: RO-Crate metadata, BagIt integrity manifests, and an in-toto/DSSE attestation. Message bodies and file bytes are excluded by default; digests are recorded instead. Tools are never re-executed during replay.",
+    "parameters": [
+      {
+        "name": "include_message_content",
+        "type": "boolean",
+        "description": "Include message bodies. Default false — prompt text is where personal and proprietary data accumulates."
+      },
+      {
+        "name": "include_file_content",
+        "type": "boolean",
+        "description": "Include uploaded file bytes. Default false."
+      },
+      {
+        "name": "label",
+        "type": "string",
+        "description": "Free-form label for the recipient, e.g. a ticket id."
+      },
+      {
+        "name": "target_host",
+        "type": "string",
+        "description": "Target host used when reporting the credential injection decision."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Bundle id (hb_...)."
+      },
+      {
+        "name": "replay",
+        "type": "object",
+        "description": "Replay semantics: mode (recorded_replay), supported and unsupported modes, and the guarantees that tools are never re-executed and model requests are never re-issued."
+      },
+      {
+        "name": "content",
+        "type": "object",
+        "description": "Content capture flag (gen_ai.content.capture) and whether message bodies or file bytes are included."
+      },
+      {
+        "name": "redaction",
+        "type": "object",
+        "description": "What was withheld: denied and injected credentials (metadata only), and every scrubbed field path."
+      },
+      {
+        "name": "transcript",
+        "type": "object",
+        "description": "Projected event log with per-event OTel GenAI attributes; excluded bodies carry a sha256 reference."
+      },
+      {
+        "name": "ro_crate",
+        "type": "object",
+        "description": "RO-Crate 1.1 metadata graph describing the bundle parts."
+      },
+      {
+        "name": "bagit",
+        "type": "object",
+        "description": "BagIt sha512 payload manifest and its self-digest."
+      },
+      {
+        "name": "attestation",
+        "type": "object",
+        "description": "In-toto statement in a DSSE envelope, the signing public key (PEM), and what the local trust root does and does not prove."
+      },
+      {
+        "name": "integrity",
+        "type": "object",
+        "description": "payload_sha256 over the canonical JSON of every other top-level field."
+      }
+    ]
+  },
+  {
+    "id": "handoff-list",
+    "group": "Handoff",
+    "title": "List handoff bundles",
+    "method": "GET",
+    "path": "/v1/x/handoff-bundles",
+    "summary": "List stored bundles, newest first. Summaries omit the payload.",
+    "parameters": [
+      {
+        "name": "session_id",
+        "type": "string",
+        "description": "Filter to one session."
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Page size, 1-200 (default 50)."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "array",
+        "description": "Bundle summaries: id, session_id, label, schema_version, replay_mode, event_count, payload_sha256, signature_key_id, created_at."
+      },
+      {
+        "name": "has_more",
+        "type": "boolean",
+        "description": "True when another page follows."
+      }
+    ]
+  },
+  {
+    "id": "handoff-get",
+    "group": "Handoff",
+    "title": "Retrieve handoff bundle",
+    "method": "GET",
+    "path": "/v1/x/handoff-bundles/{bundle_id}",
+    "summary": "Fetch a stored bundle payload. Bundles are immutable once created — a recipient that already has the id can assume the bytes have not changed.",
+    "parameters": [
+      {
+        "name": "bundle_id",
+        "type": "string",
+        "required": true,
+        "description": "Bundle id."
+      }
+    ],
+    "response": [
+      {
+        "name": "bundle",
+        "type": "object",
+        "description": "The full handoff bundle, identical to the create response."
+      }
+    ]
+  }
+]
