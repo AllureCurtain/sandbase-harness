@@ -1,0 +1,343 @@
+[
+  {
+    "id": "outcomes-list",
+    "group": "Outcomes",
+    "title": "List outcomes",
+    "method": "GET",
+    "path": "/v1/outcomes",
+    "summary": "List outcome definitions. Archived definitions are excluded.",
+    "response": [
+      {
+        "name": "data",
+        "type": "Outcome[]",
+        "description": "Outcome definitions with objective, criteria, and evaluator."
+      }
+    ]
+  },
+  {
+    "id": "outcomes-create",
+    "group": "Outcomes",
+    "title": "Create outcome",
+    "method": "POST",
+    "path": "/v1/outcomes",
+    "summary": "Define a reusable success criterion with an evaluator and pass threshold.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "description": "Human-readable outcome name."
+      },
+      {
+        "name": "objective",
+        "type": "string",
+        "required": true,
+        "description": "What a successful session must achieve."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Free-form description."
+      },
+      {
+        "name": "criteria",
+        "type": "string[]",
+        "description": "Transcript markers the deterministic evaluator matches."
+      },
+      {
+        "name": "pass_threshold",
+        "type": "number",
+        "description": "Score required to pass, clamped to 0..1. Defaults to 0.75."
+      },
+      {
+        "name": "evaluator",
+        "type": "string",
+        "description": "Evaluator name. Defaults to `deterministic_transcript_matcher`."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated out_... identifier."
+      },
+      {
+        "name": "objective",
+        "type": "string",
+        "description": "Stored objective."
+      },
+      {
+        "name": "criteria",
+        "type": "string[]",
+        "description": "Stored criteria markers."
+      },
+      {
+        "name": "pass_threshold",
+        "type": "number",
+        "description": "Effective pass threshold."
+      },
+      {
+        "name": "evaluator",
+        "type": "string",
+        "description": "Effective evaluator name."
+      },
+      {
+        "name": "status",
+        "type": "active | archived",
+        "description": "Current definition state."
+      }
+    ]
+  },
+  {
+    "id": "outcomes-get",
+    "group": "Outcomes",
+    "title": "Get outcome",
+    "method": "GET",
+    "path": "/v1/outcomes/{outcome_id}",
+    "summary": "Retrieve an outcome definition. Archived definitions are treated as missing.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Outcome identifier."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable outcome name."
+      },
+      {
+        "name": "objective",
+        "type": "string",
+        "description": "Stored objective."
+      },
+      {
+        "name": "criteria",
+        "type": "string[]",
+        "description": "Stored criteria markers."
+      }
+    ]
+  },
+  {
+    "id": "outcomes-update",
+    "group": "Outcomes",
+    "title": "Update outcome",
+    "method": "PUT",
+    "path": "/v1/outcomes/{outcome_id}",
+    "summary": "Update an outcome definition. Omitted fields keep their stored value.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable outcome name."
+      },
+      {
+        "name": "objective",
+        "type": "string",
+        "description": "Replacement objective."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Free-form description."
+      },
+      {
+        "name": "criteria",
+        "type": "string[]",
+        "description": "Replacement criteria markers."
+      },
+      {
+        "name": "pass_threshold",
+        "type": "number",
+        "description": "Score required to pass, clamped to 0..1."
+      },
+      {
+        "name": "evaluator",
+        "type": "string",
+        "description": "Replacement evaluator name."
+      },
+      {
+        "name": "status",
+        "type": "active | disabled",
+        "description": "Enable or disable the definition."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Replacement opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Outcome identifier."
+      },
+      {
+        "name": "pass_threshold",
+        "type": "number",
+        "description": "Effective pass threshold after the update."
+      },
+      {
+        "name": "evaluator",
+        "type": "string",
+        "description": "Effective evaluator name after the update."
+      },
+      {
+        "name": "updated_at",
+        "type": "string",
+        "description": "ISO 8601 update timestamp."
+      }
+    ]
+  },
+  {
+    "id": "outcomes-archive",
+    "group": "Outcomes",
+    "title": "Archive outcome",
+    "method": "POST",
+    "path": "/v1/outcomes/{outcome_id}/archive",
+    "summary": "Archive an outcome definition so it can no longer be applied to sessions.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Archived outcome identifier."
+      },
+      {
+        "name": "status",
+        "type": "archived",
+        "description": "Definition state after archiving."
+      },
+      {
+        "name": "archived_at",
+        "type": "string",
+        "description": "ISO 8601 archive timestamp."
+      }
+    ]
+  },
+  {
+    "id": "session-outcomes-list",
+    "group": "Outcomes",
+    "title": "List session outcomes",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/outcomes",
+    "summary": "List outcome evaluations recorded for a session, newest first.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionOutcome[]",
+        "description": "Recorded evaluations with status, score, and details."
+      }
+    ]
+  },
+  {
+    "id": "session-outcomes-create",
+    "group": "Outcomes",
+    "title": "Record session outcome",
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/outcomes",
+    "summary": "Record an outcome evaluation for a session. Supply outcome_id to tie it to a definition.",
+    "parameters": [
+      {
+        "name": "outcome_id",
+        "type": "string",
+        "description": "Outcome definition to record against. Must exist and be active."
+      },
+      {
+        "name": "status",
+        "type": "passed | failed | inconclusive",
+        "description": "Evaluation result. Defaults to `inconclusive`."
+      },
+      {
+        "name": "score",
+        "type": "number",
+        "description": "Numeric score for this evaluation."
+      },
+      {
+        "name": "summary",
+        "type": "string",
+        "description": "Human-readable summary of the evaluation."
+      },
+      {
+        "name": "details",
+        "type": "object",
+        "description": "Structured evaluation details."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated sout_... identifier."
+      },
+      {
+        "name": "session_id",
+        "type": "string",
+        "description": "Session the evaluation belongs to."
+      },
+      {
+        "name": "outcome_id",
+        "type": "string",
+        "description": "Linked outcome definition, or null for an ad-hoc record."
+      },
+      {
+        "name": "status",
+        "type": "passed | failed | inconclusive",
+        "description": "Recorded evaluation status."
+      },
+      {
+        "name": "score",
+        "type": "number",
+        "description": "Recorded score."
+      }
+    ]
+  },
+  {
+    "id": "session-outcomes-evaluate",
+    "group": "Outcomes",
+    "title": "Evaluate session outcome",
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/outcomes/evaluate",
+    "summary": "Run the outcome evaluator against a session transcript and record the result.",
+    "parameters": [
+      {
+        "name": "outcome_id",
+        "type": "string",
+        "required": true,
+        "description": "Outcome definition to evaluate. Its evaluator and pass_threshold are used."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated sout_... identifier."
+      },
+      {
+        "name": "status",
+        "type": "passed | failed | inconclusive",
+        "description": "Evaluator result. Model-assisted evaluators report inconclusive when no evaluator is registered."
+      },
+      {
+        "name": "score",
+        "type": "number",
+        "description": "Evaluator score for this session."
+      },
+      {
+        "name": "summary",
+        "type": "string",
+        "description": "Evaluator summary."
+      },
+      {
+        "name": "details",
+        "type": "object",
+        "description": "Evaluator diagnostics, including the effective threshold."
+      }
+    ]
+  }
+]

@@ -1,8 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { mountedRouteKeys, routeKey } from './support/route-table';
 import { API_REFERENCE_DOCS } from '../../apps/console/src/components/pages/settings/apiReferenceDocs';
 import {
   DEFAULT_API_REFERENCE_ENDPOINT_ID,
@@ -31,37 +30,8 @@ const context: ApiReferenceExampleContext = {
 
 describe('API reference docs', () => {
   it('documents every mounted backend route', () => {
-    const mountedRouteFiles: Record<string, string> = {
-      'agents.ts': '/v1/agents',
-      'api-keys.ts': '/v1/api-keys',
-      'credential-vaults.ts': '/v1',
-      'extended.ts': '/v1/x',
-      'environments.ts': '/v1',
-      'files.ts': '/v1',
-      'handoff.ts': '/v1/x',
-      'memory-stores.ts': '/v1',
-      'resources.ts': '/v1',
-      'runtime.ts': '/v1/x',
-      'settings.ts': '/v1/x/settings',
-      'session-resources.ts': '/v1/sessions',
-      'sessions.ts': '/v1/sessions',
-      'runs.ts': '/v1/runs',
-      'skills.ts': '/v1/skills',
-      'stream.ts': '/v1/sessions',
-      'templates.ts': '/v1/x/templates',
-      'worker.ts': '/v1/x/worker',
-    };
+    const mounted = mountedRouteKeys();
     const documented = new Set(API_REFERENCE_DOCS.map((endpoint) => routeKey(endpoint.method, endpoint.path)));
-    const mounted = new Set<string>();
-
-    for (const [file, mountPath] of Object.entries(mountedRouteFiles)) {
-      const source = readFileSync(join(process.cwd(), 'src/api/routes', file), 'utf8');
-      for (const match of source.matchAll(/app\.(get|post|put|delete|patch)\('([^']+)'/g)) {
-        const method = match[1].toUpperCase();
-        const route = match[2] === '/' ? '' : match[2].replace(/:([A-Za-z0-9_]+)/g, '{$1}');
-        mounted.add(routeKey(method, `${mountPath}${route}`));
-      }
-    }
 
     expect([...mounted].sort()).toEqual([...documented].sort());
   });
@@ -272,7 +242,3 @@ describe('API reference docs', () => {
     expect(html).toContain("curl -sS &#x27;http://127.0.0.1:3000/v1/custom/custom_123&#x27;");
   });
 });
-
-function routeKey(method: string, path: string): string {
-  return `${method} ${path.replace(/\{[^}]+\}/g, '{}')}`;
-}

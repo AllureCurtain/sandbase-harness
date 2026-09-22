@@ -1,0 +1,296 @@
+[
+  {
+    "id": "schedules-list",
+    "group": "Scheduled deployments",
+    "title": "List scheduled deployments",
+    "method": "GET",
+    "path": "/v1/scheduled-deployments",
+    "summary": "List scheduled deployment plans. Archived plans are excluded.",
+    "response": [
+      {
+        "name": "data",
+        "type": "ScheduledDeployment[]",
+        "description": "Schedules with cron expression, status, and next_run_at."
+      }
+    ]
+  },
+  {
+    "id": "schedules-create",
+    "group": "Scheduled deployments",
+    "title": "Create scheduled deployment",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments",
+    "summary": "Create a cron schedule that starts a session for an agent.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "description": "Human-readable schedule name."
+      },
+      {
+        "name": "agent_id",
+        "type": "string",
+        "required": true,
+        "description": "Agent to deploy. `agent` is accepted as an alias."
+      },
+      {
+        "name": "cron",
+        "type": "string",
+        "required": true,
+        "description": "Five-field cron expression."
+      },
+      {
+        "name": "environment_id",
+        "type": "string",
+        "description": "Environment the scheduled session runs in."
+      },
+      {
+        "name": "payload",
+        "type": "object",
+        "description": "Message payload passed to the scheduled session."
+      },
+      {
+        "name": "status",
+        "type": "active | paused",
+        "description": "Initial schedule state. Defaults to `active`."
+      },
+      {
+        "name": "next_run_at",
+        "type": "string",
+        "description": "Override for the computed next run time."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated sched_... identifier."
+      },
+      {
+        "name": "agent_id",
+        "type": "string",
+        "description": "Agent deployed by this schedule."
+      },
+      {
+        "name": "cron",
+        "type": "string",
+        "description": "Stored cron expression."
+      },
+      {
+        "name": "status",
+        "type": "active | paused",
+        "description": "Current schedule state."
+      },
+      {
+        "name": "next_run_at",
+        "type": "string",
+        "description": "Computed next run time, or null when the cron expression has no future match."
+      }
+    ]
+  },
+  {
+    "id": "schedules-get",
+    "group": "Scheduled deployments",
+    "title": "Get scheduled deployment",
+    "method": "GET",
+    "path": "/v1/scheduled-deployments/{schedule_id}",
+    "summary": "Retrieve a scheduled deployment plan. Archived plans are treated as missing.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Schedule identifier."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable schedule name."
+      },
+      {
+        "name": "cron",
+        "type": "string",
+        "description": "Stored cron expression."
+      },
+      {
+        "name": "status",
+        "type": "active | paused",
+        "description": "Current schedule state."
+      }
+    ]
+  },
+  {
+    "id": "schedules-update",
+    "group": "Scheduled deployments",
+    "title": "Update scheduled deployment",
+    "method": "PUT",
+    "path": "/v1/scheduled-deployments/{schedule_id}",
+    "summary": "Update a scheduled deployment plan. Omitted fields keep their stored value.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable schedule name."
+      },
+      {
+        "name": "agent_id",
+        "type": "string",
+        "description": "Agent to deploy. `agent` is accepted as an alias."
+      },
+      {
+        "name": "environment_id",
+        "type": "string",
+        "description": "Environment the scheduled session runs in."
+      },
+      {
+        "name": "cron",
+        "type": "string",
+        "description": "Five-field cron expression."
+      },
+      {
+        "name": "payload",
+        "type": "object",
+        "description": "Replacement message payload."
+      },
+      {
+        "name": "status",
+        "type": "active | paused",
+        "description": "Pause or resume the schedule."
+      },
+      {
+        "name": "next_run_at",
+        "type": "string",
+        "description": "Override for the next run time. An explicit null recomputes it from the cron expression."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Replacement opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Schedule identifier."
+      },
+      {
+        "name": "cron",
+        "type": "string",
+        "description": "Stored cron expression after the update."
+      },
+      {
+        "name": "next_run_at",
+        "type": "string",
+        "description": "Next run time after the update."
+      },
+      {
+        "name": "updated_at",
+        "type": "string",
+        "description": "ISO 8601 update timestamp."
+      }
+    ]
+  },
+  {
+    "id": "schedules-archive",
+    "group": "Scheduled deployments",
+    "title": "Archive scheduled deployment",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments/{schedule_id}/archive",
+    "summary": "Archive a scheduled deployment plan so it stops producing runs.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Archived schedule identifier."
+      },
+      {
+        "name": "status",
+        "type": "archived",
+        "description": "Schedule state after archiving."
+      },
+      {
+        "name": "archived_at",
+        "type": "string",
+        "description": "ISO 8601 archive timestamp."
+      }
+    ]
+  },
+  {
+    "id": "schedules-runs",
+    "group": "Scheduled deployments",
+    "title": "List schedule runs",
+    "method": "GET",
+    "path": "/v1/scheduled-deployments/{schedule_id}/runs",
+    "summary": "List run records for a schedule, including the session each run created.",
+    "response": [
+      {
+        "name": "data",
+        "type": "ScheduledDeploymentRun[]",
+        "description": "Run records, newest first."
+      }
+    ]
+  },
+  {
+    "id": "schedules-run",
+    "group": "Scheduled deployments",
+    "title": "Run scheduled deployment now",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments/{schedule_id}/run",
+    "summary": "Manually trigger a schedule and create a session. The schedule must be active.",
+    "parameters": [
+      {
+        "name": "payload",
+        "type": "object",
+        "description": "Overrides merged into the stored schedule payload for this run."
+      },
+      {
+        "name": "trigger_type",
+        "type": "string",
+        "description": "Run trigger label. Defaults to `manual`."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Run record identifier."
+      },
+      {
+        "name": "session_id",
+        "type": "string",
+        "description": "Session created by this run."
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "description": "Run outcome state."
+      },
+      {
+        "name": "trigger_type",
+        "type": "string",
+        "description": "Trigger label recorded for this run."
+      }
+    ]
+  },
+  {
+    "id": "schedules-run-due",
+    "group": "Scheduled deployments",
+    "title": "Run due scheduled deployments",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments/run-due",
+    "summary": "Run every active schedule whose next_run_at has arrived.",
+    "response": [
+      {
+        "name": "data",
+        "type": "ScheduledDeploymentRun[]",
+        "description": "Run records created by this pass."
+      }
+    ]
+  }
+]
