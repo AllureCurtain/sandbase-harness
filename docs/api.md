@@ -1112,6 +1112,7 @@ returned `vlt_...` id when attaching a vault to a session.
 | `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/rotate` | Replace the encrypted secret value. |
 | `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/mark-used` | Mark a credential as used and append an audit event. |
 | `GET` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/audit` | List credential audit events. |
+| `GET` | `/v1/credential-vaults/{vault_id}/audit` | List every credential audit event in a vault. |
 | `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/archive` | Archive a credential. |
 | `DELETE` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}` | Delete a credential. |
 

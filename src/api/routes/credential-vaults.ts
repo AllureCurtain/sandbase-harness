@@ -5,6 +5,10 @@ import { pageOf } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
+  appendCredentialAuditEvent,
+  listCredentialAuditEvents,
+} from '@/core/credentials/audit.js';
+import {
   archiveResource,
   arrayOfStrings,
   conflict,
@@ -116,7 +120,122 @@ export function credentialVaultRoutes(deps: ServerDeps) {
 
   app.post('/credential-vaults/:id/archive', (c) => archiveResource(c, deps, 'credential_vaults', (row) => toVault(row, deps)));
 
+  // --- Credential rotation, use and audit (published) ----------------------
+  //
+  // `docs/api.md` publishes rotate and mark-used with a worked example, and
+  // `docs/api-matrix.md` publishes the audit listing. The events come from
+  // `credential_audit_events` (M028), which records what happened to a secret
+  // without ever recording the secret.
+
+  app.post('/credential-vaults/:id/credentials/:credentialId/rotate', async (c) => {
+    const body = await readObjectBody(c);
+    if (!body.ok) return body.response;
+    const vaultId = c.req.param('id');
+    const credentialId = c.req.param('credentialId');
+    const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
+    if (!vault) return notFound(c, 'Credential vault not found');
+    if (!liveCredential(deps, vaultId, credentialId)) return notFound(c, 'Credential not found');
+
+    const secretValue = typeof body.value.value === 'string' ? body.value.value : '';
+    if (!secretValue) return invalid(c, 'value is required');
+
+    const encrypted = encryptSecret(secretValue, deps.workspace?.dataDir);
+    // A rotation replaces the secret material and nothing else: the credential
+    // keeps its identity, its policy and its history.
+    deps.db.prepare(
+      `UPDATE credential_records
+       SET secret_ciphertext = ?, secret_nonce = ?, secret_tag = ?, value_hint = ?, updated_at = ?
+       WHERE id = ? AND vault_id = ?`,
+    ).run(
+      encrypted.ciphertext,
+      encrypted.nonce,
+      encrypted.tag,
+      secretHint(secretValue),
+      new Date().toISOString(),
+      credentialId,
+      vaultId,
+    );
+    deps.db.prepare('UPDATE credential_vaults SET updated_at = datetime(\'now\') WHERE id = ?').run(vaultId);
+    appendCredentialAuditEvent(deps.db, {
+      vaultId,
+      credentialId,
+      action: 'rotate',
+      actor: stringField(body.value.actor),
+      metadata: stringRecordField(body.value.metadata),
+    });
+    const row = deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ?').get(credentialId, vaultId) as unknown as CredentialRow;
+    return c.json(toCredential(row));
+  });
+
+  app.post('/credential-vaults/:id/credentials/:credentialId/mark-used', async (c) => {
+    // Marking a credential used is the management call a client makes without a
+    // body, so an absent body is read as an empty one rather than rejected.
+    const raw = await c.req.json().catch(() => ({}));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return invalid(c, 'Request body must be an object');
+    const body = raw as Record<string, unknown>;
+    const vaultId = c.req.param('id');
+    const credentialId = c.req.param('credentialId');
+    const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
+    if (!vault) return notFound(c, 'Credential vault not found');
+    if (!liveCredential(deps, vaultId, credentialId)) return notFound(c, 'Credential not found');
+
+    appendCredentialAuditEvent(deps.db, {
+      vaultId,
+      credentialId,
+      action: 'mark_used',
+      actor: stringField(body.actor),
+      metadata: stringRecordField(body.metadata),
+      touchLastUsed: true,
+    });
+    const row = deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ?').get(credentialId, vaultId) as unknown as CredentialRow;
+    return c.json(toCredential(row));
+  });
+
+  app.get('/credential-vaults/:id/credentials/:credentialId/audit', (c) => {
+    const vaultId = c.req.param('id');
+    const credentialId = c.req.param('credentialId');
+    if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
+      return notFound(c, 'Credential vault not found');
+    }
+    // A deleted credential keeps its history, so the row is read in any state;
+    // a credential that never existed in this vault is still a 404.
+    if (!deps.db.prepare('SELECT id FROM credential_records WHERE id = ? AND vault_id = ?').get(credentialId, vaultId)) {
+      return notFound(c, 'Credential not found');
+    }
+    return c.json(pageOf(listCredentialAuditEvents(deps.db, {
+      vaultId,
+      credentialId,
+      limit: parseLimit(c.req.query('limit')),
+    })));
+  });
+
+  app.get('/credential-vaults/:id/audit', (c) => {
+    const vaultId = c.req.param('id');
+    if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
+      return notFound(c, 'Credential vault not found');
+    }
+    return c.json(pageOf(listCredentialAuditEvents(deps.db, {
+      vaultId,
+      limit: parseLimit(c.req.query('limit')),
+    })));
+  });
+
   return app;
+}
+
+/** A credential that can still be used: not archived and not deleted. */
+function liveCredential(deps: ServerDeps, vaultId: string, credentialId: string): CredentialRow | undefined {
+  return deps.db.prepare(
+    "SELECT * FROM credential_records WHERE id = ? AND vault_id = ? AND archived_at IS NULL AND status != 'deleted'",
+  ).get(credentialId, vaultId) as CredentialRow | undefined;
+}
+
+/** A usable positive `limit` query value, or `undefined` for the default. */
+function parseLimit(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.trunc(parsed);
 }
 
 function vaultSelect(where = '') {
