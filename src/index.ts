@@ -22,6 +22,7 @@ import { bootstrapRuntimeSandboxes } from './core/runtime/sandbox-bootstrap.js';
 import { bootstrapRuntimeLoopEngine } from './core/runtime/loop-engine-bootstrap.js';
 import { resolveRuntimeApiAuth } from './core/runtime/api-auth.js';
 import { createRuntimeSessionServices } from './core/runtime/session-runtime.js';
+import { resolveSessionCredentialInjections } from './core/credentials/injection.js';
 import { attachRuntimeServerErrorHandler, parseCsv, runtimeStartupBannerLines } from './core/runtime/http-server.js';
 import { createLogger, InMemoryLogStore } from './core/observability/logger.js';
 import { Metrics } from './core/observability/metrics.js';
@@ -122,6 +123,14 @@ async function startServer(opts: StartServerOptions) {
     memory,
     artifactStore,
     defaultMaxSteps: loopEngine.defaultMaxSteps,
+    // The turn's injection boundary: a session that attaches a vault gets its
+    // unrestricted environment variables in the sandbox command environment, and
+    // its `limited` ones only where the policy can name a host. A shell command
+    // declares none, which is why this call passes no target host.
+    resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db, sessionId, {
+      dataDir,
+      targetHost,
+    }),
     logger,
   });
   if (reconciled > 0) {

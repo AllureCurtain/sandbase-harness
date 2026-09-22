@@ -1194,13 +1194,16 @@ ports are supported; a bare `*` does not mean unrestricted. Missing or malformed
 policy, an empty allow-list, or an unverified target is denied. Denial happens
 before decryption, produces only non-secret `runtime_denied` audit metadata, and
 does not update `last_used_at`. Explicit `unrestricted` is the only policy that
-can inject without a target host. The helper is an injection-boundary contract;
-production web/MCP/custom-tool callers still need to propagate target-host
-context before universal enforcement can be claimed. A stdio MCP server is one
-caller of that no-host form: the session's `unrestricted` environment variables
-are passed to its process and an MCP tool's return value is scrubbed, while a
-`limited` credential is denied for it the same way it is denied for a shell
-command. A url-transport server is passed no credential at all.
+can inject without a target host. The helper is an injection-boundary contract,
+and the runtime's own turn path is a caller of it: `src/index.ts` builds a
+resolver from it and hands that to the executor, which uses the no-host form for a
+shell command and for a stdio MCP server, because neither names a host. Host-scoped
+outbound callers — web tools, custom tools and a url-transport MCP server — still
+need to propagate target-host context before universal enforcement can be claimed.
+A stdio MCP server is one caller of that no-host form: the session's `unrestricted`
+environment variables are passed to its process and an MCP tool's return value is
+scrubbed, while a `limited` credential is denied for it the same way it is denied
+for a shell command. A url-transport server is passed no credential at all.
 
 ### Memory limits, scope, and preconditions
 
