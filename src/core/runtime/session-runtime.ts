@@ -5,6 +5,8 @@ import { SessionManager } from '../session/session-manager.js';
 import { DefaultSessionExecutor } from '../session/executor.js';
 import { ContextCompactor } from '../session/context-compactor.js';
 import { recordSessionOutputs } from '@/core/session/session-outputs.js';
+import { readRubricFileText } from '@/core/session/outcome-rubric.js';
+import { createModelOutcomeGrader } from '@/core/outcomes/grader.js';
 import { SnapshotManager } from '../session/snapshot-manager.js';
 import type { ArtifactStore } from '../storage/artifact-store.js';
 import type { Skill } from '../skills/loader.js';
@@ -55,6 +57,13 @@ export interface RuntimeSessionServicesOptions {
    * environment.
    */
   resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
+  /**
+   * Resolve a `{type: "file"}` rubric to its text.
+   *
+   * Defaulted to reading the upload the Files API stored, so the declared rubric
+   * and the readable file cannot drift apart; an embedder may override it.
+   */
+  resolveRubricFile?: (fileId: string) => string | undefined;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
 }
@@ -116,6 +125,14 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     },
   });
   sessionManager.setExecutor(executor);
+  // A declared outcome is graded through the session manager, which owns the log
+  // the evaluation both reads (the transcript) and writes (the span triple), so
+  // the rubric and the verdict cannot drift from what was actually recorded.
+  sessionManager.setOutcomeGrader(createModelOutcomeGrader(options.modelRegistry));
+  sessionManager.setRubricFileResolver(
+    options.resolveRubricFile
+      ?? ((fileId: string) => readRubricFileText(options.db, options.artifactStore, fileId)),
+  );
 
   const reconciled = sessionManager.reconcileOrphans();
 

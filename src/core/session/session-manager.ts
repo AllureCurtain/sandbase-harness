@@ -57,6 +57,10 @@ import {
 } from './loop-engine-admission.js';
 import type { AgentDefinition, AgentOverrides } from '@/types/agent.js';
 import { agentOverrideError, applyAgentOverrides } from '@/core/agent/overrides.js';
+import { OUTCOME_EVALUATOR_UNAVAILABLE_CODE, type OutcomeGrader } from '@/core/outcomes/grader.js';
+import { OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE } from '@/core/outcomes/contract.js';
+import { runOutcomeEvaluation } from '@/core/outcomes/evaluation.js';
+import { outcomeTranscript } from './outcome-transcript.js';
 import {
   runtimeCapabilityRegistry,
   type RuntimeCapabilityRegistry,
@@ -123,6 +127,10 @@ export class SessionManager {
    */
   private broadcastListener?: (event: SessionEvent) => void;
   private executor?: SessionExecutor;
+  /** Grader for a declared outcome; absent means the outcome is not measured. */
+  private outcomeGrader?: OutcomeGrader;
+  /** Reader for a `{type: "file"}` rubric; absent means a file rubric is refused. */
+  private rubricFileResolver?: (fileId: string) => string | undefined;
   /** Per-session execution chain — serializes turns so they never overlap. */
   private executionChains = new Map<string, Promise<void>>();
   /** Per-session abort controller for the currently running turn. */
@@ -1059,6 +1067,73 @@ export class SessionManager {
   }
 
   /**
+   * Register the grader a declared outcome is measured by.
+   *
+   * Optional: a runtime with no grader leaves a declared outcome unevaluated
+   * rather than reporting a verdict it cannot produce. The sessions contract
+   * records that boundary.
+   */
+  setOutcomeGrader(grader: OutcomeGrader): void {
+    this.outcomeGrader = grader;
+  }
+
+  /**
+   * Register the reader for a `{type: "file"}` rubric.
+   *
+   * Optional: a runtime with no file store cannot resolve a file rubric, and the
+   * evaluation reports that instead of grading against an empty rubric.
+   */
+  setRubricFileResolver(resolve: (fileId: string) => string | undefined): void {
+    this.rubricFileResolver = resolve;
+  }
+
+  /**
+   * Measure a declared outcome against its rubric, once.
+   *
+   * The rubric is resolved before grading, and both the resolved text and the
+   * transcript come from the durable log, so a resumed session evaluates what was
+   * actually recorded rather than what happened to be in memory. The span triple
+   * is appended to that same log, which is what makes the evaluation replayable.
+   */
+  private async evaluateDeclaredOutcome(
+    sessionId: string,
+    event: Extract<UserEvent, { type: 'user.define_outcome' }>,
+  ): Promise<void> {
+    const grader = this.outcomeGrader;
+    if (!grader) return;
+
+    const rubric = event.rubric.type === 'text'
+      ? event.rubric.content
+      : this.rubricFileResolver?.(event.rubric.file_id);
+    if (rubric === undefined) {
+      const error = new Error(
+        `Rubric file not found: ${event.rubric.type === 'file' ? event.rubric.file_id : 'unknown'}`,
+      ) as Error & { code: string };
+      error.code = OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE;
+      throw error;
+    }
+
+    await runOutcomeEvaluation({
+      outcomeId: `outc_${nanoid(16)}`,
+      iteration: 0,
+      description: event.description,
+      rubric,
+      grader,
+      logger: {
+        append: (span) => {
+          const logged = this.eventLogger.append(sessionId, {
+            type: span.type,
+            metadata: span.metadata,
+          });
+          this.broadcast(sessionId, logged);
+          return logged;
+        },
+      },
+      readTranscript: () => outcomeTranscript(this.eventLogger.getEvents(sessionId)),
+    });
+  }
+
+  /**
    * Run a single turn for a session. Serialized via executionChains so turns
    * never overlap. Transitions running on start, then paused (idle, awaiting
    * next input) on normal completion — NOT terminal, so multi-turn works.
@@ -1090,6 +1165,16 @@ export class SessionManager {
       })) {
         this.broadcast(sessionId, evt);
       }
+
+      // A declared outcome is measured once the turn it instructed has finished.
+      // The turn itself already ran, so only the grading pass is added: without
+      // it the session would hold a rubric that nothing ever applied. A grading
+      // pass that cannot run throws, which surfaces below as this session's own
+      // error rather than as an outcome silently left unjudged.
+      if (event.type === 'user.define_outcome') {
+        await this.evaluateDeclaredOutcome(sessionId, event);
+      }
+
       // Turn finished. If a tool needs confirmation → requires_action;
       // otherwise go idle (paused), awaiting next input.
       const current = this.get(sessionId);
@@ -1300,6 +1385,11 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     case LOOP_ENGINE_UNSUPPORTED_CODE:
     case LOOP_ENGINE_INVALID_CODE:
     case 'unsupported_capability':
+    // A grader with no provider, and a rubric file that cannot be read, are
+    // configuration facts. Reporting `unknown` would invite a client to retry a
+    // call that cannot succeed until the runtime is fixed.
+    case OUTCOME_EVALUATOR_UNAVAILABLE_CODE:
+    case OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE:
       return 'not_retryable';
     default:
       return 'unknown';

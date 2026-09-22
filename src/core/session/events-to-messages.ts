@@ -150,6 +150,20 @@ export function eventsToMessages(
         break;
       }
 
+      case 'user.define_outcome': {
+        // The event carries no content blocks: its payload lives in `metadata`,
+        // and the projection turns it back into the instruction the agent works
+        // against. Without this the outcome would be durable and unread, and the
+        // turn it queued would run with no criteria at all.
+        flushAssistant();
+        flushTools();
+        const instruction = outcomeInstruction(event.metadata);
+        if (instruction) {
+          messages.push({ role: 'user', content: [{ type: 'text', text: instruction }] });
+        }
+        break;
+      }
+
       case 'agent.thinking': {
         // OMA: reasoning parts go into assistant content
         flushTools();
@@ -278,6 +292,42 @@ export function eventsToMessages(
 // ============================================================
 // Helpers
 // ============================================================
+
+// ============================================================
+// Helpers
+// ============================================================
+
+/**
+ * Rebuild a declared outcome's instruction from its persisted metadata.
+ *
+ * `user.define_outcome` carries `description`, `rubric` and `max_iterations`
+ * instead of content blocks, so the projection reconstructs the wording the
+ * agent works against. A file rubric is named by its id rather than inlined:
+ * the agent may not be able to read that file, and the runtime does not put a
+ * rubric into the agent's context that it cannot show it.
+ */
+export function outcomeInstruction(metadata: Record<string, unknown> | undefined): string | undefined {
+  if (!metadata) return undefined;
+  const description = typeof metadata.description === 'string' ? metadata.description.trim() : '';
+  if (!description) return undefined;
+  const rubric = metadata.rubric;
+  const rubricRecord = rubric && typeof rubric === 'object' && !Array.isArray(rubric)
+    ? rubric as Record<string, unknown>
+    : undefined;
+  const rubricText = typeof rubricRecord?.content === 'string'
+    ? rubricRecord.content
+    : typeof rubricRecord?.file_id === 'string'
+      ? `(rubric file ${rubricRecord.file_id})`
+      : '';
+  const iterations = typeof metadata.max_iterations === 'number' ? metadata.max_iterations : undefined;
+  return [
+    'Work until the following outcome is satisfied. Do not ask for confirmation; produce the deliverable.',
+    '',
+    `Outcome: ${description}`,
+    ...(rubricText ? ['', 'Measure your work against this rubric:', rubricText] : []),
+    ...(iterations !== undefined ? ['', `Evaluation iterations allowed: ${iterations}`] : []),
+  ].join('\n');
+}
 
 function userContentToParts(content?: ContentBlock[]): ContentPart[] {
   if (!content || content.length === 0) return [{ type: 'text', text: '' }];

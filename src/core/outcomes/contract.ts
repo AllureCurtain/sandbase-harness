@@ -9,3 +9,12 @@
  */
 export const DEFAULT_OUTCOME_MAX_ITERATIONS = 3;
 export const MAX_OUTCOME_MAX_ITERATIONS = 20;
+
+/**
+ * Stable code for a `{type: "file"}` rubric that cannot be read.
+ *
+ * The evaluation refuses rather than grading against an empty rubric: a grader
+ * handed no criteria would report a verdict about nothing, and the caller would
+ * have no way to tell that from a real measurement.
+ */
+export const OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE = 'outcome_rubric_file_not_found';

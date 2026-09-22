@@ -106,6 +106,39 @@ Session agent reference (`agent_with_overrides`):
 - `POST /v1/runs` accepts only the two pinning forms: the override form is
   refused there with a 400 naming the reason, rather than accepted and ignored.
 
+Declared outcome evaluation:
+
+- A `user.define_outcome` event is an instruction as well as a record: its
+  `description` and rubric project into the turn's context, so the queued turn
+  works against declared criteria. A `{type: "file"}` rubric names its file
+  rather than inlining it.
+- Once that turn completes, the runtime appends
+  `span.outcome_evaluation_start`, `span.outcome_evaluation_ongoing` and
+  `span.outcome_evaluation_end`, and the end event carries the verdict
+  (`satisfied | needs_revision | failed`), an explanation and the id of the start
+  event it closes. See `events.md` for the payloads.
+- The grader runs in its own context window over what the agent produced: its
+  messages, tool calls and their results. The system prompt, the session's
+  lifecycle events, the outcome instruction and any earlier verdict are excluded,
+  so an evaluation is not anchored to the runtime's scaffolding or to its own
+  previous answer.
+- The rubric comes from the declared outcome: inline text is used directly and a
+  file rubric is read from the upload the Files API stored. A rubric file that
+  cannot be read refuses the evaluation with `outcome_rubric_file_not_found`
+  rather than grading against an empty rubric.
+- A grader that cannot run — no model provider configured — closes the end event
+  as `failed` and surfaces `session.error` with code
+  `outcome_evaluator_unavailable` and `retry_status: not_retryable`. The
+  evaluation is never silently skipped: an ungraded outcome and a failed outcome
+  would otherwise be indistinguishable to a client.
+- A turn that threw is not graded, and the end event is appended on every path so
+  a client waiting on `span.outcome_evaluation_end` cannot hang.
+- `needs_revision` does **not** yet start another turn, and `max_iterations` does
+  not yet bound anything: the revision loop is the second half of this behaviour
+  and is recorded as `partial` in the capability matrix until it lands. A
+  re-declared outcome on the same session is graded again, under a new
+  `outcome_id`.
+
 ## 3. Alignment
 
 Aligned for: lifecycle endpoints, status vocabulary, initial event processing,
@@ -123,6 +156,9 @@ reference forms, and the tri-state override rule.
 | Override refusal codes | `agent_model_required` is the published code for a cleared `model`. `agent_tools_cleared_with_skills`, `agent_mcp_server_not_found`, `invalid_agent_override_field`, `invalid_agent_overrides`, `invalid_agent_ref` and `agent_required` are SandBase spellings for the same conditions, published so a client can distinguish them without parsing prose. |
 | `model.effort` in an override | Refused with `invalid_agent_override_field` rather than accepted and ignored. A definition may carry `effort` for read-back; a session snapshot is projected without an effort field, and no local provider executes one. |
 | MCP cross-check scope | The published exception covers clearing `mcp_servers`. Locally the same check runs on the resolved definition, so a `tools` override that binds an `mcp_toolset` to an undeclared server is refused with `agent_mcp_server_not_found` instead of persisting a toolset that silently does nothing. |
+| Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: not_retryable` rather than reporting a verdict the runtime cannot produce. |
+| No grader composed | A runtime that composes no grader at all leaves a declared outcome unevaluated instead of inventing a verdict. The fail-closed refusal of `user.define_outcome` at admission is part of the revision-loop change and is not claimed here. |
+| Revision loop | `needs_revision` does not yet start another turn, `max_iterations` bounds nothing, and `max_iterations_reached` / `interrupted` are never emitted. Recorded as `partial` in the capability matrix rather than presented as a delivered loop. |
 
 ## 5. Reason for the difference
 
@@ -157,6 +193,10 @@ reference forms, and the tri-state override rule.
   agent and its version list stay untouched, a session without overrides keeps
   following the agent, every refusal is a code-carrying 400 that creates nothing,
   and `/v1/runs` refuses the override form.
+- `tests/integration/outcome-grading.test.ts` — a declared outcome reaches the
+  agent's context, the completed turn is graded, the span triple reaches the
+  event log in order, and a runtime with no provider records
+  `outcome_evaluator_unavailable` with `retry_status: not_retryable`.
 - `tests/unit/cma-event-contract.test.ts` — `initial_events` validation: the
   whitelist, the 50-event ceiling, the `user.define_outcome` defaulting and its
   rejection cases, and the projection that lifts the payload out of the metadata
@@ -172,6 +212,9 @@ reference forms, and the tri-state override rule.
 
 ## 7. Status
 
-`supported` for lifecycle, status vocabulary, initial events, and the `agent`
-reference including `agent_with_overrides`. The session budget is `partial` in
-its own contract file, and this file does not claim it.
+`supported` for lifecycle, status vocabulary, initial events, the `agent`
+reference including `agent_with_overrides`, and the declared-outcome evaluation.
+`partial` for the declared-outcome *loop*: grading is delivered, revision is not,
+and the capability matrix records that split rather than claiming the loop. The
+session budget is `partial` in its own contract file, and this file does not
+claim it.

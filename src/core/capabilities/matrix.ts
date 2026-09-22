@@ -341,6 +341,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   },
   {
     area: 'operations',
+    id: 'outcome-grading',
+    status: 'partial',
+    reason: 'A declared outcome projects into the turn it queues and is graded once that turn completes, by a model pass in its own context window over what the agent produced, published as a span triple (`span.outcome_evaluation_start` / `_ongoing` / `_end`) whose end event carries the verdict and its explanation. The revision loop is not implemented: `needs_revision` does not yet append feedback or re-run the turn, `max_iterations` bounds nothing, and `max_iterations_reached` and `interrupted` are never emitted, so the fail-closed refusal of a declared outcome on a runtime with no grader is absent as well.',
+    contract: 'contracts/anthropic-cma/sessions.md',
+  },
+  {
+    area: 'operations',
     id: 'outcome-evaluation',
     status: 'supported',
     reason: 'Declared outcomes evaluate deterministically against the event log rather than by model judgement, so a pass/fail is reproducible. A local extension: the published contract defines no deterministic evaluator.',
