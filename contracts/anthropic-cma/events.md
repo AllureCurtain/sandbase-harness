@@ -39,14 +39,16 @@ Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.
   over. Each carries `outcome_id` and `iteration` (`0` is the evaluation of the
   declared outcome, `n` the re-evaluation after the n-th revision). The end event
   adds `result`, `explanation`, and the id of the start event it closes. `result`
-  is `satisfied | needs_revision | failed` after a grading pass, and
+  is `satisfied | needs_revision | failed` after a grading pass,
   `max_iterations_reached` when the grader asked for a revision that the spent
-  budget cannot run. The `ongoing` event carries no partial verdict: the grader's
+  budget cannot run, and `budget_reached` when the session spent its ceiling before
+  the loop could finish. The `ongoing` event carries no partial verdict: the grader's
   reasoning is opaque, and progress that cannot be observed would be invented.
-- An interrupt closes the outcome with one further `span.outcome_evaluation_end`
-  carrying `result: "interrupted"` and an empty `outcome_evaluation_start_id`. The
-  close is not tied to one evaluation, and the empty id is what keeps it
-  distinguishable from the end event of an evaluation that actually ran.
+- An interrupt, or a session that reached its spending ceiling, closes the outcome
+  with one further `span.outcome_evaluation_end` carrying `result: "interrupted"` or
+  `"budget_reached"` and an empty `outcome_evaluation_start_id`. The close is not
+  tied to one evaluation, and the empty id is what keeps it distinguishable from the
+  end event of an evaluation that actually ran.
 - A revision is a real `user.message`: the grader's explanation is appended to the
   same log, so the next turn reads its instruction from the log rather than from
   memory, and a replayed session reconstructs the same sequence.
@@ -116,12 +118,14 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   `retry_status: not_retryable`.
 - `tests/unit/outcome-loop.test.ts` — the loop's span bookkeeping: one triple per
   evaluation with `iteration` counting from 0, the budget verdict on the last
-  allowed evaluation, one revision message per revision, and the interrupt close
-  carrying an empty `outcome_evaluation_start_id`.
+  allowed evaluation, one revision message per revision, and the closes that name
+  no evaluation — `interrupted` and `budget_reached` — carrying an empty
+  `outcome_evaluation_start_id`.
 - `tests/integration/outcome-loop.test.ts` — the same through a session: the
   revision `user.message` in the event listing, the executor re-entered for it,
-  the status a stop leaves behind, and the admission refusal that keeps a declared
-  outcome off a runtime with no grader.
+  the status a stop leaves behind, the ceiling ending an outcome before its next
+  grading pass or turn, and the admission refusal that keeps a declared outcome off
+  a runtime with no grader.
 
 ## 7. Status
 

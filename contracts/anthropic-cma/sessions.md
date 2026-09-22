@@ -138,10 +138,12 @@ Declared outcome evaluation:
   revision is visible in the log and the next turn reads its context from it. The
   loop stops at the first `satisfied` or `failed`, at the declared `max_iterations`
   (the last allowed evaluation reports `max_iterations_reached` and the agent still
-  gets one final turn to settle its answer), or when the session is interrupted. An
-  interrupt closes the outcome as `interrupted` and records no `session.error`. A
-  re-declared outcome on the same session is graded again, under a new
-  `outcome_id`.
+  gets one final turn to settle its answer), when the session is interrupted, or
+  when the session reaches the spending ceiling it declared. An interrupt closes the
+  outcome as `interrupted`; a spent ceiling closes it as `budget_reached`, which is
+  the code admission refuses the next work-starting event with. Neither records a
+  `session.error`. A re-declared outcome on the same session is graded again, under
+  a new `outcome_id`.
 - A runtime that composes no grader refuses `user.define_outcome` at admission
   with `outcome_grader_unavailable` (400) on both ingress paths, rather than
   accepting an outcome it can never evaluate.
@@ -166,6 +168,7 @@ reference forms, and the tri-state override rule.
 | Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: not_retryable` rather than reporting a verdict the runtime cannot produce. |
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
+| Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
 
 ## 5. Reason for the difference
 
@@ -209,8 +212,10 @@ reference forms, and the tri-state override rule.
   with the executor re-entered for it, the spent budget reported as
   `max_iterations_reached` with one final settling turn, an interrupt closing the
   outcome as `interrupted` with no `session.error` (including one that lands inside
-  a revision turn and one that stops for a tool confirmation), and
-  `outcome_grader_unavailable` as a 400 on both ingress paths with nothing written.
+  a revision turn and one that stops for a tool confirmation), a session that spends
+  its declared ceiling closing the outcome as `budget_reached` without another
+  grading pass or turn, and `outcome_grader_unavailable` as a 400 on both ingress
+  paths with nothing written.
 - `tests/unit/cma-event-contract.test.ts` — `initial_events` validation: the
   whitelist, the 50-event ceiling, the `user.define_outcome` defaulting and its
   rejection cases, and the projection that lifts the payload out of the metadata
