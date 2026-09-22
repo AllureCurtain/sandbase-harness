@@ -63,12 +63,13 @@ is created `active` (the schema default) and stays `active` until archived.
   `event` field, so the body is not the published reference envelope. The
   resource is not inlined, which is the one property it shares with the
   published shape.
-- A first attempt sends the legacy `X-Managed-Agents-Signature`
+- Every attempt sends the legacy `X-Managed-Agents-Signature`
   (`sha256=<hex>` over the body) *and* the published `webhook-id`,
   `webhook-timestamp` and `webhook-signature` headers, the last computed by
   `webhookDeliverySignature` over `id.timestamp.body`. The stored `signature`
-  column holds the legacy value. `retryDelivery` reuses `postWebhook` **without**
-  the delivery identity, so a retry carries the legacy header only.
+  column holds the legacy value, so its meaning does not change with the header
+  set. A retry keeps the delivery id and re-signs with its own timestamp, so the
+  published header set is continuous across attempts.
 - `nextRetryAt` is a fixed `2 ** (attempt - 1) * 60` seconds — 60 s, then
   120 s — with `maxAttempts` defaulting to 3 and no jitter.
 - `retryDueWebhookDeliveries` takes `pending_retry` rows whose `next_retry_at`
@@ -130,9 +131,9 @@ validation means the stored zone is the zone the cadence actually runs in.
 derivation, `id.timestamp.body` as the signed content, `v1,<base64>` output, a
 constant-time verifier, and a space-separated rotation window.
 `verifyWebhookDelivery` recomputes the signature, so the format is asserted
-rather than assumed. What is missing is the wiring — the persisted signature is
-the legacy value, and only a first attempt sends the published header set at
-all.
+rather than assumed. The header set is wired into every attempt: a retry keeps
+the delivery id and carries its own timestamp. The one local choice left is the
+persisted `signature` column, which holds the legacy value.
 
 **The rest is local behaviour that overlaps the published contract in name
 only.** The delivery envelope, the disable policy, the retry schedule, the
@@ -145,7 +146,6 @@ records.
 | Difference | Detail |
 | --- | --- |
 | Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. |
-| Published headers on a retry | The `webhook-id` / `webhook-timestamp` / `webhook-signature` set is sent on a first attempt only. A retry sends the legacy body signature and nothing else, so the published header set is not continuous across attempts. |
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
 | Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
@@ -177,9 +177,6 @@ records.
 - Caller-driven dispatch keeps the runtime from owning a background loop and its
   shutdown story. The cost is that the published retry contract applies only to
   what a caller asks for, which a reader must know before relying on it.
-- The retry path predates the published header set and was never moved onto the
-  delivery identity. That is a defect rather than a design choice, and the fix
-  belongs in a runtime change, not in this contract.
 - The deployment failure split is absent because the scheduler never grew a
   preflight step. Recording the failure and advancing the cadence does not lose
   the error, but it does lose the operator signal the published contract
@@ -197,8 +194,8 @@ records.
   signature in a rotation window), and the published header names.
 - `tests/unit/webhook-dispatcher.test.ts` — dispatch to matching active
   subscriptions with a stored signed delivery record, the published header set
-  on a first attempt, and a failed delivery queued as `pending_retry` and later
-  marked delivered.
+  on every attempt with the delivery id unchanged across a two-attempt retry,
+  and a failed delivery queued as `pending_retry` and later marked delivered.
 - `tests/unit/cron-timezone.test.ts` — the field grammar, the refusal of a
   malformed or out-of-range field and of an unknown zone, the same wall time
   resolving to different instants per zone, the instant moving across a DST
@@ -217,10 +214,10 @@ records.
 
 ## 7. Status
 
-`partial` for both, and the reason is no longer narrow. Cron-in-zone and the
-signature arithmetic are the aligned parts. The published delivery envelope, the
-published headers on a retry, the entire auto-disable policy, the deployment
-endpoint alias, the pause/unpause surface, the `trigger_context`
+`partial` for both, and the reason is no longer narrow. Cron-in-zone, the
+signature arithmetic and the published headers on every attempt are the aligned
+parts. The published delivery envelope, the entire auto-disable policy, the
+deployment endpoint alias, the pause/unpause surface, the `trigger_context`
 representation, the lifecycle event names and the asymmetric failure split are
 absent, and are listed in §4 so that "covered by a contract" does not read as
 "implemented". Neither entry is `supported`; neither is `unavailable`, because
