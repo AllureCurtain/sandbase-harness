@@ -14,6 +14,20 @@ import type { DelegationService } from './delegation-service.js';
 import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, mcpDiscoveredToolAdmitted, resolveToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
+import type { SecretRedactor } from '@/core/credentials/redaction.js';
+
+/**
+ * Vault-derived material one turn's sandbox tools use.
+ *
+ * Passed in per turn rather than held on the resolver, so nothing retains a
+ * secret past the turn that resolved it.
+ */
+export type SandboxCredentials = {
+  /** Environment variables the session's vaults contributed. */
+  env: Record<string, string>;
+  /** Scrubs vault secret values out of everything a tool hands back. */
+  redactor: SecretRedactor;
+};
 
 export interface ToolResolverDeps {
   delegationService: DelegationService;
@@ -53,11 +67,12 @@ export class ToolResolver {
     session: Session,
     agent: AgentDefinition,
     sandbox: SandboxInstance,
+    credentials?: SandboxCredentials,
   ): Promise<Record<string, any>> {
     const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
     const mount = this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: session.id } : undefined;
     const delegationCtx = rootDelegationContext(agent.name, DEFAULT_MAX_DELEGATION_DEPTH);
-    const tools = this.buildSandboxTools(agent, sandbox, bindings, mount);
+    const tools = this.buildSandboxTools(agent, sandbox, bindings, mount, credentials);
     Object.assign(tools, await this.getOrConnectMcp(session.id, agent));
     Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx, session));
     // Custom tools are model-visible declarations only. The caller executes them
@@ -210,6 +225,7 @@ export class ToolResolver {
     sandbox: SandboxInstance,
     bindings: readonly MemoryBinding[] = [],
     memoryMount?: SessionMemoryMount,
+    credentials?: SandboxCredentials,
   ): Record<string, any> {
     const tools: Record<string, any> = {};
     const enabledTools = new Set(getEnabledToolNames(agent));
@@ -237,7 +253,12 @@ export class ToolResolver {
         execute: async ({ command }: { command: string }) => {
           const refusal = refuseBashOnMemoryMount(command, bindings);
           if (refusal) return refusal;
-          const result = await sandbox.execute(command);
+          // A shell command declares no target host, so only a credential the
+          // policy admits without one reaches the environment.
+          const result = await sandbox.execute(
+            command,
+            credentials && Object.keys(credentials.env).length > 0 ? { env: credentials.env } : undefined,
+          );
           return result.exitCode === 0 ? result.stdout : `Error (exit ${result.exitCode}): ${result.stderr}`;
         },
       };
@@ -374,6 +395,19 @@ export class ToolResolver {
 
     if (enabledTools.has('web_fetch')) {
       tools['web_fetch'] = createWebFetchTool({ policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'), overrides: this.deps.webFetch });
+    }
+
+    // Everything a tool hands back is scrubbed in one place, so a tool added
+    // later cannot forget a secret it happened to echo.
+    if (credentials) {
+      for (const [name, tool] of Object.entries(tools)) {
+        const execute = tool?.execute;
+        if (typeof execute !== 'function') continue;
+        tools[name] = {
+          ...tool,
+          execute: async (input: unknown) => credentials.redactor(await execute(input)),
+        };
+      }
     }
     return tools;
   }

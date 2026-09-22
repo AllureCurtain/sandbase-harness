@@ -32,7 +32,9 @@ import { collectSessionOutputs, type SessionOutputFile } from './session-outputs
 import { SandboxLifecycle, type SandboxLifecycleLogger } from './sandbox-lifecycle.js';
 import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
-import { ToolResolver } from './tool-resolver.js';
+import { ToolResolver, type SandboxCredentials } from './tool-resolver.js';
+import { createCredentialRedactor, clearCredentialInjectionBundle } from '@/core/credentials/redaction.js';
+import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
 import { getCustomToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import {
   assertPiAgentCanExecute,
@@ -82,6 +84,15 @@ export interface ExecutorDeps {
   webFetch?: WebFetchOverrides;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
+  /**
+   * Resolve a session's vault credentials for a turn.
+   *
+   * Optional: a runtime with no vault store passes nothing, and a session with no
+   * vaults resolves to an empty bundle. The resolver enforces the network policy
+   * before it decrypts anything, so a credential this turn cannot use arrives in
+   * `denied` rather than in the environment.
+   */
+  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
   /**
    * Publish the files an agent wrote under the session output directory.
    *
@@ -203,8 +214,14 @@ export class DefaultSessionExecutor implements SessionExecutor {
     );
 
     // 5. Build tools: built-in sandbox tools, MCP tools, delegation tools, and
-    // confirm-required stripping.
-    const tools = await this.toolResolver.resolveTools(session, agent, sandbox);
+    // confirm-required stripping. A shell command declares no target host, so the
+    // resolver is asked without one: an `unrestricted` credential is injected and
+    // a `limited` one is denied, exactly as the policy already decides.
+    const resolvedCredentials = this.deps.resolveCredentialInjections?.(session.id);
+    const credentials: SandboxCredentials | undefined = resolvedCredentials
+      ? { env: { ...resolvedCredentials.environment }, redactor: createCredentialRedactor(resolvedCredentials) }
+      : undefined;
+    const tools = await this.toolResolver.resolveTools(session, agent, sandbox, credentials);
     // A custom tool call is parked work, not executable work: the runtime
     // surfaces it and waits for the caller's result, so it is routed through the
     // same requires_action path an approval takes.
@@ -236,20 +253,27 @@ export class DefaultSessionExecutor implements SessionExecutor {
       abortSignal: options?.abortSignal,
     };
 
-    for await (const evt of strategy.execute(context)) {
-      yield evt;
+    try {
+      for await (const evt of strategy.execute(context)) {
+        yield evt;
+      }
+
+      // 7. Extract key facts into long-term memory (R9.18), scoped by context_id.
+      await this.contextBuilder.extractMemory(session, event).catch(() => {});
+
+      // 8. Snapshot the workspace after the turn if enabled (R9.11).
+      this.sandboxLifecycle.snapshotAfterTurn(session, sandbox);
+
+      // 9. Publish the files the agent wrote under the session output root.
+      await this.publishSessionOutputs(session, sandbox);
+      // NOTE: no sandbox/MCP cleanup here — they persist for the session
+      // lifetime and are destroyed via cleanupSession() on terminal states.
+    } finally {
+      // The turn is the lifetime of a vault secret: the redactor and the bundle it
+      // was built from are cleared here, whether the strategy finished or threw.
+      credentials?.redactor.clear();
+      clearCredentialInjectionBundle(resolvedCredentials);
     }
-
-    // 7. Extract key facts into long-term memory (R9.18), scoped by context_id.
-    await this.contextBuilder.extractMemory(session, event).catch(() => {});
-
-    // 8. Snapshot the workspace after the turn if enabled (R9.11).
-    this.sandboxLifecycle.snapshotAfterTurn(session, sandbox);
-
-    // 9. Publish the files the agent wrote under the session output root.
-    await this.publishSessionOutputs(session, sandbox);
-    // NOTE: no sandbox/MCP cleanup here — they persist for the session
-    // lifetime and are destroyed via cleanupSession() on terminal states.
   }
 
   /**

@@ -313,6 +313,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   },
   {
     area: 'credentials',
+    id: 'credential-injection-execution',
+    status: 'partial',
+    reason: 'A turn on a session that attaches a vault injects its unrestricted environment variables into the sandbox command environment, redacts every value a sandbox tool hands back, and clears the retained values when the turn ends. Two deviations: the delegated child path builds its own sandbox tools and does not thread credentials, so a sub-agent receives no vault environment; and nothing is injected into model requests, so a credential authenticates an outbound call rather than a completion.',
+    contract: 'contracts/anthropic-cma/credentials.md',
+  },
+  {
+    area: 'credentials',
     id: 'oauth-refresh',
     status: 'unavailable',
     reason: 'No refresh loop, refresh-failure event, or validate endpoint exists, and none is scheduled. A supplied refresh block is parsed, stored, and answered with an explicit warning that it will not be executed, so a caller never assumes a token was renewed.',
