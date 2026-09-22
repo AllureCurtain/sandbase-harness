@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { basename, dirname } from 'node:path';
 import type { LogLevel } from '@/core/observability/logger.js';
+import { capabilityMatrixJson } from '@/core/capabilities/matrix.js';
 import {
   listMemoryProviders,
   toRuntimeMemoryProviderInfo,
@@ -204,6 +205,10 @@ export function runtimeRoutes(deps: ServerDeps) {
     return c.json({
       type: 'capability_inventory',
       capabilities: deps.sessionManager.getCapabilityRegistry().list(),
+      // The two halves answer different questions: the inventory says what this
+      // build can execute, the matrix says which published behaviours it
+      // implements and why not when it does not.
+      contract: capabilityMatrixJson(),
     });
   });
 

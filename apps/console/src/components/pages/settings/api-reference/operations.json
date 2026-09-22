@@ -36,6 +36,11 @@
         "name": "capabilities",
         "type": "array",
         "description": "Built-in capability descriptors, including availability and rejection reason when unavailable."
+      },
+      {
+        "name": "contract",
+        "type": "capability_matrix",
+        "description": "CMA contract matrix: one entry per published behaviour the runtime reports on, each with area, id, status, a reason whenever the status is not supported, and the contract document that carries its detail."
       }
     ]
   },

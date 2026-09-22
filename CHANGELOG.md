@@ -4,6 +4,8 @@
 
 ### Added
 
+- Serves the CMA contract matrix from `GET /v1/x/capabilities` under `contract`, beside the existing runtime tool inventory. The matrix records, for every published contract area, whether this build implements the behaviour, the reason for any other status, and the contract document that carries the detail, so the served inventory and the published contract cannot drift apart silently. The addition is additive: `type` and `capabilities` keep their existing shape and status codes.
+
 - Adds path-addressed session memory mounts. A session can mount up to eight stores at whole-segment paths; file tools persist mounted content through `memory_records`, read-only mounts reject writes, shell access is refused while mounts are attached, and existing-file updates require a content precondition.
 
 - Records an immutable version row per memory write. A memory is overwritten in place, so previously nothing could say what a path held before, attribute a change to the session that made it, or notice that two writers raced on the same path. Every create, update, and delete now records the store, the memory, a per-memory monotonic version number, the path, the content, its SHA-256, its size in bytes, the change kind, and the session that made it, and a unique index refuses a second writer claiming a version that already exists rather than letting it overwrite the first. `GET /v1/memory_stores/{id}/memory_versions` lists a store's recorded versions newest first, optionally scoped to one memory, and `GET /v1/memory_stores/{id}/memory_versions/{versionId}` reads one by its own id.
