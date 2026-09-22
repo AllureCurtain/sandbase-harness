@@ -1122,6 +1122,10 @@ Credential `auth_type` values:
 - `bearer_token`
 - `environment_variable`
 
+The canonical spelling nests the type under `auth` — `mcp_oauth`, `static_bearer`
+(the local name for `bearer_token`) and `environment_variable` — with
+`display_name` as a top-level sibling of `auth`.
+
 Add a credential:
 
 ```bash
@@ -1142,6 +1146,33 @@ curl -X POST http://127.0.0.1:3000/v1/credential-vaults/VAULT_ID/credentials \
 
 Secret values are encrypted at rest. Responses return `value_hint`, not the raw
 secret.
+
+The same credential in the canonical nested shape, which is what a read projects:
+
+```bash
+curl -X POST http://127.0.0.1:3000/v1/credential-vaults/VAULT_ID/credentials \
+  -H "Content-Type: application/json" \
+  -d '{
+    "display_name": "Deploy key",
+    "auth": {
+      "type": "environment_variable",
+      "secret_name": "DEPLOY_KEY",
+      "secret_value": "ghp_example",
+      "injection_location": { "header": true, "body": false }
+    }
+  }'
+```
+
+`static_bearer` and `mcp_oauth` are keyed by `mcp_server_url` and carry `token` and
+`access_token` respectively; an `mcp_oauth` create may also send a `refresh` block,
+and the response then carries a `warnings` entry saying the refresh is not
+executed, because this runtime holds no OAuth refresh loop. Omitting
+`injection_location` enables both positions, supplying the object fills omitted
+fields with `false`, and the response always resolves both. A payload supplying
+both `auth` and a flat field is refused rather than merged, so a flat field can
+never silently override a nested one. The flat spelling above stays accepted as a
+legacy alias, and a read projects the canonical `auth` object either way, beside
+the local fields existing callers already read.
 
 Rotate a credential:
 

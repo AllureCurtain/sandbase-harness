@@ -103,8 +103,9 @@ GitHub resource boundary:
 
 Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
-the `injection_location` create/update asymmetry and both-fields-resolved
-response, and rotation that preserves identity.
+the `injection_location` create rules and the both-fields-resolved read
+projection, and rotation that preserves identity. There is no credential update
+route: structural fields are locked, so a change means archive and recreate.
 
 ## 4. Differences
 
@@ -112,6 +113,7 @@ response, and rotation that preserves identity.
 | --- | --- |
 | OAuth refresh | There is no refresh loop, no refresh-failure event, and no validate endpoint. A supplied `refresh` block is parsed, recorded, and reported back as **not executed**, with a warning on the response. |
 | Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
+| Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
 
@@ -133,6 +135,11 @@ response, and rotation that preserves identity.
   create/update asymmetry and `null` rejection, all three auth shapes, the
   both-spellings rejection, MCP URL normalization and mismatch cases, locked
   field reporting, and write-only omission from the projection.
+- `tests/integration/canonical-credential-wire.test.ts` — each canonical type
+  created through the published endpoint and read back through it: the nested
+  round trip with its resolved `injection_location`, the `static_bearer` name on
+  the wire, the `refresh` warning, the mixed-shape refusal, the legacy flat alias,
+  the missing-field refusals, and that no response carries the secret.
 - `tests/unit/credential-policy.test.ts` — network policy normalization.
 - `tests/unit/credential-redaction.test.ts` — secret material never appears in
   a response.
