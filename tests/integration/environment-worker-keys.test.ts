@@ -80,6 +80,45 @@ describe('Environment worker keys (documented routes)', () => {
     return { res, body: res.status === 204 ? null : await res.json() as any };
   }
 
+  it('serves the published work-items route scoped to one environment', async () => {
+    const first = queue.enqueue('sess_a', 'read', { path: 'a1' });
+    const second = queue.enqueue('sess_a', 'exec', { command: 'echo hi' });
+    queue.enqueue('sess_b', 'read', { path: 'b1' });
+
+    const { res, body } = await get('/v1/environments/env_a/work-items');
+    expect(res.status).toBe(200);
+    // env_b's item belongs to another environment and must not appear here.
+    expect(body.data.map((item: { id: string }) => item.id).sort()).toEqual([first, second].sort());
+    expect(body.first_id).toBe(body.data[0].id);
+    expect(body.counts).toEqual({ pending: 2 });
+    // The item is the shape a worker receives from the claim route.
+    expect(body.data[0].sessionId).toBe('sess_a');
+
+    // `limit` narrows the page; an unusable value falls back to the queue default.
+    expect((await get('/v1/environments/env_a/work-items?limit=1')).body.data).toHaveLength(1);
+    expect((await get('/v1/environments/env_a/work-items?limit=nonsense')).body.data).toHaveLength(2);
+
+    // An unknown environment and an archived one are both refused, as the
+    // neighbouring worker-key routes refuse them.
+    expect((await get('/v1/environments/env_missing/work-items')).res.status).toBe(404);
+    db.prepare("UPDATE environments SET archived_at = datetime('now') WHERE id = 'env_b'").run();
+    expect((await get('/v1/environments/env_b/work-items')).res.status).toBe(404);
+  });
+
+  it('refuses the work-items route when this runtime has no work queue', async () => {
+    const withoutQueue = createServer({
+      db,
+      sessionManager: new SessionManager(db),
+      agents: [],
+      reloadAgents: () => ({ agents: [], errors: [] }),
+      consoleRoot: null,
+    });
+
+    const res = await withoutQueue.request('/v1/environments/env_a/work-items');
+    expect(res.status).toBe(503);
+    expect((await res.json() as any).error.type).toBe('work_queue_unavailable');
+  });
+
   it('starts with no keys and rejects an unknown environment', async () => {
     const empty = await get('/v1/environments/env_a/worker-keys');
     expect(empty.res.status).toBe(200);
