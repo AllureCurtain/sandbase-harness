@@ -26,7 +26,7 @@
         "name": "agent",
         "type": "string | object",
         "required": true,
-        "description": "Agent id, or an object with an id and optional version."
+        "description": "Agent id, an object with an id and optional version, or an agent_with_overrides object that replaces selected fields (model, system, tools, mcp_servers, skills) for this session only."
       },
       {
         "name": "environment_id",

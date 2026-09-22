@@ -447,7 +447,23 @@ class SessionsResource {
   constructor(private readonly client: ManagedAgentsClient) {}
 
   create(input: {
-    agent: string | { id: string; type?: 'agent'; version?: number };
+    agent: string | { id: string; type?: 'agent'; version?: number } | {
+      type: 'agent_with_overrides';
+      id: string;
+      version?: number;
+      /**
+       * Session-local replacements for the agent's configuration.
+       *
+       * Overrides never merge: a field that is present replaces the agent's
+       * value outright, an omitted field is inherited, and `null` (or `[]` for a
+       * list) clears it — except `model`, which can never be cleared.
+       */
+      model?: string | { id: string; speed?: string } | null;
+      system?: string | null;
+      tools?: Array<Record<string, unknown>> | null;
+      mcp_servers?: Array<Record<string, unknown>> | null;
+      skills?: Array<Record<string, unknown>> | null;
+    };
     environment_id?: string;
     title?: string;
     resources?: Array<Record<string, unknown>>;

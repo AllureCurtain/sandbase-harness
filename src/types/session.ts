@@ -5,7 +5,7 @@
  */
 
 import type { CMAEventType, ContentBlock, SessionBudget } from './cma-protocol.js';
-import type { AgentDefinition } from './agent.js';
+import type { AgentDefinition, AgentOverrides } from './agent.js';
 
 // ============================================================
 // Session Status (state machine)
@@ -125,6 +125,12 @@ export interface CreateSessionParams {
    * budget to a session that was created without one.
    */
   budget?: SessionBudget;
+  /**
+   * Per-session replacements for the referenced agent's configuration
+   * (`agent_with_overrides`). Omitted means the session runs the agent as
+   * defined; a rejected override throws before the session row exists.
+   */
+  agentOverrides?: AgentOverrides;
 }
 
 export interface ListSessionsParams {

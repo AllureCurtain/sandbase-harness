@@ -780,6 +780,52 @@ writes nothing.
 The creation response does not echo `initial_events`; list the session's events
 to confirm what was written.
 
+### Overriding an agent for one session
+
+`agent` accepts a third form, `agent_with_overrides`, which runs an agent with
+part of its configuration replaced for this session only:
+
+```json
+{
+  "agent": {
+    "type": "agent_with_overrides",
+    "id": "agent_echo-agent",
+    "model": "claude-sonnet-4",
+    "system": "Answer only in haiku."
+  }
+}
+```
+
+The overridable fields are `model`, `system`, `tools`, `mcp_servers` and
+`skills`. The rule is per field: an omitted field is inherited from the
+referenced version, `null` (or `[]` for a list) clears it for this session, and
+a value replaces it wholesale. Overrides never merge, so a `tools` override has
+to list every tool the session should have.
+
+| Refusal | Error code |
+| --- | --- |
+| `model: null` | `agent_model_required` |
+| `tools` cleared while the effective `skills` is non-empty | `agent_tools_cleared_with_skills` |
+| The effective `tools` binds an `mcp_toolset` to a server `mcp_servers` does not declare | `agent_mcp_server_not_found` |
+| A field is malformed; the message names it | `invalid_agent_override_field` |
+| The object carries a field the contract does not let a session override | `invalid_agent_overrides` |
+| The reference itself is malformed | `invalid_agent_ref` |
+
+A malformed `model` reports the model profile's own codes — `invalid_model`,
+`invalid_model_speed`, `unsupported_model_field` — the same ones an agent
+definition reports for that field. `model.effort` is refused with
+`invalid_agent_override_field`: the local runtime executes no effort control and
+a session snapshot is projected without the field.
+
+The override modifies nothing: it does not touch the agent and does not create a
+version. The session stores the resolved configuration as its own snapshot, and
+`agent.id` and `agent.version` still name the agent and version it was derived
+from, while the agent's own read-back is unchanged. Every refusal above is a 400
+raised before the session row exists, so a rejected override creates nothing.
+
+`POST /v1/runs` accepts only the two pinning forms; the override form is refused
+there instead of being accepted and ignored.
+
 ### Declaring a spending ceiling
 
 `POST /v1/sessions` accepts an optional `budget`, so a runaway loop stops at a

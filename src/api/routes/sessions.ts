@@ -22,6 +22,7 @@ import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normaliz
 import { unsupportedCapability } from '../capability-errors.js';
 import { isTerminal } from '@/core/session/state-machine.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
+import { isAgentOverrideError } from '@/core/agent/overrides.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { persistFileResource, toFileResource, type FileRow } from './files.js';
 import {
@@ -73,11 +74,11 @@ export function sessionsRoutes(deps: ServerDeps) {
       throw err;
     }
 
-    if (!agentRef) {
-      return invalid(c, 'agent field is required');
+    if (!agentRef.ok) {
+      return invalidWithCode(c, agentRef.code, agentRef.message);
     }
-    if (!agentRef.id.startsWith('agent_')) {
-      return invalid(c, 'agent must be a standard agent id');
+    if (!agentRef.ref.id.startsWith('agent_')) {
+      return invalidWithCode(c, 'invalid_agent_ref', 'agent must be a standard agent id');
     }
     if (!environment.ok) return invalid(c, environment.message);
     if (!resources.ok) return invalid(c, resources.message);
@@ -108,8 +109,14 @@ export function sessionsRoutes(deps: ServerDeps) {
 
     try {
       const session = sessionManager.createWithInitialEvents({
-        agent: agentRef.id,
-        agentVersion: agentRef.version,
+        agent: agentRef.ref.id,
+        ...(agentRef.ref.kind === 'pinned' ? { agentVersion: agentRef.ref.version } : {}),
+        ...(agentRef.ref.kind === 'overrides'
+          ? {
+              ...(agentRef.ref.version !== undefined ? { agentVersion: agentRef.ref.version } : {}),
+              agentOverrides: agentRef.ref.overrides,
+            }
+          : {}),
         ...(loopEngine ? { loopEngine } : {}),
         environmentId: environment.value,
         title,
@@ -130,6 +137,12 @@ export function sessionsRoutes(deps: ServerDeps) {
       // Every budget refusal is a 400: the request was well formed and asked
       // for something the contract does not allow, never an internal failure.
       if (isBudgetError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
+      // A refused override is the same shape of answer: the request was well
+      // formed and asked for a configuration the contract does not allow, and
+      // the session row was never inserted.
+      if (isAgentOverrideError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
       if (isPiSessionAdmissionError(err)) {

@@ -194,3 +194,32 @@ export interface AgentLoadResult {
   agents: AgentDefinition[];
   errors: AgentLoadError[];
 }
+
+// ============================================================
+// Per-session Agent Overrides
+// ============================================================
+
+/**
+ * Session-local replacements for an agent's configuration.
+ *
+ * Each field follows the published three-rule contract: omitted inherits the
+ * referenced agent version, `null` (or `[]` for a list) clears it for this
+ * session, and any other value replaces it wholesale. Overrides never merge
+ * with the agent's own configuration, and they never modify the agent or create
+ * a version.
+ *
+ * See `core/agent/overrides.ts` for the resolution and its documented
+ * exceptions.
+ */
+export interface AgentOverrides {
+  /** Replaces the agent's model. `null` is refused — a session always needs one. */
+  model?: { id: string; speed?: AgentModelSpeed; effort?: string } | null;
+  /** Replaces the agent's system prompt. `null` clears it. */
+  system?: string | null;
+  /** Replaces the agent's toolsets. `null` or `[]` clears them. */
+  tools?: AgentToolset[] | null;
+  /** Replaces the agent's MCP servers. `null` or `[]` clears them. */
+  mcp_servers?: McpServerConfig[] | null;
+  /** Replaces the agent's skills. `null` or `[]` clears them. */
+  skills?: AgentSkillRef[] | null;
+}
