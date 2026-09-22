@@ -1156,17 +1156,18 @@ describe('Managed Agents API', () => {
   describe('standard API page contracts', () => {
     it('returns standard page envelopes for collection endpoints', async () => {
       // Converted to the canonical envelope: the collections that return their
-      // complete set, so both cursors are null and no local field is present.
+      // complete set, so both cursors are null and no local field is present, plus
+      // the windowed skills listing, whose cursor can be followed.
       const cursorCollectionPaths = [
         '/v1/credential-vaults',
         '/v1/memory_stores',
+        '/v1/skills',
       ];
       // Still on the local envelope, named in the contract's §4 difference row.
       const collectionPaths = [
         '/v1/agents',
         '/v1/sessions',
         '/v1/environments',
-        '/v1/skills',
         '/v1/x/templates',
       ];
 
@@ -1215,7 +1216,7 @@ describe('Managed Agents API', () => {
 
       const skillsRes = await app.request('/v1/skills');
       const skills = await skillsRes.json();
-      expectPage(skills);
+      expectCursorPage(skills);
       expect(skills.data.some((item: any) => item.id === 'pptx' && item.source === 'anthropic')).toBe(true);
       expect(skills.data.some((item: any) => item.id === 'skill_research' && item.source === 'custom')).toBe(true);
       expect(skills.data.every((item: any) => item.type === 'skill')).toBe(true);
