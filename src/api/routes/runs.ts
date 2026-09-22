@@ -128,7 +128,16 @@ function parseRunAdmission(
   }
   const record = body as Record<string, unknown>;
   const agentRef = normalizeAgentRef(record.agent);
-  if (!agentRef || !agentRef.id.startsWith('agent_')) {
+  if (!agentRef.ok) {
+    return { ok: false, message: 'agent field is required and must be a standard agent id' };
+  }
+  // The run facade pins a reference; per-session overrides are a session
+  // creation behaviour. Refusing the form here keeps a caller from reading a
+  // 200 as evidence that the overrides were applied.
+  if (agentRef.ref.kind === 'overrides') {
+    return { ok: false, message: 'agent_with_overrides is not supported on /v1/runs; create a session with the overrides instead' };
+  }
+  if (!agentRef.ref.id.startsWith('agent_')) {
     return { ok: false, message: 'agent field is required and must be a standard agent id' };
   }
   const environment = normalizeEnvironmentId(deps, record.environment_id);
@@ -136,7 +145,10 @@ function parseRunAdmission(
   return {
     ok: true,
     value: {
-      agent: { id: agentRef.id, version: agentRef.version },
+      agent: {
+        id: agentRef.ref.id,
+        ...(agentRef.ref.kind === 'pinned' ? { version: agentRef.ref.version } : {}),
+      },
       environmentId: environment.value,
       loopEngine: requestedLoopEngine,
     },

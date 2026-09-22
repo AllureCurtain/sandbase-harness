@@ -55,7 +55,8 @@ import {
   LOOP_ENGINE_INVALID_CODE,
   LOOP_ENGINE_UNSUPPORTED_CODE,
 } from './loop-engine-admission.js';
-import type { AgentDefinition } from '@/types/agent.js';
+import type { AgentDefinition, AgentOverrides } from '@/types/agent.js';
+import { agentOverrideError, applyAgentOverrides } from '@/core/agent/overrides.js';
 import {
   runtimeCapabilityRegistry,
   type RuntimeCapabilityRegistry,
@@ -360,9 +361,15 @@ export class SessionManager {
     if (!agentSnapshot) {
       throw new Error(`Agent not found: ${params.agent}`);
     }
-    this.assertAgentCapabilities(agentSnapshot.definition);
+
+    // Overrides produce the session's own agent snapshot. Capability admission
+    // and the persisted definition both read the resolved one, so a session
+    // cannot pass a gate on the base agent and then execute with a different
+    // tool or model set than the one that was checked.
+    const effectiveDefinition = this.resolveSessionAgentDefinition(agentSnapshot.definition, params.agentOverrides);
+    this.assertAgentCapabilities(effectiveDefinition);
     if (loopEngine === 'pi') {
-      assertPiAgentCanExecute(agentSnapshot.definition);
+      assertPiAgentCanExecute(effectiveDefinition);
       assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default'));
     }
 
@@ -373,7 +380,7 @@ export class SessionManager {
     if (params.budget) {
       const unpriced = unpricedDeclaredModels(
         this.costProfile,
-        declaredModels([agentSnapshot.definition.model]),
+        declaredModels([effectiveDefinition.model]),
       );
       if (unpriced.length > 0) {
         throw budgetError(
@@ -391,12 +398,20 @@ export class SessionManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
     `);
 
+    // The resolved definition is persisted whenever the session's configuration
+    // can differ from the durable agent's: a version pin already did, and an
+    // override does too. A session that pins nothing and overrides nothing keeps
+    // following the current agent, which is the documented unpinned behaviour.
+    const frozenDefinition = params.agentVersion !== undefined || params.agentOverrides !== undefined
+      ? JSON.stringify(effectiveDefinition)
+      : null;
+
     stmt.run(
       id,
       agentSnapshot.id,
       agentSnapshot.name,
       agentSnapshot.version,
-      params.agentVersion !== undefined ? JSON.stringify(agentSnapshot.definition) : null,
+      frozenDefinition,
       loopEngine,
       params.environmentId ?? 'env_default',
       params.title ?? null,
@@ -415,7 +430,7 @@ export class SessionManager {
       agentId: agentSnapshot.id,
       agentName: agentSnapshot.name,
       agentVersion: agentSnapshot.version,
-      agentDefinition: params.agentVersion !== undefined ? agentSnapshot.definition : undefined,
+      agentDefinition: frozenDefinition ? effectiveDefinition : undefined,
       loopEngine,
       environmentId: params.environmentId ?? 'env_default',
       status: 'queued',
@@ -428,6 +443,25 @@ export class SessionManager {
       createdAt: now,
       updatedAt: now,
     };
+  }
+
+  /**
+   * Apply the session's overrides to the resolved agent version.
+   *
+   * The refusal is thrown rather than swallowed: a caller that sent
+   * `agent_with_overrides` expects either a session running that configuration
+   * or a rejection, never a session silently running the base agent.
+   */
+  private resolveSessionAgentDefinition(
+    base: AgentDefinition,
+    overrides: AgentOverrides | undefined,
+  ): AgentDefinition {
+    if (!overrides) return base;
+    const resolved = applyAgentOverrides(base, overrides);
+    if (!resolved.ok) {
+      throw agentOverrideError(resolved.code, resolved.message);
+    }
+    return resolved.definition;
   }
 
   private resolveAgentSnapshot(agentId: string, version?: number): { id: string; name: string; version: number; definition: AgentDefinition } | undefined {

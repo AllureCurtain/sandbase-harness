@@ -1,5 +1,7 @@
 import type { ServerDeps } from '../server.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
+import type { AgentOverrides } from '@/types/agent.js';
+import { AGENT_OVERRIDE_TYPE, parseAgentOverrides } from '@/core/agent/overrides.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { resolveFileMountPath } from '@/core/session/file-mount-path.js';
 import {
@@ -25,16 +27,76 @@ export function normalizeMessageContent(content: unknown): ContentBlock[] | null
   return null;
 }
 
-export function normalizeAgentRef(value: unknown): { id: string; version?: number } | null {
-  if (typeof value === 'string' && value.length > 0) return { id: value };
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+/**
+ * The three shapes the published contract accepts for `agent`.
+ *
+ * - `id` (string) — the agent's current version;
+ * - `type: "agent"` + optional `version` — a pinned version;
+ * - `type: "agent_with_overrides"` — a pinned or current version with part of
+ *   its configuration replaced for this session only.
+ *
+ * The override form carries its parsed overrides rather than the raw body, so
+ * every consumer downstream works from validated values.
+ */
+export type AgentRef =
+  | { kind: 'current'; id: string }
+  | { kind: 'pinned'; id: string; version: number }
+  | { kind: 'overrides'; id: string; version?: number; overrides: AgentOverrides };
+
+export type AgentRefResult =
+  | { ok: true; ref: AgentRef }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Normalize the `agent` reference.
+ *
+ * An absent `agent` is a different client mistake from a malformed one, and the
+ * two are told apart: a caller fixing "required field missing" and a caller
+ * fixing "malformed reference" need different answers. Every refusal carries a
+ * code, because the override form adds enough ways to be wrong that a code-less
+ * 400 would leave the caller guessing which part of the object to change.
+ */
+export function normalizeAgentRef(value: unknown): AgentRefResult {
+  if (value === undefined || value === null) {
+    return { ok: false, code: 'agent_required', message: 'agent field is required' };
+  }
+  if (typeof value === 'string') {
+    if (value.length === 0) return agentRefError('agent must be a non-empty agent id');
+    return { ok: true, ref: { kind: 'current', id: value } };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return agentRefError('agent must be an agent id string or an agent object');
+  }
   const record = value as Record<string, unknown>;
-  if (record.type !== undefined && record.type !== 'agent') return null;
-  if (typeof record.id !== 'string' || record.id.length === 0) return null;
+  if (typeof record.id !== 'string' || record.id.length === 0) {
+    return agentRefError('agent.id is required');
+  }
   const version = typeof record.version === 'number' && Number.isInteger(record.version) && record.version > 0
     ? record.version
     : undefined;
-  return { id: record.id, version };
+  if (record.version !== undefined && version === undefined) {
+    return agentRefError('agent.version must be a positive integer');
+  }
+
+  if (record.type === AGENT_OVERRIDE_TYPE) {
+    const parsed = parseAgentOverrides(record);
+    if (!parsed.ok) return { ok: false, code: parsed.code, message: parsed.message };
+    return {
+      ok: true,
+      ref: { kind: 'overrides', id: record.id, ...(version !== undefined ? { version } : {}), overrides: parsed.overrides },
+    };
+  }
+  if (record.type !== undefined && record.type !== 'agent') {
+    return agentRefError('agent.type must be "agent" or "agent_with_overrides"');
+  }
+  return {
+    ok: true,
+    ref: version !== undefined ? { kind: 'pinned', id: record.id, version } : { kind: 'current', id: record.id },
+  };
+}
+
+function agentRefError(message: string): AgentRefResult {
+  return { ok: false, code: 'invalid_agent_ref', message };
 }
 
 
