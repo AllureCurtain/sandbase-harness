@@ -6,13 +6,26 @@ import type { UserEvent } from '@/types/cma-protocol.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import { composeSystemPrompt, type Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
+import { memoryBindingIsWritable, resolveMemoryBindings } from '@/core/memory/bindings.js';
 import { getAgentSkillIds } from '@/core/agent/standard.js';
+
+type SessionAwareMemoryProvider = MemoryProvider & {
+  addForSession?: (
+    storeId: string,
+    content: string,
+    metadata: Record<string, unknown> | undefined,
+    sessionId: string,
+  ) => Promise<string>;
+};
 
 export interface ContextBuilderDeps {
   eventLogger: EventLogger;
   compactor?: ContextCompactor;
   skills?: Skill[];
   memory?: MemoryProvider;
+  /** API-managed memory_records provider selected by memory_store resources. */
+  memoryRecords?: MemoryProvider;
+  memoryStoreName?: (storeId: string) => string | undefined;
 }
 
 export interface BuiltContext {
@@ -43,21 +56,44 @@ export class ContextBuilder {
     if (this.deps.memory && session.contextId) {
       systemPrompt = await this.injectMemory(systemPrompt, session.contextId, event);
     }
+    const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
+    if (this.deps.memoryRecords && bindings.length > 0) {
+      systemPrompt = await this.injectMountedMemory(systemPrompt, bindings, event);
+    }
 
     return { systemPrompt, messages };
   }
 
   async extractMemory(session: Session, event: UserEvent): Promise<void> {
-    if (!this.deps.memory || !session.contextId) return;
     if (event.type !== 'user.message') return;
     const text = (event.content ?? [])
       .filter((block) => block.type === 'text')
       .map((block: any) => block.text)
       .join(' ')
       .trim();
+    if (!text) return;
 
-    if (text) {
-      await this.deps.memory.add(session.contextId, text, { source: 'user.message' });
+    // Preserve the legacy context_id provider exactly for existing sessions.
+    if (this.deps.memory && session.contextId) {
+      try {
+        await this.deps.memory.add(session.contextId, text, { source: 'user.message' });
+      } catch {
+        // A legacy provider failure must not suppress mounted-store extraction.
+      }
+    }
+
+    if (!this.deps.memoryRecords) return;
+    const memoryRecords = this.deps.memoryRecords as SessionAwareMemoryProvider;
+    for (const binding of resolveMemoryBindings(session.resources, this.deps.memoryStoreName).filter(memoryBindingIsWritable)) {
+      try {
+        if (memoryRecords.addForSession) {
+          await memoryRecords.addForSession(binding.storeId, text, { source: 'user.message' }, session.id);
+        } else {
+          await memoryRecords.add(binding.storeId, text, { source: 'user.message' });
+        }
+      } catch {
+        // Memory extraction is best-effort and isolated per mounted store.
+      }
     }
   }
 
@@ -112,5 +148,36 @@ export class ContextBuilder {
     } catch {
       return systemPrompt;
     }
+  }
+
+  private async injectMountedMemory(
+    systemPrompt: string,
+    bindings: ReturnType<typeof resolveMemoryBindings>,
+    event: UserEvent,
+  ): Promise<string> {
+    if (!this.deps.memoryRecords) return systemPrompt;
+    const query = event.type === 'user.message'
+      ? (event.content ?? []).filter((b) => b.type === 'text').map((b: any) => b.text).join(' ')
+      : '';
+    const sections: string[] = [];
+    for (const binding of bindings) {
+      const description = [
+        `Mount path: ${binding.mountPath}`,
+        `Access: ${binding.access}`,
+        ...(binding.instructions ? [`Instructions: ${binding.instructions}`] : []),
+      ].join('\n');
+      try {
+        const memories = await this.deps.memoryRecords.search(binding.storeId, query, 5);
+        const records = memories.length > 0
+          ? `\n${memories.map((memory) => `- ${memory.content}`).join('\n')}`
+          : '\n(no matching memories)';
+        sections.push(`${description}${records}`);
+      } catch {
+        sections.push(`${description}\n(store unavailable)`);
+      }
+    }
+    return sections.length > 0
+      ? `${systemPrompt}\n\n# Mounted Memory Stores\n\n${sections.join('\n\n')}`
+      : systemPrompt;
   }
 }

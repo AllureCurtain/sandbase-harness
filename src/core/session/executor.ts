@@ -25,6 +25,8 @@ import { EventLogger } from './event-logger.js';
 import { ContextCompactor } from './context-compactor.js';
 import type { Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
+import type { MemoryMountAdapter } from '@/core/memory/mount-adapter.js';
+import { resolveMemoryBindings } from '@/core/memory/bindings.js';
 import type { SnapshotManager } from './snapshot-manager.js';
 import { collectSessionOutputs, type SessionOutputFile } from './session-outputs.js';
 import { SandboxLifecycle, type SandboxLifecycleLogger } from './sandbox-lifecycle.js';
@@ -62,6 +64,11 @@ export interface ExecutorDeps {
   skillsDir?: string;
   /** Optional long-term memory provider, scoped by context_id (R9.16–18). */
   memory?: MemoryProvider;
+  /** API-managed memory_records provider for mounted stores. */
+  memoryRecords?: MemoryProvider;
+  /** Path-addressed memory adapter; absent means mounted calls fail closed. */
+  memoryMount?: MemoryMountAdapter;
+  memoryStoreName?: (storeId: string) => string | undefined;
   /** Optional workspace snapshot manager (R9.11). */
   snapshots?: SnapshotManager;
   /** Workspace fallback when an agent does not set max_turns. */
@@ -97,6 +104,8 @@ export class DefaultSessionExecutor implements SessionExecutor {
       compactor: deps.compactor,
       skills: deps.skills,
       memory: deps.memory,
+      memoryRecords: deps.memoryRecords,
+      memoryStoreName: deps.memoryStoreName,
     });
     this.delegationService = new DelegationService({
       agents: deps.agents,
@@ -107,12 +116,20 @@ export class DefaultSessionExecutor implements SessionExecutor {
       // parent session's backend instead of always landing on local.
       provisionSandbox: (session, sandboxId) => this.sandboxLifecycle.provisionDetached(session, sandboxId),
       composeSystemPrompt: (agent) => this.contextBuilder.composeSystemPrompt(agent),
-      buildSandboxTools: (agent, sandbox) => this.toolResolver.buildSandboxTools(agent, sandbox),
+      buildMemoryContext: async (childSession, childAgent, childEvent) => (await this.contextBuilder.build(childSession, childAgent, childEvent, undefined, () => {})).systemPrompt,
+      buildSandboxTools: (agent, sandbox, parentSession) => this.toolResolver.buildSandboxTools(
+        agent,
+        sandbox,
+        resolveMemoryBindings(parentSession?.resources, deps.memoryStoreName),
+        deps.memoryMount ? { adapter: deps.memoryMount, sessionId: parentSession?.id ?? 'unknown' } : undefined,
+      ),
       resolveSkillDirs: (agent) => this.skillDirsFor(agent),
     });
     this.toolResolver = new ToolResolver({
       delegationService: this.delegationService,
       webFetch: deps.webFetch,
+      memoryMount: deps.memoryMount,
+      memoryStoreName: deps.memoryStoreName,
     });
   }
 
