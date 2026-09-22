@@ -1196,7 +1196,11 @@ before decryption, produces only non-secret `runtime_denied` audit metadata, and
 does not update `last_used_at`. Explicit `unrestricted` is the only policy that
 can inject without a target host. The helper is an injection-boundary contract;
 production web/MCP/custom-tool callers still need to propagate target-host
-context before universal enforcement can be claimed.
+context before universal enforcement can be claimed. A stdio MCP server is one
+caller of that no-host form: the session's `unrestricted` environment variables
+are passed to its process and an MCP tool's return value is scrubbed, while a
+`limited` credential is denied for it the same way it is denied for a shell
+command. A url-transport server is passed no credential at all.
 
 ### Memory limits, scope, and preconditions
 

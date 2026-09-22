@@ -15,6 +15,8 @@ import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, mcpDisco
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 import type { SecretRedactor } from '@/core/credentials/redaction.js';
+import { clearCredentialInjectionBundle, createCredentialRedactor } from '@/core/credentials/redaction.js';
+import type { CredentialInjectionBundle } from '@/core/credentials/injection.js';
 
 /**
  * Vault-derived material one turn's sandbox tools use.
@@ -41,6 +43,15 @@ export interface ToolResolverDeps {
   /** Path-addressed memory provider. Mount calls fail closed when absent. */
   memoryMount?: MemoryMountAdapter;
   memoryStoreName?: (storeId: string) => string | undefined;
+  /**
+   * Resolve a session's vault credentials for one MCP connection.
+   *
+   * Optional: a runtime with no vault store passes nothing, and an agent whose
+   * servers are all anonymous needs nothing. The resolver enforces the network
+   * policy before it decrypts anything, so a credential this session cannot use
+   * comes back in `denied` rather than in the environment.
+   */
+  resolveCredentialInjections?: (sessionId: string, targetHost?: string | null) => CredentialInjectionBundle;
 }
 
 export interface ToolConfirmationResolution {
@@ -425,10 +436,41 @@ export class ToolResolver {
       return this.mcpToolCache.get(sessionId) ?? {};
     }
 
+    // A stdio server is a local process rather than an outbound call, so no
+    // target host is claimed: exactly as for a shell command, an `unrestricted`
+    // credential is injected and a `limited` one is denied by the policy.
+    const resolveCredentials = this.deps.resolveCredentialInjections
+      ? () => this.deps.resolveCredentialInjections!(sessionId)
+      : undefined;
     const manager = new McpManager({
       // A server's tool list is only known after connect, so the owning
       // toolset's admission rule is applied here rather than to a declared list.
       admitTool: (serverName, toolName) => mcpDiscoveredToolAdmitted(agent, serverName, toolName),
+      resolveEnvironment: resolveCredentials
+        ? () => {
+          const bundle = resolveCredentials();
+          const environment = { ...bundle.environment };
+          // The bundle belongs to this connect: the copy above is what the server
+          // process receives, and the manager empties that copy after the spawn.
+          clearCredentialInjectionBundle(bundle);
+          return environment;
+        }
+        : undefined,
+      redactResult: resolveCredentials
+        ? (_serverName, result) => {
+          // Resolved per call rather than captured once, so what gets scrubbed is
+          // the value the session holds now; cleared immediately afterwards so
+          // neither the redactor nor its bundle outlives the call.
+          const bundle = resolveCredentials();
+          const redactor = createCredentialRedactor(bundle);
+          try {
+            return redactor(result);
+          } finally {
+            redactor.clear();
+            clearCredentialInjectionBundle(bundle);
+          }
+        }
+        : undefined,
     });
     const tools = await manager.connectAll(agent.mcp_servers);
     this.mcpManagers.set(sessionId, manager);
