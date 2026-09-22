@@ -30,6 +30,42 @@ export function nextCronRun(
   if (!isValidTimeZone(timeZone)) return null;
   return nextCronRunInZone(cron, after, timeZone);
 }
+
+/**
+ * Restore the forward schedule of every active deployment at startup.
+ *
+ * `runDueScheduledDeployments` only matches rows that already carry a
+ * `next_run_at`, so a deployment whose next time passed while the runtime was
+ * down would never be picked up again. Recomputing it at startup is not a
+ * backfill — a trigger missed while the process was stopped is deliberately not
+ * replayed, per the contract — it only restores the forward schedule.
+ */
+export function rearmScheduledDeployments(deps: { db: Database }, opts: { now?: Date } = {}): number {
+  const now = opts.now ?? new Date();
+  const rows = deps.db.prepare(
+    `SELECT *
+     FROM scheduled_deployments
+     WHERE archived_at IS NULL AND status = 'active'`,
+  ).all() as Array<RearmRow>;
+  let updated = 0;
+  for (const row of rows) {
+    const stale = !row.next_run_at || row.next_run_at <= now.toISOString();
+    if (!stale) continue;
+    const next = nextCronRun(row.cron, now, row.timezone || 'UTC')?.toISOString() ?? null;
+    deps.db.prepare(
+      'UPDATE scheduled_deployments SET next_run_at = ?, updated_at = ? WHERE id = ?',
+    ).run(next, now.toISOString(), row.id);
+    updated += 1;
+  }
+  return updated;
+}
+
+type RearmRow = {
+  id: string;
+  cron: string;
+  timezone: string | null;
+  next_run_at: string | null;
+};
 export function runDueScheduledDeployments(
   db: Database,
   sessionManager: SessionManager,

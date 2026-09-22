@@ -93,11 +93,15 @@ is created `active` (the schema default) and stays `active` until archived.
   then `failed`). It is never written back to the subscription and never raises
   a disable.
 
-There is no dispatcher loop and no disable policy: both entry points run only
-when a caller hits `POST /v1/webhooks/dispatch` or `POST /v1/webhooks/retry-due`.
-The published disable rules — the `3xx` rule, the private-address rule, the
-sustained-failure window, `disabled_reason`, and the reset-on-success rule — have
-no implementation here, and neither does the published 5–120 s jitter.
+The runtime composes an operations bridge at startup: it registers a broadcast
+listener that projects every durable session event to the matching subscriptions,
+re-arms the forward schedule of active deployments, and starts one 60-second tick
+that retries due deliveries and runs due deployments. `POST /v1/webhooks/dispatch`
+and `POST /v1/webhooks/retry-due` remain for a caller that wants a pass on demand.
+No disable policy exists: the published disable rules — the `3xx` rule, the
+private-address rule, the sustained-failure window, `disabled_reason`, and the
+reset-on-success rule — have no implementation here, and neither does the
+published 5–120 s jitter.
 
 Scheduled deployments live under `/v1/scheduled-deployments`, the historical
 local spelling only; there is no `/v1/deployments` alias. `operations.ts`
@@ -164,7 +168,7 @@ records.
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
 | Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
 | Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
-| Delivery trigger | Caller-driven `POST /webhooks/dispatch` and `POST /webhooks/retry-due`. There is no background dispatcher and no timer, so an unwatched runtime delivers nothing. |
+| Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The published jittered 5–120 s backoff is not implemented: the local schedule is a fixed 60 s then 120 s. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
 | Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`session.updated`, `turn_complete`, `span.*`). |
 | Deployment endpoint paths | The historical local `/v1/scheduled-deployments` is served; there is no `/v1/deployments` alias, so a client written against the published path gets no route. |
@@ -189,9 +193,11 @@ records.
   private-address rule would break — that is a reason not to enable it by
   default, not a reason to describe it as opt-in when no check exists at all.
   The disable *mechanism* is genuinely absent, and is named here as such.
-- Caller-driven dispatch keeps the runtime from owning a background loop and its
-  shutdown story. The cost is that the published retry contract applies only to
-  what a caller asks for, which a reader must know before relying on it.
+- The runtime owns the delivery loop now, and owns its shutdown story with it: the
+  timer is `unref`'d so it cannot keep a process alive on its own, and the runtime
+  stopper clears it. The earlier caller-driven design avoided that responsibility
+  at the cost of delivering nothing while nobody polled, which is the trade this
+  replaces.
 - The deployment failure split is absent because the scheduler never grew a
   preflight step. Recording the failure and advancing the cadence does not lose
   the error, but it does lose the operator signal the published contract
@@ -222,6 +228,11 @@ records.
   window, a second rotation replaces the window rather than appending to it, an
   unknown subscription is a 404, and a subscription with no stored secret gains one
   and leaves the legacy derivation behind.
+- `tests/integration/operations-bridge.test.ts` and
+  `tests/integration/operations-runtime-composition.test.ts` — the broadcast
+  listener projects a durable event to a matching subscription, the timers retry a
+  due delivery and run a due deployment, and a composed runtime has both a listener
+  and a running timer that its stop function clears.
 - `tests/unit/cron-timezone.test.ts` — the field grammar, the refusal of a
   malformed or out-of-range field and of an unknown zone, the same wall time
   resolving to different instants per zone, the instant moving across a DST
@@ -241,8 +252,9 @@ records.
 ## 7. Status
 
 `partial` for both, and the reason is no longer narrow. Cron-in-zone, the
-signature arithmetic, the per-endpoint secret and the published headers on every
-attempt are the aligned parts. The published delivery envelope, the entire
+signature arithmetic, the per-endpoint secret, the published headers on every
+attempt and the background tick that delivers without a caller are the aligned
+parts. The published delivery envelope, the entire
 auto-disable policy, the deployment endpoint alias, the pause/unpause surface, the
 `trigger_context` representation, the lifecycle event names and the asymmetric
 failure split are absent, and are listed in §4 so that "covered by a contract" does

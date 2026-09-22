@@ -11,6 +11,7 @@ import { join } from 'node:path';
 
 import { Database } from './core/db/database.js';
 import { createServer } from './api/server.js';
+import { composeOperations, webhookSigningSecret } from './api/operations-bridge.js';
 import { logDirForFile, resolveConfigPath, resolveDataDir, resolveLogFile, resolveUserPath, resolveWorkspaceRoot } from './core/config/paths.js';
 import { composeRuntimeFromSettings } from './core/runtime/composition.js';
 import { ensureDefaultEnvironment, loadRuntimeConfigBootstrap } from './core/runtime/config-bootstrap.js';
@@ -127,6 +128,17 @@ async function startServer(opts: StartServerOptions) {
     console.log(`  Recovery:  reconciled ${reconciled} interrupted session(s)`);
   }
 
+  // Compose the operations wirings before the server accepts traffic: a webhook
+  // subscription created in the gap between binding and registration would miss
+  // every event until the next restart, and a deployment whose next run passed
+  // while the runtime was down needs its forward schedule restored.
+  const { stopOperationsTimers } = composeOperations({
+    db,
+    sessionManager,
+    webhookSecret: webhookSigningSecret(dataDir),
+    dataDir,
+  });
+
   const runtimeApiAuth = resolveRuntimeApiAuth({ db });
 
   let server: ReturnType<typeof serve> | undefined;
@@ -148,7 +160,10 @@ async function startServer(opts: StartServerOptions) {
     logger,
     logStore,
     metrics,
-    restart: () => stopRuntime('restart'),
+    restart: () => {
+      stopOperationsTimers();
+      stopRuntime('restart');
+    },
     workQueue,
     corsOrigins: parseCsv(process.env.MANAGED_AGENTS_CORS_ORIGINS),
     workspace: {
@@ -208,9 +223,16 @@ async function startServer(opts: StartServerOptions) {
   // than crashing with an unhandled 'error' event stack trace.
   attachRuntimeServerErrorHandler({ server, port, db });
 
-  // Graceful shutdown: stop accepting requests, drain turns + sandboxes, close DB
-  process.on('SIGINT', () => void stopRuntime('shutdown'));
-  process.on('SIGTERM', () => void stopRuntime('shutdown'));
+  // Graceful shutdown: stop accepting requests, stop the operations timers,
+  // drain turns + sandboxes, close DB
+  process.on('SIGINT', () => {
+    stopOperationsTimers();
+    void stopRuntime('shutdown');
+  });
+  process.on('SIGTERM', () => {
+    stopOperationsTimers();
+    void stopRuntime('shutdown');
+  });
 }
 
 runCli({ version: VERSION, startServer });

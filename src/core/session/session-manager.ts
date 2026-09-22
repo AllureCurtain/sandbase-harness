@@ -106,6 +106,14 @@ export class SessionManager {
   private readonly resolveEnvironmentSandboxProvider: EnvironmentSandboxProviderResolver;
   private readonly isLoopEngineExecutable: (engine: SessionLoopEngine) => boolean;
   private subscribers = new Map<string, Set<Subscriber>>();
+  /**
+   * Process-wide listener for every event that reaches the broadcast step.
+   *
+   * Distinct from `subscribers`, which are per session and exist for one SSE
+   * connection. A projection that answers a runtime-wide question — webhook
+   * dispatch, for instance — would otherwise have to discover sessions first.
+   */
+  private broadcastListener?: (event: SessionEvent) => void;
   private executor?: SessionExecutor;
   /** Per-session execution chain — serializes turns so they never overlap. */
   private executionChains = new Map<string, Promise<void>>();
@@ -592,6 +600,17 @@ export class SessionManager {
   /**
    * Subscribe to real-time session events (SSE pub/sub channel).
    */
+  /**
+   * Register the process-wide listener, replacing any previous one.
+   *
+   * The event is already durable in the append-only log by the time this runs,
+   * so a listener failure is contained rather than propagated: a projection must
+   * never be able to fail an event the log has accepted.
+   */
+  setBroadcastListener(listener: (event: SessionEvent) => void): void {
+    this.broadcastListener = listener;
+  }
+
   subscribe(sessionId: string, callback: Subscriber): () => void {
     if (!this.subscribers.has(sessionId)) {
       this.subscribers.set(sessionId, new Set());
@@ -892,6 +911,13 @@ export class SessionManager {
         } catch {
           // subscriber errors don't propagate
         }
+      }
+    }
+    if (this.broadcastListener) {
+      try {
+        this.broadcastListener(event);
+      } catch {
+        // a projection failure must not fail an event that is already durable
       }
     }
   }
