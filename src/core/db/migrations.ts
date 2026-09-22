@@ -840,6 +840,19 @@ CREATE INDEX idx_handoff_bundles_session ON handoff_bundles(session_id, created_
 CREATE INDEX idx_handoff_bundles_created ON handoff_bundles(created_at DESC, id);
 `;
 
+/**
+ * The IANA zone a schedule's cron is evaluated in.
+ *
+ * `cron.ts` has always done the wall-clock arithmetic in a zone and
+ * `scheduler.ts` has always read one off the row, but nothing could put one
+ * there: the field was not read from a request and no column held it, so every
+ * schedule silently ran in UTC. `NOT NULL DEFAULT 'UTC'` makes the default the
+ * same one the runner applies, and an existing row reads as UTC.
+ */
+const M037_SCHEDULED_TIMEZONE = `
+ALTER TABLE scheduled_deployments ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -877,4 +890,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 34, name: '034_memory_versions', sql: M034_MEMORY_VERSIONS },
   { version: 35, name: '035_session_budget', sql: M035_SESSION_BUDGET },
   { version: 36, name: '036_handoff_bundles', sql: M036_HANDOFF_BUNDLES },
+  { version: 37, name: '037_scheduled_timezone', sql: M037_SCHEDULED_TIMEZONE },
 ];
