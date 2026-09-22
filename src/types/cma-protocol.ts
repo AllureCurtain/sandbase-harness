@@ -405,16 +405,18 @@ export interface SpanModelRequestEndEvent extends EventBase {
  * `span.outcome_evaluation_end`.
  *
  * `satisfied` and `failed` end the outcome; `needs_revision` asks for another
- * iteration. `max_iterations_reached` and `interrupted` are properties of the
- * iteration budget and the session's lifecycle rather than of the deliverable,
- * so they are decided by the loop and not by the grader.
+ * iteration. `max_iterations_reached`, `interrupted` and `budget_reached` are
+ * properties of the iteration budget, the session's lifecycle and its spending
+ * ceiling rather than of the deliverable, so they are decided by the loop and not
+ * by the grader.
  */
 export type OutcomeEvaluationResult =
   | 'satisfied'
   | 'needs_revision'
   | 'failed'
   | 'max_iterations_reached'
-  | 'interrupted';
+  | 'interrupted'
+  | 'budget_reached';
 
 /** Where the session log holds a `user.define_outcome` payload. */
 export interface SpanOutcomeEvaluationMetadata extends Record<string, unknown> {

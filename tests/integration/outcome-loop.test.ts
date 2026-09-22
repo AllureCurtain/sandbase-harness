@@ -24,8 +24,9 @@ import {
 } from '@/core/session/session-manager.js';
 import type { EventLogger } from '@/core/session/event-logger.js';
 import type { OutcomeGrade, OutcomeGradeInput } from '@/core/outcomes/grader.js';
+import type { CostProfile } from '@/core/session/cost-profile.js';
 import type { Session, SessionEvent } from '@/types/session.js';
-import type { UserEvent } from '@/types/cma-protocol.js';
+import type { SessionBudget, UserEvent } from '@/types/cma-protocol.js';
 import { createServer } from '@/api/server.js';
 import { loadSkills } from '@/core/skills/loader.js';
 
@@ -39,6 +40,24 @@ const OUTCOME_EVENT = {
 const NEEDS_REVISION: OutcomeGrade = { result: 'needs_revision', explanation: 'The response body is empty.' };
 const SATISFIED: OutcomeGrade = { result: 'satisfied', explanation: 'The endpoint returns 200.' };
 
+/**
+ * One cent per thousand tokens, so a test can cross a ceiling in whole cents: the
+ * ceiling is measured from `span.model_request_end` rows priced by this profile.
+ */
+const PROFILE: CostProfile = {
+  id: 'test',
+  models: {
+    'model-priced': { input_per_mtok_cents: 1000, output_per_mtok_cents: 1000 },
+  },
+  web_search_per_1000_cents: 0,
+  active_hour_cents: 0,
+};
+
+/** One cent of spend, which two thousand tokens cost under {@link PROFILE}. */
+function oneCentBudget(): SessionBudget {
+  return { type: 'limit', max_list_cost: { amount: '1', currency: 'USD' } };
+}
+
 /** A scripted agent: one turn per call, with the stops a test asks for. */
 class ScriptedExecutor implements SessionExecutor {
   readonly turns: string[] = [];
@@ -51,12 +70,20 @@ class ScriptedExecutor implements SessionExecutor {
       /** Turn number (1-based) during which the caller interrupts the session. */
       interruptOnTurn?: number;
     } = {},
-    private readonly hooks: { interrupt?: () => Promise<void> } = {},
+    private readonly hooks: {
+      interrupt?: () => Promise<void>;
+      /** Runs at the start of a turn, before the turn appends anything. */
+      onTurn?: (turn: number, session: Session) => void | Promise<void>;
+    } = {},
   ) {}
 
   async *execute(session: Session, _event: UserEvent, options?: ExecuteOptions): AsyncIterable<SessionEvent> {
     const turn = this.turns.length + 1;
     this.turns.push(`turn ${turn}`);
+
+    // What a turn spends is part of the script: a test records the cost here when
+    // it wants the ceiling to be crossed by this turn.
+    await this.hooks.onTurn?.(turn, session);
 
     if (this.script.interruptOnTurn === turn) {
       // The interrupt lands while the turn is running, which is exactly the case
@@ -96,8 +123,13 @@ describe('declared outcome revision loop', () => {
     db = new Database(join(tmpDir, 'test.db'));
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
-    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{}')`);
+    // The model has to be one the cost profile prices: a session whose model has no
+    // list price is refused a budget rather than metered against an invented rate.
+    db.exec(
+      `INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{"name":"x","model":"model-priced"}')`,
+    );
     manager = new SessionManager(db);
+    manager.setCostProfile(PROFILE);
     grades = [];
     graded = [];
     interruptTarget = undefined;
@@ -148,6 +180,16 @@ describe('declared outcome revision loop', () => {
 
   function revisionsOf(events: SessionEvent[]): SessionEvent[] {
     return events.filter((event) => event.type === 'user.message');
+  }
+
+  /** Append a model-request record: the rows the ceiling is measured from. */
+  function recordSpend(sessionId: string, tokens: number): void {
+    manager.getEventLogger().append(sessionId, {
+      type: 'span.model_request_end',
+      modelUsed: 'model-priced',
+      tokensIn: tokens,
+      tokensOut: 0,
+    });
   }
 
   it('re-runs the turn with the grader feedback as a real user message', async () => {
@@ -270,6 +312,66 @@ describe('declared outcome revision loop', () => {
     ]);
     expect(events.some((event) => event.type === 'session.error')).toBe(false);
     expect(manager.get(session.id)?.status).toBe('requires_action');
+  });
+
+  it('grades nothing further once the declaration turn reaches the ceiling', async () => {
+    useExecutor(
+      {},
+      {
+        onTurn: (turn, session) => {
+          // Two thousand tokens are two cents under the profile, against a one-cent
+          // ceiling: the turn that carried the declaration spent the last of it.
+          if (turn === 1) recordSpend(session.id, 2000);
+        },
+      },
+    );
+    grades = [NEEDS_REVISION];
+
+    const session = manager.createWithInitialEvents(
+      { agent: 'agent_x', budget: oneCentBudget() },
+      [OUTCOME_EVENT as UserEvent],
+    );
+    await settle(session.id);
+
+    // No grading pass and no revision turn: the ceiling stops the loop before its
+    // next model request rather than after it.
+    expect(executor.turns).toEqual(['turn 1']);
+    expect(graded).toHaveLength(0);
+
+    const events = eventsOf(session.id);
+    expect(endsOf(events).map((event) => event.metadata)).toMatchObject([
+      { iteration: 0, result: 'budget_reached', outcome_evaluation_start_id: '' },
+    ]);
+    expect(events.some((event) => event.type === 'session.error')).toBe(false);
+    expect(manager.get(session.id)?.status).toBe('paused');
+  });
+
+  it('ends the outcome when a revision turn reaches the ceiling', async () => {
+    useExecutor(
+      {},
+      {
+        onTurn: (turn, session) => {
+          if (turn === 2) recordSpend(session.id, 2000);
+        },
+      },
+    );
+    grades = [NEEDS_REVISION, SATISFIED];
+
+    const session = manager.createWithInitialEvents(
+      { agent: 'agent_x', budget: oneCentBudget() },
+      [OUTCOME_EVENT as UserEvent],
+    );
+    await settle(session.id);
+
+    // The revision turn ran and was paid for, and then the outcome stopped: the
+    // evaluation that would have measured it never ran.
+    expect(executor.turns).toEqual(['turn 1', 'turn 2']);
+    expect(graded).toHaveLength(1);
+    expect(endsOf(eventsOf(session.id)).map((event) => event.metadata)).toMatchObject([
+      { iteration: 0, result: 'needs_revision' },
+      { iteration: 1, result: 'budget_reached', outcome_evaluation_start_id: '' },
+    ]);
+    expect(manager.get(session.id)?.status).toBe('paused');
   });
 });
 

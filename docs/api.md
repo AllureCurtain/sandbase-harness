@@ -775,9 +775,10 @@ published on the session's event log as three events, in order:
 
 `iteration` counts from `0`: it is `0` for the evaluation of the declared outcome and
 `n` for the re-evaluation after the n-th revision. `result` is `satisfied`,
-`needs_revision`, `failed`, `max_iterations_reached` or `interrupted`, and the end
-event is appended on every path — including when the grader could not run — so a
-client watching for it never hangs on an evaluation that is already over. The
+`needs_revision`, `failed`, `max_iterations_reached`, `interrupted` or
+`budget_reached`, and the end event is appended on every path — including when the
+grader could not run — so a client watching for it never hangs on an evaluation
+that is already over. The
 grader runs in its own context window over what the agent produced: its messages,
 tool calls and tool results, never the system prompt or an earlier verdict.
 
@@ -796,7 +797,13 @@ turn reads its instruction from it. The loop ends at the first `satisfied` or
   and records no `session.error`;
 - a revision turn that stops for a tool confirmation ends the outcome as
   `interrupted` too: the loop cannot drive another turn while the session waits
-  for a human, and the session's own status reports `requires_action`.
+  for a human, and the session's own status reports `requires_action`;
+- a session that reaches its spending ceiling stops iterating: the loop spends
+  nothing more — not the grader pass that would measure the turn that just ran, not
+  the revision turn, and not the settling turn — and the outcome closes with one
+  further `span.outcome_evaluation_end` carrying `result: "budget_reached"` and an
+  empty `outcome_evaluation_start_id`. Admission still refuses the next
+  work-starting event with `budget_reached`, so one name covers both facts.
 
 Each iteration is observable: one revision `user.message` per revision and one
 `span.outcome_evaluation_start` / `_ongoing` / `_end` triple per evaluation.
@@ -914,6 +921,13 @@ is refused with `budget_reached`, and only events that settle work already in
 flight are accepted — the refusal names them. This stops the *next* model
 request rather than aborting one in progress: the request that crossed the cap
 has already completed and been charged.
+
+A declared outcome stops at the ceiling too. The loop reads the session's spend
+before it spends anything, so a session that reaches its ceiling during an outcome
+runs no further iteration and no further grading pass, and the outcome closes with
+`result: "budget_reached"` on its terminal `span.outcome_evaluation_end`. The
+ceiling is enforced there as well as at admission because a revision turn is not an
+event: it is internal to the declaration that was already admitted.
 
 The creation response reports the budget back as `budget`, or omits the field
 when the session has none. A session whose budget was removed reports `null`

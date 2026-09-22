@@ -1127,9 +1127,12 @@ export class SessionManager {
    * actually recorded. Every span triple is appended to that same log, which is
    * what makes the outcome replayable.
    *
-   * An outcome that stops without a verdict — the caller interrupted it, or a
-   * turn left the session waiting on a tool confirmation — closes as
-   * `interrupted` rather than as a verdict about a deliverable nobody finished.
+   * An outcome that stops without a verdict — the caller interrupted it, a turn
+   * left the session waiting on a tool confirmation, or the session spent its
+   * declared ceiling — closes with the reason it stopped rather than with a
+   * verdict about a deliverable nobody finished. The ceiling is read here as well
+   * as at admission because the iterations are internal to one admitted event and
+   * no admission gate would see their model requests.
    */
   private async runDeclaredOutcomeLoop(
     sessionId: string,
@@ -1180,6 +1183,9 @@ export class SessionManager {
       runTurn: () => this.runOutcomeTurn(sessionId, abortController, revision, turnState),
       readTranscript: () => outcomeTranscript(this.eventLogger.getEvents(sessionId)),
       isAborted: () => abortController.signal.aborted || turnState.requiresAction,
+      // The session's own ceiling, which admission enforces for events and the
+      // loop enforces for the turns no event goes through.
+      isExhausted: () => this.isBudgetExhausted(sessionId),
     });
   }
 

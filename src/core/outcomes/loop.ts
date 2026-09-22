@@ -4,8 +4,13 @@
  * A declared outcome starts a self-directed loop: the agent works, a grader
  * measures the deliverable against the rubric, the explanation goes back into the
  * session as a revision message, and the agent iterates — until the rubric is
- * satisfied, the grader says it cannot be met, the iteration budget is spent, or
- * the session is interrupted.
+ * satisfied, the grader says it cannot be met, the iteration budget is spent, the
+ * session is interrupted, or the session reaches its spending ceiling.
+ *
+ * The ceiling is checked here as well as at event admission, because a revision
+ * turn is not an event: appending the revision and re-entering the executor are
+ * internal to one already-admitted declaration, so without this check the
+ * iterations would keep starting model requests no admission gate ever sees.
  *
  * The loop is driven from the persisted event log rather than from in-memory
  * state. Each revision is a real `user.message`, and each grading pass is the
@@ -67,6 +72,15 @@ export class OutcomeInterruptedError extends Error {
   }
 }
 
+/**
+ * The verdict a loop-driven stop reports when the session spent its ceiling.
+ *
+ * Spelled the same as the admission refusal (`BUDGET_ERROR_CODES.reached`),
+ * because a client reading the outcome's terminal event and a client reading a 400
+ * should be looking at one name for one fact.
+ */
+export const OUTCOME_BUDGET_REACHED_RESULT = 'budget_reached';
+
 export interface OutcomeRequest {
   description: string;
   /** Iterations allowed, already defaulted by the ingress normalizer. */
@@ -96,6 +110,15 @@ export interface OutcomeLoopInput {
    * the difference between them.
    */
   isAborted: () => boolean;
+  /**
+   * True once the session has spent the ceiling it declared.
+   *
+   * The loop spends nothing more once it is true: not the grader pass that would
+   * measure the turn that just ran, not the revision turn, and not the settling
+   * turn. The outcome closes as `budget_reached`, which is the same code admission
+   * refuses the next work-starting event with.
+   */
+  isExhausted: () => boolean;
 }
 
 export interface OutcomeLoopResult {
@@ -114,6 +137,12 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
       closeInterrupted(input, iteration);
       throw new OutcomeInterruptedError();
     }
+    // Nothing is spent on an exhausted session — not even the grader pass, which
+    // is a model request like any other.
+    if (input.isExhausted()) {
+      closeBudgetReached(input, iteration);
+      return { result: OUTCOME_BUDGET_REACHED_RESULT, iterations: iteration, explanation };
+    }
 
     if (iteration > 0) {
       // The revision is appended before the turn, so the turn re-reads the log
@@ -128,6 +157,13 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
       if (input.isAborted()) {
         closeInterrupted(input, iteration);
         throw new OutcomeInterruptedError();
+      }
+      // The same turn can also spend the last of the ceiling, and then the
+      // evaluation is skipped for the same reason: a verdict about work nobody
+      // paid for is not a verdict the runtime can stand behind.
+      if (input.isExhausted()) {
+        closeBudgetReached(input, iteration);
+        return { result: OUTCOME_BUDGET_REACHED_RESULT, iterations: iteration, explanation };
       }
     }
 
@@ -150,6 +186,14 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
     }
 
     if (evaluation.result === 'max_iterations_reached') {
+      // The settling turn is a model request like any other, so it is skipped once
+      // the ceiling is spent: the outcome is over either way, and the close names
+      // the reason it stopped.
+      if (input.isExhausted()) {
+        closeBudgetReached(input, iteration);
+        // `iteration` is the evaluation that just ran, which the count includes.
+        return { result: OUTCOME_BUDGET_REACHED_RESULT, iterations: iteration + 1, explanation };
+      }
       // The budget is spent, so no further evaluation runs. The agent still gets
       // one final turn to settle its answer before the session goes idle.
       input.appendRevision(finalRevisionMessage(input.request.description, evaluation.explanation));
@@ -171,24 +215,41 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
 }
 
 /**
- * Close an outcome as `interrupted`.
+ * Close an outcome without a verdict from the grader.
  *
- * The close is not tied to one evaluation, so `outcome_evaluation_start_id` is
+ * An interrupt and a spent ceiling are not deliberations about the deliverable, so
+ * the close is not tied to one evaluation and `outcome_evaluation_start_id` is
  * empty: no start event is being closed. That keeps this event distinguishable
  * from the end span of an evaluation that actually ran, whichever point of the
  * iteration the stop arrived at.
  */
-function closeInterrupted(input: OutcomeLoopInput, iteration: number): void {
+function closeOutcome(
+  input: OutcomeLoopInput,
+  iteration: number,
+  result: typeof OUTCOME_BUDGET_REACHED_RESULT | 'interrupted',
+): void {
   input.logger.append({
     type: 'span.outcome_evaluation_end',
     metadata: {
       outcome_id: input.outcomeId,
       outcome_evaluation_start_id: '',
-      result: 'interrupted',
-      explanation: 'The outcome was interrupted before evaluation completed.',
+      result,
+      explanation: result === OUTCOME_BUDGET_REACHED_RESULT
+        ? 'The session reached its spending ceiling before this outcome finished.'
+        : 'The outcome was interrupted before evaluation completed.',
       iteration,
     },
   });
+}
+
+/** Close an outcome the caller stopped. */
+function closeInterrupted(input: OutcomeLoopInput, iteration: number): void {
+  closeOutcome(input, iteration, 'interrupted');
+}
+
+/** Close an outcome whose session spent its ceiling. */
+function closeBudgetReached(input: OutcomeLoopInput, iteration: number): void {
+  closeOutcome(input, iteration, OUTCOME_BUDGET_REACHED_RESULT);
 }
 
 /** The agent-facing instruction that asks for the work the grader will measure. */

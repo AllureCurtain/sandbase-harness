@@ -58,13 +58,21 @@ Source: `src/core/session/session-budget.ts`, `src/core/session/cost-profile.ts`
 - `manager.update(sessionId, { budget })` implements the raise/remove rules. Only
   the budget is updatable there; the remaining session fields belong to the
   session-update behaviour.
+- The ceiling is read by a declared outcome's revision loop as well as by admission.
+  A revision turn is not an event — appending the revision and re-entering the
+  executor are internal to the declaration that was already admitted — so the loop
+  consults the spend before it spends anything further (the grading pass included)
+  and closes the outcome with `result: "budget_reached"` on its terminal
+  `span.outcome_evaluation_end`. The published consequence, "the next model request
+  does not start", is what this extends to work one admitted event can keep
+  starting.
 
 ## 3. Alignment
 
 | Published clause | State |
 | --- | --- |
 | Budget value shape, `type: 'limit'` / `max_list_cost` nesting | Aligned. `parseSessionBudget` rejects a non-integer amount, a leading zero, an unknown currency, a wrong `type`, and a malformed shape with distinct stable codes. |
-| Enforcement between model requests | Aligned in effect: the event that would start the next request is refused before a turn is queued, so the request never starts. Expressed as event admission rather than an engine stop condition — see §4. |
+| Enforcement between model requests | Aligned in effect, and widened: the event that would start the next request is refused before a turn is queued, and a declared outcome's revision loop stops at the ceiling before it starts another grading pass or turn. Expressed as event admission plus a loop condition rather than an engine stop condition — see §4. |
 | Pause rather than terminate | Not aligned. The event is refused; the session is not transitioned to a paused state and no `stop_reason: budget_reached` is emitted. See §4. |
 | Settlement-event whitelist at the cap | Aligned with a narrower list. See §4. |
 | Refusing to attach, or to lower below consumed cost | Aligned. A budget is attachable at creation only, must be strictly greater than consumed cost, and cannot be re-added after removal. |
@@ -79,6 +87,7 @@ Source: `src/core/session/session-budget.ts`, `src/core/session/cost-profile.ts`
 | Unpriced model ⇒ no budget | A model the profile does not list makes the session unbudgetable (`budget_model_without_list_price`). The published contract has authoritative prices, so the case does not arise for it. |
 | `list_cost` withheld when incomplete | When any model used is unpriced, `usage.list_cost` is omitted rather than reported as a lower bound. Reporting a lower bound as a total would understate spend to a caller that is about to choose a new cap. |
 | The cap refuses the next event instead of pausing the session | The published design pauses the session and reports `budget_reached` on the thread. SandBase refuses the work-starting event with the code `budget_reached` and leaves the session status alone: the pause signal is a thread-level fact, and this runtime has no thread surface to report it on. The consequence the contract cares about — the next model request does not start — holds either way. |
+| An outcome stops at the ceiling with its own verdict | A declared outcome whose session reaches the ceiling closes with `result: "budget_reached"` on its terminal `span.outcome_evaluation_end`. The published contract has no outcome-loop surface, so this is a local rule rather than a published one; `sessions.md` §4 records the outcome side of it. |
 | The settlement whitelist names three events, not four | The published list also names `user.tool_result`. No client can send that event here — externally executed tool results arrive as `user.custom_tool_result` — and the refusal quotes the list back to the client, so naming an event the API would reject as unknown would be worse than omitting it. |
 | No `session.status_rescheduled` | Not emitted, because no transient-error retry schedule exists. |
 | No budget alerts | `session-budget-alerts` remains a deliberate non-goal, as recorded in the capability matrix. |
@@ -113,6 +122,13 @@ boundary (just under the cap keeps running, at the cap stops), settlement-event
 acceptance at the cap, the attach/lower/remove rules, the three-state budget
 (`undefined` / `null` / object), the `session.usage` payload, and derivation from
 the durable log across a manager restart.
+`tests/unit/outcome-loop.test.ts` covers the loop's half of the ceiling: a spent
+ceiling stops the iterations without a grading pass and closes the outcome as
+`budget_reached`, and the unit test also pins that this verdict is spelled the same
+as the admission code.
+`tests/integration/outcome-loop.test.ts` covers it through a real session: a ceiling
+crossed by the declared turn grades nothing further, and a ceiling crossed by a
+revision turn ends the outcome there.
 `tests/unit/capability-matrix.test.ts` pins this entry's status and the
 deviations its reason names.
 
