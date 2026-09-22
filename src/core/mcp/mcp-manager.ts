@@ -85,6 +85,17 @@ export interface McpManagerOptions {
    */
   resolveEnvironment?: (server: McpServerConfig) => Record<string, string> | undefined;
   /**
+   * Request headers a url-transport server's connection should carry.
+   *
+   * The SDK sends the initial SSE request through `eventSourceInit.fetch` and every
+   * message POST through `requestInit`, so a caller-supplied credential has to reach
+   * both or the server sees it on one leg only. The returned record is copied into
+   * the transport and then emptied, so this manager does not retain the values; the
+   * transport holds the copy it presents for the life of the connection. Absent
+   * means "send no extra headers".
+   */
+  resolveHeaders?: (server: McpServerConfig) => Record<string, string> | undefined;
+  /**
    * Scrub a tool result before the strategy hands it to the model.
    *
    * A server that echoes the credential it was given would otherwise put the
@@ -97,6 +108,7 @@ export interface McpManagerOptions {
 export class McpManager {
   private readonly admitTool: ((serverName: string, toolName: string) => boolean) | undefined;
   private readonly resolveEnvironment: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
+  private readonly resolveHeaders: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
   private readonly redactResult: ((serverName: string, result: unknown) => unknown) | undefined;
   private clients = new Map<string, McpClient>();
   private serverConfigs = new Map<string, McpServerConfig>();
@@ -107,6 +119,7 @@ export class McpManager {
   constructor(options: McpManagerOptions = {}) {
     this.admitTool = options.admitTool;
     this.resolveEnvironment = options.resolveEnvironment;
+    this.resolveHeaders = options.resolveHeaders;
     this.redactResult = options.redactResult;
   }
   /** Sleep function (injectable for tests). */
@@ -279,8 +292,9 @@ export class McpManager {
   private async createClient(server: McpServerConfig): Promise<McpClient> {
     let transport;
     // Credential material contributed by the resolver, kept only until the
-    // process has started.
+    // connection is established.
     let injectedEnv: Record<string, string> | undefined;
+    let injectedHeaders: Record<string, string> | undefined;
     if (server.type === 'stdio') {
       if (!server.command) {
         throw new Error(`MCP server "${server.name}": stdio transport requires "command"`);
@@ -301,17 +315,34 @@ export class McpManager {
         throw new Error(`MCP server "${server.name}": url transport requires "url"`);
       }
       const url = resolveEnvVarsDeep(server.url, false);
-      transport = new SSEClientTransport(new URL(url));
+      injectedHeaders = this.resolveHeaders?.(server);
+      const headers = { ...(injectedHeaders ?? {}) };
+      transport = new SSEClientTransport(new URL(url), Object.keys(headers).length > 0
+        ? {
+          // The initial SSE request goes through this fetch, and every message
+          // POST through `requestInit`; a credential has to ride both legs, so
+          // both are supplied rather than only the one the SDK documents first.
+          eventSourceInit: {
+            fetch: ((input: string | URL | Request, init?: RequestInit) => globalThis.fetch(input, {
+              ...init,
+              headers: { ...(init?.headers as Record<string, string> | undefined), ...headers },
+            })) as typeof fetch,
+          },
+          requestInit: { headers },
+        }
+        : undefined);
     }
 
     const client = new Client({ name: 'sandbase-harness', version: '1.0.0' });
     try {
       await client.connect(transport);
     } finally {
-      // The values were needed only to start the process. Emptying them here
-      // keeps this manager from holding credential material for the rest of the
-      // session; a reconnect resolves them again through the same option.
-      clearInjectedEnvironment(injectedEnv);
+      // The resolver's records were needed only to establish the connection, so
+      // they are emptied here: the manager keeps no credential material for the
+      // rest of the session, and a reconnect resolves it again through the same
+      // option. The copies handed to a transport belong to that transport.
+      clearInjectedValues(injectedEnv);
+      clearInjectedValues(injectedHeaders);
     }
 
     return {
@@ -338,14 +369,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Empty the record a credential resolver handed over.
+ * Empty a record a credential resolver handed over.
  *
- * The record is the manager's copy for one spawn attempt, so it is cleared
+ * The record is the manager's copy for one connect attempt, so it is cleared
  * rather than left reachable from a long-lived object.
  */
-function clearInjectedEnvironment(env?: Record<string, string>): void {
-  if (!env) return;
-  for (const key of Object.keys(env)) delete env[key];
+function clearInjectedValues(values?: Record<string, string>): void {
+  if (!values) return;
+  for (const key of Object.keys(values)) delete values[key];
 }
 
 /** Heuristic: does this error indicate a dropped/broken MCP connection? */

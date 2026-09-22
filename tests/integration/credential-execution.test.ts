@@ -100,9 +100,9 @@ describe('credential execution wiring', () => {
       resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local' }),
       strategy,
       eventLogger: new EventLogger(db),
-      resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db!, sessionId, {
+      resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db!, sessionId, {
         dataDir: tmpDir,
-        targetHost,
+        ...target,
       }),
     });
     const session: Session = {

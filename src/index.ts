@@ -126,10 +126,10 @@ async function startServer(opts: StartServerOptions) {
     // The turn's injection boundary: a session that attaches a vault gets its
     // unrestricted environment variables in the sandbox command environment, and
     // its `limited` ones only where the policy can name a host. A shell command
-    // declares none, which is why this call passes no target host.
-    resolveCredentialInjections: (sessionId, targetHost) => resolveSessionCredentialInjections(db, sessionId, {
+    // declares none, which is why this call passes no target.
+    resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db, sessionId, {
       dataDir,
-      targetHost,
+      ...target,
     }),
     logger,
   });
