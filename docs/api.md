@@ -115,7 +115,19 @@ headers are passed through untouched.
 
 ## Pagination and Errors
 
-Collection responses:
+Collection responses. A canonical `/v1` collection carries cursors:
+
+```json
+{
+  "data": [],
+  "prev_page": null,
+  "next_page": null
+}
+```
+
+An extension collection under `/v1/x` — and a canonical collection the contract has
+not converted yet, listed in `contracts/anthropic-cma/pagination.md` §4 — carries the
+local fields:
 
 ```json
 {
