@@ -12,6 +12,9 @@ import api_keys from './api-reference/api-keys.json';
 import operations from './api-reference/operations.json';
 import worker from './api-reference/worker.json';
 import handoff from './api-reference/handoff.json';
+import webhooks from './api-reference/webhooks.json';
+import scheduled_deployments from './api-reference/scheduled-deployments.json';
+import outcomes from './api-reference/outcomes.json';
 
 export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(sessions as unknown as ApiReferenceEndpoint[]),
@@ -27,4 +30,7 @@ export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(operations as unknown as ApiReferenceEndpoint[]),
   ...(worker as unknown as ApiReferenceEndpoint[]),
   ...(handoff as unknown as ApiReferenceEndpoint[]),
+  ...(webhooks as unknown as ApiReferenceEndpoint[]),
+  ...(scheduled_deployments as unknown as ApiReferenceEndpoint[]),
+  ...(outcomes as unknown as ApiReferenceEndpoint[]),
 ];

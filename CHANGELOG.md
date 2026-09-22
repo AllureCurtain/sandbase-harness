@@ -4,6 +4,8 @@
 
 ### Added
 
+- Documents the operations namespace in the Console API reference. Webhooks, scheduled deployments and outcomes contribute 25 routes the reference omitted entirely, because the check that keeps the reference and the server in agreement compared a hand-written list of route files that never mentioned `src/api/routes/operations.ts`. That check now expands the real mount graph from `src/api/server.ts`, following composed routers and collapsing the `/v1/x` compatibility mirror onto the canonical `/v1` path only when that path is mounted, so an undocumented route fails it. Two entries describing routes this runtime never had, `POST /v1/scheduled-deployments/{schedule_id}/pause` and `/unpause`, are removed, and the orphan `legacy-providers.json`, which documented the `/v1/x/*-providers` CRUD surface that was removed from the v1 API and was imported by nothing, is deleted.
+
 - Serves the CMA contract matrix from `GET /v1/x/capabilities` under `contract`, beside the existing runtime tool inventory. The matrix records, for every published contract area, whether this build implements the behaviour, the reason for any other status, and the contract document that carries the detail, so the served inventory and the published contract cannot drift apart silently. The addition is additive: `type` and `capabilities` keep their existing shape and status codes.
 
 - Adds path-addressed session memory mounts. A session can mount up to eight stores at whole-segment paths; file tools persist mounted content through `memory_records`, read-only mounts reject writes, shell access is refused while mounts are attached, and existing-file updates require a content precondition.

@@ -1,0 +1,298 @@
+[
+  {
+    "id": "webhooks-list",
+    "group": "Webhooks",
+    "title": "List webhooks",
+    "method": "GET",
+    "path": "/v1/webhooks",
+    "summary": "List webhook subscriptions. Archived subscriptions are excluded.",
+    "response": [
+      {
+        "name": "data",
+        "type": "Webhook[]",
+        "description": "Webhook subscriptions with url, events, and status."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-create",
+    "group": "Webhooks",
+    "title": "Create webhook",
+    "method": "POST",
+    "path": "/v1/webhooks",
+    "summary": "Subscribe an http(s) endpoint to one or more session event names. No per-endpoint secret is minted or returned.",
+    "parameters": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true,
+        "description": "Delivery target. Must be an http(s) URL."
+      },
+      {
+        "name": "events",
+        "type": "string[]",
+        "required": true,
+        "description": "Event names to deliver. At least one is required."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable label. Defaults to the URL host."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Free-form description."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated wh_... identifier."
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "description": "Delivery target."
+      },
+      {
+        "name": "events",
+        "type": "string[]",
+        "description": "Subscribed event names. `*` matches every event and a `prefix.*` entry matches that prefix."
+      },
+      {
+        "name": "status",
+        "type": "active | archived",
+        "description": "Subscription state. Archived subscriptions are derived from `archived_at` and are excluded from listing and dispatch."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque tags."
+      },
+      {
+        "name": "created_at",
+        "type": "string",
+        "description": "ISO 8601 creation timestamp."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-get",
+    "group": "Webhooks",
+    "title": "Get webhook",
+    "method": "GET",
+    "path": "/v1/webhooks/{webhook_id}",
+    "summary": "Retrieve a webhook subscription. Archived subscriptions are treated as missing.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Webhook identifier."
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "description": "Delivery target."
+      },
+      {
+        "name": "events",
+        "type": "string[]",
+        "description": "Subscribed event names."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque tags."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-update",
+    "group": "Webhooks",
+    "title": "Update webhook",
+    "method": "PUT",
+    "path": "/v1/webhooks/{webhook_id}",
+    "summary": "Update a webhook subscription. Omitted fields keep their stored value.",
+    "parameters": [
+      {
+        "name": "url",
+        "type": "string",
+        "description": "Delivery target. Must be an http(s) URL when supplied."
+      },
+      {
+        "name": "events",
+        "type": "string[]",
+        "description": "Replacement event name list. Must not be empty."
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable label."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Free-form description."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Replacement opaque tags."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Webhook identifier."
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "description": "Delivery target after the update."
+      },
+      {
+        "name": "events",
+        "type": "string[]",
+        "description": "Subscribed event names after the update."
+      },
+      {
+        "name": "updated_at",
+        "type": "string",
+        "description": "ISO 8601 update timestamp."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-archive",
+    "group": "Webhooks",
+    "title": "Archive webhook",
+    "method": "POST",
+    "path": "/v1/webhooks/{webhook_id}/archive",
+    "summary": "Archive a webhook subscription and stop future deliveries.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Archived webhook identifier."
+      },
+      {
+        "name": "status",
+        "type": "archived",
+        "description": "Subscription state after archiving."
+      },
+      {
+        "name": "archived_at",
+        "type": "string",
+        "description": "ISO 8601 archive timestamp."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-deliveries",
+    "group": "Webhooks",
+    "title": "List webhook deliveries",
+    "method": "GET",
+    "path": "/v1/webhooks/{webhook_id}/deliveries",
+    "summary": "List delivery attempts newest first, including their status codes, retry schedule, and signature.",
+    "response": [
+      {
+        "name": "data",
+        "type": "WebhookDelivery[]",
+        "description": "Each record carries `status` (`delivered`, `pending_retry`, or `failed`), `status_code`, `error`, `signature`, `attempt_count` (ceiling 3, so at most two retries) and `next_retry_at` (a fixed 60s then 120s backoff; `null` once terminal)."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-test",
+    "group": "Webhooks",
+    "title": "Send webhook test",
+    "method": "POST",
+    "path": "/v1/webhooks/{webhook_id}/test",
+    "summary": "Record a signed test delivery without requiring an outbound network call.",
+    "parameters": [
+      {
+        "name": "event",
+        "type": "string",
+        "description": "Event name for the test payload. Defaults to the first subscribed event."
+      },
+      {
+        "name": "payload",
+        "type": "object",
+        "description": "Overrides merged into the test payload data."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated whd_... delivery identifier."
+      },
+      {
+        "name": "status",
+        "type": "simulated",
+        "description": "Test deliveries are recorded as simulated, never sent."
+      },
+      {
+        "name": "signature",
+        "type": "string",
+        "description": "`sha256=<hex>` HMAC of the serialized test payload, keyed by the runtime's signing secret."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-dispatch",
+    "group": "Webhooks",
+    "title": "Dispatch webhook event",
+    "method": "POST",
+    "path": "/v1/webhooks/dispatch",
+    "summary": "Dispatch an event to matching active webhooks and record one delivery per match.",
+    "parameters": [
+      {
+        "name": "event",
+        "type": "string",
+        "required": true,
+        "description": "Event name to match against webhook subscriptions."
+      },
+      {
+        "name": "data",
+        "type": "object",
+        "description": "Event payload delivered to matching webhooks."
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Optional caller-supplied event id echoed in the delivered payload."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "WebhookDelivery[]",
+        "description": "One delivery record per matching webhook."
+      }
+    ]
+  },
+  {
+    "id": "webhooks-retry-due",
+    "group": "Webhooks",
+    "title": "Retry due webhook deliveries",
+    "method": "POST",
+    "path": "/v1/webhooks/retry-due",
+    "summary": "Retry failed deliveries whose retry time has arrived, up to fifty per pass.",
+    "response": [
+      {
+        "name": "data",
+        "type": "WebhookDelivery[]",
+        "description": "Deliveries that were retried in this pass. A retry re-signs the stored payload and sends only the legacy `X-Managed-Agents-Signature` header, not the published header set."
+      }
+    ]
+  }
+]
