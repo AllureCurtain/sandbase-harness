@@ -773,12 +773,33 @@ published on the session's event log as three events, in order:
 | `span.outcome_evaluation_ongoing` | `outcome_id`, `iteration` |
 | `span.outcome_evaluation_end` | `outcome_id`, `iteration`, `result`, `explanation`, `outcome_evaluation_start_id` |
 
-`iteration` is `0` for the evaluation of the declared outcome. `result` is
-`satisfied`, `needs_revision`, or `failed`, and the end event is appended on
-every path — including when the grader could not run — so a client watching for
-it never hangs on an evaluation that is already over. The grader runs in its own
-context window over what the agent produced: its messages, tool calls and tool
-results, never the system prompt or an earlier verdict.
+`iteration` counts from `0`: it is `0` for the evaluation of the declared outcome and
+`n` for the re-evaluation after the n-th revision. `result` is `satisfied`,
+`needs_revision`, `failed`, `max_iterations_reached` or `interrupted`, and the end
+event is appended on every path — including when the grader could not run — so a
+client watching for it never hangs on an evaluation that is already over. The
+grader runs in its own context window over what the agent produced: its messages,
+tool calls and tool results, never the system prompt or an earlier verdict.
+
+A `needs_revision` verdict drives the next iteration. The runtime appends the
+grader's explanation to the session log as a real `user.message` and runs another
+turn inside the same outcome, so the revision is visible in the log and the next
+turn reads its instruction from it. The loop ends at the first `satisfied` or
+`failed`, at the declared `max_iterations`, or when the session is interrupted:
+
+- the last allowed evaluation reports `max_iterations_reached` instead of asking
+  for a revision the budget cannot run, and the agent still gets one final turn to
+  settle its answer before the session goes idle;
+- an interrupt closes the outcome with one further
+  `span.outcome_evaluation_end` carrying `result: "interrupted"` and an empty
+  `outcome_evaluation_start_id`, because the close is not tied to one evaluation,
+  and records no `session.error`;
+- a revision turn that stops for a tool confirmation ends the outcome as
+  `interrupted` too: the loop cannot drive another turn while the session waits
+  for a human, and the session's own status reports `requires_action`.
+
+Each iteration is observable: one revision `user.message` per revision and one
+`span.outcome_evaluation_start` / `_ongoing` / `_end` triple per evaluation.
 
 Grading needs a model provider. With none configured the evaluation closes as
 `failed` and the session records `session.error` with code
@@ -786,11 +807,9 @@ Grading needs a model provider. With none configured the evaluation closes as
 missing provider is a configuration problem rather than a transient one. A
 `{ "type": "file" }` rubric is read from the uploaded file; if it cannot be read
 the refusal is `outcome_rubric_file_not_found` rather than a verdict against an
-empty rubric.
-
-`needs_revision` does not yet start another turn and `max_iterations` does not
-yet bound anything: the revision loop is not implemented, and the capability
-inventory reports this area as `partial` rather than as a delivered loop.
+empty rubric. A runtime that composes no grader at all refuses the declaration at
+admission with `outcome_grader_unavailable` (400) instead of accepting an outcome
+it can never evaluate.
 
 Validation runs before any session row, event, or sandbox exists, and creation
 and the events commit together, so a rejected batch leaves no session and no
@@ -804,6 +823,7 @@ partial history behind:
 | An element's `type` is neither `user.message` nor `user.define_outcome` | `invalid_initial_event_type` |
 | A message `content` is neither a string nor an array of content blocks | `invalid_initial_events` |
 | An outcome lacks a `description`, has a malformed `rubric`, or sets `max_iterations` outside 1..20 | `invalid_initial_events` |
+| The runtime composes no outcome grader, so a declared outcome could never be measured | `outcome_grader_unavailable` |
 
 The same normalization runs on a live event: `POST /v1/sessions/{id}/events` with a
 malformed `user.define_outcome` answers `400` with code `invalid_define_outcome` and

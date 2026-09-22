@@ -15,7 +15,7 @@ import type { SessionEvent } from '@/types/session.js';
 import type { OutcomeGrade } from '@/core/outcomes/grader.js';
 
 /** A scripted run: turns and grades are consumed in order. */
-function harness(grades: OutcomeGrade[], opts: { abortAfterEvaluations?: number } = {}) {
+function harness(grades: OutcomeGrade[], opts: { abortAfterEvaluations?: number; abortAfterTurns?: number } = {}) {
   const spans: Array<{ type: string; metadata: Record<string, unknown> }> = [];
   const revisions: string[] = [];
   const turns: string[] = [];
@@ -53,7 +53,11 @@ function harness(grades: OutcomeGrade[], opts: { abortAfterEvaluations?: number 
         yield { id: `sevt_turn_${turnCount}` } as SessionEvent;
       },
       readTranscript: () => `assistant: attempt ${turnCount}`,
-      isAborted: () => opts.abortAfterEvaluations !== undefined && gradeIndex >= opts.abortAfterEvaluations,
+      isAborted: () =>
+        (opts.abortAfterEvaluations !== undefined && gradeIndex >= opts.abortAfterEvaluations) ||
+        // Models an interrupt that lands while a turn is running rather than
+        // between iterations.
+        (opts.abortAfterTurns !== undefined && turnCount >= opts.abortAfterTurns),
     },
   };
 }
@@ -122,5 +126,51 @@ describe('runOutcomeLoop', () => {
     expect(run.spans.at(-1)?.metadata).toMatchObject({ result: 'interrupted', outcome_evaluation_start_id: '', iteration: 1 });
     // No revision was appended for the iteration that never ran.
     expect(run.revisions).toHaveLength(0);
+  });
+
+  it('does not measure a revision turn the caller stopped', async () => {
+    const run = harness([revise, satisfied], { abortAfterTurns: 1 });
+    await expect(runOutcomeLoop(run.input)).rejects.toBeInstanceOf(OutcomeInterruptedError);
+
+    // The revision was appended and its turn ran, but nothing graded the stopped
+    // turn: an interrupt that lands inside a turn is noticed before measuring it.
+    expect(run.turns).toEqual(['turn 1']);
+    expect(run.revisions).toHaveLength(1);
+    expect(run.spans.map((span) => span.type)).toEqual([
+      'span.outcome_evaluation_start',
+      'span.outcome_evaluation_ongoing',
+      'span.outcome_evaluation_end',
+      'span.outcome_evaluation_end',
+    ]);
+    expect(run.spans[2].metadata).toMatchObject({ iteration: 0, result: 'needs_revision' });
+    expect(run.spans[3].metadata).toMatchObject({
+      iteration: 1,
+      result: 'interrupted',
+      outcome_evaluation_start_id: '',
+    });
+  });
+
+  it('closes the outcome as interrupted when the settling turn is stopped', async () => {
+    // One allowed iteration: the evaluation reports the spent budget, and the
+    // interrupt then lands during the final turn it allows.
+    const run = harness([revise], { abortAfterTurns: 1 });
+    const result = await runOutcomeLoop(run.input);
+
+    expect(result).toMatchObject({ result: 'interrupted', iterations: 1 });
+    expect(run.turns).toEqual(['turn 1']);
+    // The budget verdict stays on the log; the interrupt close is what ended the
+    // outcome, so a client reading it does not stop at `max_iterations_reached`.
+    expect(run.spans.map((span) => span.type)).toEqual([
+      'span.outcome_evaluation_start',
+      'span.outcome_evaluation_ongoing',
+      'span.outcome_evaluation_end',
+      'span.outcome_evaluation_end',
+    ]);
+    expect(run.spans[2].metadata).toMatchObject({ iteration: 0, result: 'max_iterations_reached' });
+    expect(run.spans[3].metadata).toMatchObject({
+      iteration: 0,
+      result: 'interrupted',
+      outcome_evaluation_start_id: '',
+    });
   });
 });

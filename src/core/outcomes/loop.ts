@@ -35,6 +35,30 @@ import type { OutcomeGrader } from './grader.js';
  */
 export const OUTCOME_GRADER_UNAVAILABLE_CODE = 'outcome_grader_unavailable';
 
+/**
+ * Admission refusal for a declared outcome on a grader-less runtime.
+ *
+ * Carries its code so the session ingress can answer 400 with the stable value
+ * instead of letting message-sniffing fallbacks call it a runtime fault.
+ */
+export function outcomeGraderUnavailableError(): Error & { code: string } {
+  const error = new Error(
+    'This runtime composes no outcome grader, so a declared outcome could never be measured.',
+  ) as Error & { code: string };
+  error.code = OUTCOME_GRADER_UNAVAILABLE_CODE;
+  return error;
+}
+
+/** Whether a thrown value is the declaration refusal above. */
+export function isOutcomeGraderUnavailableError(error: unknown): error is Error & { code: string } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === OUTCOME_GRADER_UNAVAILABLE_CODE
+  );
+}
+
 /** Raised when an interrupt stopped the outcome mid-flight. */
 export class OutcomeInterruptedError extends Error {
   constructor() {
@@ -62,7 +86,15 @@ export interface OutcomeLoopInput {
   runTurn: () => AsyncIterable<SessionEvent>;
   /** Read the session's log as a grader-facing transcript. */
   readTranscript: () => string;
-  /** True once the caller has interrupted the outcome. */
+  /**
+   * True once the outcome must stop driving turns.
+   *
+   * Two things make it true: the caller aborted the session, or a turn left the
+   * run in a state the loop cannot continue through — a tool confirmation is
+   * pending, so another turn would answer work the session is still waiting on.
+   * Both close the outcome as `interrupted`; the session's own status carries
+   * the difference between them.
+   */
   isAborted: () => boolean;
 }
 
@@ -89,6 +121,13 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
       input.appendRevision(revisionMessage(input.request.description, explanation));
       for await (const event of input.runTurn()) {
         void event;
+      }
+      // A turn can consume the interrupt, so the stop is re-checked before the
+      // turn is measured: grading a turn the caller stopped would report a
+      // verdict about work that never finished.
+      if (input.isAborted()) {
+        closeInterrupted(input, iteration);
+        throw new OutcomeInterruptedError();
       }
     }
 
@@ -118,6 +157,10 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
         void event;
       }
       if (input.isAborted()) {
+        // The settling turn was stopped, so `interrupted` — not the budget
+        // verdict the last evaluation already reported — is what ended this
+        // outcome, and the log says so.
+        closeInterrupted(input, iteration);
         return { result: 'interrupted', iterations: iteration + 1, explanation };
       }
       return { result: 'max_iterations_reached', iterations: iteration + 1, explanation };
@@ -128,11 +171,12 @@ export async function runOutcomeLoop(input: OutcomeLoopInput): Promise<OutcomeLo
 }
 
 /**
- * Close an outcome that was interrupted before its next evaluation began.
+ * Close an outcome as `interrupted`.
  *
- * `outcome_evaluation_start_id` is empty because no start event was written: the
- * contract keeps that case distinguishable from an evaluation that began and was
- * interrupted while running.
+ * The close is not tied to one evaluation, so `outcome_evaluation_start_id` is
+ * empty: no start event is being closed. That keeps this event distinguishable
+ * from the end span of an evaluation that actually ran, whichever point of the
+ * iteration the stop arrived at.
  */
 function closeInterrupted(input: OutcomeLoopInput, iteration: number): void {
   input.logger.append({

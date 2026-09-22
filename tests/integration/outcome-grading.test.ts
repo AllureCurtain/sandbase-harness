@@ -20,6 +20,7 @@ import type { EventLogger } from '@/core/session/event-logger.js';
 import { toApiEvent } from '@/api/standard.js';
 import { createModelOutcomeGrader } from '@/core/outcomes/grader.js';
 import type { OutcomeGrade, OutcomeGradeInput } from '@/core/outcomes/grader.js';
+import { isOutcomeGraderUnavailableError } from '@/core/outcomes/loop.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 
 /** An executor that finishes a turn normally, appending one agent message. */
@@ -77,7 +78,7 @@ describe('declared outcome grading', () => {
     manager.setOutcomeGrader({
       grade: async (input) => {
         seen.push(input);
-        return { result: 'needs_revision', explanation: 'The response body is empty.' } satisfies OutcomeGrade;
+        return { result: 'satisfied', explanation: 'The endpoint returns 200.' } satisfies OutcomeGrade;
       },
     });
 
@@ -102,12 +103,13 @@ describe('declared outcome grading', () => {
     expect(end.type).toBe('span.outcome_evaluation_end');
     expect(end.metadata).toMatchObject({
       iteration: 0,
-      result: 'needs_revision',
-      explanation: 'The response body is empty.',
+      result: 'satisfied',
+      explanation: 'The endpoint returns 200.',
     });
-    // One evaluation per declared outcome: the revision loop that would emit an
-    // iteration 1 is not part of this change.
+    // A satisfied verdict ends the outcome: no revision message is appended and
+    // no second evaluation runs. The revision path is pinned in outcome-loop.test.ts.
     expect(spans.filter((event) => event.type === 'span.outcome_evaluation_end')).toHaveLength(1);
+    expect(events.some((event) => event.type === 'user.message')).toBe(false);
   });
 
   it('reports a grader with no provider as the session error instead of a verdict', async () => {
@@ -128,11 +130,20 @@ describe('declared outcome grading', () => {
     expect(end.metadata).toMatchObject({ result: 'failed' });
   });
 
-  it('leaves a declared outcome unevaluated when no grader is composed', async () => {
-    const session = await runDeclaredOutcome();
-    const events = manager.getEventLogger().getEvents(session.id);
-    expect(events.some((event) => event.type.startsWith('span.outcome_evaluation'))).toBe(false);
-    expect(events.some((event) => event.type === 'session.error')).toBe(false);
+  it('refuses a declared outcome when the runtime composes no grader', () => {
+    // No setOutcomeGrader: the runtime could never measure this outcome, so the
+    // declaration is refused at admission instead of accepted and left ungraded.
+    let thrown: unknown;
+    try {
+      manager.createWithInitialEvents({ agent: 'agent_x' }, [OUTCOME_EVENT as never]);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(isOutcomeGraderUnavailableError(thrown)).toBe(true);
+    // The refusal is raised inside the creation transaction, so neither the
+    // session nor any event survives it.
+    expect((db.prepare('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number }).count).toBe(0);
   });
 
   it('does not grade a turn that was not declared as an outcome', async () => {

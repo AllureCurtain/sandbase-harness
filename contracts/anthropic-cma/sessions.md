@@ -133,11 +133,18 @@ Declared outcome evaluation:
   would otherwise be indistinguishable to a client.
 - A turn that threw is not graded, and the end event is appended on every path so
   a client waiting on `span.outcome_evaluation_end` cannot hang.
-- `needs_revision` does **not** yet start another turn, and `max_iterations` does
-  not yet bound anything: the revision loop is the second half of this behaviour
-  and is recorded as `partial` in the capability matrix until it lands. A
+- A `needs_revision` verdict starts another iteration: the explanation is appended
+  as a real `user.message` and a further turn runs inside the same outcome, so the
+  revision is visible in the log and the next turn reads its context from it. The
+  loop stops at the first `satisfied` or `failed`, at the declared `max_iterations`
+  (the last allowed evaluation reports `max_iterations_reached` and the agent still
+  gets one final turn to settle its answer), or when the session is interrupted. An
+  interrupt closes the outcome as `interrupted` and records no `session.error`. A
   re-declared outcome on the same session is graded again, under a new
   `outcome_id`.
+- A runtime that composes no grader refuses `user.define_outcome` at admission
+  with `outcome_grader_unavailable` (400) on both ingress paths, rather than
+  accepting an outcome it can never evaluate.
 
 ## 3. Alignment
 
@@ -157,8 +164,8 @@ reference forms, and the tri-state override rule.
 | `model.effort` in an override | Refused with `invalid_agent_override_field` rather than accepted and ignored. A definition may carry `effort` for read-back; a session snapshot is projected without an effort field, and no local provider executes one. |
 | MCP cross-check scope | The published exception covers clearing `mcp_servers`. Locally the same check runs on the resolved definition, so a `tools` override that binds an `mcp_toolset` to an undeclared server is refused with `agent_mcp_server_not_found` instead of persisting a toolset that silently does nothing. |
 | Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: not_retryable` rather than reporting a verdict the runtime cannot produce. |
-| No grader composed | A runtime that composes no grader at all leaves a declared outcome unevaluated instead of inventing a verdict. The fail-closed refusal of `user.define_outcome` at admission is part of the revision-loop change and is not claimed here. |
-| Revision loop | `needs_revision` does not yet start another turn, `max_iterations` bounds nothing, and `max_iterations_reached` / `interrupted` are never emitted. Recorded as `partial` in the capability matrix rather than presented as a delivered loop. |
+| No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
+| Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 
 ## 5. Reason for the difference
 

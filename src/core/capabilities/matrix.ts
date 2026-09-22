@@ -342,8 +342,8 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'operations',
     id: 'outcome-grading',
-    status: 'partial',
-    reason: 'A declared outcome projects into the turn it queues and is graded once that turn completes, by a model pass in its own context window over what the agent produced, published as a span triple (`span.outcome_evaluation_start` / `_ongoing` / `_end`) whose end event carries the verdict and its explanation. The revision loop is not implemented: `needs_revision` does not yet append feedback or re-run the turn, `max_iterations` bounds nothing, and `max_iterations_reached` and `interrupted` are never emitted, so the fail-closed refusal of a declared outcome on a runtime with no grader is absent as well.',
+    status: 'supported',
+    reason: 'A declared outcome projects into the turn it queues, is graded once that turn completes by a model pass in its own context window over what the agent produced, and drives its own revisions: a `needs_revision` verdict appends the explanation as a real `user.message` and runs another turn inside the same outcome, bounded by the declared `max_iterations`, whose last allowed evaluation reports `max_iterations_reached` and still leaves the agent one final turn to settle its answer. Every iteration is published on the session log as a `span.outcome_evaluation_start` / `_ongoing` / `_end` triple, an interrupt closes the outcome as `interrupted` without recording a `session.error`, and a runtime that composes no grader refuses the declaration at admission with `outcome_grader_unavailable` on both ingress paths. Two rules are local: grading runs through a model provider, so a runtime with no provider closes the evaluation as `failed` with `outcome_evaluator_unavailable`, and a revision turn that stops for a tool confirmation ends the outcome as `interrupted` because the loop cannot drive another turn while the session waits for a human.',
     contract: 'contracts/anthropic-cma/sessions.md',
   },
   {
