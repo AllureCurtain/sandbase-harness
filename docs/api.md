@@ -760,6 +760,38 @@ A non-empty list produces a session whose status is `running` and whose event
 log already contains every supplied event, in order. An absent field and an
 empty array behave the same way: the session is created idle.
 
+The declaration is also the instruction: the event projects into the agent's
+context as the outcome description plus the rubric, so the turn it queues works
+against the criteria instead of ignoring them.
+
+Once that turn completes, the outcome is measured and the measurement is
+published on the session's event log as three events, in order:
+
+| Event | Payload |
+| --- | --- |
+| `span.outcome_evaluation_start` | `outcome_id`, `iteration` |
+| `span.outcome_evaluation_ongoing` | `outcome_id`, `iteration` |
+| `span.outcome_evaluation_end` | `outcome_id`, `iteration`, `result`, `explanation`, `outcome_evaluation_start_id` |
+
+`iteration` is `0` for the evaluation of the declared outcome. `result` is
+`satisfied`, `needs_revision`, or `failed`, and the end event is appended on
+every path — including when the grader could not run — so a client watching for
+it never hangs on an evaluation that is already over. The grader runs in its own
+context window over what the agent produced: its messages, tool calls and tool
+results, never the system prompt or an earlier verdict.
+
+Grading needs a model provider. With none configured the evaluation closes as
+`failed` and the session records `session.error` with code
+`outcome_evaluator_unavailable` and `retry_status: "not_retryable"`, because a
+missing provider is a configuration problem rather than a transient one. A
+`{ "type": "file" }` rubric is read from the uploaded file; if it cannot be read
+the refusal is `outcome_rubric_file_not_found` rather than a verdict against an
+empty rubric.
+
+`needs_revision` does not yet start another turn and `max_iterations` does not
+yet bound anything: the revision loop is not implemented, and the capability
+inventory reports this area as `partial` rather than as a delivered loop.
+
 Validation runs before any session row, event, or sandbox exists, and creation
 and the events commit together, so a rejected batch leaves no session and no
 partial history behind:

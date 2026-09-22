@@ -17,7 +17,7 @@
 
 /**
  * All possible CMA event types.
- * 4 user + 8 agent + 3 streaming + 7 session + 2 span + 1 terminal = 25 total
+ * 6 user (incl. `user.define_outcome`) + 8 agent + 5 streaming + 7 session + 5 span + 1 terminal = 32 total
  */
 export type CMAEventType =
   // User events (4)
@@ -50,9 +50,12 @@ export type CMAEventType =
   | 'session.error'
   | 'session.deleted'
   | 'session.usage'
-  // Span events (2)
+  // Span events (5)
   | 'span.model_request_start'
   | 'span.model_request_end'
+  | 'span.outcome_evaluation_start'
+  | 'span.outcome_evaluation_ongoing'
+  | 'span.outcome_evaluation_end'
   // Terminal event (1)
   | 'turn_complete';
 
@@ -397,7 +400,55 @@ export interface SpanModelRequestEndEvent extends EventBase {
   };
 }
 
-export type SpanEvent = SpanModelRequestStartEvent | SpanModelRequestEndEvent;
+/**
+ * Verdict of one outcome evaluation, as published on
+ * `span.outcome_evaluation_end`.
+ *
+ * `satisfied` and `failed` end the outcome; `needs_revision` asks for another
+ * iteration. `max_iterations_reached` and `interrupted` are properties of the
+ * iteration budget and the session's lifecycle rather than of the deliverable,
+ * so they are decided by the loop and not by the grader.
+ */
+export type OutcomeEvaluationResult =
+  | 'satisfied'
+  | 'needs_revision'
+  | 'failed'
+  | 'max_iterations_reached'
+  | 'interrupted';
+
+/** Where the session log holds a `user.define_outcome` payload. */
+export interface SpanOutcomeEvaluationMetadata extends Record<string, unknown> {
+  outcome_id: string;
+  /** `0` is the evaluation of the declared outcome before any revision. */
+  iteration: number;
+  /** Present on the end span only. */
+  result?: OutcomeEvaluationResult;
+  explanation?: string;
+  /** The start span this end span closes; `''` when no evaluation began. */
+  outcome_evaluation_start_id?: string;
+}
+
+export interface SpanOutcomeEvaluationStartEvent extends EventBase {
+  type: 'span.outcome_evaluation_start';
+  metadata?: SpanOutcomeEvaluationMetadata;
+}
+
+export interface SpanOutcomeEvaluationOngoingEvent extends EventBase {
+  type: 'span.outcome_evaluation_ongoing';
+  metadata?: SpanOutcomeEvaluationMetadata;
+}
+
+export interface SpanOutcomeEvaluationEndEvent extends EventBase {
+  type: 'span.outcome_evaluation_end';
+  metadata?: SpanOutcomeEvaluationMetadata;
+}
+
+export type SpanEvent =
+  | SpanModelRequestStartEvent
+  | SpanModelRequestEndEvent
+  | SpanOutcomeEvaluationStartEvent
+  | SpanOutcomeEvaluationOngoingEvent
+  | SpanOutcomeEvaluationEndEvent;
 
 // ============================================================
 // Terminal Event

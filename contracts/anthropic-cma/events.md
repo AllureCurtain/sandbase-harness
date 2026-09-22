@@ -16,6 +16,11 @@ Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.
 - Inbound events carry `processed_at` once admitted, so a client can tell queued
   from handled.
 - `session.error` carries a structured error object rather than a bare string.
+- Evaluation of a declared outcome is observable as span events:
+  `span.outcome_evaluation_start`, `span.outcome_evaluation_ongoing` and
+  `span.outcome_evaluation_end`. The end event carries the verdict, so a client
+  can distinguish "still being measured" from "measured, and this is the
+  answer".
 
 ## 2. Current SandBase shape
 
@@ -28,6 +33,18 @@ Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.
 - `session.error` carries a structured payload.
 - `session.usage` is emitted before the session goes idle, so a client reading
   the stream observes usage before the terminal status.
+- One outcome evaluation appends exactly three events, in order, and the end
+  event is appended on every path — including the one where the grader throws or
+  cannot run, so a client waiting on it cannot hang on an outcome that is already
+  over. Each carries `outcome_id` and `iteration` (`0` is the evaluation of the
+  declared outcome, `n` the re-evaluation after the n-th revision). The end event
+  adds `result` (`satisfied | needs_revision | failed` after a grading pass),
+  `explanation`, and the id of the start event it closes. The `ongoing` event
+  carries no partial verdict: the grader's reasoning is opaque, and progress that
+  cannot be observed would be invented.
+- A `user.define_outcome` payload rides in `metadata` and is projected back into
+  the agent's context as the turn's instruction; the event has no content blocks
+  of its own.
 
 ## 3. Alignment
 
@@ -42,6 +59,8 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 | Event metadata storage | SandBase stores event payloads in a metadata column rather than per-field columns. This is a storage choice with no wire effect. |
 | Local event types | SandBase emits extension event types under `/v1/x` that are not part of the canonical domain set. |
 | `session.updated` | Emitted locally so the Console can react without polling. Not confirmed against the upstream event catalogue; treated as a local contract. |
+| Outcome span vocabulary | `span.outcome_evaluation_*` is the local spelling for the outcome evaluation spans. The three-event shape and the verdict vocabulary are a SandBase profile: they are recorded here rather than presented as a verified upstream enumeration. |
+| Outcome progression | The grader's own reasoning is not published while an evaluation runs. `span.outcome_evaluation_ongoing` marks that the evaluation is in flight and carries no content, because a partial verdict derived from nothing would be a claim about the deliverable that the runtime cannot support. |
 
 ## 5. Reason for the difference
 
@@ -77,9 +96,20 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   A user abort records no `session.error` at all.
 - `tests/unit/model-error.test.ts` — the message carried into the payload is
   enriched with provider detail and has secrets redacted before it is persisted.
+- `tests/unit/outcome-evaluation.test.ts` — one evaluation appends the three span
+  events in order with the declared outcome's id and iteration, the end event
+  carries the verdict and the explanation and names the start event it closes, a
+  grader that throws still closes the end event before the failure propagates,
+  and the transcript excludes the runtime's own scaffolding.
+- `tests/integration/outcome-grading.test.ts` — the same sequence through a
+  session: a declared outcome reaches the agent's context, the completed turn is
+  graded with the span triple on the event listing, and a runtime with no
+  provider records `session.error` with `outcome_evaluator_unavailable` and
+  `retry_status: not_retryable`.
 
 ## 7. Status
 
-`supported` for append-only ordering, `processed_at`, and structured
-`session.error`. The error code vocabulary is `unverified` against upstream and
-is recorded that way in the capability matrix.
+`supported` for append-only ordering, `processed_at`, structured
+`session.error`, and the outcome evaluation span sequence. The error code
+vocabulary and the outcome span vocabulary are `unverified` against upstream and
+are recorded that way in the capability matrix.
