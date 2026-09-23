@@ -61,8 +61,10 @@ from stderr is persisted as `pi_resume_refused` and remains visible.
 ## Current scope and boundaries
 
 The current print-mode adapter produces durable CMA events and visible Pi-native
-tool trajectory. Native Pi tools are not Harness `ToolResolver` tools, so a
-declared policy is compiled into Pi's own vocabulary — `--tools` for the enabled
+tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
+not receive Harness `always_ask` approval, local file path confinement, or a
+fake Allow/Deny card. A declared policy is compiled into Pi's own vocabulary
+instead — `--tools` for the enabled
 set, `--exclude-tools` for a tool denied by `never_allow` or `enabled: false`, and
 `--no-builtin-tools` when no native tool is left — and a declaration with no
 faithful expression is refused with `pi_tool_policy_not_supported`, whose message
@@ -74,8 +76,8 @@ instead of refused, because nothing is expected to run through it and Pi has no
 MCP transport to enforce: that is a correction of the earlier blanket refusal of
 any `enabled: false` entry, and it makes no tool available. Continuity is guarded
 by the managed lease and SQLite header state; a failed proof remains visible and
-cannot silently fork history. Docker/Kubernetes Pi transport, RPC, and a
-Pi→Harness approval bridge remain excluded. It also adds no OpenAI API surface.
+cannot silently fork history. Docker/Kubernetes Pi transport, RPC, and a Pi→Harness approval bridge remain
+excluded. It also adds no OpenAI API surface.
 
 Pi recognizes `models.json` provider settings and resolves `$ENV_VAR` values
 at request time; this is why the per-session config references
