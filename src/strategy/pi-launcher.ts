@@ -33,38 +33,8 @@ export interface PiLaunchRequest {
   /** Explicit Pi skill directories, one `--skill` flag per directory. */
   skillDirs?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  /**
-   * The agent's native tool policy, already compiled into Pi's own flags.
-   *
-   * Omitted means "launch with no built-in tools at all" — see
-   * {@link piToolArgsFor}. It is deliberately not a required field, because the
-   * safe default is expressible: a launch that cannot say which tools are
-   * allowed exposes none, rather than inheriting Pi's full toolset and widening
-   * the agent's declared policy. The strategy always supplies the compiled plan.
-   */
-  toolArgs?: readonly string[];
   /** Cancels the in-flight child only after it has exited and released its workdir. */
   abortSignal?: AbortSignal;
-}
-
-/**
- * Flags a launch that states no tool policy is given: none at all.
- *
- * `--no-builtin-tools` is the strict end of Pi's own surface, so an omitted
- * policy cannot widen what the agent may do. It still leaves extension tools
- * enabled, which is what the managed gate extension will need.
- */
-export const PI_TOOL_ARGS_WHEN_UNSTATED = ['--no-builtin-tools'] as const;
-
-/**
- * The tool flags one launch uses.
- *
- * A request that cannot say which tools are allowed is launched with none rather
- * than with Pi's default set: the compiled plan is what makes a declared policy
- * true, and guessing here would be the widening this field exists to prevent.
- */
-export function piToolArgsFor(request: Pick<PiLaunchRequest, 'toolArgs'>): readonly string[] {
-  return request.toolArgs ?? PI_TOOL_ARGS_WHEN_UNSTATED;
 }
 
 export class PiCleanupPendingError extends Error {
@@ -255,7 +225,6 @@ export class PiLauncher {
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
       const invocation = piInvocationFor([
         '-p', '--mode', 'json', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
-        ...piToolArgsFor(request),
         ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
         ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
       ], {

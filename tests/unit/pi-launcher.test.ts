@@ -123,9 +123,6 @@ describe('Pi launcher', () => {
     const expectedSessionFile = join(directory, 'pi-sessions', 'sess_safe_123.jsonl');
     expect(observed.args).toEqual([
       '-p', '--mode', 'json', '--model', 'sandbase/gpt-4.1', '--session', expectedSessionFile,
-      // This request states no tool policy, and the strict end of Pi's surface is
-      // what a launch that cannot state one uses.
-      '--no-builtin-tools',
     ]);
     expect(observed.stdin).toBe(prompt);
     expect(observed.cwd).toBe(workDir);

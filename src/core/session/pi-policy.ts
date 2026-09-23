@@ -124,5 +124,14 @@ export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdm
 export function assertPiAgentCanExecute(agent: AgentDefinition): PiNativeToolPlan {
   const plan = assertPiAgentToolPolicyCanExecute(agent);
   if (plan.gate.length > 0) throw new PiAlwaysAskUnsupportedError();
+  // A denied native tool is compiled into `--exclude-tools`, but the launch that
+  // would send those flags is its own change. Until it ships, an agent declaring
+  // one is still refused: admitting it here would run the tool with Pi's default
+  // toolset, which is the widening this check exists to prevent.
+  if (plan.denied.length > 0) {
+    throw new PiToolPolicyUnsupportedError(
+      `Pi cannot yet enforce a denied native tool (${plan.denied.join(', ')}); refusing rather than launching it unenforced`,
+    );
+  }
   return plan;
 }
