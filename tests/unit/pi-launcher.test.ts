@@ -50,6 +50,23 @@ process.stdin.on('end', () => {
   return { command: process.execPath, commandArgs: [script, resultPath], resultPath };
 }
 
+/**
+ * A controlled CLI that behaves like an RPC child: it records its argv and cwd
+ * as soon as it starts, then stays alive because an RPC session writes prompts
+ * to it later rather than at launch.
+ */
+function rpcCli(directory: string): { command: string; commandArgs: string[]; resultPath: string } {
+  const script = join(directory, 'controlled-rpc-pi.mjs');
+  const resultPath = join(directory, 'rpc-argv.json');
+  writeFileSync(script, `
+import { writeFileSync } from 'node:fs';
+const [resultPath, ...args] = process.argv.slice(2);
+writeFileSync(resultPath, JSON.stringify({ args, cwd: process.cwd() }));
+setInterval(() => {}, 1_000);
+`);
+  return { command: process.execPath, commandArgs: [script, resultPath], resultPath };
+}
+
 function restrictedTestEnvironment(): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH,
@@ -461,5 +478,85 @@ describe('Pi launcher', () => {
     });
 
     expect(result).toEqual({ available: true, message: 'Pi CLI is available.' });
+  });
+
+  it('launches one RPC child with the compiled flags and no prompt on its channel', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-rpc-launch-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = rpcCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+    });
+    const request = {
+      sessionId: 'sess_rpc_launch',
+      workDir,
+      systemPrompt: 'fixture system',
+      model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
+      // The plan admission compiled is the argv: nothing here re-derives it.
+      toolArgs: ['--tools', 'read,grep'],
+    };
+
+    const handle = await launcher.startRpc(request);
+    await waitForFile(cli.resultPath);
+    const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as { args: string[]; cwd: string };
+
+    expect(observed.args).toEqual([
+      '--mode', 'rpc', '--model', 'sandbase/gpt-4.1',
+      '--session', join(directory, 'pi-sessions', 'sess_rpc_launch.jsonl'),
+      '--tools', 'read,grep',
+    ]);
+    // Nothing print-mode about it: no `-p`, and the child stays alive with its
+    // command channel open for the turns that follow.
+    expect(observed.args).not.toContain('-p');
+    expect(observed.cwd).toBe(workDir);
+    expect(handle.stdin.writable).toBe(true);
+    expect(handle.sessionFile).toBe(join(directory, 'pi-sessions', 'sess_rpc_launch.jsonl'));
+
+    // The session lease is what makes "one child per session" true across
+    // processes, including a second runtime instance pointed at the same data.
+    await expect(launcher.startRpc(request)).rejects.toMatchObject({ code: 'pi_session_busy' });
+
+    await handle.interrupt();
+  });
+
+  it('exposes no built-in tool for an RPC launch that states no policy at all', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-rpc-unstated-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = rpcCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+    });
+
+    const handle = await launcher.startRpc({
+      sessionId: 'sess_rpc_unstated',
+      workDir,
+      systemPrompt: 'fixture system',
+      model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
+    });
+    await waitForFile(cli.resultPath);
+    const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as { args: string[] };
+
+    // Omitted is not "unrestricted": a launch that cannot state its policy is
+    // given the strict end of Pi's own surface.
+    expect(observed.args).toContain('--no-builtin-tools');
+    expect(observed.args).not.toContain('--tools');
+
+    await handle.interrupt();
   });
 });

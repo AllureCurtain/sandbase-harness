@@ -1,5 +1,10 @@
 import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
 import { MINIMAX_DEFAULT_MODEL, MINIMAX_ENDPOINTS, MINIMAX_MODELS, MINIMAX_PROVIDER } from '@/core/model/minimax.js';
+import {
+  PI_ADAPTER_CAPABILITY_IDS,
+  PI_ADAPTER_REQUIREMENTS,
+  PI_LOOP_ENGINE_REASON,
+} from '@/strategy/pi/capability-profile.js';
 import type { SettingsAvailability } from './schema.js';
 
 export type AdapterStatus = 'available' | 'unavailable' | 'invalid';
@@ -56,10 +61,13 @@ export const ROADMAP_LOOP_ENGINE_REASON =
 /**
  * Pi is a shipped adapter, but it is not a peer of `builtin`: it drives a
  * host-local child CLI whose native tools sit outside Harness approval and
- * sandbox path policy. The restriction is reported rather than hidden.
+ * sandbox path policy.
+ *
+ * Re-exported from the Pi capability profile rather than restated here, so the
+ * descriptor, the API reference, and `docs/pi-loop-engine.md` cannot end up
+ * describing three slightly different engines.
  */
-export const PI_LOOP_ENGINE_REASON =
-  'Runs the Pi CLI against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy.';
+export { PI_LOOP_ENGINE_REASON };
 
 /**
  * Single engine-discovery source of truth.
@@ -81,8 +89,8 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
       timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
     }), {
       reason: PI_LOOP_ENGINE_REASON,
-      requirements: ['Pi CLI available on PATH', 'local sandbox provider'],
-      capabilities: ['stdout-jsonl', 'session-continuity', 'native-pi-tools'],
+      requirements: [...PI_ADAPTER_REQUIREMENTS],
+      capabilities: [...PI_ADAPTER_CAPABILITY_IDS],
     }),
     descriptor('harness', 'Harness', false, 'runtime', objectSchema(), { reason: ROADMAP_LOOP_ENGINE_REASON }),
     descriptor('codex', 'Codex', false, 'runtime', objectSchema(), { reason: ROADMAP_LOOP_ENGINE_REASON }),

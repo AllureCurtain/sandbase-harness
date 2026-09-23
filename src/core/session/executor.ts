@@ -57,6 +57,14 @@ export interface ExecutorDeps {
   strategy: AgentStrategy;
   /** Resolve a strategy for the engine frozen on a persisted session. */
   resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
+  /**
+   * Release strategy-owned engine resources bound to a session.
+   *
+   * Called on a terminal session state, before the sandbox and work directory
+   * are torn down. A strategy that owns a child process (Pi owns one per
+   * session) implements this; a strategy that owns nothing leaves it unset.
+   */
+  disposeStrategySessions?: (sessionId: string) => Promise<void> | void;
   eventLogger: EventLogger;
   /** Optional context compactor. If provided, long histories are summarized. */
   compactor?: ContextCompactor;
@@ -330,6 +338,12 @@ export class DefaultSessionExecutor implements SessionExecutor {
    * SessionManager when the session reaches a terminal state.
    */
   async cleanupSession(sessionId: string): Promise<void> {
+    // Engine-owned children stop first. A session-owned child still running
+    // would keep using a work directory the runtime has just released, and its
+    // cleanup failures (such as `pi_cleanup_pending`) are ownership failures
+    // that must stay visible instead of being masked by a successful sandbox
+    // teardown.
+    await this.deps.disposeStrategySessions?.(sessionId);
     await this.sandboxLifecycle.cleanup(sessionId);
     await this.toolResolver.cleanupSession(sessionId);
   }

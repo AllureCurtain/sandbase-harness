@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import type { Readable } from 'node:stream';
+import type { Readable, Writable } from 'node:stream';
 import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join, resolve, sep, win32 } from 'node:path';
@@ -108,6 +108,50 @@ export type PiProcessTerminator = (
 ) => void | Promise<void>;
 
 export type PiProcessGroupInspector = (pid: number) => boolean;
+
+/**
+ * A long-lived `--mode rpc` Pi child.
+ *
+ * `stdin` is exposed because it is the session's command channel for the child's
+ * whole life: unlike a print-mode turn, it is never given a prompt at launch and
+ * never closed by the launcher.
+ */
+export interface PiRpcProcessHandle extends PiProcessHandle {
+  readonly stdin: Writable;
+  /**
+   * Terminate the child and wait for it to release its work-directory lease.
+   *
+   * Rejects with a cleanup failure when tree ownership could not be confirmed,
+   * so a caller never reports a released workspace it does not own.
+   */
+  interrupt(): Promise<void>;
+}
+
+/**
+ * The tool flags one RPC launch uses.
+ *
+ * Omitted means the same thing it means for a print-mode turn — see
+ * {@link piToolArgsFor} — so an RPC launch that cannot state its policy still
+ * exposes no built-in tool rather than inheriting Pi's full toolset.
+ */
+export interface PiRpcLaunchRequest {
+  sessionId: string;
+  /** Host work directory the child runs in; also its cwd. */
+  workDir: string;
+  /** Already-composed agent system prompt, including loaded skills. */
+  systemPrompt: string;
+  model: PiModelConfig;
+  toolArgs?: readonly string[];
+  skillDirs?: string[];
+  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Hard cancellation for the whole child, shared with the cleanup ladder. */
+  abortSignal?: AbortSignal;
+}
+
+/** The launcher surface the Pi adapter calls. */
+export interface PiRpcLauncher {
+  startRpc(request: PiRpcLaunchRequest): Promise<PiRpcProcessHandle>;
+}
 
 export interface PiLauncherOptions {
   dataDir: string;
@@ -329,6 +373,140 @@ export class PiLauncher {
         sessionFile: paths.sessionFile,
         leaseRecovered: lease.recoveredStale,
         wait,
+      };
+    } catch (error) {
+      if (this.database && isPiContinuityError(error)) {
+        // Persist the reason so a later retry cannot silently fork a new file.
+        const message = error instanceof Error ? error.message : String(error);
+        markPiSessionContinuityFailure(this.database, request.sessionId, paths.sessionFile, error.code, message);
+      }
+      await lease.release().catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Start a long-lived Pi RPC child for one SandBase session.
+   *
+   * Differences from `start()`, each deliberate:
+   *
+   * - `--mode rpc` instead of `-p --mode json`, and no prompt is written at
+   *   launch: prompts arrive as RPC commands, so the channel stays writable for
+   *   the session's whole life. That is what makes a second turn on the same
+   *   child possible at all.
+   * - No process-level turn timeout. An RPC child serves many prompts, so a
+   *   whole-process deadline would kill a healthy session mid-conversation; the
+   *   per-turn deadline belongs to the session owner.
+   * - Continuity state, the lease, and the tool flags are the same ones the
+   *   print-mode launch used, so the two modes cannot disagree about which tools
+   *   an agent may use or which Pi conversation it is continuing.
+   */
+  async startRpc(request: PiRpcLaunchRequest): Promise<PiRpcProcessHandle> {
+    const model = this.resolveModel(request.model);
+    const modelEnvironmentKeys = new Set([
+      ...referencedEnvVars(request.model.api_key),
+      ...referencedEnvVars(request.model.base_url),
+    ]);
+    const paths = this.prepareSessionPaths(request.sessionId);
+    const lease = await acquirePiSessionFileLease(paths.sessionFile, {
+      staleAfterMs: this.leaseStaleAfterMs,
+    });
+
+    try {
+      if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
+      this.materializeModelsConfig(paths.configDir, model);
+      this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
+      const invocation = piInvocationFor([
+        '--mode', 'rpc', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
+        ...piToolArgsFor(request),
+        ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
+        ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
+      ], {
+        command: this.command,
+        commandArgs: this.commandArgs,
+        platform: this.platform,
+        environment: this.environment,
+        fileExists: this.fileExists,
+      });
+
+      const env = restrictedPiEnvironment(this.environment, {
+        PI_CODING_AGENT_DIR: paths.configDir,
+        PI_TELEMETRY: '0',
+        SANDBASE_PI_API_KEY: model.api_key,
+      }, modelEnvironmentKeys);
+
+      const abortController = new AbortController();
+      const onRequestAbort = () => abortController.abort();
+      if (request.abortSignal) {
+        if (request.abortSignal.aborted) abortController.abort();
+        else request.abortSignal.addEventListener('abort', onRequestAbort, { once: true });
+      }
+
+      let raw: PiProcessHandle;
+      try {
+        raw = await spawnPiProcess(this.spawnImpl, invocation.file, invocation.args, {
+          cwd: request.workDir,
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          detached: this.platform !== 'win32',
+        }, undefined, abortController.signal, {
+          platform: this.platform,
+          terminateProcess: this.terminateProcess,
+          terminationGraceMs: this.terminationGraceMs,
+          cleanupTimeoutMs: this.cleanupTimeoutMs,
+          processGroupAlive: this.processGroupAlive,
+        });
+      } catch (error) {
+        request.abortSignal?.removeEventListener('abort', onRequestAbort);
+        throw error;
+      }
+
+      const stdin = raw.child.stdin;
+      if (!stdin) {
+        request.abortSignal?.removeEventListener('abort', onRequestAbort);
+        await raw.terminate(true).catch(() => {});
+        throw new Error('Pi RPC child did not expose stdin');
+      }
+
+      const wait = async (): Promise<PiProcessExit> => {
+        let failure: unknown;
+        try {
+          return await raw.wait();
+        } catch (error) {
+          failure = error;
+          throw error;
+        } finally {
+          request.abortSignal?.removeEventListener('abort', onRequestAbort);
+          if (isCleanupPendingError(failure)) lease.suspendHeartbeat();
+          else await lease.release().catch(() => {});
+        }
+      };
+
+      // A natural child exit must release the lease even when the session owner
+      // learns about it through the RPC reader rather than by calling
+      // interrupt(). The promise is shared with later wait/interrupt calls, and
+      // its rejection is observed here so it cannot go unhandled.
+      void wait().catch(() => {});
+
+      return {
+        ...raw,
+        stdin,
+        sessionFile: paths.sessionFile,
+        leaseRecovered: lease.recoveredStale,
+        wait,
+        interrupt: async () => {
+          if (!abortController.signal.aborted) abortController.abort();
+          try {
+            await wait();
+          } catch (error) {
+            // Ownership failures stay visible; an aborted child that is confirmed
+            // gone is the expected outcome of asking it to stop.
+            if (isCleanupPendingError(error)) throw error;
+            if (error instanceof Error && error.name === 'AbortError') return;
+            throw error;
+          }
+        },
       };
     } catch (error) {
       if (this.database && isPiContinuityError(error)) {
