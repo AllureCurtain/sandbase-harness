@@ -308,7 +308,7 @@ describe('session loop engine persistence', () => {
     db.close();
   });
 
-  it('refuses a policy Pi cannot express, and admits a toolset that expects nothing to run', async () => {
+  it('enforces a denied or disabled native tool by exclusion, and admits a toolset that expects nothing to run', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-pi-tool-policy-'));
     directories.push(directory);
     const db = new Database(join(directory, 'data.db'));
@@ -316,10 +316,10 @@ describe('session loop engine persistence', () => {
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     const piManager = new SessionManager(db, undefined, 'pi');
 
-    // A denied native tool is compiled into an exclusion, but the launch that
-    // sends those flags is its own change, so the agent is still refused — and
-    // the refusal names the tool, which is the part an operator can act on.
-    const stillRefused = [
+    // A denied native tool is enforced by exclusion now that the launch sends the
+    // compiled flags, so the agent runs with that tool genuinely unavailable
+    // instead of being refused outright.
+    const enforcedByExclusion = [
       {
         label: 'named-never-allow',
         toolset: {
@@ -336,7 +336,7 @@ describe('session loop engine persistence', () => {
       },
     ];
 
-    for (const [index, restriction] of stillRefused.entries()) {
+    for (const [index, restriction] of enforcedByExclusion.entries()) {
       const agentId = `agent_pi_restricted_${index}`;
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
         agentId,
@@ -349,17 +349,9 @@ describe('session loop engine persistence', () => {
         }),
       );
 
-      let error: unknown;
-      try {
-        piManager.create({ agent: agentId });
-      } catch (caught) {
-        error = caught;
-      }
-      expect(error).toBeInstanceOf(PiToolPolicyUnsupportedError);
-      expect((error as PiToolPolicyUnsupportedError).code).toBe(PI_TOOL_POLICY_UNSUPPORTED_CODE);
-      expect((error as Error).message).toMatch(/bash/);
+      expect(() => piManager.create({ agent: agentId })).not.toThrow();
       expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get(agentId))
-        .toEqual({ count: 0 });
+        .toEqual({ count: 1 });
     }
 
     // A fully disabled MCP toolset is a different case: nothing is expected to run

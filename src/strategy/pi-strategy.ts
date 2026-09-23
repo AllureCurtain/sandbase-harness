@@ -1,4 +1,5 @@
 import type { TextBlock } from '@/types/cma-protocol.js';
+import type { AgentDefinition } from '@/types/agent.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { PiLaunchRequest, PiProcessHandle } from './pi-launcher.js';
 import type { Database } from '@/core/db/database.js';
@@ -14,6 +15,7 @@ import { PiCleanupPendingError, PiTimeoutError } from './pi-launcher.js';
 import { PiStderrTail } from './pi/stderr-tail.js';
 import { PiTranslator } from './pi/translator.js';
 import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
+import { compilePiNativeToolPolicy } from '@/core/session/pi-native-tools.js';
 
 export interface PiTurnLauncher {
   /** Foundation compatibility path; adapter-aware launchers also implement start. */
@@ -54,12 +56,15 @@ export class PiStrategy implements AgentStrategy {
     if (!selectedModel) {
       throw new Error('Pi loop engine requires a selected model id');
     }
+    const toolPlan = compilePiNativeToolPolicy(requireAgentDefinition(context));
     const request: PiLaunchRequest = {
       sessionId: context.session.id,
       workDir: context.sandbox.hostWorkDir,
       prompt: context.userEvent.content.map((block) => block.text).join('\n'),
       systemPrompt: context.systemPrompt,
       model: context.modelConfig,
+      // The same compiler admission ran, so the flags sent are the ones checked.
+      toolArgs: toolPlan.argv,
       ...(context.skillDirs?.length ? { skillDirs: context.skillDirs } : {}),
       ...(thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed)
         ? { thinkingLevel: thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed) }
@@ -160,6 +165,23 @@ export class PiStrategy implements AgentStrategy {
       throw new Error(withStderr(message, stderr.text()));
     }
   }
+}
+
+/**
+ * The definition whose policy the launch must express.
+ *
+ * A Pi session freezes its own agent definition when it is created, and that is
+ * what admission compiled, so this is the definition the flags come from. There
+ * is deliberately no fallback: without it the runtime cannot say which tool set
+ * it is allowed to expose, and guessing would be the widening the compiler exists
+ * to prevent.
+ */
+function requireAgentDefinition(context: StrategyContext): AgentDefinition {
+  const definition = context.session.agentDefinition;
+  if (!definition) {
+    throw new Error('Pi loop engine requires the session agent definition to express its tool policy');
+  }
+  return definition;
 }
 
 function thinkingLevelForSpeed(speed: string | undefined): PiLaunchRequest['thinkingLevel'] {

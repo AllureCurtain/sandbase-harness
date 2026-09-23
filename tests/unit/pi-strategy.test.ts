@@ -13,6 +13,14 @@ describe('PiStrategy', () => {
       session: {
         id: 'sess_pi_prompt', agentId: 'agent_test', agentName: 'test', environmentId: 'env_default',
         status: 'running', createdAt: new Date(), updatedAt: new Date(),
+        // The session freezes its own definition, and that is what the launch's
+        // tool policy is compiled from.
+        agentDefinition: {
+          name: 'test',
+          model: 'gpt-pi-selected',
+          system: '# System',
+          tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'read' }, { name: 'grep' }] }],
+        },
       },
       userEvent: { type: 'user.message', content: [{ type: 'text', text: 'Implement this.' }] },
       systemPrompt: '# System\n\n# Skill\nFollow the skill instructions.',
@@ -40,6 +48,8 @@ describe('PiStrategy', () => {
       model: {
         name: 'selected', provider: 'openai', model: 'gpt-pi-selected', api_key: '${MODEL_API_KEY}',
       },
+      // The declared policy reaches the launch as Pi's own flags.
+      toolArgs: ['--tools', 'read,grep'],
       abortSignal: controller.signal,
     }]);
   });

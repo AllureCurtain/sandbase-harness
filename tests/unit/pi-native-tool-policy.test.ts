@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { compilePiNativeToolPolicy, PiToolPolicyUnsupportedError } from '@/core/session/pi-native-tools.js';
 import { assertPiAgentCanExecute, PiAlwaysAskUnsupportedError } from '@/core/session/pi-policy.js';
+import { PI_TOOL_ARGS_WHEN_UNSTATED, piToolArgsFor } from '@/strategy/pi-launcher.js';
 import { PI_NATIVE_TOOLS, isPiNativeTool } from '@/strategy/pi/native-tools.js';
 import type { AgentDefinition } from '@/types/agent.js';
 
@@ -142,19 +143,33 @@ describe('fail-closed refusals', () => {
 });
 
 describe('the tool policy one launch uses', () => {
-  it('still refuses a denied or disabled tool, because the exclusion is not sent yet', () => {
-    // The compiler knows how to exclude the tool, but the launch that would send
-    // those flags is its own change: admitting the agent now would run the tool
-    // with Pi's default toolset, so the refusal stays and names what it refused.
+  it('uses the compiled plan when the request states one', () => {
+    expect(piToolArgsFor({ toolArgs: ['--tools', 'read'] })).toEqual(['--tools', 'read']);
+  });
+
+  it('exposes no built-in tool when the request states no policy at all', () => {
+    // Omitted is not "unrestricted": it is the strict end of Pi's own surface, so
+    // a launch that cannot state its policy cannot widen the agent's.
+    expect(piToolArgsFor({})).toEqual(PI_TOOL_ARGS_WHEN_UNSTATED);
+    expect(PI_TOOL_ARGS_WHEN_UNSTATED).toEqual(['--no-builtin-tools']);
+  });
+
+  it('enforces a denied or disabled tool by exclusion instead of refusing the agent', () => {
     const definition = agentWithTools([
       {
         type: 'agent_toolset_20260401',
-        configs: [{ name: 'read' }, { name: 'bash', permission_policy: { type: 'never_allow' } }],
+        configs: [
+          { name: 'read' },
+          { name: 'bash', permission_policy: { type: 'never_allow' } },
+          { name: 'write', enabled: false },
+        ],
       },
     ]);
 
-    expect(compilePiNativeToolPolicy(definition).denied).toEqual(['bash']);
-    expect(() => assertPiAgentCanExecute(definition)).toThrow(PiToolPolicyUnsupportedError);
-    expect(() => assertPiAgentCanExecute(definition)).toThrow(/bash/);
+    // The plan is what the launch sends, so the same tools admission compiled are
+    // the ones the child is told about.
+    expect(compilePiNativeToolPolicy(definition).denied).toEqual(['bash', 'write']);
+    expect(assertPiAgentCanExecute(definition).argv)
+      .toEqual(['--tools', 'read', '--exclude-tools', 'bash,write']);
   });
 });

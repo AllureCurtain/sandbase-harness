@@ -45,6 +45,15 @@ describe('Pi resume refusal', () => {
       session: {
         id: sessionId, loopEngine: 'pi', agentId: 'agent_pi', agentName: 'pi-agent',
         environmentId: 'env_default', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+        // The launch compiles the session's tool flags from this frozen
+        // definition; the executor always sets it before a strategy runs, so the
+        // resume refusal below is what this turn has left to report.
+        agentDefinition: {
+          name: 'pi-agent',
+          model: 'fixture-model',
+          system: 'system',
+          tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'read' }] }],
+        },
       },
       userEvent: { type: 'user.message', content: [{ type: 'text', text: 'resume' }] },
       systemPrompt: 'system', messages: [],

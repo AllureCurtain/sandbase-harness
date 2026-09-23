@@ -16,6 +16,16 @@ function contextFor(events: SessionEvent[], broadcasts: SessionEvent[], usage: n
       status: 'running',
       createdAt: new Date(),
       updatedAt: new Date(),
+      // The session freezes its own definition, and the launch compiles its tool
+      // flags from it. The executor resolves the definition (or raises "Agent not
+      // found") before a strategy runs, so a context without one is not a state
+      // the runtime can reach.
+      agentDefinition: {
+        name: 'pi-agent',
+        model: 'fixture-model',
+        system: 'system',
+        tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'read' }] }],
+      },
     },
     userEvent: { type: 'user.message', content: [{ type: 'text', text: 'hello' }] },
     systemPrompt: 'system',
