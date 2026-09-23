@@ -33,6 +33,17 @@ export interface PiLaunchRequest {
   /** Explicit Pi skill directories, one `--skill` flag per directory. */
   skillDirs?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /**
+   * The agent's native tool policy, already compiled into Pi's own flags.
+   *
+   * Optional in the type but never optional in effect: the launcher refuses a
+   * request without it, because an absent argument list would leave Pi's full
+   * built-in toolset in place — widening an agent's declared policy instead of
+   * enforcing it. A runtime refusal is used here rather than a required field so
+   * that the guard is a behaviour a test can pin, and so a construction site
+   * that is not exercising tools does not have to invent a policy.
+   */
+  toolArgs?: readonly string[];
   /** Cancels the in-flight child only after it has exited and released its workdir. */
   abortSignal?: AbortSignal;
 }
@@ -221,10 +232,18 @@ export class PiLauncher {
 
     try {
       if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
+      // Fail closed rather than fall back to Pi's default toolset: a launch that
+      // cannot say which tools are allowed must not run at all.
+      if (!request.toolArgs) {
+        throw new Error(
+          'Pi launch requires the compiled native tool policy; refusing to launch a process with Pi\'s default toolset',
+        );
+      }
       this.materializeModelsConfig(paths.configDir, model);
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
       const invocation = piInvocationFor([
         '-p', '--mode', 'json', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
+        ...request.toolArgs,
         ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
         ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
       ], {

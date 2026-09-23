@@ -1,5 +1,19 @@
 import type { AgentDefinition } from '@/types/agent.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
+import {
+  assertPiAgentToolPolicyCanExecute,
+  PiToolPolicyUnsupportedError,
+  PI_TOOL_POLICY_UNSUPPORTED_CODE,
+  PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
+  type PiNativeToolPlan,
+} from './pi-native-tools.js';
+
+export {
+  PiToolPolicyUnsupportedError,
+  PI_TOOL_POLICY_UNSUPPORTED_CODE,
+  PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
+};
+export type { PiNativeToolPlan };
 
 /** Stable public error code for the currently unsupported Pi confirmation mode. */
 export const PI_ALWAYS_ASK_UNSUPPORTED_CODE = 'pi_always_ask_not_supported';
@@ -12,20 +26,6 @@ export class PiAlwaysAskUnsupportedError extends Error {
   constructor() {
     super(PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE);
     this.name = 'PiAlwaysAskUnsupportedError';
-  }
-}
-
-/** Stable public error for explicit tool restrictions Pi cannot faithfully enforce. */
-export const PI_TOOL_POLICY_UNSUPPORTED_CODE = 'pi_tool_policy_not_supported';
-export const PI_TOOL_POLICY_UNSUPPORTED_MESSAGE =
-  'Pi loop engine does not support agents declaring disabled or never_allow tools.';
-
-export class PiToolPolicyUnsupportedError extends Error {
-  readonly code = PI_TOOL_POLICY_UNSUPPORTED_CODE;
-
-  constructor() {
-    super(PI_TOOL_POLICY_UNSUPPORTED_MESSAGE);
-    this.name = 'PiToolPolicyUnsupportedError';
   }
 }
 
@@ -108,26 +108,21 @@ export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdm
 }
 
 /**
- * Pi print mode has no validated Harness tool-policy bridge. Reject explicit
- * constraints it cannot enforce rather than allowing its independent child
- * CLI to bypass an agent's confirmation or denial declaration.
+ * Assert an agent's tool policy can run on Pi, and return the plan expressing it.
+ *
+ * Pi's native tools are not Harness tools, so the declared policy is compiled
+ * into Pi's own flags (see `pi-native-tools.ts`) rather than merely inspected: a
+ * denied tool is excluded from the allowlist instead of the whole agent being
+ * refused, and anything Pi cannot honour is refused with
+ * `pi_tool_policy_not_supported` rather than silently dropped.
+ *
+ * A tool declared `always_ask` is different: the plan reports it in `gate`, and
+ * the pre-execution gate that would ask is its own change. Until that ships, an
+ * agent declaring one is refused, because launching it would run a tool nobody
+ * would be asked about — the approval policy this runtime must not weaken.
  */
-export function assertPiAgentCanExecute(agent: AgentDefinition): void {
-  // A canonical custom entry carries no permission policy by design, so there is
-  // nothing here for Pi to refuse; the legacy grouping still can carry one.
-  const declaredConfigs = (agent.tools ?? []).flatMap((toolset) => {
-    if (toolset.type === 'custom') return [];
-    return [
-      ...(toolset.default_config ? [toolset.default_config] : []),
-      ...(toolset.configs ?? []),
-    ];
-  });
-  if (declaredConfigs.some((config) => config.permission_policy?.type === 'always_ask')) {
-    throw new PiAlwaysAskUnsupportedError();
-  }
-  if (declaredConfigs.some(
-    (config) => config.enabled === false || config.permission_policy?.type === 'never_allow',
-  )) {
-    throw new PiToolPolicyUnsupportedError();
-  }
+export function assertPiAgentCanExecute(agent: AgentDefinition): PiNativeToolPlan {
+  const plan = assertPiAgentToolPolicyCanExecute(agent);
+  if (plan.gate.length > 0) throw new PiAlwaysAskUnsupportedError();
+  return plan;
 }
