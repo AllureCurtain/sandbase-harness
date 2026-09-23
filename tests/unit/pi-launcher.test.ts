@@ -93,6 +93,15 @@ function launchRequest(workDir: string, sessionId: string) {
   } as const;
 }
 
+/**
+ * A policy fingerprint for a launch that has no durable state to compare it to.
+ *
+ * These launches are given no database, so the binding is never read back: the
+ * value only has to be present, because a launch must state the contract it is
+ * claiming to resume.
+ */
+const UNCHECKED_POLICY_FINGERPRINT = 'unchecked-policy-fingerprint';
+
 async function waitForFile(path: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (existsSync(path)) return;
@@ -507,6 +516,7 @@ describe('Pi launcher', () => {
       model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
       // The plan admission compiled is the argv: nothing here re-derives it.
       toolArgs: ['--tools', 'read,grep'],
+      policyFingerprint: UNCHECKED_POLICY_FINGERPRINT,
     };
 
     const handle = await launcher.startRpc(request);
@@ -553,6 +563,7 @@ describe('Pi launcher', () => {
       workDir,
       systemPrompt: 'fixture system',
       model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
+      policyFingerprint: UNCHECKED_POLICY_FINGERPRINT,
     });
     await waitForFile(cli.resultPath);
     const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as { args: string[] };
@@ -588,6 +599,7 @@ describe('Pi launcher', () => {
       model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
       toolArgs: ['--tools', 'read,bash'],
       gateTools: ['bash'],
+      policyFingerprint: UNCHECKED_POLICY_FINGERPRINT,
     });
     await waitForFile(cli.resultPath);
     const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as {
@@ -646,6 +658,7 @@ describe('Pi launcher', () => {
       model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
       toolArgs: ['--tools', 'bash'],
       gateTools: [''],
+      policyFingerprint: UNCHECKED_POLICY_FINGERPRINT,
     })).rejects.toThrow('Pi gate tool list contains no usable native tool name');
     expect(existsSync(cli.resultPath)).toBe(false);
   });

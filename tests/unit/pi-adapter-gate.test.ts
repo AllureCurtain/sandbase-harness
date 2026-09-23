@@ -128,6 +128,9 @@ const startRequest = {
   systemPrompt: '# System',
   model: { provider: 'openai', model: 'gpt-pi-selected', api_key: 'fixture-key' },
   toolPlan: { flags: ['--tools', 'read,bash'], gate: ['bash'] },
+  // The contract the session runs under, which the launch has to be able to prove
+  // before it spawns a child.
+  binding: { workDir: '/sandbox/work', policyFingerprint: 'fixture-policy-fingerprint' },
   sink,
 };
 
@@ -229,6 +232,9 @@ describe('Pi adapter gate boundary', () => {
     expect(preauthorized.starts[0].gateTools).toEqual(startRequest.toolPlan.gate);
     expect(interactive.starts[0].toolArgs).toEqual(preauthorized.starts[0].toolArgs);
     expect(interactive.starts[0].gateTools).toEqual(preauthorized.starts[0].gateTools);
+    // And the contract the caller admitted travels with them, so the launch can
+    // refuse a resume the recorded state does not agree with.
+    expect(preauthorized.starts[0].policyFingerprint).toBe(startRequest.binding.policyFingerprint);
     await preauthorizedSession.close();
   });
 });

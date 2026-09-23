@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
 import {
+  PI_POLICY_MISMATCH_CODE,
   assertPiSessionContinuity,
   getPiSessionState,
   inspectPiSessionFile,
   recordPiSessionState,
 } from '@/strategy/pi/session-continuity.js';
+import { piPolicyFingerprint } from '@/strategy/pi/rpc-wire.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
 
 const directories: string[] = [];
@@ -53,6 +55,109 @@ describe('Pi session continuity state', () => {
     expect(() => assertPiSessionContinuity(value.db, value.session, value.file)).toThrow('identity or schema');
     writeFileSync(value.file, '{"type":"not-session","id":"pi-1"}\n');
     expect(() => inspectPiSessionFile(value.file)).toThrow('missing type=session');
+    value.db.close();
+  });
+
+  it('refuses a resume whose work directory or policy is not the recorded one', () => {
+    const value = setup();
+    writeFileSync(value.file, '{"type":"session","id":"pi-1","version":1}\n');
+    const binding = { workDir: join(value.directory, 'work'), policyFingerprint: 'fingerprint-a' };
+    recordPiSessionState(value.db, value.session, value.file, { id: 'pi-1', schemaVersion: '1' }, 'active', undefined, binding);
+
+    // The recorded contract is what is compared, and reproducing it resumes.
+    expect(assertPiSessionContinuity(value.db, value.session, value.file, binding).state?.status).toBe('active');
+
+    // A different directory names the directory, not a generic discontinuity:
+    // the caller has to know which half of the contract it has to repair.
+    expect(() => assertPiSessionContinuity(value.db, value.session, value.file, {
+      ...binding,
+      workDir: join(value.directory, 'elsewhere'),
+    })).toThrow(expect.objectContaining({
+      code: PI_POLICY_MISMATCH_CODE,
+      message: expect.stringContaining('work directory'),
+    }));
+
+    // And a different policy names the policy.
+    expect(() => assertPiSessionContinuity(value.db, value.session, value.file, {
+      ...binding,
+      policyFingerprint: 'fingerprint-b',
+    })).toThrow(expect.objectContaining({
+      code: PI_POLICY_MISMATCH_CODE,
+      message: expect.stringContaining('tool policy'),
+    }));
+
+    // A resume that cannot state its contract at all is not the recorded one
+    // either, so it is refused rather than assumed to match.
+    expect(() => assertPiSessionContinuity(value.db, value.session, value.file))
+      .toThrow(expect.objectContaining({ code: PI_POLICY_MISMATCH_CODE }));
+    value.db.close();
+  });
+
+  it('resumes a row recorded before the binding existed, which has nothing to compare', () => {
+    const value = setup();
+    writeFileSync(value.file, '{"type":"session","id":"pi-1","version":1}\n');
+    // The shape a pre-M041 row has: identity and status, no recorded binding.
+    value.db.prepare(`
+      INSERT INTO pi_session_state (session_id, session_file, pi_session_id, schema_version, status)
+      VALUES (?, ?, 'pi-1', '1', 'active')
+    `).run(value.session, value.file);
+
+    const state = getPiSessionState(value.db, value.session);
+    expect(state?.workDir).toBeUndefined();
+    expect(state?.policyFingerprint).toBeUndefined();
+
+    // Nothing to compare means nothing to refuse: the session continues, and the
+    // upgraded runtime does not invent a contract the earlier turns never had.
+    const asserted = assertPiSessionContinuity(value.db, value.session, value.file, {
+      workDir: join(value.directory, 'work'),
+      policyFingerprint: 'fingerprint-a',
+    });
+    expect(asserted.state?.piSessionId).toBe('pi-1');
+    value.db.close();
+  });
+
+  it('treats a re-ordered equivalent policy as the same contract, and keeps a recorded binding', () => {
+    const value = setup();
+    writeFileSync(value.file, '{"type":"session","id":"pi-1","version":1}\n');
+    const policy = {
+      allow: ['read', 'bash'],
+      gate: ['bash'],
+      denied: ['write'],
+      exposeNoTools: false,
+      model: 'fixture-model',
+      provider: 'openai',
+      workDir: join(value.directory, 'work'),
+      approvalMode: 'interactive' as const,
+    };
+    const recorded = piPolicyFingerprint(policy);
+
+    // A re-ordering is the same plan, so it is the same contract; hashing it
+    // differently would refuse a resume that reproduces what it ran under.
+    expect(piPolicyFingerprint({ ...policy, allow: ['bash', 'read'] })).toBe(recorded);
+    expect(piPolicyFingerprint({ ...policy, gate: ['bash'] })).toBe(recorded);
+    // Everything else that changes the contract does change the digest.
+    expect(piPolicyFingerprint({ ...policy, denied: [] })).not.toBe(recorded);
+    expect(piPolicyFingerprint({ ...policy, approvalMode: 'preauthorized_once' })).not.toBe(recorded);
+    expect(piPolicyFingerprint({ ...policy, model: 'other-model' })).not.toBe(recorded);
+    expect(piPolicyFingerprint({ ...policy, workDir: join(value.directory, 'other') })).not.toBe(recorded);
+
+    recordPiSessionState(value.db, value.session, value.file, { id: 'pi-1', schemaVersion: '1' }, 'active', undefined, {
+      workDir: policy.workDir,
+      policyFingerprint: recorded,
+    });
+    expect(assertPiSessionContinuity(value.db, value.session, value.file, {
+      workDir: policy.workDir,
+      policyFingerprint: piPolicyFingerprint({ ...policy, allow: ['bash', 'read'] }),
+    }).state?.policyFingerprint).toBe(recorded);
+
+    // A later turn that states the identity but not the contract leaves the
+    // recorded binding in place rather than erasing what the session ran under.
+    recordPiSessionState(value.db, value.session, value.file, { id: 'pi-1', schemaVersion: '1' });
+    expect(getPiSessionState(value.db, value.session)).toMatchObject({
+      workDir: policy.workDir,
+      policyFingerprint: recorded,
+      status: 'active',
+    });
     value.db.close();
   });
 

@@ -914,6 +914,21 @@ CREATE UNIQUE INDEX idx_pi_tool_interactions_use ON pi_tool_interactions(session
 CREATE INDEX idx_pi_tool_interactions_request ON pi_tool_interactions(session_id, pi_request_id);
 `;
 
+/**
+ * The contract a Pi session ran under, so a resume can prove it is continuing it.
+ *
+ * `pi_session_state` already proves *which* Pi conversation a managed session
+ * file holds; on its own it says nothing about the work directory the turns ran
+ * in or the tool policy, model, and approval mode they ran under. Both columns
+ * are nullable on purpose: a row written before this migration has no recorded
+ * binding, and the resume path compares only a value that was recorded, so an
+ * upgrade neither blocks a live session nor invents a contract for one.
+ */
+const M041_PI_SESSION_POLICY_BINDING = `
+ALTER TABLE pi_session_state ADD COLUMN policy_fingerprint TEXT;
+ALTER TABLE pi_session_state ADD COLUMN work_dir TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -955,4 +970,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 38, name: '038_webhook_signing_secrets', sql: M038_WEBHOOK_SIGNING_SECRETS },
   { version: 39, name: '039_webhook_previous_secret', sql: M039_WEBHOOK_PREVIOUS_SECRET },
   { version: 40, name: '040_pi_tool_interactions', sql: M040_PI_TOOL_INTERACTIONS },
+  { version: 41, name: '041_pi_session_policy_binding', sql: M041_PI_SESSION_POLICY_BINDING },
 ];

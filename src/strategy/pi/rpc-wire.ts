@@ -7,10 +7,15 @@
  * child-process, filesystem, or SDK dependency, so both the transport and the
  * policy compiler can import it without a cycle.
  *
- * It carries only what its readers use. The resume binding and the
- * caller-argument flag list arrive with the behaviours that read them, so no
- * constant here is one nothing depends on.
+ * It carries only what its readers use. The caller-argument flag list arrives
+ * with the behaviour that reads it, so no constant here is one nothing depends
+ * on. The resume binding lives here because exactly two things read it — the
+ * launch that computes it and the durable state that records and compares it —
+ * and a second copy of the digest is how the two would drift apart.
  */
+
+import { createHash } from 'node:crypto';
+import type { PiApprovalMode } from './approval-mode.js';
 
 /** LF is the only record delimiter Pi accepts in RPC mode. */
 export const PI_RPC_RECORD_DELIMITER = '\n';
@@ -158,3 +163,52 @@ export const PI_GATE_ENV = {
 export const PI_RPC_COMMANDS = ['prompt', 'steer', 'abort', 'get_commands'] as const;
 
 export type PiRpcCommand = (typeof PI_RPC_COMMANDS)[number];
+
+/**
+ * Everything that must be identical for an existing Pi session to be resumed.
+ *
+ * Resume is strict on purpose. The managed session file proves *which* Pi
+ * conversation is being continued, not what it was continued under, so the
+ * compiled tool plan, the model and provider, the work directory, and the
+ * approval mode are part of the same claim. Continuing an old conversation under
+ * a different contract would leave the previous turns' durable events describing
+ * a policy the model is no longer running under, and silently forking a new Pi
+ * conversation instead would make the log disagree with what the model saw.
+ */
+export interface PiPolicyBinding {
+  /** Native tool names the compiled plan exposes. */
+  allow: readonly string[];
+  /** Subset of `allow` whose calls the managed gate decides. */
+  gate: readonly string[];
+  /** Native tool names the compiled plan withholds. */
+  denied: readonly string[];
+  /** True when the compiled plan exposes no engine-native tool at all. */
+  exposeNoTools: boolean;
+  model: string;
+  provider: string;
+  /** Host work directory the child runs in. */
+  workDir: string;
+  /** Who answers a gated call; a change of mode is a different contract. */
+  approvalMode: PiApprovalMode;
+}
+
+/**
+ * Stable digest of a policy binding.
+ *
+ * Sets are sorted before hashing so a re-ordered but identical compiled plan
+ * yields the same digest: a `--tools` order change is not a policy change, and
+ * recording it as one would refuse a resume that reproduces its contract.
+ */
+export function piPolicyFingerprint(binding: PiPolicyBinding): string {
+  const canonical = JSON.stringify({
+    allow: [...binding.allow].sort(),
+    gate: [...binding.gate].sort(),
+    denied: [...binding.denied].sort(),
+    exposeNoTools: binding.exposeNoTools,
+    model: binding.model,
+    provider: binding.provider,
+    workDir: binding.workDir,
+    approvalMode: binding.approvalMode,
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}

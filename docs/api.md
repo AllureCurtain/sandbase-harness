@@ -2086,7 +2086,14 @@ runtime has not proved that the process tree released the workspace, so it does
 not clean up or accept a new turn. A live cross-runtime Pi session-file owner
 returns a retryable `pi_session_busy` error. Resume refusal, corrupt headers,
 path/schema mismatch, and missing SQLite continuity proof are visible errors;
-they never silently start a second Pi history.
+they never silently start a second Pi history. A resume is also bound to the
+contract the recorded turns ran under: the work directory they ran in, and a
+fingerprint of the compiled tool plan, the model, and the approval mode, are
+compared with what `pi_session_state` recorded, and a resume that differs is
+refused with the stable code `pi_policy_mismatch` — naming whether the directory
+or the policy changed — rather than continuing the conversation under a contract
+its own durable events do not describe. A session recorded before that binding
+existed has no recorded value to compare against and still resumes.
 
 Pi-native tool events are trajectory records only while no policy gates them:
 they do not run through the builtin `ToolResolver`, receive no Harness local path

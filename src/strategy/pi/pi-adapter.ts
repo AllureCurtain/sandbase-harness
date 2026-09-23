@@ -97,6 +97,11 @@ export class PiAdapter implements LoopEngineAdapter {
       systemPrompt: request.systemPrompt,
       model: request.model,
       toolArgs: request.toolPlan.flags,
+      // The contract the caller admitted the session under travels with the
+      // launch, which is the only place that can refuse a resume before a child
+      // exists: a compiled policy the recorded row does not agree with is a
+      // different conversation than the one the durable events describe.
+      policyFingerprint: request.binding.policyFingerprint,
       ...(gateTools.length ? { gateTools } : {}),
       ...(request.skillDirs?.length ? { skillDirs: request.skillDirs } : {}),
       ...(request.thinkingLevel ? { thinkingLevel: request.thinkingLevel } : {}),

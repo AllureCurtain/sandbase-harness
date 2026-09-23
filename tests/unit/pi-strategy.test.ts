@@ -386,7 +386,7 @@ describe('PiStrategy turn loop over a session-owned child', () => {
     expect(session.calls.filter((call) => call === 'close')).toHaveLength(closes);
   });
 
-  it('records the engine session identity after a settled turn', async () => {
+  it('records the engine session identity and the contract it ran under after a settled turn', async () => {
     const { database, directory } = continuityDatabase('ma-pi-strategy-continuity-');
     const sessionFile = join(directory, 'pi-sessions', 'sess_pi_turn.jsonl');
     mkdirSync(join(directory, 'pi-sessions'), { recursive: true });
@@ -394,18 +394,57 @@ describe('PiStrategy turn loop over a session-owned child', () => {
 
     const session = new ScriptedSession('sess_pi_turn');
     session.engineSessionFile = sessionFile;
-    const strategy = strategyFor([session], [], database);
+    const starts: LoopEngineStartRequest[] = [];
+    const strategy = strategyFor([session], starts, database);
 
     await run(strategy, contextFor([]));
 
     // Continuity is recorded before the terminal marker, so a later turn can
-    // prove it is continuing the same Pi conversation.
-    expect(getPiSessionState(database, 'sess_pi_turn')).toMatchObject({
+    // prove it is continuing the same Pi conversation under the same contract.
+    const state = getPiSessionState(database, 'sess_pi_turn');
+    expect(state).toMatchObject({
       sessionFile,
       piSessionId: 'pi-session-1',
       status: 'active',
     });
+    // The binding the launch proved is the binding the settled turn records:
+    // one computation, so the two cannot disagree about what this session is.
+    expect(state?.workDir).toBe(starts[0]?.binding.workDir);
+    expect(state?.policyFingerprint).toBe(starts[0]?.binding.policyFingerprint);
+    expect(state?.policyFingerprint).toMatch(/^[0-9a-f]{64}$/);
     database.close();
+  });
+
+  it('fingerprints the approval mode as part of the contract a session is bound to', async () => {
+    const interactiveStarts: LoopEngineStartRequest[] = [];
+    const interactive = new ScriptedSession('sess_pi_turn');
+    await run(new PiStrategy({
+      adapter: {
+        async startSession(request: LoopEngineStartRequest) {
+          interactiveStarts.push(request);
+          return interactive;
+        },
+      },
+    }), contextFor([]));
+
+    const preauthorizedStarts: LoopEngineStartRequest[] = [];
+    const preauthorized = new ScriptedSession('sess_pi_turn');
+    await run(new PiStrategy({
+      adapter: {
+        async startSession(request: LoopEngineStartRequest) {
+          preauthorizedStarts.push(request);
+          return preauthorized;
+        },
+      },
+      approvalMode: () => 'preauthorized_once',
+    }), contextFor([]));
+
+    // Who answers a gated call changes the contract even when nothing else does,
+    // so a runtime that switched mode is not resuming the session its earlier
+    // turns described — while the work directory it runs in is unchanged.
+    expect(interactiveStarts[0]?.binding.workDir).toBe(preauthorizedStarts[0]?.binding.workDir);
+    expect(interactiveStarts[0]?.binding.policyFingerprint)
+      .not.toBe(preauthorizedStarts[0]?.binding.policyFingerprint);
   });
 
   it('refuses a turn whose engine session changed identity underneath it', async () => {
