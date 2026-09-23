@@ -13,7 +13,7 @@ import {
   PI_SANDBOX_UNSUPPORTED_CODE,
   PI_SANDBOX_UNSUPPORTED_MESSAGE,
   PI_TOOL_POLICY_UNSUPPORTED_CODE,
-  PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
+  PiToolPolicyUnsupportedError,
   PI_USER_EVENT_UNSUPPORTED_CODE,
 } from '@/core/session/pi-policy.js';
 import { SessionManager } from '@/core/session/session-manager.js';
@@ -308,18 +308,18 @@ describe('session loop engine persistence', () => {
     db.close();
   });
 
-  it('rejects denied and disabled tool declarations before Pi session persistence or resume', async () => {
+  it('refuses a policy Pi cannot express, and admits a toolset that expects nothing to run', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-pi-tool-policy-'));
     directories.push(directory);
     const db = new Database(join(directory, 'data.db'));
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     const piManager = new SessionManager(db, undefined, 'pi');
-    let executorCalled = false;
-    piManager.setExecutor({
-      async *execute() { executorCalled = true; },
-    });
-    const restrictions = [
+
+    // A denied native tool is compiled into an exclusion, but the launch that
+    // sends those flags is its own change, so the agent is still refused — and
+    // the refusal names the tool, which is the part an operator can act on.
+    const stillRefused = [
       {
         label: 'named-never-allow',
         toolset: {
@@ -334,6 +334,39 @@ describe('session loop engine persistence', () => {
           configs: [{ name: 'bash', enabled: false }],
         },
       },
+    ];
+
+    for (const [index, restriction] of stillRefused.entries()) {
+      const agentId = `agent_pi_restricted_${index}`;
+      db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+        agentId,
+        restriction.label,
+        JSON.stringify({
+          name: restriction.label,
+          model: 'gpt-4o',
+          system: 'Do not bypass declared policies.',
+          tools: [restriction.toolset],
+        }),
+      );
+
+      let error: unknown;
+      try {
+        piManager.create({ agent: agentId });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(PiToolPolicyUnsupportedError);
+      expect((error as PiToolPolicyUnsupportedError).code).toBe(PI_TOOL_POLICY_UNSUPPORTED_CODE);
+      expect((error as Error).message).toMatch(/bash/);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get(agentId))
+        .toEqual({ count: 0 });
+    }
+
+    // A fully disabled MCP toolset is a different case: nothing is expected to run
+    // through it and Pi has no MCP transport, so there is nothing to enforce and
+    // the agent runs. The earlier blanket refusal of any `enabled: false` entry
+    // was the over-broad rule this compiler replaced.
+    const admitted = [
       {
         label: 'mcp-default-never-allow',
         toolset: {
@@ -352,35 +385,49 @@ describe('session loop engine persistence', () => {
       },
     ];
 
-    for (const [index, restriction] of restrictions.entries()) {
-      const agentId = `agent_pi_restricted_${index}`;
+    for (const [index, declaration] of admitted.entries()) {
+      const agentId = `agent_pi_admitted_${index}`;
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
         agentId,
-        restriction.label,
+        declaration.label,
         JSON.stringify({
-          name: restriction.label,
+          name: declaration.label,
           model: 'gpt-4o',
-          system: 'Do not bypass declared policies.',
-          tools: [restriction.toolset],
+          system: 'Nothing runs through this toolset.',
+          tools: [declaration.toolset],
         }),
       );
 
-      expect(() => piManager.create({ agent: agentId })).toThrow(PI_TOOL_POLICY_UNSUPPORTED_MESSAGE);
+      expect(() => piManager.create({ agent: agentId })).not.toThrow();
       expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get(agentId))
-        .toEqual({ count: 0 });
-
-      const legacy = new SessionManager(db).create({ agent: agentId });
-      db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
-      await expect(piManager.sendEvent(legacy.id, {
-        type: 'user.message', content: [{ type: 'text', text: 'run' }],
-      })).rejects.toMatchObject({
-        code: PI_TOOL_POLICY_UNSUPPORTED_CODE,
-        message: PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
-      });
-      expect(piManager.getEventLogger().getEvents(legacy.id)).toEqual([]);
+        .toEqual({ count: 1 });
     }
 
-    expect(executorCalled).toBe(false);
+    // An MCP toolset the agent could actually use is a different matter: Pi has no
+    // MCP transport, so accepting it would promise a capability the engine lacks.
+    // The code is the stable contract; the message names which declaration caused
+    // the refusal, which is the part an operator needs.
+    db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+      'agent_pi_mcp_enabled',
+      'mcp-enabled',
+      JSON.stringify({
+        name: 'mcp-enabled',
+        model: 'gpt-4o',
+        system: 'Use MCP.',
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'filesystem' }],
+      }),
+    );
+    let refused: unknown;
+    try {
+      piManager.create({ agent: 'agent_pi_mcp_enabled' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(PiToolPolicyUnsupportedError);
+    expect((refused as PiToolPolicyUnsupportedError).code).toBe(PI_TOOL_POLICY_UNSUPPORTED_CODE);
+    expect((refused as Error).message).toMatch(/no MCP transport/);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_pi_mcp_enabled'))
+      .toEqual({ count: 0 });
     db.close();
   });
 
