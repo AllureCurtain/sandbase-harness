@@ -103,8 +103,12 @@ describe('API reference docs', () => {
     const stop = API_REFERENCE_DOCS.find((endpoint) => endpoint.id === 'sessions-stop');
 
     expect(appendEvents?.parameters?.map((field) => field.name)).toEqual(['events']);
-    expect(appendEvents?.response.map((field) => field.name)).toEqual(['accepted']);
+    // The batch reply carries the steer receipt beside `accepted`, because a
+    // rejected or conflicting steer was not delivered and `accepted` alone cannot
+    // say what the engine did with it.
+    expect(appendEvents?.response.map((field) => field.name)).toEqual(['accepted', 'steer']);
     expect(appendEvents?.summary).toContain('user.* events');
+    expect(appendEvents?.summary).toContain('user.steer');
     expect(message?.response.map((field) => field.name)).toEqual(expect.arrayContaining(['event', 'accepted']));
     expect(message?.response.map((field) => field.name)).not.toContain('session');
     expect(stop?.response.map((field) => field.name)).toEqual(['id', 'status']);

@@ -36,6 +36,14 @@
  * under `interactive`, or the platform's own rule under `preauthorized_once`.
  * Both answers travel the same one-shot consume, and neither is allowed to
  * authorize a second call.
+ *
+ * Steering is the other way text reaches a running turn. It is not a turn: the
+ * turn has to already be in flight, one steer may be in flight at a time, and
+ * an `input_id` is spent once — a repeat of the same text is answered as a
+ * duplicate, different text under the same id is a conflict, and a write whose
+ * acknowledgement never arrived is reported as an unknown outcome that must not
+ * be replayed. A steer carries text and nothing else, so it cannot start work or
+ * expose a tool to a turn that did not already have one.
  */
 
 import type { Writable } from 'node:stream';
@@ -44,10 +52,14 @@ import type {
   LoopEngineEventSink,
   LoopEnginePendingInteraction,
   LoopEngineSession,
+  LoopEngineSteerInput,
+  LoopEngineSteerReceipt,
   LoopEngineTurnOutcome,
 } from '@/strategy/loop-engine/adapter.js';
 import {
   PiRpcClosedError,
+  PiRpcOutcomeUnknownError,
+  PiRpcTimeoutError,
   PiRpcTransport,
   type PiExtensionUiRequest,
   type PiRpcCloseReason,
@@ -230,6 +242,18 @@ export class PiRpcSession implements LoopEngineSession {
   private turnCounter = 0;
   private turnIdValue: string | undefined;
   private busy = false;
+  /**
+   * Steer admission for the current turn, plus the one-shot ledger of steers the
+   * engine was *possibly* given.
+   *
+   * The ledger is keyed by the caller's `input_id` and holds a digest of the text
+   * it was delivered with, because that pair is what makes a repeat idempotent
+   * and a reused id with new text a conflict.
+   */
+  private steerAdmissionOpen = false;
+  private steerInFlight: Promise<void> | undefined;
+  private steerInFlightPending = false;
+  private readonly steerLedger = new Map<string, string>();
   private closeReason: PiRpcCloseReason | undefined;
   private releasePromise: Promise<void> | undefined;
   private failure: Error | undefined;
@@ -340,6 +364,11 @@ export class PiRpcSession implements LoopEngineSession {
     this.turnCounter += 1;
     this.turnIdValue = `piturn_${this.turnCounter}`;
     this.busy = true;
+    // A new turn opens steering for itself: the previous turn closed admission as
+    // it ended, and the ledger is per turn so an id reused in the next turn is a
+    // new instruction rather than a duplicate of an old one.
+    this.steerAdmissionOpen = true;
+    this.steerLedger.clear();
     this.deferredGatedCalls.clear();
     this.gateOpenedCalls.clear();
     this.deniedGatedCalls.clear();
@@ -361,6 +390,99 @@ export class PiRpcSession implements LoopEngineSession {
   async awaitTurnOutcome(): Promise<LoopEngineTurnOutcome> {
     if (!this.outcomePromise) throw new PiRpcSessionClosedError('no turn is armed');
     return this.outcomePromise;
+  }
+
+  /**
+   * Deliver one steering instruction to the turn in flight.
+   *
+   * Every refusal is reported rather than thrown, because each one is a different
+   * instruction to the caller: a closed session, no turn accepting steering (no
+   * turn in flight, or the turn has already closed admission), a turn the caller
+   * did not name, an `input_id` already spent on other text, and a second steer
+   * while one is still in flight. None of them buffer the text for a later turn:
+   * a steer aimed at a turn that is over has no honest place to land.
+   *
+   * The ledger is written only once a steer was *possibly* applied. A clean
+   * rejection stays retryable — nothing was written, so the caller may send it
+   * again — while `outcome_unknown` retires the `input_id` permanently, because
+   * the engine may already have acted on the write and a replay would double an
+   * instruction it is too late to take back.
+   */
+  async steer(input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt> {
+    const turnId = this.turnIdValue;
+    if (this.closeReason || this.failure) {
+      return { inputId: input.inputId, state: 'rejected', detail: 'the session is closed' };
+    }
+    if (!this.steerAdmissionOpen || !this.busy) {
+      return { inputId: input.inputId, state: 'rejected', detail: 'no turn is accepting steering' };
+    }
+    if (input.expectedTurnId !== undefined && input.expectedTurnId !== turnId) {
+      return {
+        inputId: input.inputId,
+        state: 'rejected',
+        detail: 'expected_turn_id does not name the active turn',
+        ...(turnId ? { turnId } : {}),
+      };
+    }
+
+    const digest = fingerprintPiToolInput({ text: input.text });
+    const seen = this.steerLedger.get(input.inputId);
+    if (seen !== undefined) {
+      return seen === digest
+        ? { inputId: input.inputId, state: 'duplicate', ...(turnId ? { turnId } : {}) }
+        : {
+          inputId: input.inputId,
+          state: 'conflict',
+          detail: 'input_id was already used with different text',
+          ...(turnId ? { turnId } : {}),
+        };
+    }
+    if (this.steerInFlightPending) {
+      return {
+        inputId: input.inputId,
+        state: 'rejected',
+        detail: 'a steer is already in flight for this turn',
+        ...(turnId ? { turnId } : {}),
+      };
+    }
+
+    let release: () => void = () => {};
+    // Registered before the write is attempted, so a second steer arriving while
+    // this one is awaiting its acknowledgement is refused rather than queued
+    // behind it — one instruction may be in flight per turn.
+    this.steerInFlight = new Promise<void>((resolvePromise) => { release = resolvePromise; });
+    this.steerInFlightPending = true;
+    try {
+      await this.send('steer', { message: input.text }, { timeoutMs: this.steerTimeoutMs });
+      this.steerLedger.set(input.inputId, digest);
+      return { inputId: input.inputId, state: 'delivered', ...(turnId ? { turnId } : {}) };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (isOutcomeUnknown(error)) {
+        // The write may or may not have arrived, so the id is retired: reporting
+        // this as a plain rejection would invite the replay the contract forbids.
+        this.steerLedger.set(input.inputId, digest);
+        return { inputId: input.inputId, state: 'outcome_unknown', detail, ...(turnId ? { turnId } : {}) };
+      }
+      return { inputId: input.inputId, state: 'rejected', detail, ...(turnId ? { turnId } : {}) };
+    } finally {
+      this.steerInFlightPending = false;
+      this.steerInFlight = undefined;
+      release();
+    }
+  }
+
+  /** Refuse further steers for this turn. Called before `turn_complete`. */
+  closeSteerAdmission(): void {
+    this.steerAdmissionOpen = false;
+  }
+
+  /**
+   * Wait for steer work already accepted, so a receipt is never answered after
+   * the turn it belongs to has been reported as finished.
+   */
+  async settleSteerReceipts(): Promise<void> {
+    await this.steerInFlight;
   }
 
   /**
@@ -498,6 +620,17 @@ export class PiRpcSession implements LoopEngineSession {
     return this.transport.send(command, payload, options);
   }
 
+  /**
+   * Deadline for one steer write.
+   *
+   * The same per-command deadline the transport already applies elsewhere, so a
+   * steer whose acknowledgement never arrives settles as unacknowledged instead
+   * of leaving the turn's one in-flight slot held forever.
+   */
+  private get steerTimeoutMs(): number | undefined {
+    return this.options.requestTimeoutMs;
+  }
+
   private armOutcome(): void {
     this.outcomePromise = new Promise<LoopEngineTurnOutcome>((resolvePromise) => {
       this.resolveOutcome = resolvePromise;
@@ -601,6 +734,9 @@ export class PiRpcSession implements LoopEngineSession {
     }
     if (frame.type === 'agent_settled') {
       await this.translator.handleEvent(frame);
+      // Admission closes before the turn is settled, so a steer arriving after
+      // this frame cannot be accepted into a turn that is already over.
+      this.closeSteerAdmission();
       const lastTurnError = this.translator.result.lastTurnError;
       this.settle(lastTurnError ? { kind: 'failed', error: new Error(lastTurnError) } : { kind: 'settled' });
       return;
@@ -912,6 +1048,21 @@ export class PiRpcSession implements LoopEngineSession {
 function isBenignCloseError(error: unknown): boolean {
   return error instanceof PiRpcClosedError
     || (error instanceof Error && error.name === 'AbortError');
+}
+
+/**
+ * True when a failed write may still have been applied by the engine.
+ *
+ * A timeout and a transport that died mid-command are the two cases where the
+ * runtime cannot prove the frame was not acted on. The transport marks both, and
+ * the flag is read rather than the class so a test double — or a future error
+ * type — cannot silently turn an unknown outcome into a retryable one.
+ */
+function isOutcomeUnknown(error: unknown): boolean {
+  if (error instanceof PiRpcTimeoutError || error instanceof PiRpcOutcomeUnknownError) return true;
+  return Boolean(error)
+    && typeof error === 'object'
+    && (error as { outcomeUnknown?: unknown }).outcomeUnknown === true;
 }
 
 /**

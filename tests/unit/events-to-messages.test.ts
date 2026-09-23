@@ -47,6 +47,21 @@ describe('eventsToMessages', () => {
     expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
   });
 
+  it('does not project a user.steer as a user turn', () => {
+    // A steer was written to the live engine session's own input channel while its
+    // turn was running, so the child already read it. Projecting it here as well
+    // would deliver the same instruction twice, and would deliver it as an
+    // ordinary user turn — the one thing `user.steer` must never become.
+    const events = [
+      ev('user.message', [{ type: 'text', text: 'refactor the parser' }]),
+      ev('user.steer', [{ type: 'text', text: 'prefer the smaller change' }]),
+      ev('agent.message', [{ type: 'text', text: 'done' }]),
+    ];
+    const msgs = eventsToMessages(events);
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(JSON.stringify(msgs)).not.toContain('prefer the smaller change');
+  });
+
   it('pairs tool_use with tool_result in adjacent assistant/tool messages', () => {
     const events = [
       ev('user.message', [{ type: 'text', text: 'run ls' }]),

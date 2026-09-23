@@ -24,6 +24,38 @@ describe('ManagedAgentsClient runtime management resources', () => {
     }));
   });
 
+  it('sends a user.steer with its idempotency key and returns the receipt', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      accepted: false,
+      steer: { input_id: 'steer_1', state: 'rejected', detail: 'no turn is accepting steering' },
+    })) as unknown as typeof fetch;
+    const client = new ManagedAgentsClient({ baseUrl: 'http://localhost:3000', fetch: fetchImpl });
+
+    const result = await client.sessions.steer('sess_1', {
+      inputId: 'steer_1',
+      text: 'be brief',
+      expectedTurnId: 'piturn_1',
+    });
+
+    // The idempotency key and the turn binding travel as the event's own fields,
+    // so the receipt the caller acts on describes the steer it actually sent.
+    expect(fetchImpl).toHaveBeenCalledWith('http://localhost:3000/v1/sessions/sess_1/events', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        events: [{
+          type: 'user.steer',
+          input_id: 'steer_1',
+          text: 'be brief',
+          expected_turn_id: 'piturn_1',
+        }],
+      }),
+    }));
+    expect(result).toEqual({
+      accepted: false,
+      steer: { input_id: 'steer_1', state: 'rejected', detail: 'no turn is accepting steering' },
+    });
+  });
+
   it('calls canonical runtime settings endpoints', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

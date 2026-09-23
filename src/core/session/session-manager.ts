@@ -56,6 +56,7 @@ import {
   LOOP_ENGINE_UNSUPPORTED_CODE,
 } from './loop-engine-admission.js';
 import type { AgentDefinition, AgentOverrides } from '@/types/agent.js';
+import type { LoopEngineSteerReceipt } from '@/strategy/loop-engine/adapter.js';
 import { agentOverrideError, applyAgentOverrides } from '@/core/agent/overrides.js';
 import { OUTCOME_EVALUATOR_UNAVAILABLE_CODE, type OutcomeGrader } from '@/core/outcomes/grader.js';
 import {
@@ -110,6 +111,17 @@ export interface SessionExecutor {
   execute(session: Session, event: UserEvent, options?: ExecuteOptions): AsyncIterable<SessionEvent>;
   /** Destroy resources (sandbox) bound to a session on terminal state */
   cleanupSession?(sessionId: string): Promise<void>;
+  /**
+   * Deliver a live steer without scheduling a turn.
+   *
+   * `undefined` means no live engine session owns steering for this session. The
+   * Session Manager reports that as a refusal, never as a delivery and never as
+   * a turn to run later.
+   */
+  steer?(
+    session: Session,
+    event: Extract<UserEvent, { type: 'user.steer' }>,
+  ): Promise<LoopEngineSteerReceipt | undefined>;
   /**
    * Reconnect a session's MCP servers after the credential they authenticate with
    * changed, so the next tool call uses the new value. Optional: an executor with no
@@ -608,8 +620,16 @@ export class SessionManager {
   /**
    * Send a user event to a session.
    * Returns synchronous acknowledgment; actual execution is async via SSE.
+   *
+   * A `user.steer` is the one event that answers with more than acceptance: it is
+   * offered to the live engine session straight away and the reply carries the
+   * receipt the caller has to act on, since "already delivered", "reused id" and
+   * "never heard it" are three different things to do next.
    */
-  async sendEvent(sessionId: string, event: UserEvent): Promise<{ accepted: boolean }> {
+  async sendEvent(
+    sessionId: string,
+    event: UserEvent,
+  ): Promise<{ accepted: boolean; steer?: LoopEngineSteerReceipt }> {
     if (!event || typeof (event as any).type !== 'string' || (event as any).type.length === 0) {
       throw new Error('Invalid event: missing required string "type" field');
     }
@@ -619,6 +639,14 @@ export class SessionManager {
     // Revalidate the snapshot-first/current-durable effective definition before
     // mutating the append-only log or queuing any model, sandbox, or tool work.
     this.assertSessionCapabilities(session);
+
+    // Steering is not a turn. It has to reach the engine while the turn it
+    // influences is still running, so it bypasses the execution chain entirely: a
+    // queued steer would arrive after that turn had ended, and would be reported
+    // as delivered while changing nothing.
+    if (event.type === 'user.steer') {
+      return this.deliverSteer(session, event);
+    }
 
     const confirmationMetadata = event.type === 'user.tool_confirmation'
       ? getConfirmationMetadata(event, this.eventLogger.getEvents(sessionId))
@@ -678,6 +706,62 @@ export class SessionManager {
     }
 
     return { accepted: true };
+  }
+
+  /**
+   * Validate one steer, offer it to the live engine session, then record it.
+   *
+   * The order is deliberate: the engine is asked *before* the event is appended,
+   * so a steer that never reached a live session leaves a durable record saying
+   * so rather than one implying delivery. The receipt is written into the event's
+   * metadata, which is the only place a client reading the log back can learn
+   * whether the engine acknowledged the instruction, already had it, or never
+   * received it.
+   *
+   * A steer carries text and nothing else, so this path can append an event and
+   * call the steering side channel — it can never enter the execution chain, build
+   * a tool set, or start a turn.
+   */
+  private async deliverSteer(
+    session: Session,
+    event: Extract<UserEvent, { type: 'user.steer' }>,
+  ): Promise<{ accepted: boolean; steer: LoopEngineSteerReceipt }> {
+    const inputId = event.input_id;
+    if (typeof inputId !== 'string' || inputId.length === 0) {
+      throw new Error('Invalid steer: input_id must be a non-empty string');
+    }
+    if (typeof event.text !== 'string' || event.text.length === 0) {
+      throw new Error('Invalid steer: text must be a non-empty string');
+    }
+    if (event.expected_turn_id !== undefined && typeof event.expected_turn_id !== 'string') {
+      throw new Error('Invalid steer: expected_turn_id must be a string');
+    }
+
+    const receipt = await this.executor?.steer?.(session, event)
+      ?? {
+        inputId,
+        state: 'rejected' as const,
+        detail: 'no live engine session is accepting steering for this session',
+      };
+
+    const logged = this.eventLogger.append(session.id, {
+      type: event.type,
+      content: [{ type: 'text', text: event.text }],
+      metadata: {
+        input_id: inputId,
+        steer_state: receipt.state,
+        ...(receipt.turnId ? { turn_id: receipt.turnId } : {}),
+        ...(receipt.detail ? { detail: receipt.detail } : {}),
+      },
+    });
+    this.broadcast(session.id, logged);
+
+    // `outcome_unknown` counts as accepted: the write may have reached the engine,
+    // so telling the caller it failed would invite exactly the replay the steer
+    // contract forbids. Only a refusal the engine actually performed — a rejected
+    // steer, or an `input_id` already spent on other text — answers `false`.
+    const accepted = receipt.state !== 'rejected' && receipt.state !== 'conflict';
+    return { accepted, steer: receipt };
   }
 
   /**

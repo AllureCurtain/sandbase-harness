@@ -140,6 +140,54 @@ export interface LoopEngineStartRequest {
 }
 
 /**
+ * One steering instruction for a turn that is already in flight.
+ *
+ * `inputId` is the caller's idempotency key, and it is the only identity a
+ * repeated delivery has: the engine is told the same text at most once, and the
+ * same key carrying different text is a conflict rather than a second
+ * instruction.
+ */
+export interface LoopEngineSteerInput {
+  inputId: string;
+  text: string;
+  /** When present, the steer is refused unless it names the active turn. */
+  expectedTurnId?: string;
+}
+
+/**
+ * Why a steer was or was not delivered.
+ *
+ * `outcome_unknown` is terminal for the caller: the write may or may not have
+ * reached the engine, so it must never be replayed automatically — a retry could
+ * double an instruction the engine already acted on. It is deliberately distinct
+ * from `rejected`, because a rejected steer is one the caller may safely resend.
+ */
+export type LoopEngineSteerState =
+  | 'delivered'
+  | 'duplicate'
+  | 'conflict'
+  | 'rejected'
+  | 'outcome_unknown';
+
+/**
+ * What the engine did with one steer.
+ *
+ * A receipt rather than a bare boolean because the four ways a steer can fail to
+ * be applied are not interchangeable to a caller: `duplicate` says the engine
+ * already has it, `conflict` says the id belongs to different text, `rejected`
+ * says nothing heard it and resending is safe, and `outcome_unknown` says
+ * resending is the one thing that must not happen.
+ */
+export interface LoopEngineSteerReceipt {
+  inputId: string;
+  state: LoopEngineSteerState;
+  /** The turn the steer was bound to, when one was in flight. */
+  turnId?: string;
+  /** Human-readable reason; set for every state except `delivered`. */
+  detail?: string;
+}
+
+/**
  * One interaction a session raised that needs a decision before it proceeds.
  *
  * The input is the input the decision will be made against, together with its
@@ -202,6 +250,30 @@ export interface LoopEngineSession extends LoopEngineInteractionResponder {
   /** Start one turn. Rejects when the session is already closed or busy. */
   prompt(text: string): Promise<void>;
   /**
+   * Deliver one steering instruction to the turn in flight.
+   *
+   * Never a turn: it writes text to the running turn and nothing else, so a steer
+   * cannot start work, expose a tool, or outlive the turn it was aimed at. Every
+   * reason it could not be applied is answered with a receipt rather than an
+   * exception, because "the engine already has this" and "the engine never heard
+   * it" are both answers a caller has to act on differently.
+   */
+  steer(input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt>;
+  /**
+   * Refuse further steers for the current turn.
+   *
+   * Called before the turn completion marker is published, so a client that has
+   * seen a turn finish can never afterwards watch a steer land inside it.
+   */
+  closeSteerAdmission(): void;
+  /**
+   * Wait for steer receipt work already accepted to finish.
+   *
+   * Awaited before `turn_complete` for the same reason admission closes first: a
+   * turn is not finished while it still owes an answer to a steer.
+   */
+  settleSteerReceipts(): Promise<void>;
+  /**
    * Resolves when the current turn settled or failed.
    *
    * A turn that outlives its deadline settles as `failed` rather than hanging,
@@ -230,4 +302,31 @@ export interface LoopEngineAdapter {
   readonly capabilityProfile: LoopEngineCapabilityProfile;
   /** Start the one session-owned child this SandBase session will use. */
   startSession(request: LoopEngineStartRequest): Promise<LoopEngineSession>;
+}
+
+/**
+ * A strategy that owns live engine sessions and can address one by session id.
+ *
+ * Steering is deliberately absent from `AgentStrategy.execute`: that entry point
+ * is the serialized turn chain, so a steer routed through it would be applied
+ * only after the turn it was meant to influence had already ended — the runtime
+ * would then have reported a steer as delivered while it changed nothing. The
+ * side channel is what lets a steer reach the turn that is running now.
+ */
+export interface LoopEngineSteering {
+  /**
+   * Deliver one steer to the live session, or `undefined` when this strategy
+   * owns no session for the id.
+   *
+   * `undefined` is not a denial the engine performed: it means the request never
+   * reached an engine at all, which the caller must report as refused rather than
+   * as delivered — and must not buffer for a later turn.
+   */
+  steerSession(sessionId: string, input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt | undefined>;
+}
+
+/** Narrow a strategy to the steering side channel without a runtime assertion. */
+export function hasSteering(strategy: unknown): strategy is LoopEngineSteering {
+  if (!strategy || typeof strategy !== 'object') return false;
+  return typeof (strategy as Partial<LoopEngineSteering>).steerSession === 'function';
 }

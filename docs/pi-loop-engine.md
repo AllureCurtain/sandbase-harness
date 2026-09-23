@@ -142,6 +142,30 @@ source it was recorded with. An unrecognized mode name is refused by Settings. A
 agent definition cannot reach the key, so no agent can make its own gated calls
 unattended.
 
+## Steering
+
+`user.steer` is a distinct event rather than a normal `user.message`, because
+normal messages use the serialized execution chain — a steer routed through it
+would arrive only after the turn it was meant to influence had ended. It is
+written to the live session's own input channel while the turn is in flight,
+keyed by `input_id`, and answered with a receipt:
+
+- the same `input_id` with the same text is idempotent (`duplicate`);
+- the same `input_id` with different text is a `conflict`, never merged;
+- one steer may be in flight per turn, and a second one is refused rather than
+  queued behind the first;
+- a write that is not acknowledged is `outcome_unknown` and is never replayed,
+  because the child may already have acted on it;
+- new steer admission closes before `turn_complete` is published, and receipts
+  already accepted settle before it, so a client can never see the terminal
+  marker and then watch a steer land in the turn it just saw finish;
+- a steer for a session with no turn in flight, or for a child that is gone, is
+  refused rather than buffered for a later turn.
+
+A steer carries text and nothing else. It cannot start a turn, expose a tool, or
+change the tool policy the child was launched with, so it can never cause a tool
+to run.
+
 The current RPC adapter produces durable CMA events and visible Pi-native
 tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
 not run through the Harness tool loop and receive no Harness local path

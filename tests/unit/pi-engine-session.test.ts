@@ -483,6 +483,66 @@ describe('session loop engine persistence', () => {
     db.close();
   });
 
+  it('records a steer that never reached a live engine as refused, not delivered', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-steer-policy-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'data.db'));
+    db.runMigrations();
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
+    const piManager = new SessionManager(db, undefined, 'pi');
+    let executorCalled = false;
+    piManager.setExecutor({
+      // No `steer`: this executor owns no live engine session.
+      async *execute() { executorCalled = true; },
+    });
+    const session = piManager.create({ agent: 'agent_test' });
+
+    // A steer is not a turn, so it never reaches `execute`. With nothing to deliver
+    // to, the answer must say so — and the durable record must agree, because a
+    // client that read back `delivered` would believe the engine was told
+    // something it never heard. Nothing is buffered for a later turn either.
+    await expect(piManager.sendEvent(session.id, {
+      type: 'user.steer', input_id: 'steer_1', text: 'be brief',
+    })).resolves.toMatchObject({
+      accepted: false,
+      steer: { inputId: 'steer_1', state: 'rejected' },
+    });
+
+    const events = piManager.getEventLogger().getEvents(session.id);
+    expect(events.map((event) => event.type)).toEqual(['user.steer']);
+    expect(events[0].metadata).toMatchObject({ input_id: 'steer_1', steer_state: 'rejected' });
+    expect(executorCalled).toBe(false);
+    db.close();
+  });
+
+  it('refuses a malformed steer instead of recording one', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-steer-invalid-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'data.db'));
+    db.runMigrations();
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'test-agent', '{}')`);
+    const piManager = new SessionManager(db, undefined, 'pi');
+    piManager.setExecutor({ async *execute() {} });
+    const session = piManager.create({ agent: 'agent_test' });
+
+    await expect(piManager.sendEvent(session.id, {
+      type: 'user.steer', input_id: '', text: 'be brief',
+    } as UserEvent)).rejects.toThrow('input_id must be a non-empty string');
+    await expect(piManager.sendEvent(session.id, {
+      type: 'user.steer', input_id: 'steer_1', text: '',
+    } as UserEvent)).rejects.toThrow('text must be a non-empty string');
+    await expect(piManager.sendEvent(session.id, {
+      type: 'user.steer', input_id: 'steer_1', text: 'x', expected_turn_id: 7,
+    } as unknown as UserEvent)).rejects.toThrow('expected_turn_id must be a string');
+
+    // A steer the runtime cannot account for leaves nothing behind: no event, and
+    // no turn queued for later.
+    expect(piManager.getEventLogger().getEvents(session.id)).toEqual([]);
+    db.close();
+  });
+
   it('rejects Pi named non-local Environments before session or event persistence', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-pi-environment-policy-'));
     directories.push(directory);

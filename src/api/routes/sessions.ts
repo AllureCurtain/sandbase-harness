@@ -46,6 +46,7 @@ import {
   normalizeSystemMessageContent,
   systemMessageContentError,
 } from './system-message.js';
+import type { LoopEngineSteerReceipt } from '@/strategy/loop-engine/adapter.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -359,6 +360,20 @@ export function sessionsRoutes(deps: ServerDeps) {
         }
         events[events.indexOf(event)] = outcome.event;
       }
+      // A steer carries text and an idempotency key and nothing else, so a payload
+      // missing either is a client error rather than a runtime fault. It is named
+      // here so the caller gets the field to fix; the Session Manager validates the
+      // same payload again as the authority, because a steer must never be stored
+      // on the strength of a route check alone.
+      if (event.type === 'user.steer') {
+        const problem = steerPayloadProblem(event);
+        if (problem) {
+          return c.json(
+            { error: { type: 'invalid_request', message: `user.steer ${problem}` } },
+            400,
+          );
+        }
+      }
     }
 
     // Pre-flight: reject the whole batch up-front if the session is missing or
@@ -378,10 +393,20 @@ export function sessionsRoutes(deps: ServerDeps) {
       for (const event of events) {
         sessionManager.assertSessionCanAcceptEvent(sessionId, event as UserEvent);
       }
+      // A `user.steer` is not a turn: it is offered to the live engine session
+      // immediately, and the receipt says whether the engine saw it, already had
+      // it, or never received it. `accepted` therefore has to report the
+      // manager's answer rather than a constant — a rejected steer was not
+      // delivered, and saying otherwise would have a client believe the engine
+      // was told something it never heard.
+      let steer: Record<string, unknown> | undefined;
+      let accepted = true;
       for (const event of events) {
-        await sessionManager.sendEvent(sessionId, event);
+        const result = await sessionManager.sendEvent(sessionId, event);
+        if (!result.accepted) accepted = false;
+        if (result.steer) steer = publicSteerReceipt(result.steer);
       }
-      return c.json({ accepted: true });
+      return c.json({ accepted, ...(steer ? { steer } : {}) });
     } catch (err: any) {
       if (err instanceof UnsupportedCapabilityError) {
         return unsupportedCapability(c, err);
@@ -606,6 +631,42 @@ export function sessionsRoutes(deps: ServerDeps) {
   });
 
   return app;
+}
+
+/**
+ * Project an engine steer receipt onto the public event API shape.
+ *
+ * Written out field by field rather than serialized straight from the internal
+ * type, so the published contract is explicit and an internal rename cannot
+ * silently change the wire format a client parses.
+ */
+function publicSteerReceipt(receipt: LoopEngineSteerReceipt): Record<string, unknown> {
+  return {
+    input_id: receipt.inputId,
+    state: receipt.state,
+    ...(receipt.turnId !== undefined ? { turn_id: receipt.turnId } : {}),
+    ...(receipt.detail !== undefined ? { detail: receipt.detail } : {}),
+  };
+}
+
+/**
+ * What is wrong with one `user.steer` payload, or `undefined` when nothing is.
+ *
+ * The three fields are the whole of a steer: an idempotency key, the text to
+ * carry, and an optional turn binding. Anything else a client sends is ignored
+ * rather than acted on, because a steer may not widen what it can do.
+ */
+function steerPayloadProblem(event: Record<string, unknown>): string | undefined {
+  if (typeof event.input_id !== 'string' || event.input_id.length === 0) {
+    return 'requires a non-empty string "input_id"';
+  }
+  if (typeof event.text !== 'string' || event.text.length === 0) {
+    return 'requires a non-empty string "text"';
+  }
+  if (event.expected_turn_id !== undefined && typeof event.expected_turn_id !== 'string') {
+    return 'requires "expected_turn_id" to be a string when it is present';
+  }
+  return undefined;
 }
 
 function internalStatusFilter(status: string | undefined) {

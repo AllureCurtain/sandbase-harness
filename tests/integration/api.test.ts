@@ -676,7 +676,7 @@ describe('Managed Agents API', () => {
         error: {
           type: 'invalid_request',
           code: 'pi_user_event_not_supported',
-          message: 'Pi loop engine supports only user.message, user.interrupt, and user.tool_confirmation events.',
+          message: 'Pi loop engine supports only user.message, user.interrupt, user.steer, and user.tool_confirmation events.',
         },
       };
       const unsupportedEvents = [
@@ -717,6 +717,64 @@ describe('Managed Agents API', () => {
       expect(interrupted.res.status).toBe(200);
       const interruptedHistory = await getJson(`/v1/sessions/${created.body.id}/events`);
       expect(interruptedHistory.body.data.map((event: { type: string }) => event.type)).toEqual(['user.interrupt']);
+    });
+
+    it('accepts user.steer as its own event and answers a refused steer as not accepted', async () => {
+      const created = await postJson('/v1/sessions', { agent: 'agent_echo-agent' });
+      expect(created.res.status).toBe(201);
+      const sessionId = created.body.id as string;
+
+      // This runtime's executor owns no live engine session, so the steer cannot be
+      // delivered. The answer has to say so rather than acknowledging a delivery
+      // the engine never saw.
+      const steered = await postJson(`/v1/sessions/${sessionId}/events`, {
+        events: [{ type: 'user.steer', input_id: 'steer_1', text: 'be brief' }],
+      });
+      expect(steered.res.status).toBe(200);
+      expect(steered.body).toEqual({
+        accepted: false,
+        steer: {
+          input_id: 'steer_1',
+          state: 'rejected',
+          detail: 'no live engine session is accepting steering for this session',
+        },
+      });
+
+      // The event is its own kind in the log — never projected into a user.message
+      // — and it carries the receipt a client reads back.
+      const history = await getJson(`/v1/sessions/${sessionId}/events`);
+      expect(history.res.status).toBe(200);
+      expect(history.body.data.map((event: { type: string }) => event.type)).toEqual(['user.steer']);
+      expect(history.body.data[0].content).toEqual([{ type: 'text', text: 'be brief' }]);
+      expect(history.body.data[0].metadata).toMatchObject({
+        input_id: 'steer_1',
+        steer_state: 'rejected',
+      });
+
+      // A later read-back cannot turn it into a turn: no agent reply was produced
+      // for it, and no `turn_complete` was published.
+      expect(history.body.data.some((event: { type: string }) => event.type === 'agent.message')).toBe(false);
+    });
+
+    it('refuses a steer that is missing its idempotency key or text', async () => {
+      const created = await postJson('/v1/sessions', { agent: 'agent_echo-agent' });
+      const sessionId = created.body.id as string;
+
+      const cases: Array<[Record<string, unknown>, string]> = [
+        [{ type: 'user.steer', text: 'be brief' }, 'input_id'],
+        [{ type: 'user.steer', input_id: 'steer_1', text: '' }, 'text'],
+        [{ type: 'user.steer', input_id: 'steer_1', text: 'x', expected_turn_id: 7 }, 'expected_turn_id'],
+      ];
+      for (const [event, field] of cases) {
+        const result = await postJson(`/v1/sessions/${sessionId}/events`, { events: [event] });
+        expect(result.res.status).toBe(400);
+        expect(result.body.error.message).toContain(field);
+      }
+
+      // Neither refused steer left a durable record: a steer the runtime cannot
+      // account for is refused, not stored for a later turn.
+      const history = await getJson(`/v1/sessions/${sessionId}/events`);
+      expect(history.body.data).toEqual([]);
     });
 
     it('rejects without agent field', async () => {
