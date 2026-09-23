@@ -880,6 +880,40 @@ ALTER TABLE webhooks ADD COLUMN secret_previous_nonce TEXT;
 ALTER TABLE webhooks ADD COLUMN secret_previous_tag TEXT;
 `;
 
+/**
+ * Durable pending-interaction records for the Pi tool gate.
+ *
+ * A table is used rather than event metadata because a decision can have no user
+ * event to hang off: when a platform-owned rule decides, writing that as a
+ * `user.*` event would present an automatic decision as a human click. The event
+ * log also cannot express the one-shot guarantee, while `decision IS NULL` in a
+ * conditional update can.
+ *
+ * `ON DELETE CASCADE` is explicit so physically deleting a session cannot fail
+ * on this foreign key.
+ */
+const M040_PI_TOOL_INTERACTIONS = `
+CREATE TABLE pi_tool_interactions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  pi_request_id TEXT NOT NULL,
+  tool_use_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  original_input TEXT NOT NULL,
+  input_fingerprint TEXT NOT NULL,
+  decision TEXT,
+  decision_source TEXT,
+  decided_input TEXT,
+  deny_message TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX idx_pi_tool_interactions_use ON pi_tool_interactions(session_id, tool_use_id);
+CREATE INDEX idx_pi_tool_interactions_request ON pi_tool_interactions(session_id, pi_request_id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -920,4 +954,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 37, name: '037_scheduled_timezone', sql: M037_SCHEDULED_TIMEZONE },
   { version: 38, name: '038_webhook_signing_secrets', sql: M038_WEBHOOK_SIGNING_SECRETS },
   { version: 39, name: '039_webhook_previous_secret', sql: M039_WEBHOOK_PREVIOUS_SECRET },
+  { version: 40, name: '040_pi_tool_interactions', sql: M040_PI_TOOL_INTERACTIONS },
 ];
