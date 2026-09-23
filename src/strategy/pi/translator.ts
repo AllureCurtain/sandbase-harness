@@ -103,8 +103,21 @@ export class PiTranslator {
       if (typeof event.type !== 'string' || event.type.length === 0) {
         throw this.protocolError('Pi event is missing a string type');
       }
-      await this.consumeEvent(event);
+      await this.handleEvent(event);
     }
+  }
+
+  /**
+   * Translate one already-parsed Pi event.
+   *
+   * Public because the RPC transport demultiplexes stdout itself: responses and
+   * extension UI requests are handled elsewhere, and only genuine agent events
+   * reach the translator. Keeping the print-mode `consume()` on top of this
+   * method means both transports share one translation, so an event cannot be
+   * projected differently depending on how Pi was started.
+   */
+  async handleEvent(event: RawPiEvent): Promise<void> {
+    await this.consumeEvent(event);
   }
 
   /** Flushes cross-chunk text and closes any request left open at EOF. */

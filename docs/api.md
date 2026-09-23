@@ -456,7 +456,7 @@ sandbox is touched:
 | `harness`, `codex`, `claude` | `400` with `loop_engine_not_supported` and the descriptor reason. |
 | any other value or type | `400` with `loop_engine_invalid`. |
 
-The Pi adapter is available but limited: Runs the Pi CLI against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy. An unavailable engine is never silently downgraded to `builtin`.
+The Pi adapter is available but limited: Runs the Pi CLI as a session-owned RPC child against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy. An unavailable engine is never silently downgraded to `builtin`.
 
 Pin a session to an immutable agent version snapshot:
 

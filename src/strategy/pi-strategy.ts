@@ -1,169 +1,341 @@
+/**
+ * Pi loop-engine strategy.
+ *
+ * This is the Harness half of the Pi boundary. It owns one Pi RPC session per
+ * SandBase session:
+ *
+ * ```text
+ * SandBase session -> one Pi child -> many prompts
+ * ```
+ *
+ * There is no global process pool, and that is a policy decision rather than an
+ * optimisation one: a pool would share one stdin channel between sessions, and
+ * stdin is where prompts are written, so pooling would mean sharing one
+ * conversation's channel between unrelated sessions.
+ *
+ * Turn model. `execute()` is called once per user event by the executor. It
+ * resolves the live session — starting one only when there is none — sends the
+ * turn's prompt to it, and waits for the turn outcome. `settled` publishes the
+ * terminal `turn_complete`; `failed` propagates so the Session Manager records a
+ * `session.error` carrying the engine's own reason.
+ *
+ * The child is released in exactly one place that owns it: `disposeSession`,
+ * called by the executor on a terminal session state, so stop, delete, and
+ * close all take the same path and none of them can leave an orphan holding the
+ * session work directory.
+ */
+
 import type { TextBlock } from '@/types/cma-protocol.js';
-import type { AgentDefinition } from '@/types/agent.js';
-import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
-import type { PiLaunchRequest, PiProcessHandle } from './pi-launcher.js';
 import type { Database } from '@/core/db/database.js';
+import type { AgentDefinition } from '@/types/agent.js';
+import type { AgentStrategy, EventLogWriter, StrategyContext } from '@/types/strategy.js';
+import type {
+  LoopEngineEventSink,
+  LoopEngineSession,
+  LoopEngineStartRequest,
+  LoopEngineTurnOutcome,
+} from '@/strategy/loop-engine/adapter.js';
+import { compilePiNativeToolPolicy, type PiNativeToolPlan } from '@/core/session/pi-native-tools.js';
 import {
   getPiSessionState,
   inspectPiSessionFile,
   markPiSessionContinuityFailure,
   recordPiSessionState,
   PiContinuityError,
-  PI_RESUME_REFUSED_MARKER,
 } from './pi/session-continuity.js';
-import { PiCleanupPendingError, PiTimeoutError } from './pi-launcher.js';
-import { PiStderrTail } from './pi/stderr-tail.js';
-import { PiTranslator } from './pi/translator.js';
 import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
-import { compilePiNativeToolPolicy } from '@/core/session/pi-native-tools.js';
 
-export interface PiTurnLauncher {
-  /** Foundation compatibility path; adapter-aware launchers also implement start. */
-  launch(request: PiLaunchRequest): Promise<void>;
-  start?(request: PiLaunchRequest): Promise<PiProcessHandle>;
+/**
+ * The adapter surface the strategy calls.
+ *
+ * Narrowed to `startSession` — the only method the strategy uses — so a test can
+ * drive the whole turn loop with a scripted session and no child process.
+ */
+export interface PiSessionStarter {
+  startSession(request: LoopEngineStartRequest): Promise<LoopEngineSession>;
+}
+
+export interface PiStrategyOptions {
+  /** The adapter that owns the Pi child's protocol and its argv. */
+  adapter: PiSessionStarter;
+  /** Durable continuity state; an embedder without a database passes none. */
+  database?: Database;
 }
 
 /**
- * Pi print-mode strategy. The foundation's opaque launch() fallback remains
- * available for isolated process tests; the real runtime uses start() so this
- * strategy owns validated JSONL translation and canonical event persistence.
+ * Pi strategy over a session-owned RPC child.
+ *
+ * `requiresModel` stays false: Pi owns model transport, so the executor must not
+ * construct an AI SDK model for it.
  */
 export class PiStrategy implements AgentStrategy {
   readonly name = 'pi';
-  /** Pi owns model transport, so the executor must not construct an AI SDK model. */
   readonly requiresModel = false;
-  private readonly database?: Database;
+  /** The one child each SandBase session owns, by session id. */
+  private readonly sessions = new Map<string, LoopEngineSession>();
 
-  constructor(private readonly launcher: PiTurnLauncher, database?: Database) {
-    this.database = database;
-  }
+  constructor(private readonly options: PiStrategyOptions) {}
 
   async *execute(context: StrategyContext) {
     if (!context.sandbox.hostWorkDir) {
       throw new Error('Pi loop engine requires a sandbox with a host-accessible work directory');
     }
     if (!context.userEvent || context.userEvent.type !== 'user.message') {
-      throw new Error('Pi loop engine foundation supports user.message turns only');
+      throw new Error('Pi loop engine supports user.message turns only');
     }
     if (!context.userEvent.content.every((block): block is TextBlock => block.type === 'text')) {
-      throw new Error('Pi loop engine foundation supports text user messages only');
+      throw new Error('Pi loop engine supports text user messages only');
     }
     if (!context.modelConfig) {
       throw new Error('Pi loop engine requires a selected model configuration');
     }
 
-    const selectedModel = context.modelConfig.model;
-    if (!selectedModel) {
-      throw new Error('Pi loop engine requires a selected model id');
-    }
-    const toolPlan = compilePiNativeToolPolicy(requireAgentDefinition(context));
-    const request: PiLaunchRequest = {
-      sessionId: context.session.id,
-      workDir: context.sandbox.hostWorkDir,
-      prompt: context.userEvent.content.map((block) => block.text).join('\n'),
-      systemPrompt: context.systemPrompt,
-      model: context.modelConfig,
-      // The same compiler admission ran, so the flags sent are the ones checked.
-      toolArgs: toolPlan.argv,
-      ...(context.skillDirs?.length ? { skillDirs: context.skillDirs } : {}),
-      ...(thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed)
-        ? { thinkingLevel: thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed) }
-        : {}),
-      ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-    };
+    const workDir = context.sandbox.hostWorkDir;
+    // The same compiler admission ran, so the flags sent are the ones checked.
+    const plan = compilePiNativeToolPolicy(requireAgentDefinition(context));
+    const session = await this.resolveSession(context, plan, workDir);
+    const prompt = context.userEvent.content.map((block) => block.text).join('\n');
 
-    // Keep the foundation behavior for a launcher test double that has not yet
-    // opted into stdout consumption. No canonical event is fabricated here.
-    if (!this.launcher.start) {
-      await this.launcher.launch(request);
-      return;
-    }
-
-    const handle = await this.launcher.start(request);
-    if (!handle.stdout) throw new Error('Pi process did not expose stdout for JSONL adapter');
-    if (!handle.stderr) throw new Error('Pi process did not expose stderr for diagnostics');
-
-    const stderr = new PiStderrTail();
-    const stderrDrain = drainStderr(handle.stderr, stderr);
-    const translator = new PiTranslator({
-      sessionId: context.session.id,
-      model: selectedModel,
-      eventLog: context.eventLog,
-      broadcast: context.broadcast,
-      recordUsage: (sessionId, inputTokens, outputTokens) => {
-        context.eventLog.recordUsage(sessionId, inputTokens, outputTokens);
-      },
-      // Oversized Pi tool results go through the same spill contract as the
-      // built-in strategy. `hostWorkDir` is required above, so the sandbox is
-      // real here and the reported path is one the agent can read back.
-      spillToolOutput: async (output) => {
-        const spill = await spillToolOutput(output, { sessionId: context.session.id, sandbox: context.sandbox });
-        return spill.preview;
-      },
-    });
-
-    let parserFinished = false;
     try {
-      const parsePromise = translator.consume(handle.stdout);
-      const exit = await Promise.all([parsePromise, handle.wait()]).then(([, result]) => result);
-      parserFinished = true;
-      const summary = translator.finish();
-      await stderrDrain;
+      await session.prompt(prompt);
+      const outcome = await this.turnOutcome(session, context.abortSignal);
+      if (outcome.kind === 'failed') throw outcome.error;
 
-      if (!summary.sawSessionHeader) {
-        throw new Error('Pi stdout ended without a session header');
-      }
-      if (exit.code !== 0 || exit.signal) {
-        throw new Error(withStderr(
-          `Pi process exited with code ${exit.code ?? 'unknown'}${exit.signal ? ` (${exit.signal})` : ''}`,
-          stderr.text(),
-        ));
-      }
-      if (summary.lastTurnError) {
-        throw new Error(withStderr(summary.lastTurnError, stderr.text()));
-      }
-
-      if (this.database && handle.sessionFile) {
-        const header = inspectPiSessionFile(handle.sessionFile);
-        if (!header) {
-          throw new PiContinuityError('pi_session_discontinuous', 'Pi completed without writing a session header');
-        }
-        const previous = getPiSessionState(this.database, context.session.id);
-        if (previous && (previous.piSessionId !== header.id || previous.schemaVersion !== header.schemaVersion)) {
-          throw new PiContinuityError('pi_session_discontinuous', 'Pi changed its session identity or schema during the turn');
-        }
-        recordPiSessionState(this.database, context.session.id, handle.sessionFile, header);
-        if (handle.leaseRecovered) {
-          const notice = context.eventLog.append(context.session.id, {
-            type: 'agent.message',
-            content: [{ type: 'text', text: 'Pi continuity notice: recovered a stale session-file lease before this turn.' }],
-          });
-          context.broadcast(notice);
-        }
-      }
+      // Continuity is recorded before the terminal marker, never after: a
+      // `turn_complete` claims the turn is finished, and a turn whose managed
+      // session file does not prove continuity is not a finished turn.
+      this.persistContinuity(session, workDir);
 
       // `turn_complete` is the durable adapter terminal marker. It is appended
-      // before strategy completion and never yielded separately.
+      // after every agent event the turn produced, and never yielded separately
+      // — a yielded durable event would be broadcast a second time.
       const terminal = context.eventLog.append(context.session.id, { type: 'turn_complete' });
       context.broadcast(terminal);
     } catch (error) {
-      if (!parserFinished && error instanceof Error && error.name !== 'AbortError') {
-        await handle.terminate(true).catch(() => {});
-        await handle.wait().catch(() => {});
-      }
-      await stderrDrain.catch(() => {});
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      if (error instanceof PiCleanupPendingError || error instanceof PiTimeoutError || error instanceof PiContinuityError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      if (this.database && handle.sessionFile && stderr.text().includes(PI_RESUME_REFUSED_MARKER)) {
-        const refusal = new PiContinuityError('pi_resume_refused', `Pi refused to resume its managed session: ${stderr.text()}`);
-        markPiSessionContinuityFailure(this.database, context.session.id, handle.sessionFile, refusal.code, refusal.message);
-        throw refusal;
-      }
-      throw new Error(withStderr(message, stderr.text()));
+      throw await this.failTurn(session, error);
     }
+  }
+
+  /**
+   * Close and release the engine session this SandBase session owns.
+   *
+   * One owner for the child does not mean one caller that could forget it:
+   * `close()` is idempotent, so the executor's terminal-state cleanup, a failed
+   * turn, and an explicit stop can all call this without racing each other. A
+   * cleanup failure (for example `pi_cleanup_pending`) is rethrown rather than
+   * swallowed, because the workspace is still held by an unconfirmed child.
+   */
+  async disposeSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    try {
+      await session.close();
+    } finally {
+      this.sessions.delete(sessionId);
+    }
+  }
+
+  /** Test and diagnostic view of the sessions this strategy currently owns. */
+  liveSessionIds(): string[] {
+    return [...this.sessions.keys()];
+  }
+
+  // ------------------------------------------------------------------
+  // Internals
+  // ------------------------------------------------------------------
+
+  /**
+   * Reuse the live session for this SandBase session, or start one.
+   *
+   * A dead session is never reused: its child is gone, its transport is closed,
+   * and a prompt into it would be written to nobody while the runtime reported a
+   * healthy turn. It is also never silently replaced inside a turn — the next
+   * turn starts a fresh child through the launcher, which re-proves continuity
+   * for the same managed session file.
+   */
+  private async resolveSession(
+    context: StrategyContext,
+    plan: PiNativeToolPlan,
+    workDir: string,
+  ): Promise<LoopEngineSession> {
+    const existing = this.liveSession(context.session.id);
+    if (existing) return existing;
+
+    const model = context.modelConfig;
+    if (!model) throw new Error('Pi loop engine requires a selected model configuration');
+    // Resolved again inside the launcher; checked here so a missing id or key
+    // fails before a child is spawned rather than after a doomed launch.
+    if (!model.model?.trim()) throw new Error('Pi loop engine requires a selected model id');
+    if (!model.api_key?.trim()) throw new Error('Pi loop engine requires a resolved model API key');
+
+    const thinkingLevel = thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed);
+    const request: LoopEngineStartRequest = {
+      sessionId: context.session.id,
+      workDir,
+      systemPrompt: context.systemPrompt,
+      model: {
+        provider: model.provider,
+        model: model.model,
+        api_key: model.api_key,
+        ...(model.base_url ? { base_url: model.base_url } : {}),
+      },
+      // The compiled plan travels as Pi's own flags, so nothing here can widen
+      // or re-derive what admission checked.
+      toolPlan: { flags: plan.argv },
+      ...(context.skillDirs?.length ? { skillDirs: context.skillDirs } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      // The child is started once, so only the first turn's signal can reach the
+      // launcher; every later turn's interrupt is delivered by `turnOutcome`.
+      ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+      sink: this.sinkFor(context),
+    };
+
+    const session = await this.options.adapter.startSession(request);
+    this.sessions.set(context.session.id, session);
+    return session;
+  }
+
+  /**
+   * Wait for the turn outcome, stopping the child when the turn is aborted.
+   *
+   * A session-owned child outlives a turn, so an interrupt has to reach the
+   * process and not only the promise this strategy is waiting on: closing the
+   * session is what makes `user.interrupt` a stop, instead of a turn the runtime
+   * walked away from while Pi kept working on it.
+   */
+  private async turnOutcome(
+    session: LoopEngineSession,
+    abortSignal: AbortSignal | undefined,
+  ): Promise<LoopEngineTurnOutcome> {
+    const outcome = session.awaitTurnOutcome();
+    if (!abortSignal) return outcome;
+    if (abortSignal.aborted) return this.abortTurn(session);
+
+    return new Promise<LoopEngineTurnOutcome>((resolvePromise, rejectPromise) => {
+      const onAbort = () => {
+        void this.abortTurn(session).then(resolvePromise, rejectPromise);
+      };
+      abortSignal.addEventListener('abort', onAbort, { once: true });
+      outcome.then(
+        (settled) => {
+          abortSignal.removeEventListener('abort', onAbort);
+          resolvePromise(settled);
+        },
+        (error) => {
+          abortSignal.removeEventListener('abort', onAbort);
+          rejectPromise(error);
+        },
+      );
+    });
+  }
+
+  private async abortTurn(session: LoopEngineSession): Promise<never> {
+    // A cleanup failure takes precedence over the abort: the workspace is held
+    // by a child whose termination was not confirmed, and reporting `cancelled`
+    // there would claim a release that did not happen.
+    await session.interrupt();
+    throw piAbortError();
+  }
+
+  /**
+   * Fail the turn, releasing the child first.
+   *
+   * The child is closed while the ownership handle is still registered, so a
+   * wedged engine cannot be left holding the session work directory. A
+   * cleanup-pending failure takes precedence over the engine error, because the
+   * workspace is unsafe to reuse until the process tree is confirmed gone.
+   */
+  private async failTurn(session: LoopEngineSession, error: unknown): Promise<Error> {
+    let cleanupError: unknown;
+    try {
+      await session.close();
+    } catch (closeError) {
+      cleanupError = closeError;
+    }
+    if (!cleanupError) this.sessions.delete(session.sessionId);
+    if (cleanupError) return asError(cleanupError);
+
+    const failure = asError(error);
+    if (failure.name === 'AbortError') return failure;
+    this.recordContinuityFailure(session, failure);
+    if (failure instanceof PiContinuityError) return failure;
+    return withStderr(failure, session.stderrTail);
+  }
+
+  /**
+   * Record the Pi session's own identity so a later launch can prove it is the
+   * same conversation before continuing it.
+   *
+   * A missing header after a settled turn is a real discontinuity rather than a
+   * detail to skip past, and a changed identity means the durable events would
+   * describe a conversation the child is no longer in.
+   */
+  private persistContinuity(session: LoopEngineSession, workDir: string): void {
+    const database = this.options.database;
+    const sessionFile = session.engineSessionFile;
+    if (!database || !sessionFile) return;
+    const header = inspectPiSessionFile(sessionFile);
+    if (!header) {
+      throw new PiContinuityError('pi_session_discontinuous', 'Pi completed without writing a session header');
+    }
+    const previous = getPiSessionState(database, session.sessionId);
+    if (previous && (previous.piSessionId !== header.id || previous.schemaVersion !== header.schemaVersion)) {
+      throw new PiContinuityError('pi_session_discontinuous', 'Pi changed its session identity or schema during the turn');
+    }
+    // The work directory is not part of the recorded binding: the managed
+    // session file lives in the runtime data directory, so a turn on a
+    // different workspace cannot silently continue a stored conversation
+    // through a path this record would have to police.
+    void workDir;
+    recordPiSessionState(database, session.sessionId, sessionFile, header);
+  }
+
+  /**
+   * Record a continuity failure so a later launch cannot silently fork.
+   *
+   * Only continuity errors are recorded. An ordinary model or tool failure
+   * leaves the stored session perfectly valid, and marking it would refuse a
+   * legitimate resume — turning a transient provider error into permanent
+   * damage. A refusal has to be durable, though, because the next launch reads
+   * this state, and a refusal that lives only in a log is one the operator has
+   * to rediscover.
+   */
+  private recordContinuityFailure(session: LoopEngineSession, error: Error): void {
+    const database = this.options.database;
+    const sessionFile = session.engineSessionFile;
+    if (!database || !sessionFile || !(error instanceof PiContinuityError)) return;
+    markPiSessionContinuityFailure(database, session.sessionId, sessionFile, error.code, error.message);
+  }
+
+  /** Return a live owned session, pruning one whose child already died. */
+  private liveSession(sessionId: string): LoopEngineSession | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+    if (session.alive) return session;
+    this.sessions.delete(sessionId);
+    return undefined;
+  }
+
+  /**
+   * The engine-neutral output surface.
+   *
+   * `spillToolOutput` closes over this turn's sandbox so an oversized Pi tool
+   * result goes through exactly the same overflow contract the builtin strategy
+   * uses, and the path the model is told about is one it can read back.
+   */
+  private sinkFor(context: StrategyContext): LoopEngineEventSink {
+    const sessionId = context.session.id;
+    const eventLog: EventLogWriter = context.eventLog;
+    return {
+      append: (target, event) => eventLog.append(target, event),
+      getLatestSeq: (target) => eventLog.getLatestSeq(target),
+      recordUsage: (target, tokensIn, tokensOut) => eventLog.recordUsage(target, tokensIn, tokensOut),
+      broadcast: (event) => context.broadcast(event),
+      spillToolOutput: async (output) => {
+        const spill = await spillToolOutput(output, { sessionId, sandbox: context.sandbox });
+        return spill.preview;
+      },
+    };
   }
 }
 
@@ -184,7 +356,7 @@ function requireAgentDefinition(context: StrategyContext): AgentDefinition {
   return definition;
 }
 
-function thinkingLevelForSpeed(speed: string | undefined): PiLaunchRequest['thinkingLevel'] {
+function thinkingLevelForSpeed(speed: string | undefined): LoopEngineStartRequest['thinkingLevel'] {
   switch (speed) {
     case 'fast': return 'off';
     case 'extended': return 'high';
@@ -193,10 +365,34 @@ function thinkingLevelForSpeed(speed: string | undefined): PiLaunchRequest['thin
   }
 }
 
-async function drainStderr(stream: AsyncIterable<Uint8Array | string>, tail: PiStderrTail): Promise<void> {
-  for await (const chunk of stream) tail.append(chunk);
+/**
+ * The engine's reason, with its stderr tail attached.
+ *
+ * The tail is diagnostics only — it never carries authority — but without it a
+ * Pi startup or resume failure is reported as a bare exit code, which is the one
+ * case where the operator has nothing to act on.
+ */
+function withStderr(error: Error, tail: string): Error {
+  if (!tail || error.message.includes(tail)) return error;
+  const enriched = new Error(`${error.message}; Pi stderr: ${tail}`);
+  enriched.name = error.name;
+  const code = (error as Error & { code?: unknown }).code;
+  if (typeof code === 'string') (enriched as Error & { code: string }).code = code;
+  return enriched;
 }
 
-function withStderr(message: string, tail: string): string {
-  return tail ? `${message}; Pi stderr: ${tail}` : message;
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/**
+ * An aborted turn, shaped like the launcher's own abort.
+ *
+ * `user.interrupt` is a control-plane event, and the Session Manager decides
+ * between `cancelled` and `failed` from this name, so it is not decoration.
+ */
+function piAbortError(): Error {
+  const error = new Error('Pi RPC turn aborted');
+  error.name = 'AbortError';
+  return error;
 }

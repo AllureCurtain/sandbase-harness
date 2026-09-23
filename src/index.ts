@@ -118,6 +118,15 @@ async function startServer(opts: StartServerOptions) {
       return strategy;
     },
     isLoopEngineAvailable: (provider) => Boolean(loopEngine.strategies[provider]),
+    // Every strategy owns whatever an engine needs released when a session
+    // reaches a terminal state — for Pi, the session-owned RPC child, whose
+    // work-directory lease must not outlive the session. A strategy that owns
+    // nothing has no `disposeSession`, and asking it for one is not an error.
+    disposeStrategySessions: async (sessionId) => {
+      await Promise.all(
+        Object.values(loopEngine.strategies).map((strategy) => strategy?.disposeSession?.(sessionId)),
+      );
+    },
     skills,
     skillsDir,
     memory,

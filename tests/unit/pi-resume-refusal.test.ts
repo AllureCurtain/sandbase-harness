@@ -1,17 +1,65 @@
-import { Readable } from 'node:stream';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
 import { PiStrategy } from '@/strategy/pi-strategy.js';
-import { recordPiSessionState, getPiSessionState } from '@/strategy/pi/session-continuity.js';
+import {
+  PiContinuityError,
+  getPiSessionState,
+  recordPiSessionState,
+} from '@/strategy/pi/session-continuity.js';
+import type { LoopEngineSession, LoopEngineTurnOutcome } from '@/strategy/loop-engine/adapter.js';
+import type { SessionEvent } from '@/types/session.js';
 import type { StrategyContext } from '@/types/strategy.js';
 
 const directories: string[] = [];
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
+
+/**
+ * A child that exited because Pi refused to resume its stored session.
+ *
+ * Pi reports this on stderr and exits immediately, and the session owner turns
+ * it into a continuity failure rather than a bare "stdout ended" — the two call
+ * for opposite responses, so the distinction has to survive into the strategy,
+ * which is what records it durably.
+ */
+class ResumedRefusalSession implements LoopEngineSession {
+  readonly calls: string[] = [];
+  alive = true;
+  phase: 'idle' | 'busy' | 'closed' = 'idle';
+  turnId: string | undefined = 'piturn_1';
+  stderrTail = 'Stored session working directory does not exist';
+  engineSessionFile: string;
+  failureError: Error | undefined;
+
+  constructor(readonly sessionId: string, sessionFile: string) {
+    this.engineSessionFile = sessionFile;
+  }
+
+  async prompt(): Promise<void> {
+    this.calls.push('prompt');
+  }
+
+  async awaitTurnOutcome(): Promise<LoopEngineTurnOutcome> {
+    return {
+      kind: 'failed',
+      error: new PiContinuityError('pi_resume_refused', `Pi refused to resume the stored session: ${this.stderrTail}`),
+    };
+  }
+
+  async interrupt(): Promise<void> {
+    this.alive = false;
+    this.phase = 'closed';
+  }
+
+  async close(): Promise<void> {
+    this.alive = false;
+    this.phase = 'closed';
+  }
+}
 
 describe('Pi resume refusal', () => {
   it('makes a Pi resume refusal visible and records continuity failure state', async () => {
@@ -28,19 +76,11 @@ describe('Pi resume refusal', () => {
     writeFileSync(sessionFile, '{"type":"session","id":"pi-resume","version":1}\n');
     recordPiSessionState(db, sessionId, sessionFile, { id: 'pi-resume', schemaVersion: '1' });
 
+    const session = new ResumedRefusalSession(sessionId, sessionFile);
     const strategy = new PiStrategy({
-      async launch() {},
-      async start() {
-        return {
-          child: {} as any,
-          sessionFile,
-          stdout: Readable.from(['{"type":"session","id":"pi-resume"}\n']),
-          stderr: Readable.from(['Stored session working directory does not exist\n']),
-          wait: async () => ({ code: 1, signal: null }),
-          terminate: async () => {},
-        };
-      },
-    }, db);
+      adapter: { async startSession() { return session; } },
+      database: db,
+    });
     const context = {
       session: {
         id: sessionId, loopEngine: 'pi', agentId: 'agent_pi', agentName: 'pi-agent',
@@ -59,7 +99,7 @@ describe('Pi resume refusal', () => {
       systemPrompt: 'system', messages: [],
       modelConfig: { name: 'fixture', provider: 'openai', model: 'fixture-model', api_key: 'fixture-key' },
       tools: {}, sandbox: { sessionId, hostWorkDir: directory }, eventLog: {
-        append: (_id: string, event: any) => ({ id: 'sevt_1', sessionId, seq: 1, type: event.type, content: event.content, createdAt: new Date() } as any),
+        append: (_id: string, event: { type: string }) => ({ id: 'sevt_1', sessionId, seq: 1, type: event.type, createdAt: new Date() } as SessionEvent),
         getLatestSeq: () => 0,
         recordUsage: () => {},
       }, broadcast: () => {}, config: {},

@@ -2,6 +2,7 @@ import type { Database } from '@/core/db/database.js';
 import { DefaultStrategy } from '@/strategy/default-strategy.js';
 import { PiStrategy } from '@/strategy/pi-strategy.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
+import { PiAdapter } from '@/strategy/pi/pi-adapter.js';
 import type { RuntimeSettings } from '@/core/settings/schema.js';
 import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
@@ -37,7 +38,16 @@ export function bootstrapRuntimeLoopEngine(
       database: options.database,
       ...(timeoutMs ? { timeoutMs } : {}),
     });
-    strategies.pi = new PiStrategy(launcher, options.database);
+    // Pi is not launched per turn any more: the strategy asks this adapter for
+    // one session-owned RPC child, and the adapter is the only place that knows
+    // the child's wire protocol. The per-turn deadline and the per-command
+    // response deadline are the same setting the print-mode launch used as its
+    // process timeout, so a turn that used to time out still does.
+    const adapter = new PiAdapter({
+      launcher,
+      ...(timeoutMs ? { turnTimeoutMs: timeoutMs, requestTimeoutMs: timeoutMs } : {}),
+    });
+    strategies.pi = new PiStrategy({ adapter, database: options.database });
   }
 
   const provider = settings.loop_engine.provider;

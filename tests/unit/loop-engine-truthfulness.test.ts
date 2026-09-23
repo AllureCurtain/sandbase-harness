@@ -61,7 +61,21 @@ describe('loop engine capability truthfulness', () => {
 
     expect(api).toContain(PI_LOOP_ENGINE_REASON);
     expect(piGuide).toContain('not receive Harness `always_ask` approval');
-    expect(piGuide).toContain('Docker/Kubernetes Pi transport, RPC, and a Pi→Harness approval bridge remain');
+    expect(piGuide).toContain('Docker/Kubernetes Pi transport and a Pi→Harness approval bridge remain');
     expect(api).toContain('Pi-native tool events are trajectory records only');
+  });
+
+  it('describes the transport the runtime actually runs', () => {
+    const pi = loopEngineDescriptor('pi');
+    const piGuide = doc('docs/pi-loop-engine.md');
+
+    // The transport changed from a print-mode process per turn to one
+    // session-owned RPC child, so the advertised capability ids have to say so;
+    // a client that branched on `stdout-jsonl` was branching on a mode this
+    // runtime no longer runs.
+    expect(pi?.capabilities).toContain('rpc-jsonl');
+    expect(pi?.capabilities).not.toContain('stdout-jsonl');
+    expect(piGuide).toContain('pi --mode rpc');
+    expect(piGuide).not.toContain('-p --mode json');
   });
 });

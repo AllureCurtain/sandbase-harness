@@ -1,50 +1,59 @@
-# Pi Loop Engine (print/JSON)
+# Pi Loop Engine (RPC)
 
 Set `loop_engine.provider` to `pi` to select the external Pi CLI for **new**
 sessions. The selected provider is persisted on each session: later global
 settings changes only affect sessions created after the change. Existing
 sessions continue to resolve their stored engine.
 
-For one text `user.message` turn, the current foundation launches exactly one
-print-mode child process:
+A session owns exactly one Pi child for its whole life. The first turn starts it
+in RPC mode and every later turn writes to that same child:
 
 ```text
-pi -p --mode json --model sandbase/<selected-model> --session <dataDir>/pi-sessions/<safe-session-id>.jsonl
+pi --mode rpc --model sandbase/<selected-model> --session <dataDir>/pi-sessions/<safe-session-id>.jsonl
 ```
 
-The selected agent model is resolved from the active model configuration for
-that turn. Its API key and base URL placeholders are resolved from the host
-Settings environment before Pi starts; only the dedicated API-key alias enters
-the restricted child environment. The private session file is pre-created
-before its path is passed to Pi. The already-composed system/skills prompt is
-written to `AGENTS.md` in the sandbox work directory before launch.
+There is no prompt on stdin at launch and stdin is never closed, because prompts
+arrive as RPC commands for as long as the session lives. Prompts are never added
+to command arguments. Each turn is one `prompt` command; the child's
+`agent_settled` frame is what settles it. The owner serializes every frame it
+writes, so two turns cannot interleave bytes on the child's stdin, and a second
+prompt while a turn is in flight is refused rather than queued.
+
+The selected agent model is resolved from the active model configuration. Its
+API key and base URL placeholders are resolved from the host Settings
+environment before Pi starts; only the dedicated API-key alias enters the
+restricted child environment. The private session file is pre-created before its
+path is passed to Pi. The already-composed system/skills prompt is written to
+`AGENTS.md` in the sandbox work directory before launch.
 
 The process runs with the session sandbox's host work directory as its current
 working directory. Therefore the Pi foundation currently requires the **local**
 sandbox provider; Docker, Kubernetes, and self-hosted sandbox pairings are
-rejected by Settings. The user prompt is written on stdin and stdin is then
-closed; it is never added to command arguments. Explicit agent skills are passed
-as one managed `--skill` flag per directory. Pi's `models.json` is written under
-the session's private Pi config directory with restrictive file permissions and
-contains only the `$SANDBASE_PI_API_KEY` credential reference.
+rejected by Settings. Explicit agent skills are passed as one managed `--skill`
+flag per directory. Pi's `models.json` is written under the session's private Pi
+config directory with restrictive file permissions and contains only the
+`$SANDBASE_PI_API_KEY` credential reference.
 
-Pi stdout is consumed as bounded LF-delimited JSONL without `readline`. The
-adapter validates documented event shapes, strips structured tool markup across
-chunk boundaries, and appends final text, thinking, native tool use/result,
-model spans, and terminal events to the same SQLite EventLogger used by the
-builtin engine. Every durable event is appended before it is broadcast. Text
-deltas have `seq: 0` and are live-only; the final `agent.message` is the replay
-authority. Each Pi model request records usage exactly once. Unknown events are
-inert, malformed authority-bearing events fail the turn, and stderr is limited
-to a redacted 64 KiB diagnostic tail.
+Pi stdout is consumed as bounded LF-delimited JSONL without `readline`, on one
+reader that separates command responses and extension UI requests from agent
+events. The adapter validates documented event shapes, strips structured tool
+markup across chunk boundaries, and appends final text, thinking, native tool
+use/result, model spans, and terminal events to the same SQLite EventLogger used
+by the builtin engine. Every durable event is appended before it is broadcast.
+Text deltas have `seq: 0` and are live-only; the final `agent.message` is the
+replay authority. Each Pi model request records usage exactly once. Unknown
+events are inert, malformed authority-bearing events fail the turn, and stderr
+is limited to a redacted 64 KiB diagnostic tail. A blocking extension dialog is
+failed rather than answered: this runtime ships no extension and relays no
+question to a client, so it has no decision to give.
 
-Pi children receive the session abort signal. An interrupt, stop, delete, or
-runtime shutdown waits for the launched Pi process tree to exit before the
-session work directory can be released; on POSIX the child runs in its own
-process group, and on Windows the session waits for `taskkill` to finish
-terminating the process tree. If tree ownership cannot be confirmed before the
-cleanup deadline, the session becomes `cleanup_pending` and the workspace is
-retained. Timeouts become `timed_out`; Pi cancellation becomes `cancelled`.
+Pi children receive the session abort signal. Interrupt, stop, delete, and
+runtime shutdown all close the session-owned child before the session work
+directory can be released; on POSIX the child runs in its own process group, and
+on Windows the session waits for `taskkill` to finish terminating the process
+tree. If tree ownership cannot be confirmed before the cleanup deadline, the
+session becomes `cleanup_pending` and the workspace is retained. A turn deadline
+that passes cancels the child (`timed_out`); Pi cancellation becomes `cancelled`.
 
 Pi must be installed and discoverable as `pi`; the Settings test reports a
 missing CLI and a turn fails explicitly if it cannot be launched. On Windows,
@@ -60,7 +69,7 @@ from stderr is persisted as `pi_resume_refused` and remains visible.
 
 ## Current scope and boundaries
 
-The current print-mode adapter produces durable CMA events and visible Pi-native
+The current RPC adapter produces durable CMA events and visible Pi-native
 tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
 not receive Harness `always_ask` approval, local file path confinement, or a
 fake Allow/Deny card. A declared policy is compiled into Pi's own vocabulary
@@ -77,7 +86,7 @@ instead of refused, because nothing is expected to run through it and Pi has no
 MCP transport to enforce: that is a correction of the earlier blanket refusal of
 any `enabled: false` entry, and it makes no tool available. Continuity is guarded
 by the managed lease and SQLite header state; a failed proof remains visible and
-cannot silently fork history. Docker/Kubernetes Pi transport, RPC, and a Pi→Harness approval bridge remain
+cannot silently fork history. Docker/Kubernetes Pi transport and a Pi→Harness approval bridge remain
 excluded. It also adds no OpenAI API surface.
 
 Pi recognizes `models.json` provider settings and resolves `$ENV_VAR` values

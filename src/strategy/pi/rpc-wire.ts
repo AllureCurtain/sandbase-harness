@@ -7,9 +7,9 @@
  * child-process, filesystem, or SDK dependency, so both the transport and the
  * policy compiler can import it without a cycle.
  *
- * It carries only what its readers use. The documented command list, the gate
- * payload, the resume binding and the caller-argument flag list arrive with the
- * behaviours that read them, so no constant here is one nothing depends on.
+ * It carries only what its readers use. The gate payload, the resume binding and
+ * the caller-argument flag list arrive with the behaviours that read them, so no
+ * constant here is one nothing depends on.
  */
 
 /** LF is the only record delimiter Pi accepts in RPC mode. */
@@ -54,3 +54,34 @@ export const PI_RPC_TIMEOUT_CODE = 'pi_rpc_timeout';
 export const PI_RPC_OUTCOME_UNKNOWN_CODE = 'pi_rpc_outcome_unknown';
 export const PI_RPC_CLOSED_CODE = 'pi_rpc_closed';
 export const PI_RPC_COMMAND_REJECTED_CODE = 'pi_rpc_command_rejected';
+
+/**
+ * The session owner's child is gone: its stdout ended or its reader failed.
+ *
+ * Distinct from `PI_RPC_CLOSED_CODE`, which the transport raises for a write it
+ * could not place. A caller branching on retry disposition needs to tell "the
+ * command never left this process" from "the engine that was serving this
+ * session no longer exists".
+ */
+export const PI_RPC_SESSION_CLOSED_CODE = 'pi_rpc_session_closed';
+
+/**
+ * Pi blocked on an extension dialog this runtime does not answer.
+ *
+ * Nothing in this runtime ships or relays an extension dialog, so the only two
+ * honest readings of an arriving one are "we cannot answer it" or "we invented
+ * an answer". The turn fails with this code instead.
+ */
+export const PI_RPC_DIALOG_UNSUPPORTED_CODE = 'pi_rpc_dialog_unsupported';
+
+/**
+ * The commands this runtime writes to a Pi RPC child.
+ *
+ * The session owner types its outbound commands as this union, so a command
+ * name that Pi does not document fails at compile time instead of being written
+ * to a child that would answer it with a parse failure. Both entries are
+ * documented RPC commands: `prompt` starts a turn, `abort` cancels one.
+ */
+export const PI_RPC_COMMANDS = ['prompt', 'abort'] as const;
+
+export type PiRpcCommand = (typeof PI_RPC_COMMANDS)[number];

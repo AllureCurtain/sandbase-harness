@@ -25,6 +25,16 @@ export interface AgentStrategy {
    * Yields SessionEvent objects for real-time broadcasting.
    */
   execute(context: StrategyContext): AsyncIterable<SessionEvent>;
+
+  /**
+   * Release whatever this strategy owns for one session.
+   *
+   * Optional because an in-process strategy owns nothing per session. A strategy
+   * that drives a session-owned child process implements it, so reaching a
+   * terminal state actually stops the engine instead of leaving it running with
+   * the session's work directory held open.
+   */
+  disposeSession?(sessionId: string): Promise<void>;
 }
 
 // ============================================================

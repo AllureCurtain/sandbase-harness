@@ -35,6 +35,15 @@ export interface RuntimeSessionServicesOptions {
   loopEngine?: SessionLoopEngine;
   /** Resolve the strategy matching a persisted session engine. */
   resolveStrategy?: (loopEngine: SessionLoopEngine) => AgentStrategy;
+  /**
+   * Release whatever a strategy owns for a session — for Pi, its RPC child —
+   * when the session reaches a terminal state.
+   *
+   * Supplied by the host that assembled the strategies, because only it knows
+   * which engines are registered. Without it a stopped session's child would
+   * keep running against a work directory the runtime has released.
+   */
+  disposeStrategySessions?: (sessionId: string) => Promise<void> | void;
   /** Engines this process can actually dispatch for new sessions. */
   isLoopEngineAvailable?: (loopEngine: SessionLoopEngine) => boolean;
   skills: Skill[];
@@ -96,6 +105,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     resolveAgent: (agentId) => loadAgentDefinitionById(options.db, agentId),
     strategy: options.strategy,
     resolveStrategy: options.resolveStrategy,
+    disposeStrategySessions: options.disposeStrategySessions,
     eventLogger,
     compactor: new ContextCompactor(),
     skills: options.skills,
