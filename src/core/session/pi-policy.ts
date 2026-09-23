@@ -53,7 +53,7 @@ export function assertPiEnvironmentCanExecute(sandboxProvider: string | undefine
 /** Stable public error code for user events Pi print mode cannot execute. */
 export const PI_USER_EVENT_UNSUPPORTED_CODE = 'pi_user_event_not_supported';
 export const PI_USER_EVENT_UNSUPPORTED_MESSAGE =
-  'Pi loop engine supports only user.message, user.interrupt, and user.tool_confirmation events.';
+  'Pi loop engine supports only user.message, user.interrupt, user.steer, and user.tool_confirmation events.';
 
 export class PiUserEventUnsupportedError extends Error {
   readonly code = PI_USER_EVENT_UNSUPPORTED_CODE;
@@ -80,13 +80,15 @@ export class PiMessageContentUnsupportedError extends Error {
 
 /**
  * Pi RPC turns accept text messages. `user.interrupt` remains a SessionManager
- * control-plane event, and `user.tool_confirmation` settles the gate the Pi
- * session raised, so both are admitted here because both have a real transport
- * in the adapter.
+ * control-plane event, `user.tool_confirmation` settles the gate the Pi session
+ * raised, and `user.steer` is written to the live session's own input channel, so
+ * all three are admitted here because all three have a real transport in the
+ * adapter.
  */
 export function assertPiUserEventCanExecute(event: UserEvent): void {
   if (event.type === 'user.interrupt') return;
   if (event.type === 'user.tool_confirmation') return;
+  if (event.type === 'user.steer') return;
   if (event.type === 'user.message') {
     if (Array.isArray(event.content) && event.content.every((block) => block.type === 'text')) return;
     throw new PiMessageContentUnsupportedError();

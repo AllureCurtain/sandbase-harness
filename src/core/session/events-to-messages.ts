@@ -264,6 +264,12 @@ export function eventsToMessages(
       }
 
       case 'user.interrupt':
+      // A steer is not re-projected into the model context. It was written to the
+      // live engine session's own input channel while its turn was running, so the
+      // child has already read it; projecting it here as well would deliver the
+      // same instruction twice — and would do it as an ordinary user turn, which is
+      // exactly what `user.steer` is not.
+      case 'user.steer':
       case 'user.tool_confirmation':
       case 'session.status_idle':
       case 'session.status_running':

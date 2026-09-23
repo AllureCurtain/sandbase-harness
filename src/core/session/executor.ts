@@ -41,6 +41,11 @@ import {
   assertPiEnvironmentCanExecute,
   assertPiUserEventCanExecute,
 } from './pi-policy.js';
+import {
+  hasSteering,
+  type LoopEngineSteerInput,
+  type LoopEngineSteerReceipt,
+} from '@/strategy/loop-engine/adapter.js';
 import type { WebFetchOverrides } from '@/core/web/web-fetch.js';
 
 export interface ExecutorDeps {
@@ -162,7 +167,18 @@ export class DefaultSessionExecutor implements SessionExecutor {
     options?: ExecuteOptions,
   ): AsyncIterable<SessionEvent> {
     const { agents, modelRegistry, eventLogger } = this.deps;
-    const strategy = this.deps.resolveStrategy?.(session.loopEngine ?? 'builtin') ?? this.deps.strategy;
+    const strategy = this.strategyFor(session);
+
+    // A steer is not a turn, so it must not be executed as one. `execute()` is
+    // serialized per session, which means a steer routed through it would apply
+    // only after the turn it was meant to influence had ended — the runtime would
+    // then have reported a delivery that changed nothing. The Session Manager
+    // delivers steers through `steer()` instead; this guard covers a direct
+    // executor caller, which has no receipt channel and so is refused rather than
+    // silently dropped.
+    if (event.type === 'user.steer') {
+      throw new Error('user.steer is delivered through the steering side channel, not as a turn');
+    }
 
     // 1. Load agent definition
     const agent = session.agentDefinition
@@ -353,8 +369,42 @@ export class DefaultSessionExecutor implements SessionExecutor {
     await this.toolResolver.cleanupSession(sessionId);
   }
 
+  /**
+   * Deliver one `user.steer` to the live engine session.
+   *
+   * Deliberately not a turn, and deliberately not queued: the point of a steer is
+   * to reach the turn that is running now, so it takes the same side channel the
+   * strategy uses for its own live session. Returns `undefined` when no strategy
+   * owns steering for this session — the caller reports that as a refusal, never
+   * as a delivery or a buffered later turn.
+   */
+  async steer(
+    session: Session,
+    event: Extract<UserEvent, { type: 'user.steer' }>,
+  ): Promise<LoopEngineSteerReceipt | undefined> {
+    const strategy = this.strategyFor(session);
+    if (!hasSteering(strategy)) return undefined;
+    const input: LoopEngineSteerInput = {
+      inputId: event.input_id,
+      text: event.text,
+      ...(event.expected_turn_id !== undefined ? { expectedTurnId: event.expected_turn_id } : {}),
+    };
+    return strategy.steerSession(session.id, input);
+  }
+
   /** MCP connection status for a session (for /v1/x/mcp/status). */
   getMcpStatus(sessionId: string): McpServerStatus[] {
     return this.toolResolver.getMcpStatus(sessionId);
+  }
+
+  /**
+   * The strategy that owns the engine frozen on this session.
+   *
+   * Resolved in one place so a turn and a steer cannot reach different engines
+   * for the same session — a steer delivered to the default strategy while the
+   * turn ran on another engine would be a delivery to nobody.
+   */
+  private strategyFor(session: Session): AgentStrategy {
+    return this.deps.resolveStrategy?.(session.loopEngine ?? 'builtin') ?? this.deps.strategy;
   }
 }

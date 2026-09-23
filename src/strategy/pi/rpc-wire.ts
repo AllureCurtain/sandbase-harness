@@ -149,11 +149,12 @@ export const PI_GATE_ENV = {
  * The session owner types its outbound commands as this union, so a command
  * name that Pi does not document fails at compile time instead of being written
  * to a child that would answer it with a parse failure. `prompt` starts a turn,
- * `abort` cancels one, and `get_commands` is how the runtime proves the managed
- * gate extension loaded. A gate decision travels as an `extension_ui_response`,
- * which answers a Pi-issued request rather than naming a command, so it is
- * written by the transport directly and is not a member here.
+ * `steer` writes an instruction into the turn already in flight, `abort` cancels
+ * one, and `get_commands` is how the runtime proves the managed gate extension
+ * loaded. A gate decision travels as an `extension_ui_response`, which answers a
+ * Pi-issued request rather than naming a command, so it is written by the
+ * transport directly and is not a member here.
  */
-export const PI_RPC_COMMANDS = ['prompt', 'abort', 'get_commands'] as const;
+export const PI_RPC_COMMANDS = ['prompt', 'steer', 'abort', 'get_commands'] as const;
 
 export type PiRpcCommand = (typeof PI_RPC_COMMANDS)[number];

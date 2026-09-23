@@ -17,16 +17,17 @@
 
 /**
  * All possible CMA event types.
- * 6 user (incl. `user.define_outcome`) + 8 agent + 5 streaming + 7 session + 5 span + 1 terminal = 32 total
+ * 7 user (incl. `user.define_outcome` and `user.steer`) + 8 agent + 5 streaming + 7 session + 5 span + 1 terminal = 33 total
  */
 export type CMAEventType =
-  // User events (4)
+  // User events (7)
   | 'system.message'
   | 'user.message'
   | 'user.interrupt'
   | 'user.tool_confirmation'
   | 'user.custom_tool_result'
   | 'user.define_outcome'
+  | 'user.steer'
   // Agent events (8)
   | 'agent.message'
   | 'agent.thinking'
@@ -195,12 +196,34 @@ export interface UserDefineOutcomeEvent extends EventBase {
   max_iterations: number;
 }
 
+/**
+ * A mid-turn steering instruction for an engine that owns a live input channel.
+ *
+ * Deliberately not a `user.message`: a message is queued on the session's
+ * serialized execution chain and starts a turn, whereas a steer has to reach the
+ * turn that is *already running*. Keeping the two apart is what lets the runtime
+ * refuse a steer that arrives with nothing to steer instead of buffering it for
+ * a later turn the caller never aimed it at.
+ *
+ * `input_id` is the idempotency key. Repeating it with the same `text` is a
+ * duplicate the engine is not told twice; repeating it with different text is a
+ * conflict and is refused rather than applied.
+ */
+export interface UserSteerEvent extends EventBase {
+  type: 'user.steer';
+  input_id: string;
+  text: string;
+  /** When present, the steer is refused unless it names the active turn. */
+  expected_turn_id?: string;
+}
+
 export type UserEvent =
   | UserMessageEvent
   | UserInterruptEvent
   | UserToolConfirmationEvent
   | UserCustomToolResultEvent
-  | UserDefineOutcomeEvent;
+  | UserDefineOutcomeEvent
+  | UserSteerEvent;
 
 // ============================================================
 // Agent Events (emitted during execution)

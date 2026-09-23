@@ -266,6 +266,22 @@ export interface StreamedEvent {
   message_id?: string;
 }
 
+/**
+ * What the engine did with one `user.steer`.
+ *
+ * `delivered` — the engine accepted the write.
+ * `duplicate` — this `input_id` was already delivered with the same text.
+ * `conflict` — this `input_id` was already used with different text.
+ * `rejected` — the steer never reached a live engine session, and resending is safe.
+ * `outcome_unknown` — the write may or may not have arrived; never replay it.
+ */
+export interface SteerReceipt {
+  input_id: string;
+  state: 'delivered' | 'duplicate' | 'conflict' | 'rejected' | 'outcome_unknown';
+  turn_id?: string;
+  detail?: string;
+}
+
 export class ManagedAgentsClient {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
@@ -534,7 +550,13 @@ class SessionsResource {
     custom_tool_use_id?: string;
     result?: 'allow' | 'deny';
     deny_message?: string;
-  }): Promise<{ accepted: boolean }> {
+    /** `user.steer` only. Idempotency key; replaying it must not re-apply. */
+    input_id?: string;
+    /** `user.steer` only. */
+    text?: string;
+    /** `user.steer` only. Refuses the steer unless it names the active turn. */
+    expected_turn_id?: string;
+  }): Promise<{ accepted: boolean; steer?: SteerReceipt }> {
     return this.client.request('POST', `/v1/sessions/${encodeURIComponent(id)}/events`, { events: [event] });
   }
 
@@ -573,6 +595,27 @@ class SessionsResource {
 
   interrupt(id: string): Promise<{ accepted: boolean }> {
     return this.sendEvent(id, { type: 'user.interrupt' });
+  }
+
+  /**
+   * Steer a live engine session without starting a new turn.
+   *
+   * `inputId` is an idempotency key: repeating it with the same `text` is
+   * answered as a `duplicate` rather than applied twice, and repeating it with
+   * different text is refused as a `conflict`. An `outcome_unknown` receipt must
+   * never be retried — the write may already have reached the engine.
+   */
+  steer(id: string, input: {
+    inputId: string;
+    text: string;
+    expectedTurnId?: string;
+  }): Promise<{ accepted: boolean; steer?: SteerReceipt }> {
+    return this.sendEvent(id, {
+      type: 'user.steer',
+      input_id: input.inputId,
+      text: input.text,
+      ...(input.expectedTurnId ? { expected_turn_id: input.expectedTurnId } : {}),
+    });
   }
 
   approveTool(id: string, toolUseId: string): Promise<{ accepted: boolean }> {

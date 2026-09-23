@@ -9,7 +9,12 @@ import {
   getPiSessionState,
   recordPiSessionState,
 } from '@/strategy/pi/session-continuity.js';
-import type { LoopEngineSession, LoopEngineTurnOutcome } from '@/strategy/loop-engine/adapter.js';
+import type {
+  LoopEngineSession,
+  LoopEngineSteerInput,
+  LoopEngineSteerReceipt,
+  LoopEngineTurnOutcome,
+} from '@/strategy/loop-engine/adapter.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { StrategyContext } from '@/types/strategy.js';
 
@@ -52,6 +57,19 @@ class ResumedRefusalSession implements LoopEngineSession {
 
   async respondToInteraction(): Promise<boolean> {
     return false;
+  }
+
+  /** No live turn accepts steering in this scenario; the session reports that. */
+  async steer(input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt> {
+    return { inputId: input.inputId, state: 'rejected', detail: 'no turn is accepting steering' };
+  }
+
+  closeSteerAdmission(): void {
+    this.calls.push('closeSteerAdmission');
+  }
+
+  async settleSteerReceipts(): Promise<void> {
+    this.calls.push('settleSteerReceipts');
   }
 
   async interrupt(): Promise<void> {

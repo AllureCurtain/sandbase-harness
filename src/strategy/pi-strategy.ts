@@ -40,6 +40,9 @@ import type {
   LoopEngineEventSink,
   LoopEngineSession,
   LoopEngineStartRequest,
+  LoopEngineSteerInput,
+  LoopEngineSteerReceipt,
+  LoopEngineSteering,
   LoopEngineTurnOutcome,
 } from '@/strategy/loop-engine/adapter.js';
 import { compilePiNativeToolPolicy, type PiNativeToolPlan } from '@/core/session/pi-native-tools.js';
@@ -92,7 +95,7 @@ export interface PiStrategyOptions {
  * `requiresModel` stays false: Pi owns model transport, so the executor must not
  * construct an AI SDK model for it.
  */
-export class PiStrategy implements AgentStrategy {
+export class PiStrategy implements AgentStrategy, LoopEngineSteering {
   readonly name = 'pi';
   readonly requiresModel = false;
   /** The one child each SandBase session owns, by session id. */
@@ -161,6 +164,13 @@ export class PiStrategy implements AgentStrategy {
       // session file does not prove continuity is not a finished turn.
       this.persistContinuity(session, workDir);
 
+      // Order matters: refuse new steers, then let the ones already accepted
+      // finish settling, and only then publish the terminal marker. A client that
+      // sees `turn_complete` must never afterwards watch a steer land in the turn
+      // it just saw finish.
+      session.closeSteerAdmission();
+      await session.settleSteerReceipts();
+
       // `turn_complete` is the durable adapter terminal marker. It is appended
       // after every agent event the turn produced, and never yielded separately
       // — a yielded durable event would be broadcast a second time.
@@ -169,6 +179,22 @@ export class PiStrategy implements AgentStrategy {
     } catch (error) {
       throw await this.failTurn(session, error);
     }
+  }
+
+  /**
+   * Deliver one steer to the live session this strategy already owns.
+   *
+   * `undefined` when there is no live session for the id: the request never
+   * reached an engine, so the caller reports a refusal rather than a delivery,
+   * and nothing is buffered for a later turn — the turn the caller aimed at is
+   * the only one the instruction means anything to. The session's own admission
+   * and ledger decide everything else, including a steer for a turn that has
+   * already closed admission.
+   */
+  async steerSession(sessionId: string, input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt | undefined> {
+    const session = this.liveSession(sessionId);
+    if (!session) return undefined;
+    return session.steer(input);
   }
 
   /**

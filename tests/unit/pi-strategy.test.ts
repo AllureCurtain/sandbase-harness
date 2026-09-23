@@ -21,6 +21,8 @@ import { getPiSessionState } from '@/strategy/pi/session-continuity.js';
 import type {
   LoopEngineSession,
   LoopEngineStartRequest,
+  LoopEngineSteerInput,
+  LoopEngineSteerReceipt,
   LoopEngineTurnOutcome,
 } from '@/strategy/loop-engine/adapter.js';
 import type { AgentDefinition } from '@/types/agent.js';
@@ -66,6 +68,15 @@ class ScriptedSession implements LoopEngineSession {
   failureError: Error | undefined;
   /** Set to make `close()` reject, as a retained workspace does. */
   closeError: Error | undefined;
+  /** Steers offered to this session, in order. */
+  readonly steers: LoopEngineSteerInput[] = [];
+  /** What `steer` answers. */
+  steerReceipt: LoopEngineSteerReceipt = { inputId: 'unset', state: 'delivered' };
+  /**
+   * Run the moment steer receipts settle, so a test can observe the log as it was
+   * before `turn_complete` — the ordering this session participates in.
+   */
+  onSettleSteerReceipts: (() => void) | undefined;
 
   constructor(readonly sessionId: string) {}
 
@@ -73,6 +84,21 @@ class ScriptedSession implements LoopEngineSession {
     this.calls.push('prompt');
     this.promptTexts.push(text);
     this.phase = 'busy';
+  }
+
+  async steer(input: LoopEngineSteerInput): Promise<LoopEngineSteerReceipt> {
+    this.calls.push('steer');
+    this.steers.push(input);
+    return { ...this.steerReceipt, inputId: input.inputId };
+  }
+
+  closeSteerAdmission(): void {
+    this.calls.push('closeSteerAdmission');
+  }
+
+  async settleSteerReceipts(): Promise<void> {
+    this.calls.push('settleSteerReceipts');
+    this.onSettleSteerReceipts?.();
   }
 
   async respondToInteraction(reference: string, response: unknown): Promise<boolean> {
@@ -248,11 +274,52 @@ describe('PiStrategy turn loop over a session-owned child', () => {
 
     // A yielded durable event would be broadcast a second time by the executor.
     expect(yielded).toEqual([]);
-    expect(session.calls).toEqual(['prompt', 'awaitTurnOutcome']);
+    expect(session.calls).toEqual([
+      'prompt',
+      'awaitTurnOutcome',
+      'closeSteerAdmission',
+      'settleSteerReceipts',
+    ]);
     expect(events.map((event) => event.type)).toEqual(['turn_complete']);
     // Appended first, then broadcast: a subscriber never sees an event the log
     // does not already hold.
     expect(broadcasts.map((event) => event.id)).toEqual(events.map((event) => event.id));
+  });
+
+  it('closes steer admission and settles its receipts before turn_complete', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    const strategy = strategyFor([session], []);
+    const events: SessionEvent[] = [];
+    // A turn is not finished while it still owes an answer to a steer, so the log
+    // is observed at the exact moment receipts settle: nothing may be published
+    // before them, and a client that reads `turn_complete` must never afterwards
+    // watch a steer land in the turn it just saw finish.
+    let publishedAtSettle = -1;
+    session.onSettleSteerReceipts = () => { publishedAtSettle = events.length; };
+    const closeIndex = () => session.calls.indexOf('closeSteerAdmission');
+    const settleIndex = () => session.calls.indexOf('settleSteerReceipts');
+
+    await run(strategy, contextFor(events));
+
+    expect(publishedAtSettle).toBe(0);
+    expect(closeIndex()).toBeLessThan(settleIndex());
+    expect(events.map((event) => event.type)).toEqual(['turn_complete']);
+  });
+
+  it('delivers a steer on the side channel and reports a missing session as absent', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    session.steerReceipt = { inputId: 'steer_1', state: 'delivered', turnId: 'piturn_1' };
+    const strategy = strategyFor([session], []);
+
+    // No live session: `undefined` means the request never reached an engine, so
+    // the caller reports a refusal rather than a delivery.
+    await expect(strategy.steerSession('sess_pi_turn', { inputId: 'steer_1', text: 'stop' }))
+      .resolves.toBeUndefined();
+
+    await run(strategy, contextFor([]));
+    await expect(strategy.steerSession('sess_pi_turn', { inputId: 'steer_1', text: 'stop' }))
+      .resolves.toEqual({ inputId: 'steer_1', state: 'delivered', turnId: 'piturn_1' });
+    expect(session.steers).toEqual([{ inputId: 'steer_1', text: 'stop' }]);
   });
 
   it('propagates a failed turn with the engine reason and releases the child', async () => {

@@ -124,20 +124,25 @@
     "title": "Append raw event",
     "method": "POST",
     "path": "/v1/sessions/{session_id}/events",
-    "summary": "Append one or more user.* events to a session log. This is lower-level than the message convenience endpoint.",
+    "summary": "Append one or more user.* events to a session log. This is lower-level than the message convenience endpoint. A user.steer event is delivered to the turn already running and answered with a receipt.",
     "parameters": [
       {
         "name": "events",
         "type": "array",
         "required": true,
-        "description": "Array of user.* events. Each event must be an object with a non-empty string type."
+        "description": "Array of user.* events. Each event must be an object with a non-empty string type. A user.steer carries input_id (idempotency key), text, and an optional expected_turn_id."
       }
     ],
     "response": [
       {
         "name": "accepted",
         "type": "boolean",
-        "description": "True when the event batch was accepted."
+        "description": "True when the event batch was accepted. False for a user.steer whose receipt state is rejected or conflict."
+      },
+      {
+        "name": "steer",
+        "type": "object",
+        "description": "Present for a user.steer: input_id, state (delivered | duplicate | conflict | rejected | outcome_unknown), and turn_id or detail when available. outcome_unknown must never be replayed."
       }
     ]
   },

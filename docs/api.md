@@ -644,6 +644,74 @@ Session event records may include optional execution metadata when available:
 Clients should treat absent fields as unknown and preserve the event's existing
 append-only ordering and SSE resume semantics.
 
+### Steering a live turn
+
+A `user.steer` event carries a mid-turn instruction to the engine session that is
+already running the turn, instead of waiting for it or starting another one:
+
+```json
+{
+  "events": [
+    {
+      "type": "user.steer",
+      "input_id": "steer_1",
+      "text": "Prefer the smaller change.",
+      "expected_turn_id": "piturn_1"
+    }
+  ]
+}
+```
+
+It is its own event and never becomes a `user.message`. A message is queued on
+the session's serialized execution chain and starts a turn, whereas this
+instruction is written to the running turn's own input channel — a steer routed
+through the chain would be applied only after the turn it was meant to influence
+had ended. Because there is nothing to steer without a turn, a steer is refused
+rather than buffered for a later one.
+
+The response reports what the engine actually did with it:
+
+```json
+{
+  "accepted": true,
+  "steer": { "input_id": "steer_1", "state": "delivered", "turn_id": "piturn_1" }
+}
+```
+
+| `state` | Meaning |
+| --- | --- |
+| `delivered` | The engine accepted the write. |
+| `duplicate` | This `input_id` was already delivered with the same text; nothing was sent a second time. |
+| `conflict` | This `input_id` was already used with different text. The steer is refused, never merged into the earlier one. |
+| `rejected` | No live engine session was accepting steering: there is no turn in flight, the turn has already closed steer admission, the child is gone, or `expected_turn_id` did not name the active turn. Resending is safe. |
+| `outcome_unknown` | The write was not acknowledged. It must never be replayed, because the engine may already have acted on it. |
+
+`accepted` is `false` for `rejected` and `conflict` only. An `outcome_unknown`
+steer is reported as accepted, because telling a caller it failed would invite
+exactly the replay the contract forbids.
+
+The rest of the steer contract:
+
+- `input_id` is an idempotency key, and a repeat with the same text is answered
+  as the same receipt rather than applied twice.
+- One steer may be in flight per turn; a second steer while one is pending is
+  refused with a receipt that says so, not queued behind it.
+- Steer admission closes before the turn's completion marker is published, and
+  receipts already accepted settle before it, so a client that has seen a turn
+  finish never afterwards watches a steer land in it.
+- A steer carries text and nothing else. It cannot start work, expose a tool, or
+  change the turn's tool policy, so it is never able to run a tool.
+- The event is persisted with its receipt in `metadata` (`input_id`,
+  `steer_state`, and `turn_id` / `detail` when present), so a client reading the
+  log back can tell a delivered steer from one the engine never heard.
+
+The event is answered only by an engine that owns a live input channel for the
+session. The `pi` engine does; the builtin loop is turn-serialized, so a steer
+there is refused the same way as one for a session with no turn in flight.
+
+The TypeScript SDK exposes the same call as
+`sessions.steer(id, { inputId, text, expectedTurnId? })`.
+
 ### session.error
 
 Every failed turn appends one `session.error` carrying a structured payload in a

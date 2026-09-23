@@ -1010,3 +1010,131 @@ describe('Pi RPC tool gate', () => {
     });
   });
 });
+
+describe('Pi RPC steering', () => {
+  it('delivers one steer per turn and treats a repeated input as idempotent', async () => {
+    const h = harness();
+    await h.session.prompt('go');
+
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'be brief' }))
+      .resolves.toMatchObject({ inputId: 'steer_1', state: 'delivered', turnId: 'piturn_1' });
+    // Same input id, same text: the engine already has it, so this is answered as
+    // a duplicate rather than sent as a second instruction.
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'be brief' }))
+      .resolves.toMatchObject({ inputId: 'steer_1', state: 'duplicate' });
+    expect(h.fake.commands.filter((command) => command === 'steer')).toHaveLength(1);
+    // The steer reached the child as one record carrying only the text, so it
+    // cannot have started work or exposed a tool.
+    expect(h.wire.written.filter((frame) => frame.type === 'steer')).toEqual([
+      { id: 'sb-2', type: 'steer', message: 'be brief' },
+    ]);
+  });
+
+  it('refuses the same input id carrying different text instead of merging it', async () => {
+    const h = harness();
+    await h.session.prompt('go');
+    await h.session.steer({ inputId: 'steer_1', text: 'be brief' });
+
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'ignore the tests' }))
+      .resolves.toMatchObject({ inputId: 'steer_1', state: 'conflict' });
+    expect(h.fake.commands.filter((command) => command === 'steer')).toHaveLength(1);
+  });
+
+  it('refuses a second steer while one is still in flight', async () => {
+    const h = harness({ requestTimeoutMs: 60 });
+    await h.session.prompt('go');
+    // Pi never answers the steer, so the first write stays in flight.
+    h.fake.silentCommands = new Set(['steer']);
+
+    const inFlight = h.session.steer({ inputId: 'steer_1', text: 'first' });
+    await waitFor(() => h.fake.commands.includes('steer'), 'the first steer write');
+
+    await expect(h.session.steer({ inputId: 'steer_2', text: 'second' }))
+      .resolves.toMatchObject({
+        inputId: 'steer_2',
+        state: 'rejected',
+        detail: 'a steer is already in flight for this turn',
+      });
+    // The refused steer is not queued behind the first: it never reached the child.
+    expect(h.fake.commands.filter((command) => command === 'steer')).toHaveLength(1);
+    await expect(inFlight).resolves.toMatchObject({ state: 'outcome_unknown' });
+  });
+
+  it('binds a steer to the active turn when one was named', async () => {
+    const h = harness();
+    await h.session.prompt('go');
+
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'x', expectedTurnId: 'piturn_9' }))
+      .resolves.toMatchObject({ state: 'rejected' });
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'x', expectedTurnId: 'piturn_1' }))
+      .resolves.toMatchObject({ state: 'delivered' });
+  });
+
+  it('refuses steering before a turn starts, once admission closes, and after it ends', async () => {
+    const h = harness();
+    // Nothing is running yet, so there is no turn to steer and nothing is buffered
+    // for the turn that has not started.
+    await expect(h.session.steer({ inputId: 'steer_0', text: 'early' }))
+      .resolves.toMatchObject({ state: 'rejected', detail: 'no turn is accepting steering' });
+
+    await h.session.prompt('go');
+    h.session.closeSteerAdmission();
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'late' }))
+      .resolves.toMatchObject({ state: 'rejected' });
+
+    // The turn's own end-of-turn frame closes admission before it settles, so a
+    // steer arriving with the turn already over is refused rather than applied.
+    h.fake.say({ type: 'agent_settled' });
+    await expect(h.session.awaitTurnOutcome()).resolves.toEqual({ kind: 'settled' });
+    await expect(h.session.steer({ inputId: 'steer_2', text: 'later' }))
+      .resolves.toMatchObject({ state: 'rejected' });
+    expect(h.fake.commands.filter((command) => command === 'steer')).toHaveLength(0);
+  });
+
+  it('retires a steer whose outcome is unknown instead of leaving it replayable', async () => {
+    const h = harness({ requestTimeoutMs: 40 });
+    await h.session.prompt('go');
+
+    // Pi never answers the steer, so the write may or may not have been applied.
+    h.fake.silentCommands = new Set(['steer']);
+    await expect(h.session.steer({ inputId: 'steer_unknown', text: 'stop' }))
+      .resolves.toMatchObject({ state: 'outcome_unknown' });
+
+    // A retry of the same id must not be re-sent: the engine may already have
+    // acted on the first write, and replaying it would double the instruction.
+    await expect(h.session.steer({ inputId: 'steer_unknown', text: 'stop' }))
+      .resolves.toMatchObject({ state: 'duplicate' });
+    expect(h.fake.commands.filter((command) => command === 'steer')).toHaveLength(1);
+  });
+
+  it('reports a steer written to a closed session as refused', async () => {
+    const h = harness();
+    await h.session.prompt('go');
+    await h.session.close();
+
+    await expect(h.session.steer({ inputId: 'steer_1', text: 'stop' }))
+      .resolves.toMatchObject({ state: 'rejected', detail: 'the session is closed' });
+  });
+
+  it('settles an in-flight steer receipt before the caller is told the turn finished', async () => {
+    const h = harness();
+    await h.session.prompt('go');
+    // Nothing in flight: settling is a no-op rather than a hang.
+    await expect(h.session.settleSteerReceipts()).resolves.toBeUndefined();
+
+    h.fake.silentCommands = new Set(['steer']);
+    const inFlight = h.session.steer({ inputId: 'steer_1', text: 'stop' });
+    await waitFor(() => h.fake.commands.includes('steer'), 'the steer write');
+    let settled = false;
+    const settling = h.session.settleSteerReceipts().then(() => { settled = true; });
+    await settleAsync();
+    // The receipt is still owed, so the turn may not be reported as finished yet.
+    expect(settled).toBe(false);
+
+    h.fake.silentCommands = new Set();
+    h.fake.say({ type: 'response', id: 'sb-2', command: 'steer', success: true });
+    await expect(inFlight).resolves.toMatchObject({ state: 'delivered' });
+    await settling;
+    expect(settled).toBe(true);
+  });
+});
