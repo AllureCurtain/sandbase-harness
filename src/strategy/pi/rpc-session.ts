@@ -31,6 +31,11 @@
  * race the suspended one. The gate itself belongs to the SandBase-owned
  * extension this session's launch loaded; the owner's job is to prove it loaded,
  * record what a decision would be made against, and consume that decision once.
+ *
+ * Who answers a gate is the platform's approval mode, read per gate: a person
+ * under `interactive`, or the platform's own rule under `preauthorized_once`.
+ * Both answers travel the same one-shot consume, and neither is allowed to
+ * authorize a second call.
  */
 
 import type { Writable } from 'node:stream';
@@ -68,6 +73,12 @@ import {
   type PiInteractionRecord,
   type PiInteractionStore,
 } from './interaction-store.js';
+import {
+  PI_APPROVAL_MODE_DEFAULT,
+  type PiApprovalMode,
+  type PiPreauthorizedDecision,
+  type PiPreauthorizedRule,
+} from './approval-mode.js';
 import {
   PI_RESUME_REFUSED_MARKER,
   PiContinuityError,
@@ -171,6 +182,26 @@ export interface PiRpcSessionOptions {
    * here is denied rather than opened (see `handleGateRequest`).
    */
   interactions?: PiInteractionStore;
+  /**
+   * The platform's approval mode for the *next* gate, read when one opens.
+   *
+   * A function rather than a value because the mode describes how the platform
+   * answers the next call, not the session it happens to arrive in: the session
+   * re-reads it at every gate instead of copying it into a pending gate or the
+   * compiled plan, so a resolver that stops selecting the unattended mode leaves
+   * the next gate waiting for a person, and a decision already recorded keeps the
+   * source it was recorded with rather than deciding anything again.
+   *
+   * Omitted means `interactive`, the same as the settings default: unattended
+   * operation is never assumed.
+   */
+  approvalMode?: () => PiApprovalMode;
+  /**
+   * Platform-owned rule for `preauthorized_once`. Returning `undefined` is the
+   * safe answer: the gate then waits for a person instead of deciding, so a
+   * call the rule does not name is neither approved nor denied unattended.
+   */
+  preauthorizedRule?: PiPreauthorizedRule;
   /** Per-command response deadline. */
   requestTimeoutMs?: number;
   /** Per-turn deadline; a wedged turn is cancelled rather than left running. */
@@ -651,8 +682,20 @@ export class PiRpcSession implements LoopEngineSession {
     this.deferredGatedCalls.delete(payload.tool_call_id);
     this.gateOpenedCalls.add(payload.tool_call_id);
     this.translator.noteNativeToolCall();
-    this.emitGatedToolUse(payload, turnId);
 
+    // A platform rule answers this call only when the operator selected the
+    // unattended mode and the rule names it. Every other case — including a rule
+    // that does not cover this tool or this input — falls through to the
+    // interactive gate below, because waiting for a person is the one answer
+    // that is never wrong: it neither denies what a person could still approve
+    // nor approves what no rule named.
+    const platformDecision = this.platformDecision(record);
+    if (platformDecision) {
+      await this.answerAsPlatform(request.id, payload, record, turnId, platformDecision);
+      return;
+    }
+
+    this.emitGatedToolUse(payload, turnId, { source: 'user' });
     this.pendingGate = { piRequestId: request.id, payload, record, turnId };
     this.settle({
       kind: 'gate',
@@ -667,8 +710,81 @@ export class PiRpcSession implements LoopEngineSession {
     });
   }
 
-  /** Publish the durable tool_use a client renders as an approval card. */
-  private emitGatedToolUse(payload: PiGatePayload, turnId: string): void {
+  /**
+   * The platform's own answer for one gated call, when the selected mode has one.
+   *
+   * Returns `undefined` unless the mode is `preauthorized_once` *and* the
+   * platform rule names this call, so an interactive session — and a rule that
+   * abstains — leaves the decision where it has always been: with a person.
+   * The mode is read here, per gate, rather than latched on the session, so
+   * turning it off is honored by the very next call instead of by the next
+   * session.
+   */
+  private platformDecision(record: PiInteractionRecord): PiPreauthorizedDecision | undefined {
+    const mode: PiApprovalMode = this.options.approvalMode?.() ?? PI_APPROVAL_MODE_DEFAULT;
+    if (mode !== 'preauthorized_once') return undefined;
+    return this.options.preauthorizedRule?.(record);
+  }
+
+  /**
+   * Answer one gated call under the platform rule.
+   *
+   * The platform's decision travels the same one-shot path a human decision
+   * does — the conditional update on the durable record is the only thing that
+   * authorizes execution — so it applies to exactly this call, is spent by being
+   * applied, and authorizes nothing afterwards. It is recorded and published as
+   * `platform`, never as `user`: an automatic decision must not be readable as a
+   * click by a person. A decision that could not be consumed denies the call
+   * instead of executing it.
+   */
+  private async answerAsPlatform(
+    requestId: string,
+    payload: PiGatePayload,
+    record: PiInteractionRecord,
+    turnId: string,
+    decision: PiPreauthorizedDecision,
+  ): Promise<void> {
+    const consumed = this.interactions?.consume({
+      sessionId: this.options.sessionId,
+      piRequestId: requestId,
+      toolUseId: record.toolUseId,
+      expectedTurnId: turnId,
+      decision: decision.allow ? 'allow' : 'deny',
+      source: 'platform',
+      ...(decision.allow ? {} : { denyMessage: decision.reason }),
+    });
+    if (consumed?.kind !== 'consumed') {
+      // The record is no longer this gate's to decide — a replayed call, or a row
+      // decided elsewhere. Nothing is published for it: the call is denied, and
+      // the denial is remembered so its execution frames cannot be read as an
+      // approved call that ran.
+      this.deniedGatedCalls.add(record.toolUseId);
+      await this.denyGate(requestId);
+      return;
+    }
+    if (!decision.allow) this.deniedGatedCalls.add(record.toolUseId);
+    this.emitGatedToolUse(payload, turnId, {
+      source: 'platform',
+      decision: decision.allow ? 'allow' : 'deny',
+    });
+    await this.respondDecision(requestId, {
+      decision: decision.allow ? PI_GATE_DECISION_ALLOW : PI_GATE_DECISION_DENY,
+    }).catch(() => {});
+  }
+
+  /**
+   * Publish the durable tool_use a client renders as an approval card.
+   *
+   * `source` states who decided, and it is carried in both the content block and
+   * the metadata: a platform decision is published with
+   * `requires_confirmation: false` and `confirmation_source: "platform"`, so no
+   * client can present it as an approval a person gave.
+   */
+  private emitGatedToolUse(
+    payload: PiGatePayload,
+    turnId: string,
+    decision: { source: 'user' | 'platform'; decision?: 'allow' | 'deny' },
+  ): void {
     const groupId = payload.tool_call_id;
     const event = this.options.sink.append(this.options.sessionId, {
       type: 'agent.tool_use',
@@ -677,7 +793,7 @@ export class PiRpcSession implements LoopEngineSession {
         id: payload.tool_call_id,
         name: payload.tool_name,
         input: payload.input,
-        requires_confirmation: true,
+        requires_confirmation: decision.source === 'user',
         confirmation_group_id: groupId,
       } as ContentBlock],
       modelUsed: this.options.model,
@@ -685,7 +801,8 @@ export class PiRpcSession implements LoopEngineSession {
         confirmation_group_id: groupId,
         pi_turn_id: turnId,
         input_fingerprint: fingerprintPiToolInput(payload.input),
-        confirmation_source: 'user',
+        confirmation_source: decision.source,
+        ...(decision.decision ? { confirmation_decision: decision.decision } : {}),
       },
     });
     this.options.sink.broadcast(event);

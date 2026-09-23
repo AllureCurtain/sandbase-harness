@@ -1,5 +1,6 @@
 import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
 import { MINIMAX_DEFAULT_MODEL, MINIMAX_ENDPOINTS, MINIMAX_MODELS, MINIMAX_PROVIDER } from '@/core/model/minimax.js';
+import { PI_APPROVAL_MODE_DEFAULT, PI_APPROVAL_MODES } from '@/strategy/pi/approval-mode.js';
 import {
   PI_ADAPTER_CAPABILITY_IDS,
   PI_ADAPTER_REQUIREMENTS,
@@ -70,6 +71,15 @@ export const ROADMAP_LOOP_ENGINE_REASON =
 export { PI_LOOP_ENGINE_REASON };
 
 /**
+ * Persisted settings key for the platform-owned Pi approval mode.
+ *
+ * Named once so the adapter descriptor's JSON Schema, the settings schema, and
+ * the tests that tie them together cannot disagree about the key this mode is
+ * stored under.
+ */
+export const PI_APPROVAL_MODE_OPTION = 'approval_mode';
+
+/**
  * Single engine-discovery source of truth.
  *
  * Settings, session-creation admission, and the API reference all read this
@@ -87,6 +97,14 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
     descriptor('pi', 'Pi CLI', true, 'runtime', objectSchema({
       default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
       timeout_seconds: { type: 'integer', minimum: 1, maximum: 86400, default: 300 },
+      // Platform-owned: an agent definition cannot reach this key, so an agent
+      // cannot make its own gated tool calls unattended. The default is stated
+      // so a Console that reads only the schema offers the interactive mode.
+      [PI_APPROVAL_MODE_OPTION]: {
+        type: 'string',
+        enum: [...PI_APPROVAL_MODES],
+        default: PI_APPROVAL_MODE_DEFAULT,
+      },
     }), {
       reason: PI_LOOP_ENGINE_REASON,
       requirements: [...PI_ADAPTER_REQUIREMENTS],

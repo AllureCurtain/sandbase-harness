@@ -28,6 +28,7 @@ import {
   fingerprintPiToolInput,
   PiInteractionStore,
 } from '@/strategy/pi/interaction-store.js';
+import type { PiApprovalMode, PiPreauthorizedRule } from '@/strategy/pi/approval-mode.js';
 import { createPiRpcWire, settleAsync, waitFor, type PiRpcWire } from './pi-rpc-test-helpers.js';
 
 const SESSION_ID = 'sess_rpc_owner';
@@ -84,6 +85,8 @@ function harness(options: {
   stderrTail?: () => string;
   gateTools?: readonly string[];
   interactions?: PiInteractionStore;
+  approvalMode?: () => PiApprovalMode;
+  preauthorizedRule?: PiPreauthorizedRule;
 } = {}): Harness {
   const wire = createPiRpcWire();
   const fake = new FakePi(wire);
@@ -135,6 +138,8 @@ function harness(options: {
     },
     ...(options.gateTools ? { gateTools: options.gateTools } : {}),
     ...(options.interactions ? { interactions: options.interactions } : {}),
+    ...(options.approvalMode ? { approvalMode: options.approvalMode } : {}),
+    ...(options.preauthorizedRule ? { preauthorizedRule: options.preauthorizedRule } : {}),
     ...(options.turnTimeoutMs ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
     ...(options.requestTimeoutMs ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
   });
@@ -760,5 +765,248 @@ describe('Pi RPC tool gate', () => {
     // call is denied rather than opened.
     expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'deny' }]);
     expect(h.session.pendingGateRequestId).toBeUndefined();
+  });
+
+  /**
+   * The unattended mode: a second way for one gated call to be answered, under a
+   * platform-owned rule instead of a person. These assertions are the ones that
+   * keep it from becoming more than that — off unless selected, one call per
+   * decision, never recorded as human, and never a standing permission.
+   */
+  describe('preauthorized_once mode', () => {
+    /** A platform rule that answers `allow` and counts how often it was asked. */
+    function allowingRule(): { rule: PiPreauthorizedRule; calls: () => number } {
+      let calls = 0;
+      return {
+        rule: () => {
+          calls += 1;
+          return { allow: true };
+        },
+        calls: () => calls,
+      };
+    }
+
+    it('waits for a person when no approval mode was selected, even with a rule available', async () => {
+      const store = gateStore();
+      const allowing = allowingRule();
+      // The mode is the authority, not the rule's presence: a runtime that was
+      // never switched to the unattended mode must not consult it at all.
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        preauthorizedRule: allowing.rule,
+      });
+      await h.session.prompt('run');
+      askGate(h);
+
+      const outcome = await h.session.awaitTurnOutcome();
+      expect(outcome.kind).toBe('gate');
+      expect(allowing.calls()).toBe(0);
+      expect(decisions(h)).toEqual([]);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({ state: 'pending' });
+      const toolUse = h.events.find((event) => event.type === 'agent.tool_use');
+      expect(toolUse?.content?.[0]).toMatchObject({ requires_confirmation: true });
+      expect(toolUse?.metadata).toMatchObject({ confirmation_source: 'user' });
+      expect(h.session.pendingGateRequestId).toBe('ui-gate-1');
+    });
+
+    it('answers a gated call itself and records it as a platform decision', async () => {
+      const store = gateStore();
+      const allowing = allowingRule();
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => 'preauthorized_once',
+        preauthorizedRule: allowing.rule,
+      });
+      await h.session.prompt('run');
+      askGate(h);
+      await waitFor(() => decisions(h).length === 1);
+
+      // Answered without a client: the rule named the call, so there is no gate
+      // outcome, no approval card, and the same turn keeps running.
+      expect(allowing.calls()).toBe(1);
+      expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'allow' }]);
+      expect(h.session.pendingGateRequestId).toBeUndefined();
+      expect(h.session.phase).toBe('busy');
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+        state: 'allowed',
+        decisionSource: 'platform',
+      });
+
+      // Nothing a client can read says a person decided: the published tool use
+      // carries the platform as its source and is not an approval request.
+      const toolUse = h.events.find((event) => event.type === 'agent.tool_use');
+      expect(toolUse?.content?.[0]).toMatchObject({ id: 'toolu_1', requires_confirmation: false });
+      expect(toolUse?.metadata).toMatchObject({
+        confirmation_source: 'platform',
+        confirmation_decision: 'allow',
+      });
+
+      // A person's answer for the call the platform already decided is refused,
+      // and no second response is written for it.
+      await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(false);
+      expect(decisions(h)).toHaveLength(1);
+
+      // The call the platform allowed is expected to execute, so its own frames
+      // are not an unguarded gated call: the turn settles normally.
+      h.fake.say({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 'toolu_1' });
+      h.fake.say({ type: 'tool_execution_end', toolName: 'bash', toolCallId: 'toolu_1', isError: false });
+      h.fake.say({ type: 'agent_settled' });
+      await expect(h.session.awaitTurnOutcome()).resolves.toEqual({ kind: 'settled' });
+      expect(h.session.turnId).toBe('piturn_1');
+    });
+
+    it('spends the platform decision on one call, so a replay of it is denied', async () => {
+      const store = gateStore();
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => 'preauthorized_once',
+        preauthorizedRule: () => ({ allow: true }),
+      });
+      await h.session.prompt('run');
+      askGate(h, 'ui-gate-1');
+      await waitFor(() => decisions(h).length === 1);
+
+      // The same call announced again is a second gate for a call that already
+      // has a decision. The conditional consume finds no pending row for the new
+      // request, so nothing executes a second time and the replay is denied.
+      askGate(h, 'ui-gate-2');
+      await waitFor(() => decisions(h).length === 2);
+
+      expect(decisions(h)).toEqual([
+        { id: 'ui-gate-1', decision: 'allow' },
+        { id: 'ui-gate-2', decision: 'deny' },
+      ]);
+      expect(store.listForSession(SESSION_ID)).toHaveLength(1);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+        state: 'allowed',
+        decisionSource: 'platform',
+      });
+    });
+
+    it('decides the next gated call again instead of becoming a standing permission', async () => {
+      const store = gateStore();
+      const allowing = allowingRule();
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => 'preauthorized_once',
+        preauthorizedRule: allowing.rule,
+      });
+      await h.session.prompt('run');
+      askGate(h, 'ui-gate-1');
+      await waitFor(() => decisions(h).length === 1);
+      askGate(h, 'ui-gate-2', gatePayload({ tool_call_id: 'toolu_2' }));
+      await waitFor(() => decisions(h).length === 2);
+
+      // Two calls, two records, two decisions: the first decision authorized the
+      // call it consumed and nothing after it.
+      expect(allowing.calls()).toBe(2);
+      expect(store.listForSession(SESSION_ID).map((record) => [
+        record.toolUseId,
+        record.state,
+        record.decisionSource,
+      ])).toEqual([
+        ['toolu_1', 'allowed', 'platform'],
+        ['toolu_2', 'allowed', 'platform'],
+      ]);
+    });
+
+    it('waits for a person at the next decision once the mode is turned off', async () => {
+      const store = gateStore();
+      let mode: PiApprovalMode = 'preauthorized_once';
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => mode,
+        preauthorizedRule: () => ({ allow: true }),
+      });
+      await h.session.prompt('run');
+      askGate(h, 'ui-gate-1');
+      await waitFor(() => decisions(h).length === 1);
+
+      // The mode is read per gate, not latched on the session: turning it off is
+      // honored by the very next call rather than by the next session.
+      mode = 'interactive';
+      askGate(h, 'ui-gate-2', gatePayload({ tool_call_id: 'toolu_2' }));
+
+      const outcome = await h.session.awaitTurnOutcome();
+      expect(outcome.kind).toBe('gate');
+      expect(outcome.kind === 'gate' && outcome.interaction.toolUseId).toBe('toolu_2');
+      expect(store.findByToolUse(SESSION_ID, 'toolu_2')).toMatchObject({ state: 'pending' });
+      // A recorded decision keeps the source it was recorded with.
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+        state: 'allowed',
+        decisionSource: 'platform',
+      });
+      // The call the rule no longer covers can still be approved by a person.
+      await expect(h.session.respondToInteraction('toolu_2', { decision: 'allow' })).resolves.toBe(true);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_2')).toMatchObject({
+        state: 'allowed',
+        decisionSource: 'user',
+      });
+    });
+
+    it('keeps waiting for a person when the rule does not name the call', async () => {
+      const store = gateStore();
+      const consulted: string[] = [];
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => 'preauthorized_once',
+        preauthorizedRule: (record) => {
+          consulted.push(record.toolName);
+          return undefined;
+        },
+      });
+      await h.session.prompt('run');
+      askGate(h);
+
+      // Abstaining is not a denial: the mode neither approves what the rule does
+      // not name nor refuses what a person could still approve.
+      const outcome = await h.session.awaitTurnOutcome();
+      expect(outcome.kind).toBe('gate');
+      expect(consulted).toEqual(['bash']);
+      expect(decisions(h)).toEqual([]);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({ state: 'pending' });
+
+      await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(true);
+      expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'allow' }]);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+        state: 'allowed',
+        decisionSource: 'user',
+      });
+    });
+
+    it('records a platform refusal as a platform decision and spends the call', async () => {
+      const store = gateStore();
+      const h = harness({
+        gateTools: ['bash'],
+        interactions: store,
+        approvalMode: () => 'preauthorized_once',
+        preauthorizedRule: () => ({ allow: false, reason: 'outside the preauthorized set' }),
+      });
+      await h.session.prompt('run');
+      askGate(h);
+      await waitFor(() => decisions(h).length === 1);
+
+      expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'deny' }]);
+      expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+        state: 'denied',
+        decisionSource: 'platform',
+        denyMessage: 'outside the preauthorized set',
+      });
+      // A refusal is not a click by a person either, and the call is decided: a
+      // later approval cannot revive it.
+      const toolUse = h.events.find((event) => event.type === 'agent.tool_use');
+      expect(toolUse?.metadata).toMatchObject({
+        confirmation_source: 'platform',
+        confirmation_decision: 'deny',
+      });
+      expect(h.session.pendingGateRequestId).toBeUndefined();
+      await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(false);
+    });
   });
 });

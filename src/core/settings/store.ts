@@ -312,7 +312,7 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
       ...(model?.api_key ? { api_key: model.api_key } : {}),
       options: {},
     },
-    loop_engine: { provider: 'builtin', options: { default_max_steps: 25 } },
+    loop_engine: { provider: 'builtin', options: { default_max_steps: 25, approval_mode: 'interactive' } },
     storage: seed.storage ?? {
       metadata: { provider: 'sqlite', options: {} },
       artifacts: { provider: 'local', options: { base_path: 'files' } },

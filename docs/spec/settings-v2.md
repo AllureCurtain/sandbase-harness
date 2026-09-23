@@ -233,10 +233,22 @@ The built-in form contains:
 
 - Provider
 - Default max steps
+- Pi gate approval mode
 - Advanced JSON options
 
 Agent `max_turns` overrides `default_max_steps`. The engine registry replaces
 the direct `new DefaultStrategy()` construction at startup.
+
+`loop_engine.options.approval_mode` is platform-owned and optional, so a document
+written before it existed stays valid. `interactive` (the default, and the
+resolution for an omitted key) makes a gated Pi native tool call wait for a
+person. `preauthorized_once` is the explicit opt-in that lets the runtime answer
+one such call itself under a platform rule: the decision is consumed once, is
+recorded and published as a platform decision rather than as an approval a person
+gave, never becomes a standing permission, and never widens the agent's declared
+tool policy. A call the rule does not name keeps waiting for a person. An
+unrecognized name is refused at that path instead of being coerced to the
+default.
 
 Changing engine provider requires a runtime restart. Invalid engine settings
 must never replace the current effective engine.

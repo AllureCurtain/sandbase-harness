@@ -27,6 +27,7 @@ import type { PiRpcLaunchRequest, PiRpcLauncher } from '@/strategy/pi-launcher.j
 import { PiStderrTail } from './stderr-tail.js';
 import { PI_ADAPTER_ID, PI_CAPABILITY_PROFILE } from './capability-profile.js';
 import type { PiInteractionStore } from './interaction-store.js';
+import type { PiApprovalMode, PiPreauthorizedRule } from './approval-mode.js';
 import { PiRpcSession, PiRpcSessionClosedError, type PiRpcSessionOptions } from './rpc-session.js';
 
 export interface PiAdapterOptions {
@@ -39,6 +40,21 @@ export interface PiAdapterOptions {
    * that declares a gated tool is refused rather than run ungated.
    */
   interactions?: PiInteractionStore;
+  /**
+   * The platform's approval mode for the next gate, read per gate.
+   *
+   * Process-owned rather than per-session, because the mode says how this
+   * runtime answers a gated call, not what a session declared: an agent cannot
+   * reach it, and it never reaches the child. Omitted means `interactive`.
+   */
+  approvalMode?: () => PiApprovalMode;
+  /**
+   * Platform-owned rule for `preauthorized_once`.
+   *
+   * Absent for an interactive runtime, so nothing here could decide a call on
+   * its own. A rule that abstains leaves the gate waiting for a person.
+   */
+  preauthorizedRule?: PiPreauthorizedRule;
   /** Per-command response deadline. */
   requestTimeoutMs?: number;
   /** Per-turn deadline; a wedged turn is cancelled rather than left running. */
@@ -114,6 +130,8 @@ export class PiAdapter implements LoopEngineAdapter {
       // without the store; a launch that declares a gated tool is refused in the
       // adapter before it gets here, and a gate that cannot be recorded is denied.
       ...(this.options.interactions ? { interactions: this.options.interactions } : {}),
+      ...(this.options.approvalMode ? { approvalMode: this.options.approvalMode } : {}),
+      ...(this.options.preauthorizedRule ? { preauthorizedRule: this.options.preauthorizedRule } : {}),
       ...(this.options.requestTimeoutMs ? { requestTimeoutMs: this.options.requestTimeoutMs } : {}),
       ...(this.options.turnTimeoutMs ? { turnTimeoutMs: this.options.turnTimeoutMs } : {}),
     };

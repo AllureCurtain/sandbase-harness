@@ -18,9 +18,11 @@ import { Database } from '@/core/db/database.js';
 import { PiAdapter } from '@/strategy/pi/pi-adapter.js';
 import { PiRpcSessionClosedError } from '@/strategy/pi/rpc-session.js';
 import { PiInteractionStore } from '@/strategy/pi/interaction-store.js';
+import { PI_PREAUTHORIZED_ONCE_RULE } from '@/strategy/pi/approval-mode.js';
 import type { PiRpcLauncher, PiRpcLaunchRequest, PiRpcProcessHandle } from '@/strategy/pi-launcher.js';
 import type { LoopEngineEventSink, LoopEngineSession } from '@/strategy/loop-engine/adapter.js';
 import type { SessionEvent } from '@/types/session.js';
+import { settleAsync, waitFor } from './pi-rpc-test-helpers.js';
 
 const SESSION_ID = 'sess_adapter_gate';
 const directories: string[] = [];
@@ -58,15 +60,26 @@ const sink: LoopEngineEventSink = {
  * A child that answers `get_commands` with whatever the test says, so the marker
  * check can be driven in both directions without a real Pi process.
  */
-function fakeLauncher(commands: string[]): { launcher: PiRpcLauncher; interrupts: () => number; starts: PiRpcLaunchRequest[] } {
+function fakeLauncher(commands: string[]): {
+  launcher: PiRpcLauncher;
+  interrupts: () => number;
+  starts: PiRpcLaunchRequest[];
+  /** Frames the session wrote on the child's stdin, decoded, in order. */
+  frames: () => Record<string, unknown>[];
+  /** Emit one frame as if the child had produced it. */
+  emit: (frame: unknown) => void;
+} {
   const starts: PiRpcLaunchRequest[] = [];
+  const frames: Record<string, unknown>[] = [];
   let interrupts = 0;
+  let childStdout: PassThrough | undefined;
   const launcher: PiRpcLauncher = {
     async startRpc(request): Promise<PiRpcProcessHandle> {
       starts.push(request);
       const stdin = new PassThrough();
       const stdout = new PassThrough();
       const stderr = new PassThrough();
+      childStdout = stdout;
       let buffer = '';
       stdin.on('data', (chunk: Buffer) => {
         buffer += chunk.toString('utf8');
@@ -77,6 +90,7 @@ function fakeLauncher(commands: string[]): { launcher: PiRpcLauncher; interrupts
           buffer = buffer.slice(index + 1);
           if (!line.trim()) continue;
           const frame = JSON.parse(line) as Record<string, unknown>;
+          frames.push(frame);
           stdout.write(`${JSON.stringify({
             type: 'response',
             id: frame.id,
@@ -99,7 +113,13 @@ function fakeLauncher(commands: string[]): { launcher: PiRpcLauncher; interrupts
       };
     },
   };
-  return { launcher, interrupts: () => interrupts, starts };
+  return {
+    launcher,
+    interrupts: () => interrupts,
+    starts,
+    frames: () => frames,
+    emit: (frame) => childStdout?.write(`${JSON.stringify(frame)}\n`),
+  };
 }
 
 const startRequest = {
@@ -110,6 +130,24 @@ const startRequest = {
   toolPlan: { flags: ['--tools', 'read,bash'], gate: ['bash'] },
   sink,
 };
+
+/** One gate question, as the managed extension asks it. */
+function gateDialog(id: string, toolCallId = 'toolu_1'): Record<string, unknown> {
+  return {
+    type: 'extension_ui_request',
+    id,
+    method: 'editor',
+    title: 'SandBase tool approval',
+    prefill: JSON.stringify({
+      kind: 'sandbase_tool_gate',
+      version: 1,
+      tool_call_id: toolCallId,
+      tool_name: 'bash',
+      input: { command: 'rm -rf /tmp/x' },
+    }),
+    blocking: true,
+  };
+}
 
 describe('Pi adapter gate boundary', () => {
   it('refuses a gated launch with no durable pending-interaction store', async () => {
@@ -144,5 +182,53 @@ describe('Pi adapter gate boundary', () => {
     expect(launcher.interrupts()).toBe(0);
     await session.close();
     expect(launcher.interrupts()).toBe(1);
+  });
+
+  it('answers a gated call itself only when the operator selected the preauthorized mode', async () => {
+    const commands = ['help', `sandbase-gate-${SESSION_ID}`];
+    const interactions = store();
+    const interactive = fakeLauncher(commands);
+    const interactiveSession = await new PiAdapter({
+      launcher: interactive.launcher,
+      interactions,
+    }).startSession(startRequest);
+    await interactiveSession.prompt('run');
+    interactive.emit(gateDialog('ui-gate-1'));
+    await waitFor(() => interactions.findByToolUse(SESSION_ID, 'toolu_1') !== undefined);
+    await settleAsync();
+
+    // An interactive adapter relays nothing on its own: the call is recorded and
+    // left waiting, and no decision is written for it.
+    expect(interactive.frames().filter((frame) => frame.type === 'extension_ui_response')).toEqual([]);
+    expect(interactions.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({ state: 'pending' });
+    await interactiveSession.close();
+
+    const preauthorized = fakeLauncher(commands);
+    const preauthorizedSession = await new PiAdapter({
+      launcher: preauthorized.launcher,
+      interactions,
+      approvalMode: () => 'preauthorized_once',
+      preauthorizedRule: PI_PREAUTHORIZED_ONCE_RULE,
+    }).startSession(startRequest);
+    await preauthorizedSession.prompt('run');
+    preauthorized.emit(gateDialog('ui-gate-2', 'toolu_2'));
+    await waitFor(() => preauthorized.frames().some((frame) => frame.type === 'extension_ui_response'));
+
+    // The same wiring, with the mode selected: the adapter's rule answers the
+    // call and the durable decision is the platform's, not a person's.
+    expect(JSON.parse(String(preauthorized.frames().find((frame) => frame.type === 'extension_ui_response')?.value)))
+      .toEqual({ decision: 'allow' });
+    expect(interactions.findByToolUse(SESSION_ID, 'toolu_2')).toMatchObject({
+      state: 'allowed',
+      decisionSource: 'platform',
+    });
+
+    // The mode changes who answers a gate, never the policy the child runs: both
+    // launches carry the same compiled flags and the same gated names.
+    expect(preauthorized.starts[0].toolArgs).toEqual(startRequest.toolPlan.flags);
+    expect(preauthorized.starts[0].gateTools).toEqual(startRequest.toolPlan.gate);
+    expect(interactive.starts[0].toolArgs).toEqual(preauthorized.starts[0].toolArgs);
+    expect(interactive.starts[0].gateTools).toEqual(preauthorized.starts[0].gateTools);
+    await preauthorizedSession.close();
   });
 });

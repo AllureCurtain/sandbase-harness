@@ -406,7 +406,18 @@ export type SettingsAdapterDescriptor = {
 export type RuntimeSettingsConfig = {
   schema_version: 1;
   model: { vendor: 'openai' | 'anthropic' | 'openai_compatible' | 'minimax'; base_url?: string; api_key?: string; options: Record<string, unknown> };
-  loop_engine: { provider: 'builtin' | 'harness' | 'codex' | 'claude'; options: { default_max_steps: number; [key: string]: unknown } };
+  loop_engine: {
+    provider: 'builtin' | 'harness' | 'codex' | 'claude';
+    options: {
+      default_max_steps: number;
+      /**
+       * Platform-owned Pi gate behaviour, mirroring
+       * `loop_engine.options.approval_mode` in Runtime Settings.
+       */
+      approval_mode?: 'interactive' | 'preauthorized_once';
+      [key: string]: unknown;
+    };
+  };
   storage: {
     metadata: { provider: 'sqlite' | 'postgres' | 'mysql'; options: Record<string, unknown> };
     artifacts: { provider: 'local' | 's3'; options: Record<string, unknown> };

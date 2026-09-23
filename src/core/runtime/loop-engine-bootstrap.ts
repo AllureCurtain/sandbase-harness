@@ -4,6 +4,7 @@ import { PiStrategy } from '@/strategy/pi-strategy.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
 import { PiAdapter } from '@/strategy/pi/pi-adapter.js';
 import { PiInteractionStore } from '@/strategy/pi/interaction-store.js';
+import { PI_APPROVAL_MODE_DEFAULT, piPreauthorizedRuleFor } from '@/strategy/pi/approval-mode.js';
 import type { RuntimeSettings } from '@/core/settings/schema.js';
 import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
@@ -53,9 +54,25 @@ export function bootstrapRuntimeLoopEngine(
     const interactions = options.database
       ? new PiInteractionStore(options.database, options.dataDir)
       : undefined;
+    // Off unless an operator selected it: an absent or unrecognized mode is
+    // resolved to `interactive` here and refused by Settings validation before a
+    // row can be saved, so an unattended runtime is always an explicit choice.
+    const approvalMode = settings.loop_engine.options.approval_mode ?? PI_APPROVAL_MODE_DEFAULT;
+    const preauthorizedRule = piPreauthorizedRuleFor(approvalMode);
     const adapter = new PiAdapter({
       launcher,
       ...(interactions ? { interactions } : {}),
+      // Resolved from the *effective* settings, and consulted by the session at
+      // every gate rather than latched when one opens: the mode an operator saves
+      // applies to the decisions of the runtime that activates it, the next gated
+      // call is decided again instead of inheriting a standing permission, and a
+      // decision already recorded keeps its recorded source.
+      //
+      // The rule exists only when an operator selected `preauthorized_once`.
+      // Nothing in an interactive runtime can answer a gate on its own, which is
+      // what makes the mode an explicit opt-in rather than an implied default.
+      approvalMode: () => approvalMode,
+      ...(preauthorizedRule ? { preauthorizedRule } : {}),
       ...(timeoutMs ? { turnTimeoutMs: timeoutMs, requestTimeoutMs: timeoutMs } : {}),
     });
     strategies.pi = new PiStrategy({ adapter, database: options.database });
