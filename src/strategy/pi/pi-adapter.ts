@@ -26,10 +26,19 @@ import type {
 import type { PiRpcLaunchRequest, PiRpcLauncher } from '@/strategy/pi-launcher.js';
 import { PiStderrTail } from './stderr-tail.js';
 import { PI_ADAPTER_ID, PI_CAPABILITY_PROFILE } from './capability-profile.js';
+import type { PiInteractionStore } from './interaction-store.js';
 import { PiRpcSession, PiRpcSessionClosedError, type PiRpcSessionOptions } from './rpc-session.js';
 
 export interface PiAdapterOptions {
   launcher: PiRpcLauncher;
+  /**
+   * Durable pending-interaction store, shared with the Harness database.
+   *
+   * Optional only because an embedder can compose the adapter without a
+   * database; a session started without one cannot gate anything, so a launch
+   * that declares a gated tool is refused rather than run ungated.
+   */
+  interactions?: PiInteractionStore;
   /** Per-command response deadline. */
   requestTimeoutMs?: number;
   /** Per-turn deadline; a wedged turn is cancelled rather than left running. */
@@ -48,18 +57,31 @@ export class PiAdapter implements LoopEngineAdapter {
    * The compiled tool flags travel unchanged from the strategy: the plan the
    * caller admitted is the argv the child receives, which is the only reason
    * `--tools`/`--exclude-tools` can be trusted as an enforcement rather than a
-   * promise.
+   * promise. The gated names travel with them, so the launch loads the managed
+   * gate extension for exactly the tools whose calls need a decision.
+   *
+   * The gate is verified before returning, not after the first tool call: a
+   * session that advertises an `always_ask` tool must be one where the gate
+   * provably loaded, otherwise the tool would run with no decision attached and
+   * the approval card a client saw would be theatre.
    *
    * On any failure the child is torn down before the error escapes, so a failed
    * start cannot leave an orphan Pi process holding the session work directory.
    */
   async startSession(request: LoopEngineStartRequest): Promise<LoopEngineSession> {
+    const gateTools = request.toolPlan.gate ?? [];
+    if (gateTools.length > 0 && !this.options.interactions) {
+      throw new PiRpcSessionClosedError(
+        'a session that gates a tool call requires a durable pending-interaction store',
+      );
+    }
     const launchRequest: PiRpcLaunchRequest = {
       sessionId: request.sessionId,
       workDir: request.workDir,
       systemPrompt: request.systemPrompt,
       model: request.model,
       toolArgs: request.toolPlan.flags,
+      ...(gateTools.length ? { gateTools } : {}),
       ...(request.skillDirs?.length ? { skillDirs: request.skillDirs } : {}),
       ...(request.thinkingLevel ? { thinkingLevel: request.thinkingLevel } : {}),
       ...(request.abortSignal ? { abortSignal: request.abortSignal } : {}),
@@ -82,17 +104,31 @@ export class PiAdapter implements LoopEngineAdapter {
       workDir: request.workDir,
       model: request.model.model,
       ...(handle.sessionFile ? { sessionFile: handle.sessionFile } : {}),
+      ...(gateTools.length ? { gateTools } : {}),
       stdin,
       stdout: handle.stdout,
       stderrTail: () => stderr.text(),
       requestInterrupt: () => handle.interrupt(),
       sink: request.sink,
+      // A session that gates nothing never opens a gate, so it can be composed
+      // without the store; a launch that declares a gated tool is refused in the
+      // adapter before it gets here, and a gate that cannot be recorded is denied.
+      ...(this.options.interactions ? { interactions: this.options.interactions } : {}),
       ...(this.options.requestTimeoutMs ? { requestTimeoutMs: this.options.requestTimeoutMs } : {}),
       ...(this.options.turnTimeoutMs ? { turnTimeoutMs: this.options.turnTimeoutMs } : {}),
     };
 
     const session = new PiRpcSession(sessionOptions);
     session.start();
+    try {
+      await session.verifyGateExtension();
+    } catch (error) {
+      // A child without the gate must not be handed back as a usable session:
+      // the tool it would run unguarded is exactly the one the caller declared
+      // as always_ask.
+      await session.close().catch(() => {});
+      throw error;
+    }
     return session;
   }
 }

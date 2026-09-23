@@ -20,7 +20,6 @@ import { EventLogger } from '@/core/session/event-logger.js';
 import {
   PI_SANDBOX_UNSUPPORTED_CODE,
   PI_SANDBOX_UNSUPPORTED_MESSAGE,
-  PI_USER_EVENT_UNSUPPORTED_CODE,
 } from '@/core/session/pi-policy.js';
 import { sandboxCapabilities, type SandboxInstance, type SandboxProvider } from '@/types/sandbox.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
@@ -316,14 +315,15 @@ describe('runtime session services', () => {
     db.close();
   });
 
-  it('rejects direct Pi confirmation execution before model or sandbox work', async () => {
+  it('hands a Pi tool confirmation to the Pi strategy instead of the builtin ToolResolver', async () => {
     const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime();
     const builtin = new DefaultStrategy();
+    const received: unknown[] = [];
     const pi: AgentStrategy = {
       name: 'pi-capture',
       requiresModel: false,
-      async *execute() {
-        throw new Error('Pi strategy must not receive unsupported confirmation events');
+      async *execute(context: StrategyContext) {
+        received.push(context.userEvent);
       },
     };
     const resolveModelConfig = vi.spyOn(modelRegistry, 'resolveModelConfig');
@@ -355,18 +355,21 @@ describe('runtime session services', () => {
       updatedAt: new Date(),
     };
 
-    const execute = async () => {
-      for await (const _event of services.executor.execute(session, {
-        type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'allow',
-      })) {
-        // PI admission rejects before any executor output.
-      }
-    };
+    for await (const _event of services.executor.execute(session, {
+      type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'allow',
+    })) {
+      // no-op
+    }
 
-    await expect(execute()).rejects.toMatchObject({ code: PI_USER_EVENT_UNSUPPORTED_CODE });
-    expect(resolveModelConfig).not.toHaveBeenCalled();
+    // `user.tool_confirmation` used to be refused for Pi at admission, because the
+    // runtime had no bridge to answer a Pi gate. The Pi session resolves its own
+    // gate now, so the event reaches the Pi strategy and never the builtin
+    // `ToolResolver`, which would run the call in the Harness sandbox while Pi
+    // stayed blocked on a decision it never received.
     expect(createModel).not.toHaveBeenCalled();
-    expect(provision).not.toHaveBeenCalled();
+    expect(resolveModelConfig).toHaveBeenCalled();
+    expect(provision).toHaveBeenCalled();
+    expect(received).toEqual([{ type: 'user.tool_confirmation', tool_use_id: 'call_1', result: 'allow' }]);
     db.close();
   });
 
@@ -468,7 +471,7 @@ describe('runtime session services', () => {
     db.close();
   });
 
-  it('rejects always_ask PI turns before model construction or strategy execution', async () => {
+  it('runs an always_ask Pi turn instead of refusing it before strategy execution', async () => {
     const { db, directory, agents, sandboxes, modelRegistry } = makeRuntime({
       tools: [{
         type: 'agent_toolset_20260401',
@@ -497,17 +500,17 @@ describe('runtime session services', () => {
       defaultMaxSteps: 25,
     });
 
-    const execute = async () => {
-      for await (const _event of services.executor.execute({
-        id: 'sess_pi_always_ask', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
-        loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
-      }, { type: 'user.message', content: [{ type: 'text', text: 'hello' }] })) {
-        // no-op
-      }
-    };
+    for await (const _event of services.executor.execute({
+      id: 'sess_pi_always_ask', agentId: 'agent_assistant', agentName: 'assistant', environmentId: 'env_default',
+      loopEngine: 'pi', status: 'running', createdAt: new Date(), updatedAt: new Date(),
+    }, { type: 'user.message', content: [{ type: 'text', text: 'hello' }] })) {
+      // no-op
+    }
 
-    await expect(execute()).rejects.toThrow('Pi loop engine does not support agents requesting always_ask');
-    expect(launched).toBe(false);
+    // This turn used to be refused with `pi_always_ask_not_supported` before the
+    // strategy ran. The managed gate replaces the refusal: the turn executes, and
+    // the gated tool is decided when it is called rather than never exposed.
+    expect(launched).toBe(true);
     db.close();
   });
 

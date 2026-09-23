@@ -43,9 +43,11 @@ by the builtin engine. Every durable event is appended before it is broadcast.
 Text deltas have `seq: 0` and are live-only; the final `agent.message` is the
 replay authority. Each Pi model request records usage exactly once. Unknown
 events are inert, malformed authority-bearing events fail the turn, and stderr
-is limited to a redacted 64 KiB diagnostic tail. A blocking extension dialog is
-failed rather than answered: this runtime ships no extension and relays no
-question to a client, so it has no decision to give.
+is limited to a redacted 64 KiB diagnostic tail. A blocking extension dialog
+fails the turn rather than being answered, with one exception: the managed gate
+asks through Pi's `editor` method, so an `editor` dialog whose payload is not this
+gate's own is answered with a denial. That method is shared with the gate, and
+leaving Pi blocked there would stop the engine; nothing else is ever answered.
 
 Pi children receive the session abort signal. Interrupt, stop, delete, and
 runtime shutdown all close the session-owned child before the session work
@@ -67,21 +69,62 @@ non-empty file must match the SQLite `pi_session_state` header id/schema/path,
 otherwise resume is refused rather than silently forking. A Pi resume refusal
 from stderr is persisted as `pi_resume_refused` and remains visible.
 
-## Current scope and boundaries
+## Always_ask gating
+
+A native tool the agent declares `always_ask` is stopped before it executes. When
+at least one such tool is in the compiled plan, the launch materializes a
+per-session SandBase-owned extension into the session's private Pi configuration
+directory and adds it with `--extension`, together with `--no-extensions` so that
+project-local content in the work directory cannot add or replace it. The gated
+names and the session id reach the extension through its environment
+(`SANDBASE_PI_GATED_TOOLS`, `SANDBASE_PI_SESSION_ID`).
+
+The gate is the extension's `tool_call` hook, which blocks the call and asks
+through an `editor` dialog carrying a `sandbase_tool_gate` payload: the tool call
+id, the tool name, and the input a decision will be made against. The adapter
+verifies the extension really loaded before it exposes a gated tool at all: the
+session asks for Pi's command list and requires the per-session marker command
+the extension registers. A launch with a gated tool whose marker is absent fails
+with `pi_rpc_gate_unavailable` instead of running the tool ungated.
+
+Each request is recorded durably in `pi_tool_interactions` before the caller is
+told anything, and the session publishes an `agent.tool_use` with
+`requires_confirmation: true` and the input fingerprint. The session then reports
+`requires_action` and stays busy — Pi is suspended inside its hook, so the same
+turn continues when a decision arrives and no new prompt may race it.
+
+A decision arrives as `user.tool_confirmation` naming the `tool_use_id` (Pi's own
+dialog request id is accepted as well). It is consumed exactly once, by a
+conditional update whose affected-row count is the proof: a duplicate, a late
+decision for a turn that moved on, or a decision naming a different tool finds no
+pending row, is reported as not applied, and cannot execute the call. A decision
+carrying replacement arguments is re-validated before it is written back — Pi
+re-validates nothing after an extension mutates `event.input` — and a malformed
+replacement denies the call instead. A second gate raised while a decision is
+still pending is denied rather than replacing the first, because the runtime
+relays one decision per session and a replaced gate would leave Pi suspended on a
+question no caller could address.
+
+Every path that cannot produce a trustworthy decision denies: an unrecognized
+payload, a tool this session does not gate, no turn in flight, a second gate while
+one is pending, a malformed reply, a turn past its deadline, and a transport that
+closes while a decision is pending. None of them asks, and none of them allows.
 
 The current RPC adapter produces durable CMA events and visible Pi-native
 tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
-not receive Harness `always_ask` approval, local file path confinement, or a
-fake Allow/Deny card. A declared policy is compiled into Pi's own vocabulary
-instead — `--tools` for the enabled
+not run through the Harness tool loop and receive no Harness local path
+confinement, and a gated call is decided by the session's own managed extension
+rather than by a Harness approval card. A declared policy is compiled into Pi's
+own vocabulary instead — `--tools` for the enabled
 set, `--exclude-tools` for a tool denied by `never_allow` or `enabled: false`, and
 `--no-builtin-tools` when no native tool is left — and a declaration with no
 faithful expression is refused with `pi_tool_policy_not_supported`, whose message
 now names the declaration that caused it. The launch sends those flags, so a denied
 or disabled tool is enforced by the child rather than promised by the admission
 check, and an agent that states no policy at all is launched with
-`--no-builtin-tools` rather than with Pi's default toolset. `always_ask` is still
-refused: the gate that would ask is its own change. A fully disabled `mcp_toolset` is admitted
+`--no-builtin-tools` rather than with Pi's default toolset. An `always_ask` entry
+no longer refuses the agent: a native tool declared `always_ask` is gated
+before it executes instead, by the extension described above. A fully disabled `mcp_toolset` is admitted
 instead of refused, because nothing is expected to run through it and Pi has no
 MCP transport to enforce: that is a correction of the earlier blanket refusal of
 any `enabled: false` entry, and it makes no tool available. Continuity is guarded

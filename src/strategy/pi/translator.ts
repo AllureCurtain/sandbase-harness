@@ -120,6 +120,19 @@ export class PiTranslator {
     await this.consumeEvent(event);
   }
 
+  /**
+   * Count a native tool call whose durable `tool_use` the caller emits itself.
+   *
+   * A gated call is published by the gate, not by `tool_execution_start`,
+   * because the gate — not the raw execution frame — is what makes the call
+   * approvable and what records the input a decision was made against. The
+   * count still has to move so a summary cannot report fewer native calls than
+   * the run produced.
+   */
+  noteNativeToolCall(): void {
+    this.summary.nativeToolCount += 1;
+  }
+
   /** Flushes cross-chunk text and closes any request left open at EOF. */
   finish(): PiTranslationSummary {
     const remaining = this.markup.flush();

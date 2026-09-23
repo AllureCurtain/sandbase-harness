@@ -14,10 +14,17 @@
  * conversation's channel between unrelated sessions.
  *
  * Turn model. `execute()` is called once per user event by the executor. It
- * resolves the live session — starting one only when there is none — sends the
- * turn's prompt to it, and waits for the turn outcome. `settled` publishes the
- * terminal `turn_complete`; `failed` propagates so the Session Manager records a
- * `session.error` carrying the engine's own reason.
+ * resolves the live session — starting one only when there is none — and then:
+ *
+ * - `user.message` → `prompt()`, then wait for the turn outcome;
+ * - `user.tool_confirmation` → settle the gate the previous turn suspended on,
+ *   then wait for that same turn to continue.
+ *
+ * `settled` publishes the terminal `turn_complete`; `failed` propagates so the
+ * Session Manager records a `session.error` carrying the engine's own reason. A
+ * `gate` outcome is neither: Pi is blocked inside its tool hook, the turn
+ * continues when a decision is written back, so the session is reported as
+ * needing an action and no `turn_complete` is published for it.
  *
  * The child is released in exactly one place that owns it: `disposeSession`,
  * called by the executor on a terminal session state, so stop, delete, and
@@ -25,7 +32,7 @@
  * session work directory.
  */
 
-import type { TextBlock } from '@/types/cma-protocol.js';
+import type { ContentBlock, TextBlock } from '@/types/cma-protocol.js';
 import type { Database } from '@/core/db/database.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { AgentStrategy, EventLogWriter, StrategyContext } from '@/types/strategy.js';
@@ -36,6 +43,7 @@ import type {
   LoopEngineTurnOutcome,
 } from '@/strategy/loop-engine/adapter.js';
 import { compilePiNativeToolPolicy, type PiNativeToolPlan } from '@/core/session/pi-native-tools.js';
+import { PI_RPC_APPROVAL_NOT_PENDING_CODE } from './pi/rpc-wire.js';
 import {
   getPiSessionState,
   inspectPiSessionFile,
@@ -44,6 +52,22 @@ import {
   PiContinuityError,
 } from './pi/session-continuity.js';
 import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
+
+/**
+ * A `user.tool_confirmation` named a gate this runtime was not waiting on.
+ *
+ * Refusing is the only safe reading: the durable pending record is the sole
+ * authority for executing a gated tool, so a decision that could not be recorded
+ * must not be reported as one that took effect.
+ */
+export class PiApprovalNotPendingError extends Error {
+  readonly code = PI_RPC_APPROVAL_NOT_PENDING_CODE;
+
+  constructor(readonly toolUseId: string) {
+    super(`No Pi gate is awaiting a decision for tool use "${toolUseId}"`);
+    this.name = 'PiApprovalNotPendingError';
+  }
+}
 
 /**
  * The adapter surface the strategy calls.
@@ -80,11 +104,22 @@ export class PiStrategy implements AgentStrategy {
     if (!context.sandbox.hostWorkDir) {
       throw new Error('Pi loop engine requires a sandbox with a host-accessible work directory');
     }
-    if (!context.userEvent || context.userEvent.type !== 'user.message') {
-      throw new Error('Pi loop engine supports user.message turns only');
-    }
-    if (!context.userEvent.content.every((block): block is TextBlock => block.type === 'text')) {
-      throw new Error('Pi loop engine supports text user messages only');
+    const event = context.userEvent;
+    // The two turns this engine can express, resolved before a child is spawned:
+    // a non-text message, or an event with no Pi transport behind it, is refused
+    // without starting a process the runtime would then have to tear down.
+    const turn = event.type === 'user.message'
+      ? { kind: 'message' as const, prompt: requireTextPrompt(event.content) }
+      : event.type === 'user.tool_confirmation'
+        ? {
+          kind: 'confirmation' as const,
+          toolUseId: event.tool_use_id,
+          result: event.result,
+          ...(event.deny_message !== undefined ? { denyMessage: event.deny_message } : {}),
+        }
+        : undefined;
+    if (!turn) {
+      throw new Error(`Pi loop engine cannot execute a "${event.type}" turn`);
     }
     if (!context.modelConfig) {
       throw new Error('Pi loop engine requires a selected model configuration');
@@ -94,11 +129,31 @@ export class PiStrategy implements AgentStrategy {
     // The same compiler admission ran, so the flags sent are the ones checked.
     const plan = compilePiNativeToolPolicy(requireAgentDefinition(context));
     const session = await this.resolveSession(context, plan, workDir);
-    const prompt = context.userEvent.content.map((block) => block.text).join('\n');
 
     try {
-      await session.prompt(prompt);
+      if (turn.kind === 'confirmation') {
+        // A decision is written back to the session that is still blocked inside
+        // its tool hook. `false` means this call did not consume the pending
+        // record — unknown id, already decided, mismatched or malformed — so the
+        // decision may not be reported as one that took effect.
+        const consumed = await session.respondToInteraction(turn.toolUseId, {
+          decision: turn.result,
+          ...(turn.denyMessage !== undefined ? { denyMessage: turn.denyMessage } : {}),
+        });
+        if (!consumed) throw new PiApprovalNotPendingError(turn.toolUseId);
+      } else {
+        await session.prompt(turn.prompt);
+      }
+
       const outcome = await this.turnOutcome(session, context.abortSignal);
+      if (outcome.kind === 'gate') {
+        // Not a finished turn: Pi is suspended inside its tool hook and this same
+        // turn continues when a decision arrives. The session must say it needs
+        // one — a gate nobody is told about is a gate nobody answers — and no
+        // terminal marker may be published for a turn that is still open.
+        context.config.onRequiresAction?.();
+        return;
+      }
       if (outcome.kind === 'failed') throw outcome.error;
 
       // Continuity is recorded before the terminal marker, never after: a
@@ -180,8 +235,13 @@ export class PiStrategy implements AgentStrategy {
         ...(model.base_url ? { base_url: model.base_url } : {}),
       },
       // The compiled plan travels as Pi's own flags, so nothing here can widen
-      // or re-derive what admission checked.
-      toolPlan: { flags: plan.argv },
+      // or re-derive what admission checked. The gated names travel beside them
+      // because they are part of the same compiled policy: the launch loads the
+      // managed gate extension for exactly the tools whose calls need a decision.
+      toolPlan: {
+        flags: plan.argv,
+        ...(plan.gate.length ? { gate: plan.gate } : {}),
+      },
       ...(context.skillDirs?.length ? { skillDirs: context.skillDirs } : {}),
       ...(thinkingLevel ? { thinkingLevel } : {}),
       // The child is started once, so only the first turn's signal can reach the
@@ -354,6 +414,19 @@ function requireAgentDefinition(context: StrategyContext): AgentDefinition {
     throw new Error('Pi loop engine requires the session agent definition to express its tool policy');
   }
   return definition;
+}
+
+/**
+ * The prompt text of a `user.message` turn, or a refusal.
+ *
+ * Pi's RPC `prompt` carries text, so a message with any other block is refused
+ * rather than flattened to whatever happens to be text.
+ */
+function requireTextPrompt(content: readonly ContentBlock[]): string {
+  if (!content.every((block): block is TextBlock => block.type === 'text')) {
+    throw new Error('Pi loop engine supports text user messages only');
+  }
+  return content.map((block) => block.text).join('\n');
 }
 
 function thinkingLevelForSpeed(speed: string | undefined): LoopEngineStartRequest['thinkingLevel'] {

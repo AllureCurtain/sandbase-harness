@@ -8,7 +8,7 @@ import { Writable } from 'node:stream';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import { Database } from '@/core/db/database.js';
 import {
-  PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE,
+  assertPiAgentCanExecute,
   PI_MESSAGE_CONTENT_UNSUPPORTED_CODE,
   PI_SANDBOX_UNSUPPORTED_CODE,
   PI_SANDBOX_UNSUPPORTED_MESSAGE,
@@ -20,6 +20,7 @@ import { SessionManager } from '@/core/session/session-manager.js';
 import { validateRuntimeSettings, type RuntimeSettings } from '@/core/settings/schema.js';
 import { testRuntimeSettingsArea } from '@/core/settings/test.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
+import type { AgentDefinition } from '@/types/agent.js';
 
 const directories: string[] = [];
 
@@ -267,7 +268,7 @@ describe('session loop engine persistence', () => {
     db.close();
   });
 
-  it('rejects Pi creation and legacy-session execution for always_ask agents before event persistence', async () => {
+  it('admits an always_ask agent and compiles the gate the launch must load', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-pi-policy-'));
     directories.push(directory);
     const db = new Database(join(directory, 'data.db'));
@@ -288,11 +289,21 @@ describe('session loop engine persistence', () => {
     );
     const piManager = new SessionManager(db, undefined, 'pi');
 
-    expect(() => piManager.create({ agent: 'agent_ask' })).toThrow(PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE);
+    // Admission used to refuse this agent with `pi_always_ask_not_supported`,
+    // because a launch without a gate would have run the tool with nobody asked.
+    // The managed gate replaces that refusal: the session is created, and the
+    // compiled plan names the tool whose calls must be decided before they run.
+    const created = piManager.create({ agent: 'agent_ask' });
+    expect(created.loopEngine).toBe('pi');
     expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_ask'))
-      .toEqual({ count: 0 });
+      .toEqual({ count: 1 });
+    const definition = created.agentDefinition ?? JSON.parse(
+      (db.prepare('SELECT definition FROM agents WHERE id = ?').get('agent_ask') as { definition: string }).definition,
+    ) as AgentDefinition;
+    expect(assertPiAgentCanExecute(definition).gate).toEqual(['bash']);
 
-    // Simulate a persisted PI row created before the creation-time policy gate.
+    // A persisted PI row created before the gate existed runs the same way: the
+    // decision is asked for per call rather than refused when the event arrives.
     const legacy = new SessionManager(db).create({ agent: 'agent_ask' });
     db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
     let executorCalled = false;
@@ -300,11 +311,13 @@ describe('session loop engine persistence', () => {
       async *execute() { executorCalled = true; },
     });
 
-    await expect(piManager.sendEvent(legacy.id, {
+    await piManager.sendEvent(legacy.id, {
       type: 'user.message', content: [{ type: 'text', text: 'run' }],
-    })).rejects.toThrow(PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE);
-    expect(executorCalled).toBe(false);
-    expect(piManager.getEventLogger().getEvents(legacy.id)).toEqual([]);
+    });
+    // The turn is queued on the session's execution chain, so the executor is
+    // reached just after `sendEvent` acknowledges the event.
+    await waitFor(() => executorCalled);
+    expect(executorCalled).toBe(true);
     db.close();
   });
 
@@ -437,10 +450,9 @@ describe('session loop engine persistence', () => {
     });
 
     const unsupportedEvents: Array<{ event: UserEvent; code: string }> = [
-      {
-        event: { type: 'user.tool_confirmation', tool_use_id: 'tool_1', result: 'allow' },
-        code: PI_USER_EVENT_UNSUPPORTED_CODE,
-      },
+      // `user.tool_confirmation` used to be refused here. It now settles the gate
+      // a Pi session raised, so a custom-tool result is the remaining inbound
+      // event with no Pi transport behind it.
       {
         event: {
           type: 'user.custom_tool_result',

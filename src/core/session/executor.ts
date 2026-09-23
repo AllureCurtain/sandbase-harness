@@ -198,7 +198,12 @@ export class DefaultSessionExecutor implements SessionExecutor {
     // turn: the log may hold other unpaired tool calls awaiting their own
     // confirmation, and the request would carry an unpaired tool call that
     // providers reject with "Tool result is missing".
-    if (event.type === 'user.tool_confirmation') {
+    //
+    // Pi is excluded on purpose. Its gated tools are Pi's own native tools, so
+    // routing a Pi gate through `ToolResolver` would execute the call in the
+    // Harness sandbox while Pi stayed blocked on a decision it never received.
+    // The Pi strategy resolves its own gate.
+    if (event.type === 'user.tool_confirmation' && session.loopEngine !== 'pi') {
       const resolution = await this.toolResolver.handleToolConfirmation(
         session,
         agent,

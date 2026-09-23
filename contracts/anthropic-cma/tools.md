@@ -86,9 +86,14 @@ MCP toolset approval (`standard.ts`, `tool-naming.ts`):
   `tool-naming.ts` and resolved back to a server by longest-prefix match. The
   layers that name a tool and the layers that gate it must agree on the string;
   a second spelling of the rule is how a policy silently stops applying.
-- Pi has no confirmation bridge, so `assertPiAgentCanExecute` rejects an agent
-  whose *effective* policy anywhere is `always_ask` or a denial, rather than
-  admitting it and letting the child CLI run the tool without approval.
+- Pi's pre-execution gate is the one exception, and it is not a Harness
+  permission verdict: `assertPiAgentCanExecute` admits an agent whose *effective*
+  policy marks a native tool `always_ask`, and that tool's calls are stopped by a
+  SandBase-managed Pi extension before they execute (`docs/pi-loop-engine.md`,
+  "Always_ask gating"). The decision is durable and one-shot, so the call runs only
+  if a decision was recorded for it. Anything Pi cannot express at all — a native
+  tool Pi does not have, an enabled `mcp_toolset` — is still refused with
+  `pi_tool_policy_not_supported` rather than admitted.
 
 ## 3. Alignment
 

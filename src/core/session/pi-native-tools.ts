@@ -21,9 +21,10 @@
  * entries. Reading declared configs directly is exactly what previously let a
  * toolset-level policy go unnoticed elsewhere in this codebase.
  *
- * A gated tool is *reported*, not executed: the pre-execution gate that consumes
- * `plan.gate` is its own change, so today the caller refuses an agent that
- * declares `always_ask` rather than launching a tool nobody would be asked about.
+ * A gated tool is *reported* in `plan.gate` and enforced at launch: the session
+ * loads a SandBase-managed Pi extension for those names, which blocks the call
+ * and obtains a decision before it executes. So `always_ask` is admitted with the
+ * gate rather than refused for declaring one.
  */
 
 import { getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
@@ -66,7 +67,12 @@ export function assertPiAgentToolPolicyCanExecute(agent: AgentDefinition): PiNat
 export interface PiNativeToolPlan {
   /** Native Pi tool names the session may expose. */
   allow: string[];
-  /** Subset of `allow` whose calls must pass the managed pre-execution gate. */
+  /**
+   * Subset of `allow` whose calls must pass the managed pre-execution gate.
+   *
+   * What the launch loads the gate extension for: a name that is allowed but not
+   * listed here would execute with no decision attached.
+   */
   gate: string[];
   /** Native tools declared but denied by policy, echoed into `--exclude-tools`. */
   denied: string[];

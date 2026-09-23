@@ -86,6 +86,11 @@ import {
   assertLoopEngineExecutable,
   resolveRequestedLoopEngine,
 } from './loop-engine-admission.js';
+import {
+  PI_RPC_APPROVAL_NOT_PENDING_CODE,
+  PI_RPC_GATE_LOST_CODE,
+  PI_RPC_GATE_UNAVAILABLE_CODE,
+} from '@/strategy/pi/rpc-wire.js';
 
 // ============================================================
 // Types
@@ -1495,6 +1500,12 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     case PI_CLEANUP_PENDING_CODE:
     case PI_TIMED_OUT_CODE:
     case PI_ALWAYS_ASK_UNSUPPORTED_CODE:
+    // The gate codes are permanent for the same reason: a gate extension that did
+    // not load, a gated call that ran with no decision, and a decision naming a
+    // gate nobody is waiting on are not conditions a retry fixes.
+    case PI_RPC_GATE_UNAVAILABLE_CODE:
+    case PI_RPC_GATE_LOST_CODE:
+    case PI_RPC_APPROVAL_NOT_PENDING_CODE:
     case PI_TOOL_POLICY_UNSUPPORTED_CODE:
     case PI_SANDBOX_UNSUPPORTED_CODE:
     case PI_USER_EVENT_UNSUPPORTED_CODE:
