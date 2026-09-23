@@ -69,6 +69,20 @@ non-empty file must match the SQLite `pi_session_state` header id/schema/path,
 otherwise resume is refused rather than silently forking. A Pi resume refusal
 from stderr is persisted as `pi_resume_refused` and remains visible.
 
+The session file is not the whole proof. A file says which Pi conversation is
+being continued, and nothing about what it was continued under, so
+`pi_session_state` also records the host work directory the turns ran in and a
+fingerprint of the compiled tool plan, the model and provider, and the approval
+mode. A launch compares both against what it recorded before it spawns anything,
+and a resume whose directory or fingerprint differs is refused as
+`pi_policy_mismatch`, naming which of the two changed instead of reporting a
+generic discontinuity; the refusal is durable, so the next attempt reads it
+rather than rediscovering it. Nothing is refused for being unrecorded: a row
+written before the binding existed has no value to compare against, so a session
+inherited by an upgrade still resumes. The fingerprint sorts the compiled tool
+sets before hashing, so a re-ordering of an equivalent policy is not a change and
+one that is not a change cannot refuse a resume that reproduces its contract.
+
 ## Always_ask gating
 
 A native tool the agent declares `always_ask` is stopped before it executes. When

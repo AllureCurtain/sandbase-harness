@@ -1,7 +1,29 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { Database } from '@/core/db/database.js';
+import type { LoopEngineContinuityBinding } from '@/strategy/loop-engine/adapter.js';
 
 export const PI_RESUME_REFUSED_MARKER = 'Stored session working directory does not exist';
+
+/**
+ * The recorded work directory or policy fingerprint is not the one being
+ * resumed.
+ *
+ * Deliberately not `pi_session_discontinuous`: the file and the row still agree
+ * about which Pi conversation this is, so the caller has to learn *which* half of
+ * the contract drifted — the work directory it would run in, or the compiled
+ * policy, model, and approval mode it would run under. Reporting both as a
+ * generic discontinuity is how an operator ends up repairing the wrong fact.
+ */
+export const PI_POLICY_MISMATCH_CODE = 'pi_policy_mismatch';
+
+/**
+ * The binding a resume must reproduce, as far as the caller can state it.
+ *
+ * Both fields are optional because a caller may not be able to state the whole
+ * contract — a print-mode launch carries no compiled policy fingerprint — while
+ * a recorded row created before the binding existed carries no value at all.
+ */
+export type PiContinuityBinding = Partial<LoopEngineContinuityBinding>;
 
 export interface PiSessionHeader {
   id: string;
@@ -14,6 +36,10 @@ export interface PiSessionState {
   piSessionId: string;
   schemaVersion: string;
   status: string;
+  /** Host work directory the recorded turns ran in, when one was recorded. */
+  workDir?: string;
+  /** Digest of the policy, model, provider, and approval mode, when recorded. */
+  policyFingerprint?: string;
   continuityNotice?: string;
 }
 
@@ -55,6 +81,7 @@ export function assertPiSessionContinuity(
   db: Database,
   sessionId: string,
   sessionFile: string,
+  expected: PiContinuityBinding = {},
 ): { header?: PiSessionHeader; state?: PiSessionState } {
   const header = inspectPiSessionFile(sessionFile);
   const state = getPiSessionState(db, sessionId);
@@ -72,12 +99,29 @@ export function assertPiSessionContinuity(
   if (state.sessionFile !== sessionFile || state.piSessionId !== header.id || state.schemaVersion !== header.schemaVersion) {
     throw new PiContinuityError('pi_session_discontinuous', 'Pi session file identity or schema does not match SandBase continuity state');
   }
+  // A session file proves which conversation this is, not which contract it ran
+  // under. The comparison is against the *recorded* value, so a row written
+  // before the binding existed has nothing to compare and still resumes; a row
+  // that recorded one refuses anything but the value it recorded.
+  if (state.workDir !== undefined && state.workDir !== expected.workDir) {
+    throw new PiContinuityError(
+      PI_POLICY_MISMATCH_CODE,
+      'Pi session work directory is not the one its recorded turns ran in',
+    );
+  }
+  if (state.policyFingerprint !== undefined && state.policyFingerprint !== expected.policyFingerprint) {
+    throw new PiContinuityError(
+      PI_POLICY_MISMATCH_CODE,
+      'Pi session tool policy, model, provider, or approval mode is not the one its recorded turns ran under',
+    );
+  }
   return { header, state };
 }
 
 export function getPiSessionState(db: Database, sessionId: string): PiSessionState | undefined {
   const row = db.prepare(`
-    SELECT session_id, session_file, pi_session_id, schema_version, status, continuity_notice
+    SELECT session_id, session_file, pi_session_id, schema_version, status,
+           work_dir, policy_fingerprint, continuity_notice
     FROM pi_session_state WHERE session_id = ?
   `).get(sessionId) as {
     session_id: string;
@@ -85,6 +129,8 @@ export function getPiSessionState(db: Database, sessionId: string): PiSessionSta
     pi_session_id: string;
     schema_version: string;
     status: string;
+    work_dir: string | null;
+    policy_fingerprint: string | null;
     continuity_notice: string | null;
   } | undefined;
   if (!row) return undefined;
@@ -94,6 +140,8 @@ export function getPiSessionState(db: Database, sessionId: string): PiSessionSta
     piSessionId: row.pi_session_id,
     schemaVersion: row.schema_version,
     status: row.status,
+    ...(row.work_dir ? { workDir: row.work_dir } : {}),
+    ...(row.policy_fingerprint ? { policyFingerprint: row.policy_fingerprint } : {}),
     ...(row.continuity_notice ? { continuityNotice: row.continuity_notice } : {}),
   };
 }
@@ -105,19 +153,36 @@ export function recordPiSessionState(
   header: PiSessionHeader,
   status = 'active',
   continuityNotice?: string,
+  binding: PiContinuityBinding = {},
 ): void {
+  // `COALESCE` on the two binding columns is what keeps the recorded contract
+  // stable: a caller that cannot state a fingerprint (a launch path that carries
+  // none) records the identity without erasing the binding that is already
+  // there, so a later resume still compares against what the session ran under.
   db.prepare(`
     INSERT INTO pi_session_state (
-      session_id, session_file, pi_session_id, schema_version, status, continuity_notice, last_turn_at
-    ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      session_id, session_file, pi_session_id, schema_version, status, continuity_notice,
+      work_dir, policy_fingerprint, last_turn_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(session_id) DO UPDATE SET
       session_file = excluded.session_file,
       pi_session_id = excluded.pi_session_id,
       schema_version = excluded.schema_version,
       status = excluded.status,
       continuity_notice = excluded.continuity_notice,
+      work_dir = COALESCE(excluded.work_dir, pi_session_state.work_dir),
+      policy_fingerprint = COALESCE(excluded.policy_fingerprint, pi_session_state.policy_fingerprint),
       last_turn_at = excluded.last_turn_at
-  `).run(sessionId, sessionFile, header.id, header.schemaVersion, status, continuityNotice ?? null);
+  `).run(
+    sessionId,
+    sessionFile,
+    header.id,
+    header.schemaVersion,
+    status,
+    continuityNotice ?? null,
+    binding.workDir ?? null,
+    binding.policyFingerprint ?? null,
+  );
 }
 
 export function markPiSessionContinuityFailure(

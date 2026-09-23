@@ -32,11 +32,14 @@
  * session work directory.
  */
 
+import { resolve } from 'node:path';
 import type { ContentBlock, TextBlock } from '@/types/cma-protocol.js';
 import type { Database } from '@/core/db/database.js';
 import type { AgentDefinition } from '@/types/agent.js';
+import type { ModelConfig } from '@/types/model.js';
 import type { AgentStrategy, EventLogWriter, StrategyContext } from '@/types/strategy.js';
 import type {
+  LoopEngineContinuityBinding,
   LoopEngineEventSink,
   LoopEngineSession,
   LoopEngineStartRequest,
@@ -46,7 +49,8 @@ import type {
   LoopEngineTurnOutcome,
 } from '@/strategy/loop-engine/adapter.js';
 import { compilePiNativeToolPolicy, type PiNativeToolPlan } from '@/core/session/pi-native-tools.js';
-import { PI_RPC_APPROVAL_NOT_PENDING_CODE } from './pi/rpc-wire.js';
+import { PI_APPROVAL_MODE_DEFAULT, type PiApprovalMode } from './pi/approval-mode.js';
+import { PI_RPC_APPROVAL_NOT_PENDING_CODE, piPolicyFingerprint } from './pi/rpc-wire.js';
 import {
   getPiSessionState,
   inspectPiSessionFile,
@@ -87,6 +91,16 @@ export interface PiStrategyOptions {
   adapter: PiSessionStarter;
   /** Durable continuity state; an embedder without a database passes none. */
   database?: Database;
+  /**
+   * How a gated Pi call is answered on this runtime.
+   *
+   * Read when a session's binding is computed, because who answers a gate is part
+   * of the contract the session ran under: an interactive runtime and one that
+   * preauthorizes a call unattended are not the same contract, so a session
+   * recorded under one is not resumed under the other. Omitted means
+   * `interactive`, which is also the runtime's own default.
+   */
+  approvalMode?: () => PiApprovalMode;
 }
 
 /**
@@ -124,14 +138,18 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
     if (!turn) {
       throw new Error(`Pi loop engine cannot execute a "${event.type}" turn`);
     }
-    if (!context.modelConfig) {
-      throw new Error('Pi loop engine requires a selected model configuration');
-    }
+    // The model that both the child's argv and the binding are built from,
+    // resolved before a child is spawned so a missing id or key fails without one.
+    const model = requireLaunchModel(context);
 
     const workDir = context.sandbox.hostWorkDir;
     // The same compiler admission ran, so the flags sent are the ones checked.
     const plan = compilePiNativeToolPolicy(requireAgentDefinition(context));
-    const session = await this.resolveSession(context, plan, workDir);
+    // Computed once and used for both halves of continuity: the launch proves it
+    // before a child exists, and the settled turn records it. Two computations
+    // would be two chances to disagree about what this session is running under.
+    const binding = continuityBindingFor(model, plan, workDir, this.options.approvalMode);
+    const session = await this.resolveSession(context, model, plan, workDir, binding);
 
     try {
       if (turn.kind === 'confirmation') {
@@ -162,7 +180,7 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
       // Continuity is recorded before the terminal marker, never after: a
       // `turn_complete` claims the turn is finished, and a turn whose managed
       // session file does not prove continuity is not a finished turn.
-      this.persistContinuity(session, workDir);
+      this.persistContinuity(session, binding);
 
       // Order matters: refuse new steers, then let the ones already accepted
       // finish settling, and only then publish the terminal marker. A client that
@@ -236,22 +254,19 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
    */
   private async resolveSession(
     context: StrategyContext,
+    model: ResolvedLaunchModel,
     plan: PiNativeToolPlan,
     workDir: string,
+    binding: LoopEngineContinuityBinding,
   ): Promise<LoopEngineSession> {
     const existing = this.liveSession(context.session.id);
     if (existing) return existing;
 
-    const model = context.modelConfig;
-    if (!model) throw new Error('Pi loop engine requires a selected model configuration');
-    // Resolved again inside the launcher; checked here so a missing id or key
-    // fails before a child is spawned rather than after a doomed launch.
-    if (!model.model?.trim()) throw new Error('Pi loop engine requires a selected model id');
-    if (!model.api_key?.trim()) throw new Error('Pi loop engine requires a resolved model API key');
-
     const thinkingLevel = thinkingLevelForSpeed(context.session.agentDefinition?.model_config?.speed);
     const request: LoopEngineStartRequest = {
       sessionId: context.session.id,
+      // The sandbox's own directory, unchanged: the launcher normalizes it the
+      // same way before comparing it with the recorded binding.
       workDir,
       systemPrompt: context.systemPrompt,
       model: {
@@ -268,6 +283,9 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
         flags: plan.argv,
         ...(plan.gate.length ? { gate: plan.gate } : {}),
       },
+      // The contract this session is claiming to continue, which the launch
+      // checks against what its durable state recorded before spawning anything.
+      binding,
       ...(context.skillDirs?.length ? { skillDirs: context.skillDirs } : {}),
       ...(thinkingLevel ? { thinkingLevel } : {}),
       // The child is started once, so only the first turn's signal can reach the
@@ -354,9 +372,13 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
    *
    * A missing header after a settled turn is a real discontinuity rather than a
    * detail to skip past, and a changed identity means the durable events would
-   * describe a conversation the child is no longer in.
+   * describe a conversation the child is no longer in. The binding is recorded
+   * with the identity, because a session file on its own says which conversation
+   * this is while saying nothing about the contract it ran under — and a resume
+   * that reproduces the file but not the contract would continue the history
+   * under a policy its own events do not describe.
    */
-  private persistContinuity(session: LoopEngineSession, workDir: string): void {
+  private persistContinuity(session: LoopEngineSession, binding: LoopEngineContinuityBinding): void {
     const database = this.options.database;
     const sessionFile = session.engineSessionFile;
     if (!database || !sessionFile) return;
@@ -368,12 +390,7 @@ export class PiStrategy implements AgentStrategy, LoopEngineSteering {
     if (previous && (previous.piSessionId !== header.id || previous.schemaVersion !== header.schemaVersion)) {
       throw new PiContinuityError('pi_session_discontinuous', 'Pi changed its session identity or schema during the turn');
     }
-    // The work directory is not part of the recorded binding: the managed
-    // session file lives in the runtime data directory, so a turn on a
-    // different workspace cannot silently continue a stored conversation
-    // through a path this record would have to police.
-    void workDir;
-    recordPiSessionState(database, session.sessionId, sessionFile, header);
+    recordPiSessionState(database, session.sessionId, sessionFile, header, 'active', undefined, binding);
   }
 
   /**
@@ -440,6 +457,65 @@ function requireAgentDefinition(context: StrategyContext): AgentDefinition {
     throw new Error('Pi loop engine requires the session agent definition to express its tool policy');
   }
   return definition;
+}
+
+/**
+ * A model configuration the launch can actually use.
+ *
+ * The id and key are `string` in this shape because the checks in
+ * {@link requireLaunchModel} are what make them usable, and one validated value
+ * builds both the launch's argv and the binding it is compared against: a
+ * configuration that cannot be launched cannot be fingerprinted into a contract
+ * the runtime never ran under either.
+ */
+type ResolvedLaunchModel = ModelConfig & { model: string; api_key: string };
+
+/**
+ * The model a launch and its binding are built from, or a refusal.
+ *
+ * Resolved once per turn, because the binding fingerprints the model the session
+ * is running with.
+ */
+function requireLaunchModel(context: StrategyContext): ResolvedLaunchModel {
+  const model = context.modelConfig;
+  if (!model) throw new Error('Pi loop engine requires a selected model configuration');
+  // Resolved again inside the launcher; checked here so a missing id or key
+  // fails before a child is spawned rather than after a doomed launch.
+  if (!model.model?.trim()) throw new Error('Pi loop engine requires a selected model id');
+  if (!model.api_key?.trim()) throw new Error('Pi loop engine requires a resolved model API key');
+  return { ...model, model: model.model, api_key: model.api_key };
+}
+
+/**
+ * The contract a session runs under, derived from what actually changes it.
+ *
+ * Every field here is one whose change makes the next turn a different contract
+ * than the one the durable events describe: the compiled plan in the vocabulary
+ * the child was launched with (including whether anything is gated at all), the
+ * model and provider that answered, the directory the child works in, and who
+ * answers a gated call. `piPolicyFingerprint` sorts the tool sets, so a
+ * re-ordering of an equivalent plan is not a change.
+ */
+function continuityBindingFor(
+  model: ResolvedLaunchModel,
+  plan: PiNativeToolPlan,
+  workDir: string,
+  approvalMode: (() => PiApprovalMode) | undefined,
+): LoopEngineContinuityBinding {
+  const resolvedWorkDir = resolve(workDir);
+  return {
+    workDir: resolvedWorkDir,
+    policyFingerprint: piPolicyFingerprint({
+      allow: plan.allow,
+      gate: plan.gate,
+      denied: plan.denied,
+      exposeNoTools: plan.exposeNoTools,
+      model: model.model,
+      provider: model.provider,
+      workDir: resolvedWorkDir,
+      approvalMode: approvalMode?.() ?? PI_APPROVAL_MODE_DEFAULT,
+    }),
+  };
 }
 
 /**

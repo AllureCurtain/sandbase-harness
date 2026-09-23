@@ -75,7 +75,13 @@ export function bootstrapRuntimeLoopEngine(
       ...(preauthorizedRule ? { preauthorizedRule } : {}),
       ...(timeoutMs ? { turnTimeoutMs: timeoutMs, requestTimeoutMs: timeoutMs } : {}),
     });
-    strategies.pi = new PiStrategy({ adapter, database: options.database });
+    strategies.pi = new PiStrategy({
+      adapter,
+      database: options.database,
+      // The same resolved mode the adapter decides gates with, so the contract a
+      // session is bound to is the one this runtime would actually apply.
+      approvalMode: () => approvalMode,
+    });
   }
 
   const provider = settings.loop_engine.provider;

@@ -8,6 +8,12 @@ import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
+import { MIGRATIONS } from '@/core/db/migrations.js';
+
+/** The columns of one table, as SQLite reports them. */
+function columnsOf(db: Database, table: string): string[] {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name);
+}
 
 describe('Database migrations', () => {
   let tmpDir: string;
@@ -80,6 +86,43 @@ describe('Database migrations', () => {
     const row = db2.prepare('SELECT name FROM environments WHERE id = ?').get('env_p') as { name: string };
     expect(row.name).toBe('persist');
     db2.close();
+  });
+
+  it('adds the Pi session binding columns to a fresh workspace and to an existing one', () => {
+    // Fresh: the two columns exist as soon as migrations run.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'pi_session_state')).toEqual(expect.arrayContaining(['work_dir', 'policy_fingerprint']));
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 41').get()).toEqual({
+      name: '041_pi_session_policy_binding',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped at the migration before it. The row a
+    // session wrote then has to survive the upgrade with no recorded binding,
+    // because the resume path treats an unrecorded value as nothing to compare
+    // rather than as a contract it can invent.
+    const upgradedPath = join(tmpDir, 'upgraded.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 40));
+    expect(columnsOf(upgraded, 'pi_session_state')).not.toContain('work_dir');
+    upgraded.exec(`INSERT INTO environments (id, name, config) VALUES ('env_u', 'u', '{}')`);
+    upgraded.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_u', 'u', '{}')`);
+    upgraded.exec(`
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, resources, vault_ids, loop_engine)
+      VALUES ('sess_u', 'agent_u', 'u', 'env_u', 'paused', '[]', '[]', 'pi')
+    `);
+    upgraded.exec(`
+      INSERT INTO pi_session_state (session_id, session_file, pi_session_id, schema_version, status)
+      VALUES ('sess_u', '/tmp/sess_u.jsonl', 'pi-u', '1', 'active')
+    `);
+
+    upgraded.runMigrations();
+    expect(columnsOf(upgraded, 'pi_session_state')).toEqual(expect.arrayContaining(['work_dir', 'policy_fingerprint']));
+    expect(upgraded.prepare(
+      'SELECT session_id, work_dir, policy_fingerprint FROM pi_session_state WHERE session_id = ?',
+    ).get('sess_u')).toEqual({ session_id: 'sess_u', work_dir: null, policy_fingerprint: null });
+    upgraded.close();
   });
 
   it('transaction rolls back on error', () => {

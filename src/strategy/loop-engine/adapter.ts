@@ -97,6 +97,28 @@ export interface LoopEngineToolPlan {
   gate?: readonly string[];
 }
 
+/**
+ * The contract a session's earlier turns ran under.
+ *
+ * A session that already ran is continued, never restarted, so a resume has to
+ * reproduce this exactly: the same host work directory, and the same digest over
+ * the compiled tool plan, the model and provider, and the approval mode. An
+ * engine whose own durable state says otherwise refuses the resume rather than
+ * continuing a conversation under a contract its recorded events do not
+ * describe.
+ *
+ * `workDir` is the normalized form of the directory the start request names, so
+ * a recorded value and a resume compared against it are both absolute: a
+ * trailing separator or a `..` in the sandbox's own path cannot make the same
+ * directory look like two.
+ */
+export interface LoopEngineContinuityBinding {
+  /** Normalized host work directory the session's turns ran in. */
+  workDir: string;
+  /** Digest over everything else that changes the contract of a turn. */
+  policyFingerprint: string;
+}
+
 /** Where an adapter's durable events, usage, and oversized output go. */
 export interface LoopEngineEventSink extends EventLogWriter {
   broadcast(event: SessionEvent): void;
@@ -121,6 +143,16 @@ export interface LoopEngineStartRequest {
   };
   /** The compiled tool policy the child must be launched with. */
   toolPlan: LoopEngineToolPlan;
+  /**
+   * The contract this session ran its earlier turns under and must resume under.
+   *
+   * Required rather than optional: an engine that cannot state the contract it is
+   * claiming to continue has not proved the resume, and a resume that cannot be
+   * proved has to be refused instead of assumed. `workDir` here is the binding's
+   * normalized value; the `workDir` above is the directory as the caller named
+   * it, which the engine normalizes the same way before comparing.
+   */
+  binding: LoopEngineContinuityBinding;
   /** Explicit skill directories, for an engine that loads them by path. */
   skillDirs?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';

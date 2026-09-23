@@ -140,12 +140,28 @@ export interface PiRpcProcessHandle extends PiProcessHandle {
  */
 export interface PiRpcLaunchRequest {
   sessionId: string;
-  /** Host work directory the child runs in; also its cwd. */
+  /**
+   * Host work directory the child runs in; also its cwd.
+   *
+   * Part of the resume binding: a Pi session file records the directory its own
+   * conversation ran in, and a child started elsewhere would continue the history
+   * under a contract the recorded turns never had.
+   */
   workDir: string;
   /** Already-composed agent system prompt, including loaded skills. */
   systemPrompt: string;
   model: PiModelConfig;
   toolArgs?: readonly string[];
+  /**
+   * Digest of the contract this launch is resuming under — the compiled plan,
+   * the model and provider, the work directory, and the approval mode.
+   *
+   * Compared against the recorded binding before a child is spawned, so a resume
+   * that would continue a conversation under a different contract is refused
+   * instead of started. Required rather than optional because a launch that
+   * cannot state its contract has not proved the resume it is claiming.
+   */
+  policyFingerprint: string;
   /**
    * Native tool names whose calls must pass the managed pre-execution gate.
    *
@@ -308,7 +324,13 @@ export class PiLauncher {
     });
 
     try {
-      if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
+      // A print-mode turn carries no policy fingerprint, so it can prove only the
+      // half of the binding it does state: the directory this conversation ran in.
+      if (this.database) {
+        assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile, {
+          workDir: resolve(request.workDir),
+        });
+      }
       this.materializeModelsConfig(paths.configDir, model);
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
       const invocation = piInvocationFor([
@@ -438,7 +460,17 @@ export class PiLauncher {
     });
 
     try {
-      if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
+      // Both halves of the resume binding are proved here, before the lease is
+      // used for a child: the directory this session ran in, and the digest of
+      // the policy, model, and approval contract it ran under. A session file
+      // records which conversation this is; it records nothing about what that
+      // conversation was allowed to do.
+      if (this.database) {
+        assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile, {
+          workDir: resolve(request.workDir),
+          policyFingerprint: request.policyFingerprint,
+        });
+      }
       this.materializeModelsConfig(paths.configDir, model);
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
       const gateExtensionFile = gateTools.length > 0
