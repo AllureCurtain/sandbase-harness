@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { compilePiNativeToolPolicy, PiToolPolicyUnsupportedError } from '@/core/session/pi-native-tools.js';
-import { assertPiAgentCanExecute, PiAlwaysAskUnsupportedError } from '@/core/session/pi-policy.js';
+import { assertPiAgentCanExecute } from '@/core/session/pi-policy.js';
 import { PI_TOOL_ARGS_WHEN_UNSTATED, piToolArgsFor } from '@/strategy/pi-launcher.js';
 import { PI_NATIVE_TOOLS, isPiNativeTool } from '@/strategy/pi/native-tools.js';
 import type { AgentDefinition } from '@/types/agent.js';
@@ -118,7 +118,7 @@ describe('fail-closed refusals', () => {
     expect(plan.allow).toEqual(['read']);
   });
 
-  it('reports a gated tool as gated, and still refuses the agent until the gate exists', () => {
+  it('reports a gated tool as gated, and admits the agent that declares it', () => {
     const definition = agentWithTools([
       {
         type: 'agent_toolset_20260401',
@@ -126,11 +126,16 @@ describe('fail-closed refusals', () => {
       },
     ]);
 
-    // The plan is honest about what would need asking...
-    expect(compilePiNativeToolPolicy(definition).gate).toEqual(['bash']);
-    // ...and admission refuses it, because a launch without the gate would run a
-    // tool nobody would be asked about.
-    expect(() => assertPiAgentCanExecute(definition)).toThrow(PiAlwaysAskUnsupportedError);
+    // Admission used to refuse this agent with `pi_always_ask_not_supported`,
+    // because a launch without a gate would have run the tool with nobody asked.
+    // The gate is what replaces that refusal: the plan names the tool the launch
+    // must load the gate extension for, and the agent runs.
+    const plan = assertPiAgentCanExecute(definition);
+    expect(plan.gate).toEqual(['bash']);
+    // Gated is not denied: `bash` stays in the allowlist and is decided per call,
+    // so it must not appear in `--exclude-tools` either.
+    expect(plan.allow).toEqual(['read', 'bash']);
+    expect(plan.argv).toEqual(['--tools', 'read,bash']);
   });
 
   it('returns the plan from admission for an agent that needs no gate', () => {

@@ -137,7 +137,9 @@ export class DelegationService {
     // A delegated target is a new Pi execution boundary. Validate its policy
     // before resolving credentials, constructing a model, or provisioning a
     // sandbox; otherwise a parent Pi session could bypass the creation-time
-    // always_ask/never_allow/disabled admission gate for its child.
+    // never_allow/disabled admission gate for its child. A target declaring
+    // `always_ask` is admitted, and the gate its plan names is what decides the
+    // call before it executes.
     if (session.loopEngine === 'pi' || strategy.name === 'pi') {
       assertPiAgentCanExecute(target);
     }

@@ -38,6 +38,12 @@ export type LoopEngineToolPolicy =
 export type LoopEngineToolApproval =
   /** Harness confirmation, executed by the Harness strategy loop. */
   | 'harness_confirmation'
+  /**
+   * The engine raises a managed pre-execution gate for a tool call and relays
+   * the decision to the caller. The decision is consumed once, and a decision
+   * that cannot be recorded leaves the call unexecuted.
+   */
+  | 'rpc_gate'
   /** No approval mechanism. A caller must not claim otherwise. */
   | 'none';
 
@@ -80,6 +86,15 @@ export interface LoopEngineCapabilityProfile {
 export interface LoopEngineToolPlan {
   /** The declared policy, already expressed in the engine's own flags. */
   flags: readonly string[];
+  /**
+   * Engine-native tool names whose calls must pass the managed pre-execution
+   * gate before they execute, or omitted when nothing is gated.
+   *
+   * Carried beside `flags` because it is part of the same compiled policy, and
+   * because the gate list is what the launch must load a gate extension for: a
+   * name that is allowed but not gated would execute with no decision attached.
+   */
+  gate?: readonly string[];
 }
 
 /** Where an adapter's durable events, usage, and oversized output go. */
@@ -125,6 +140,36 @@ export interface LoopEngineStartRequest {
 }
 
 /**
+ * One interaction a session raised that needs a decision before it proceeds.
+ *
+ * The input is the input the decision will be made against, together with its
+ * fingerprint, so a decision cannot be replayed against different arguments.
+ */
+export interface LoopEnginePendingInteraction {
+  /** Engine-side correlation id for the interaction. */
+  requestId: string;
+  /** Caller-visible tool use id the decision is recorded against. */
+  toolUseId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  /** Stable digest of `input`. */
+  inputFingerprint: string;
+  turnId: string;
+}
+
+/**
+ * Resolve one pending interaction.
+ *
+ * Resolves to `true` only when this call consumed the pending record. Every
+ * other outcome — unknown id, already decided, mismatched tool or turn,
+ * malformed decision — is answered with a refusal and reported as `false`, so a
+ * replayed or mismatched decision can never execute the call.
+ */
+export interface LoopEngineInteractionResponder {
+  respondToInteraction(requestId: string, response: unknown): Promise<boolean>;
+}
+
+/**
  * One engine session: one owned child, many turns.
  *
  * The turn protocol is three methods. `prompt` starts a turn, and
@@ -134,7 +179,7 @@ export interface LoopEngineStartRequest {
  * without a second round trip, so a failed turn is reported with its reason
  * instead of as an unexplained hang.
  */
-export interface LoopEngineSession {
+export interface LoopEngineSession extends LoopEngineInteractionResponder {
   readonly sessionId: string;
   /** Active turn identifier, or `undefined` when no turn is in flight. */
   readonly turnId: string | undefined;
@@ -171,6 +216,12 @@ export interface LoopEngineSession {
 }
 
 export type LoopEngineTurnOutcome =
+  /**
+   * The turn is suspended on a gate, not finished: the engine is blocked inside
+   * its tool hook and the same turn continues when a decision is written back.
+   * A caller must not publish a terminal marker for it.
+   */
+  | { kind: 'gate'; interaction: LoopEnginePendingInteraction }
   | { kind: 'settled' }
   | { kind: 'failed'; error: Error };
 

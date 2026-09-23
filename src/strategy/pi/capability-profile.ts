@@ -25,7 +25,7 @@ import type { LoopEngineCapabilityProfile } from '@/strategy/loop-engine/adapter
 
 export const PI_CAPABILITY_PROFILE: LoopEngineCapabilityProfile = {
   tool_policy: 'native_tools_only',
-  tool_approval: 'none',
+  tool_approval: 'rpc_gate',
   path_confinement: 'external_boundary',
   streaming: true,
   resume: true,
@@ -48,17 +48,20 @@ export const PI_ADAPTER_CAPABILITY_IDS = [
   'rpc-jsonl',
   'session-continuity',
   'native-pi-tools',
+  'native-tool-gate',
 ] as const;
 
 /**
  * Why Pi is still not a peer of `builtin`, stated as the current boundary.
  *
  * It must remain true after this change: Pi now holds one long-lived child per
- * session, but its native tools are still not Harness `ToolResolver` tools and
- * Pi still provides no security sandbox.
+ * session and gates an `always_ask` native tool through its own managed
+ * extension, but its native tools are still not Harness `ToolResolver` tools, so
+ * they never pass Harness permission policy, MCP tools, or sandbox path checks —
+ * and Pi still provides no security sandbox.
  */
 export const PI_LOOP_ENGINE_REASON =
-  'Runs the Pi CLI as a session-owned RPC child against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy.';
+  'Runs the Pi CLI as a session-owned RPC child against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy, and an always_ask native tool is gated by a SandBase-managed Pi extension before it executes.';
 
 /**
  * Requirements a runtime must satisfy before the Pi adapter can execute.

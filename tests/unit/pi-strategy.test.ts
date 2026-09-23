@@ -51,6 +51,10 @@ const PI_AGENT = {
 class ScriptedSession implements LoopEngineSession {
   readonly calls: string[] = [];
   readonly promptTexts: string[] = [];
+  /** Decisions handed to the gate, in order. */
+  readonly interactions: Array<{ reference: string; response: unknown }> = [];
+  /** What `respondToInteraction` answers; `false` is a decision nothing consumed. */
+  consumed = true;
   /** Prompts handed out in order; a promise here is a turn that has not settled. */
   readonly outcomes: Array<LoopEngineTurnOutcome | Promise<LoopEngineTurnOutcome>> = [];
   defaultOutcome: LoopEngineTurnOutcome | Promise<LoopEngineTurnOutcome> = { kind: 'settled' };
@@ -69,6 +73,12 @@ class ScriptedSession implements LoopEngineSession {
     this.calls.push('prompt');
     this.promptTexts.push(text);
     this.phase = 'busy';
+  }
+
+  async respondToInteraction(reference: string, response: unknown): Promise<boolean> {
+    this.calls.push('respondToInteraction');
+    this.interactions.push({ reference, response });
+    return this.consumed;
   }
 
   async awaitTurnOutcome(): Promise<LoopEngineTurnOutcome> {
@@ -97,6 +107,7 @@ function contextFor(
     agentDefinition?: unknown;
     event?: unknown;
     abortSignal?: AbortSignal;
+    requiresAction?: () => void;
   } = {},
   broadcasts: SessionEvent[] = [],
 ): StrategyContext {
@@ -139,7 +150,7 @@ function contextFor(
     },
     broadcast: (event: SessionEvent) => broadcasts.push(event),
     ...(overrides.abortSignal ? { abortSignal: overrides.abortSignal } : {}),
-    config: {},
+    config: { ...(overrides.requiresAction ? { onRequiresAction: overrides.requiresAction } : {}) },
   } as unknown as StrategyContext;
 }
 
@@ -370,5 +381,90 @@ describe('PiStrategy turn loop over a session-owned child', () => {
     });
 
     await expect(run(strategy, context)).rejects.toThrow(/text user messages only/);
+  });
+});
+
+describe('PiStrategy tool gate', () => {
+  /** The plan the launch must load a gate extensions for, compiled from the agent. */
+  const GATED_AGENT = {
+    name: 'pi-agent',
+    model: 'gpt-pi-selected',
+    system: '# System',
+    tools: [{
+      type: 'agent_toolset_20260401',
+      configs: [{ name: 'read' }, { name: 'bash', permission_policy: { type: 'always_ask' } }],
+    }],
+  } as unknown as AgentDefinition;
+
+  const GATE_INTERACTION = {
+    requestId: 'ui-gate-1',
+    toolUseId: 'toolu_1',
+    toolName: 'bash',
+    input: { command: 'rm -rf /tmp/x' },
+    inputFingerprint: 'fixture-fingerprint',
+    turnId: 'piturn_1',
+  };
+
+  it('sends the gated tool names with the flags the launch is admitted with', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    const starts: LoopEngineStartRequest[] = [];
+    const strategy = strategyFor([session], starts);
+
+    await run(strategy, contextFor([], { agentDefinition: GATED_AGENT }));
+
+    // The gates travel with the flags because they are the same compiled policy:
+    // a name that is allowed but not gated would execute with nobody asked.
+    expect(starts[0].toolPlan.flags).toEqual(['--tools', 'read,bash']);
+    expect(starts[0].toolPlan.gate).toEqual(['bash']);
+  });
+
+  it('suspends on a gate without publishing a terminal marker, and reports it needs an action', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    session.outcomes.push({ kind: 'gate', interaction: GATE_INTERACTION });
+    const events: SessionEvent[] = [];
+    let requiresAction = false;
+    const strategy = strategyFor([session], []);
+
+    await run(strategy, contextFor(events, { requiresAction: () => { requiresAction = true; } }));
+
+    // Pi is blocked inside its tool hook, so the turn is not finished: publishing
+    // `turn_complete` would tell a client the turn ended while it is still open,
+    // and the session has to say it is waiting for a decision.
+    expect(requiresAction).toBe(true);
+    expect(events.map((event) => event.type)).not.toContain('turn_complete');
+    // The session is not released: the same turn continues when a decision lands.
+    expect(session.calls).not.toContain('close');
+  });
+
+  it('writes a decision back to the session that raised the gate, then continues that turn', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    const events: SessionEvent[] = [];
+    const strategy = strategyFor([session], []);
+
+    await run(strategy, contextFor(events, {
+      event: { type: 'user.tool_confirmation', tool_use_id: 'toolu_1', result: 'allow', deny_message: 'because' },
+    }));
+
+    // A confirmation is not a prompt: the child is already in the turn the gate
+    // suspended, and sending a second prompt would race it.
+    expect(session.promptTexts).toEqual([]);
+    expect(session.interactions).toEqual([{
+      reference: 'toolu_1',
+      response: { decision: 'allow', denyMessage: 'because' },
+    }]);
+    expect(events.map((event) => event.type)).toEqual(['turn_complete']);
+  });
+
+  it('refuses a decision no pending record consumed instead of reporting it applied', async () => {
+    const session = new ScriptedSession('sess_pi_turn');
+    session.consumed = false;
+    const strategy = strategyFor([session], []);
+
+    await expect(run(strategy, contextFor([], {
+      event: { type: 'user.tool_confirmation', tool_use_id: 'toolu_1', result: 'allow' },
+    }))).rejects.toMatchObject({ code: 'pi_rpc_approval_not_pending' });
+    // The child is released: the caller cannot be told the decision took effect,
+    // and leaving a session blocked on a gate nobody is waiting for is worse.
+    expect(session.calls).toContain('close');
   });
 });

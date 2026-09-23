@@ -341,29 +341,31 @@ describe('Managed Agents API', () => {
     });
 
     it('keeps the Pi policy gate on explicit engine selection', async () => {
+      // Pi has no MCP transport, so an enabled `mcp_toolset` is a capability the
+      // agent declares and Pi cannot provide. Selecting the engine explicitly must
+      // still run admission and refuse it rather than silently dropping the
+      // toolset. (`always_ask` no longer stands here: it is admitted and gated,
+      // which the test below asserts.)
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
-        'agent_pi_admission_always_ask',
-        'pi-admission-always-ask',
+        'agent_pi_admission_mcp',
+        'pi-admission-mcp',
         JSON.stringify({
-          name: 'pi-admission-always-ask',
+          name: 'pi-admission-mcp',
           model: 'gpt-4o',
-          system: 'Ask first.',
-          tools: [{
-            type: 'agent_toolset_20260401',
-            configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
-          }],
+          system: 'Use the tools.',
+          tools: [{ type: 'mcp_toolset', mcp_server_name: 'tools-server', configs: [] }],
         }),
       );
 
       const rejected = await postJson('/v1/sessions', {
-        agent: 'agent_pi_admission_always_ask',
+        agent: 'agent_pi_admission_mcp',
         loop_engine: 'pi',
       });
       expect(rejected.res.status).toBe(400);
-      expect(rejected.body.error.code).toBe('pi_always_ask_not_supported');
+      expect(rejected.body.error.code).toBe('pi_tool_policy_not_supported');
       expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?')
-        .get('agent_pi_admission_always_ask')).toEqual({ count: 0 });
-      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_admission_always_ask');
+        .get('agent_pi_admission_mcp')).toEqual({ count: 0 });
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_admission_mcp');
     });
 
     it('reports executable capabilities and rejects unavailable web tools before persistence', async () => {
@@ -586,7 +588,7 @@ describe('Managed Agents API', () => {
       db.prepare('DELETE FROM environments WHERE id = ?').run('env_pi_docker');
     });
 
-    it('rejects Pi sessions for agents requesting always_ask with a stable client error', async () => {
+    it('admits Pi sessions for agents requesting always_ask instead of refusing them', async () => {
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
         'agent_pi_always_ask',
         'pi-always-ask',
@@ -603,41 +605,39 @@ describe('Managed Agents API', () => {
 
       const { res, body } = await postJson('/v1/sessions', { agent: 'agent_pi_always_ask' });
 
-      expect(res.status).toBe(400);
-      expect(body).toEqual({
-        error: {
-          type: 'invalid_request',
-          code: 'pi_always_ask_not_supported',
-          message: 'Pi loop engine does not support agents requesting always_ask tool confirmation.',
-        },
-      });
+      // This request used to answer `pi_always_ask_not_supported` with no session
+      // row. The managed gate replaces that refusal: the session is created, and
+      // the decision is asked for when the tool is called rather than before the
+      // session exists, so the approval the client renders is one the runtime can
+      // actually consume.
+      expect(res.status).toBe(201);
+      expect(body.error).toBeUndefined();
+      expect(body.loop_engine).toBe('pi');
       expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_pi_always_ask'))
-        .toEqual({ count: 0 });
+        .toEqual({ count: 1 });
+      db.prepare('DELETE FROM sessions WHERE agent_id = ?').run('agent_pi_always_ask');
       db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_always_ask');
     });
 
-    it('maps legacy Pi always_ask resumes to the stable client error before event persistence', async () => {
+    it('maps a legacy Pi resume with an unenforceable policy to the stable client error', async () => {
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
-        'agent_pi_legacy_always_ask',
-        'pi-legacy-always-ask',
+        'agent_pi_legacy_mcp',
+        'pi-legacy-mcp',
         JSON.stringify({
-          name: 'pi-legacy-always-ask',
+          name: 'pi-legacy-mcp',
           model: 'gpt-4o',
-          system: 'Ask first.',
-          tools: [{
-            type: 'agent_toolset_20260401',
-            configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
-          }],
+          system: 'Use the tools.',
+          tools: [{ type: 'mcp_toolset', mcp_server_name: 'tools-server', configs: [] }],
         }),
       );
       // Model a PI row created before the creation-time policy gate landed.
-      const legacy = new SessionManager(db, undefined, 'builtin').create({ agent: 'agent_pi_legacy_always_ask' });
+      const legacy = new SessionManager(db, undefined, 'builtin').create({ agent: 'agent_pi_legacy_mcp' });
       db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
       const expected = {
         error: {
           type: 'invalid_request',
-          code: 'pi_always_ask_not_supported',
-          message: 'Pi loop engine does not support agents requesting always_ask tool confirmation.',
+          code: 'pi_tool_policy_not_supported',
+          message: 'Pi 0.84.4 has no MCP transport; mcp_toolset "tools-server" cannot be enforced',
         },
       };
 
@@ -666,7 +666,7 @@ describe('Managed Agents API', () => {
       expect(history.res.status).toBe(200);
       expect(history.body.data).toEqual([]);
       db.prepare('DELETE FROM sessions WHERE id = ?').run(legacy.id);
-      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_legacy_always_ask');
+      db.prepare('DELETE FROM agents WHERE id = ?').run('agent_pi_legacy_mcp');
     });
 
     it('rejects unsupported Pi user events before persisting an event batch', async () => {
@@ -676,11 +676,13 @@ describe('Managed Agents API', () => {
         error: {
           type: 'invalid_request',
           code: 'pi_user_event_not_supported',
-          message: 'Pi loop engine supports only user.message and user.interrupt events.',
+          message: 'Pi loop engine supports only user.message, user.interrupt, and user.tool_confirmation events.',
         },
       };
       const unsupportedEvents = [
-        { type: 'user.tool_confirmation', tool_use_id: 'tool_1', result: 'allow' },
+        // `user.tool_confirmation` used to be refused here; it now settles a gate
+        // the Pi session raised, so a custom-tool result is the remaining inbound
+        // event with no Pi transport behind it.
         {
           type: 'user.custom_tool_result',
           custom_tool_use_id: 'tool_1',

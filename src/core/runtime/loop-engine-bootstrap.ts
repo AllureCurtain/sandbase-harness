@@ -3,6 +3,7 @@ import { DefaultStrategy } from '@/strategy/default-strategy.js';
 import { PiStrategy } from '@/strategy/pi-strategy.js';
 import { PiLauncher } from '@/strategy/pi-launcher.js';
 import { PiAdapter } from '@/strategy/pi/pi-adapter.js';
+import { PiInteractionStore } from '@/strategy/pi/interaction-store.js';
 import type { RuntimeSettings } from '@/core/settings/schema.js';
 import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
@@ -43,8 +44,18 @@ export function bootstrapRuntimeLoopEngine(
     // the child's wire protocol. The per-turn deadline and the per-command
     // response deadline are the same setting the print-mode launch used as its
     // process timeout, so a turn that used to time out still does.
+    //
+    // The pending-interaction store is what makes a gate decision one-shot: the
+    // record is consumed by a conditional update, so the store is composed
+    // whenever a database exists. Without one the adapter still starts sessions
+    // that gate nothing and refuses a launch that declares a gated tool, rather
+    // than running that tool with no decision attached.
+    const interactions = options.database
+      ? new PiInteractionStore(options.database, options.dataDir)
+      : undefined;
     const adapter = new PiAdapter({
       launcher,
+      ...(interactions ? { interactions } : {}),
       ...(timeoutMs ? { turnTimeoutMs: timeoutMs, requestTimeoutMs: timeoutMs } : {}),
     });
     strategies.pi = new PiStrategy({ adapter, database: options.database });

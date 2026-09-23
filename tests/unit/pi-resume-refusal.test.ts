@@ -50,6 +50,10 @@ class ResumedRefusalSession implements LoopEngineSession {
     };
   }
 
+  async respondToInteraction(): Promise<boolean> {
+    return false;
+  }
+
   async interrupt(): Promise<void> {
     this.alive = false;
     this.phase = 'closed';

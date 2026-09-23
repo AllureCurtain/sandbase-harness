@@ -60,9 +60,15 @@ describe('loop engine capability truthfulness', () => {
     const piGuide = doc('docs/pi-loop-engine.md');
 
     expect(api).toContain(PI_LOOP_ENGINE_REASON);
-    expect(piGuide).toContain('not receive Harness `always_ask` approval');
+    // The guide used to say a native tool receives no `always_ask` approval. It
+    // now receives the managed gate, and the boundary that replaced that claim is
+    // what both documents have to state: gated before execution, still not a
+    // Harness `ToolResolver` tool.
+    expect(piGuide).toContain('a native tool declared `always_ask` is gated');
+    expect(piGuide).toContain('not run through the Harness tool loop');
     expect(piGuide).toContain('Docker/Kubernetes Pi transport and a Pi→Harness approval bridge remain');
     expect(api).toContain('Pi-native tool events are trajectory records only');
+    expect(api).toContain('pi_tool_interactions');
   });
 
   it('describes the transport the runtime actually runs', () => {

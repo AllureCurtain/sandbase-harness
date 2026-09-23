@@ -15,19 +15,19 @@ export {
 };
 export type { PiNativeToolPlan };
 
-/** Stable public error code for the currently unsupported Pi confirmation mode. */
+/**
+ * Stable public error code for the Pi confirmation mode that was unsupported
+ * before the managed tool gate.
+ *
+ * Retained deliberately, because it is still mapped to `not_retryable` in the
+ * retry-classification table: a session whose `session.error` carries the code
+ * from an earlier build keeps reporting a permanent failure instead of falling
+ * back to `unknown` and inviting a retry. No code path throws it any more — an
+ * `always_ask` native tool is decided by the managed gate before it executes
+ * (see `docs/pi-loop-engine.md`), which is why the message the retired refusal
+ * carried is gone with it.
+ */
 export const PI_ALWAYS_ASK_UNSUPPORTED_CODE = 'pi_always_ask_not_supported';
-export const PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE =
-  'Pi loop engine does not support agents requesting always_ask tool confirmation.';
-
-export class PiAlwaysAskUnsupportedError extends Error {
-  readonly code = PI_ALWAYS_ASK_UNSUPPORTED_CODE;
-
-  constructor() {
-    super(PI_ALWAYS_ASK_UNSUPPORTED_MESSAGE);
-    this.name = 'PiAlwaysAskUnsupportedError';
-  }
-}
 
 /** Stable public error code for Pi sessions that cannot use the selected sandbox. */
 export const PI_SANDBOX_UNSUPPORTED_CODE = 'pi_sandbox_provider_not_supported';
@@ -53,7 +53,7 @@ export function assertPiEnvironmentCanExecute(sandboxProvider: string | undefine
 /** Stable public error code for user events Pi print mode cannot execute. */
 export const PI_USER_EVENT_UNSUPPORTED_CODE = 'pi_user_event_not_supported';
 export const PI_USER_EVENT_UNSUPPORTED_MESSAGE =
-  'Pi loop engine supports only user.message and user.interrupt events.';
+  'Pi loop engine supports only user.message, user.interrupt, and user.tool_confirmation events.';
 
 export class PiUserEventUnsupportedError extends Error {
   readonly code = PI_USER_EVENT_UNSUPPORTED_CODE;
@@ -79,11 +79,14 @@ export class PiMessageContentUnsupportedError extends Error {
 }
 
 /**
- * Pi print-mode turns are limited to text messages. user.interrupt remains a
- * SessionManager control-plane event, so it is admitted but never sent to Pi.
+ * Pi RPC turns accept text messages. `user.interrupt` remains a SessionManager
+ * control-plane event, and `user.tool_confirmation` settles the gate the Pi
+ * session raised, so both are admitted here because both have a real transport
+ * in the adapter.
  */
 export function assertPiUserEventCanExecute(event: UserEvent): void {
   if (event.type === 'user.interrupt') return;
+  if (event.type === 'user.tool_confirmation') return;
   if (event.type === 'user.message') {
     if (Array.isArray(event.content) && event.content.every((block) => block.type === 'text')) return;
     throw new PiMessageContentUnsupportedError();
@@ -92,7 +95,6 @@ export function assertPiUserEventCanExecute(event: UserEvent): void {
 }
 
 export type PiSessionAdmissionError =
-  | PiAlwaysAskUnsupportedError
   | PiToolPolicyUnsupportedError
   | PiSandboxProviderUnsupportedError
   | PiUserEventUnsupportedError
@@ -100,8 +102,7 @@ export type PiSessionAdmissionError =
 
 /** Maps all Pi admission failures to the stable API error shape. */
 export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdmissionError {
-  return error instanceof PiAlwaysAskUnsupportedError
-    || error instanceof PiToolPolicyUnsupportedError
+  return error instanceof PiToolPolicyUnsupportedError
     || error instanceof PiSandboxProviderUnsupportedError
     || error instanceof PiUserEventUnsupportedError
     || error instanceof PiMessageContentUnsupportedError;
@@ -116,18 +117,12 @@ export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdm
  * refused, and anything Pi cannot honour is refused with
  * `pi_tool_policy_not_supported` rather than silently dropped.
  *
- * A tool declared `always_ask` is different: the plan reports it in `gate`, and
- * the pre-execution gate that would ask is its own change. Until that ships, an
- * agent declaring one is refused, because launching it would run a tool nobody
- * would be asked about — the approval policy this runtime must not weaken.
+ * A tool declared `always_ask` is admitted rather than refused: the plan reports
+ * it in `gate`, and the session loads a managed Pi extension that blocks the
+ * call and obtains a decision before it executes. Refusing the agent was the
+ * earlier behaviour, kept only until that gate existed; the gate is what makes
+ * admitting the agent an enforcement rather than a promise.
  */
 export function assertPiAgentCanExecute(agent: AgentDefinition): PiNativeToolPlan {
-  const plan = assertPiAgentToolPolicyCanExecute(agent);
-  if (plan.gate.length > 0) throw new PiAlwaysAskUnsupportedError();
-  // A denied native tool is no longer refused here: the launch now sends the
-  // compiled `--tools` / `--exclude-tools` / `--no-builtin-tools` flags, so the
-  // denial is enforced by the child rather than promised by the admission check.
-  // The pre-execution gate for `always_ask` is still its own change, which is why
-  // that refusal above stays.
-  return plan;
+  return assertPiAgentToolPolicyCanExecute(agent);
 }

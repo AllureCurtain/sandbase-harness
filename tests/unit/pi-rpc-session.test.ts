@@ -10,14 +10,24 @@
  * of them, if it went the other way, would let a dead engine look healthy.
  */
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { Database } from '@/core/db/database.js';
 import type { SessionEvent } from '@/types/session.js';
 import {
   PiRpcDialogUnsupportedError,
+  PiRpcGateLostError,
+  PiRpcGateUnavailableError,
   PiRpcSession,
   PiRpcSessionClosedError,
 } from '@/strategy/pi/rpc-session.js';
 import { PiTimeoutError, PiCleanupPendingError } from '@/strategy/pi-launcher.js';
+import {
+  fingerprintPiToolInput,
+  PiInteractionStore,
+} from '@/strategy/pi/interaction-store.js';
 import { createPiRpcWire, settleAsync, waitFor, type PiRpcWire } from './pi-rpc-test-helpers.js';
 
 const SESSION_ID = 'sess_rpc_owner';
@@ -72,6 +82,8 @@ function harness(options: {
   turnTimeoutMs?: number;
   requestTimeoutMs?: number;
   stderrTail?: () => string;
+  gateTools?: readonly string[];
+  interactions?: PiInteractionStore;
 } = {}): Harness {
   const wire = createPiRpcWire();
   const fake = new FakePi(wire);
@@ -110,6 +122,7 @@ function harness(options: {
           seq: sequence,
           type: event.type,
           content: (event as { content?: unknown }).content,
+          metadata: (event as { metadata?: unknown }).metadata,
           createdAt: new Date(),
         } as unknown as SessionEvent;
         events.push(persisted);
@@ -120,6 +133,8 @@ function harness(options: {
       broadcast: (event: SessionEvent) => broadcasts.push(event),
       spillToolOutput: async (output: string) => output,
     },
+    ...(options.gateTools ? { gateTools: options.gateTools } : {}),
+    ...(options.interactions ? { interactions: options.interactions } : {}),
     ...(options.turnTimeoutMs ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
     ...(options.requestTimeoutMs ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
   });
@@ -385,5 +400,365 @@ describe('Pi RPC session release', () => {
     // child may still hold.
     await expect(session.close()).rejects.toBeInstanceOf(PiCleanupPendingError);
     expect(fake.commands).toEqual(['prompt']);
+  });
+});
+
+describe('Pi RPC tool gate', () => {
+  const directories: string[] = [];
+  const databases: Database[] = [];
+
+  afterEach(() => {
+    for (const db of databases.splice(0)) db.close();
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  });
+
+  /** A durable store, because the gate's one-shot guarantee lives in its rows. */
+  function gateStore(): PiInteractionStore {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-rpc-gate-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'data.db'));
+    databases.push(db);
+    db.runMigrations();
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
+    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_pi', 'pi-agent', '{}')`);
+    db.exec(`
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, resources, vault_ids, loop_engine)
+      VALUES ('${SESSION_ID}', 'agent_pi', 'pi-agent', 'env_default', 'running', '[]', '[]', 'pi')
+    `);
+    return new PiInteractionStore(db);
+  }
+
+  /** The payload the managed extension puts in the dialog's prefill. */
+  function gatePayload(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      kind: 'sandbase_tool_gate',
+      version: 1,
+      tool_call_id: 'toolu_1',
+      tool_name: 'bash',
+      input: { command: 'rm -rf /tmp/x' },
+      ...overrides,
+    });
+  }
+
+  /** One gate question, as the managed extension asks it. */
+  function askGate(h: Harness, requestId = 'ui-gate-1', payload = gatePayload()): void {
+    h.fake.say({
+      type: 'extension_ui_request',
+      id: requestId,
+      method: 'editor',
+      title: 'SandBase tool approval',
+      prefill: payload,
+      blocking: true,
+    });
+  }
+
+  /** Replies the runtime wrote back on the dialog channel, decoded. */
+  function decisions(h: Harness): Array<{ id: unknown; decision?: string; input?: unknown }> {
+    return h.wire.written
+      .filter((frame) => frame.type === 'extension_ui_response')
+      .map((frame) => {
+        const parsed = JSON.parse(String(frame.value)) as Record<string, unknown>;
+        return {
+          id: frame.id,
+          ...(typeof parsed.decision === 'string' ? { decision: parsed.decision } : {}),
+          ...(parsed.input !== undefined ? { input: parsed.input } : {}),
+        };
+      });
+  }
+
+  it('stops the call before it executes, records it durably, and reports it needs a decision', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+
+    const outcome = await h.session.awaitTurnOutcome();
+    expect(outcome.kind).toBe('gate');
+    const interaction = outcome.kind === 'gate' ? outcome.interaction : undefined;
+    expect(interaction).toMatchObject({
+      requestId: 'ui-gate-1',
+      toolUseId: 'toolu_1',
+      toolName: 'bash',
+      input: { command: 'rm -rf /tmp/x' },
+      turnId: 'piturn_1',
+    });
+
+    // The durable record is what a decision will be consumed against, written
+    // before the caller is told anything: the tool name, the input, the call
+    // identity, and the fingerprint of the input the decision is made against.
+    const record = store.findByToolUse(SESSION_ID, 'toolu_1');
+    expect(record).toMatchObject({
+      state: 'pending',
+      toolName: 'bash',
+      turnId: 'piturn_1',
+      piRequestId: 'ui-gate-1',
+      originalInput: { command: 'rm -rf /tmp/x' },
+    });
+    expect(record?.inputFingerprint).toBe(fingerprintPiToolInput({ command: 'rm -rf /tmp/x' }));
+
+    // The session publishes the call as approvable, which is what a client renders
+    // as the approval card, and it must not look idle while Pi is blocked.
+    const toolUse = h.events.find((event) => event.type === 'agent.tool_use');
+    expect(toolUse?.content?.[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'toolu_1',
+      name: 'bash',
+      requires_confirmation: true,
+      confirmation_group_id: 'toolu_1',
+    });
+    expect(toolUse?.metadata).toMatchObject({ confirmation_source: 'user' });
+    expect(h.session.pendingGateRequestId).toBe('ui-gate-1');
+    expect(h.session.phase).toBe('busy');
+    // Nothing has been answered yet, so Pi is still waiting inside its hook.
+    expect(decisions(h)).toEqual([]);
+    // A suspended turn still owns the child: a new prompt would race it.
+    await expect(h.session.prompt('second')).rejects.toBeInstanceOf(PiRpcSessionClosedError);
+  });
+
+  it('consumes an approval exactly once, writes it back, and resumes the same turn', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+    await h.session.awaitTurnOutcome();
+
+    await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(true);
+    expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'allow' }]);
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+      state: 'allowed',
+      decisionSource: 'user',
+    });
+
+    // A second decision for the same call finds no pending record: the call it
+    // names has already been decided, so this one is reported as not applied.
+    await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(false);
+    expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'allow' }]);
+
+    // The same turn continues — it is not a new prompt — and settles normally.
+    h.fake.say({ type: 'agent_settled' });
+    await expect(h.session.awaitTurnOutcome()).resolves.toEqual({ kind: 'settled' });
+    expect(h.session.turnId).toBe('piturn_1');
+    expect(h.session.phase).toBe('idle');
+  });
+
+  it('refuses a malformed replacement input instead of handing it to the engine', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+    await h.session.awaitTurnOutcome();
+
+    // Pi re-validates nothing after an extension mutates `event.input`, so the
+    // runtime is the last place a replacement can be refused.
+    await expect(h.session.respondToInteraction('ui-gate-1', {
+      decision: 'allow',
+      input: 'rm -rf /',
+    })).resolves.toBe(false);
+    expect(decisions(h).at(-1)).toEqual({ id: 'ui-gate-1', decision: 'deny' });
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+      state: 'denied',
+      decisionSource: 'user',
+      denyMessage: 'the approval response was not a usable decision',
+    });
+
+    // The refused decision is spent: a replay cannot execute the call either.
+    await expect(h.session.respondToInteraction('ui-gate-1', { decision: 'allow' })).resolves.toBe(false);
+  });
+
+  it('re-validates a replacement input and records what was decided against', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+    await h.session.awaitTurnOutcome();
+
+    // The replacement travels back with the approval because the gate applies it
+    // in place, and the durable record keeps what was actually approved.
+    await expect(h.session.respondToInteraction('ui-gate-1', {
+      decision: 'allow',
+      input: { command: 'echo safe' },
+    })).resolves.toBe(true);
+    expect(decisions(h).at(-1)).toEqual({ id: 'ui-gate-1', decision: 'allow', input: { command: 'echo safe' } });
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+      state: 'allowed',
+      decidedInput: { command: 'echo safe' },
+    });
+  });
+
+  it('denies a decision for a call this session is not waiting on', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+    await h.session.awaitTurnOutcome();
+
+    // A different call id names no pending record, so nothing may execute — and
+    // the gate that is genuinely pending is left alone.
+    await expect(h.session.respondToInteraction('toolu_other', { decision: 'allow' })).resolves.toBe(false);
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({ state: 'pending' });
+    expect(decisions(h)).toEqual([]);
+    expect(h.session.pendingGateRequestId).toBe('ui-gate-1');
+  });
+
+  it('denies a gate for a tool this session does not gate, and a payload it cannot read', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+
+    // A tool the compiled plan does not gate is not this gate's business, and a
+    // payload this gate cannot read is a request it cannot answer. Both are
+    // denied: leaving Pi blocked would stop the engine.
+    askGate(h, 'ui-gate-1', gatePayload({ tool_call_id: 'toolu_2', tool_name: 'write' }));
+    askGate(h, 'ui-gate-2', 'not json at all');
+    await waitFor(() => decisions(h).length === 2);
+
+    expect(decisions(h)).toEqual([
+      { id: 'ui-gate-1', decision: 'deny' },
+      { id: 'ui-gate-2', decision: 'deny' },
+    ]);
+    expect(store.listForSession(SESSION_ID)).toEqual([]);
+    expect(h.events.map((event) => event.type)).not.toContain('agent.tool_use');
+    expect(h.session.pendingGateRequestId).toBeUndefined();
+  });
+
+  it('denies a gate opened while another decision is still pending', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h, 'ui-gate-1');
+    await h.session.awaitTurnOutcome();
+
+    // One runtime relays one decision per session, so a second gate would be a
+    // question no caller can address. It is denied rather than overwriting the
+    // pending gate, which would leave Pi suspended on an unaddressable dialog.
+    askGate(h, 'ui-gate-2', gatePayload({ tool_call_id: 'toolu_2' }));
+    await waitFor(() => decisions(h).length === 1);
+
+    expect(decisions(h)).toEqual([{ id: 'ui-gate-2', decision: 'deny' }]);
+    expect(h.session.pendingGateRequestId).toBe('ui-gate-1');
+    expect(store.findByToolUse(SESSION_ID, 'toolu_2')).toBeUndefined();
+  });
+
+  it('fails closed when the transport dies while a decision is pending', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+    askGate(h);
+    await h.session.awaitTurnOutcome();
+
+    h.wire.end();
+    await settleAsync();
+
+    // The record is retired as a denial, so no later decision can run the call
+    // through a gate whose engine is gone, and the session is not alive.
+    expect(h.session.alive).toBe(false);
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+      state: 'denied',
+      decisionSource: 'system',
+      denyMessage: 'the transport closed while the gate was pending',
+    });
+    await expect(h.session.respondToInteraction('toolu_1', { decision: 'allow' })).resolves.toBe(false);
+  });
+
+  it('denies a decision that arrives after the turn deadline has already elapsed', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store, turnTimeoutMs: 20 });
+    await h.session.prompt('run');
+    askGate(h);
+    await waitFor(() => h.session.failureError !== undefined);
+
+    expect(h.session.failureError).toBeInstanceOf(PiTimeoutError);
+    expect(h.session.alive).toBe(false);
+
+    // An answer that never arrived in time is not an approval. The record is
+    // retired as a denial and the late decision is refused.
+    expect(store.findByToolUse(SESSION_ID, 'toolu_1')).toMatchObject({
+      state: 'denied',
+      decisionSource: 'system',
+      denyMessage: 'the turn deadline elapsed while the gate was pending',
+    });
+    await expect(h.session.respondToInteraction('ui-gate-1', { decision: 'allow' })).resolves.toBe(false);
+  });
+
+  it('fails the turn when a gated call executes with no gate decision attached', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    await h.session.prompt('run');
+
+    // The extension's hook is the only thing that asks, so a gated call Pi
+    // announces and finishes is one that ran unguarded. Reporting the turn as
+    // settled would claim a decision happened that never did.
+    h.fake.say({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 'toolu_1' });
+    h.fake.say({ type: 'tool_execution_end', toolName: 'bash', toolCallId: 'toolu_1', isError: false });
+
+    const outcome = await h.session.awaitTurnOutcome();
+    expect(outcome.kind).toBe('failed');
+    expect(outcome.kind === 'failed' && outcome.error).toBeInstanceOf(PiRpcGateLostError);
+    expect(outcome.kind === 'failed' && outcome.error.message).toContain('without a SandBase gate decision');
+    expect(h.session.alive).toBe(false);
+  });
+
+  it('proves the gate extension loaded, and fails closed when the marker is absent', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    h.fake.silentCommands.add('get_commands');
+
+    const probe = h.session.verifyGateExtension();
+    await waitFor(() => h.wire.written.some((frame) => frame.type === 'get_commands'));
+    const requestId = String(h.wire.written.find((frame) => frame.type === 'get_commands')?.id);
+
+    // A command list without the per-session marker is the runtime's only evidence
+    // that the managed extension did not load, and a gated tool must not be
+    // exposed without it.
+    h.fake.say({
+      type: 'response',
+      id: requestId,
+      command: 'get_commands',
+      success: true,
+      data: { commands: [{ name: 'help' }] },
+    });
+    await expect(probe).rejects.toBeInstanceOf(PiRpcGateUnavailableError);
+    await expect(probe).rejects.toMatchObject({ code: 'pi_rpc_gate_unavailable' });
+  });
+
+  it('accepts the marker command of the extension it launched', async () => {
+    const store = gateStore();
+    const h = harness({ gateTools: ['bash'], interactions: store });
+    h.fake.silentCommands.add('get_commands');
+
+    const probe = h.session.verifyGateExtension();
+    await waitFor(() => h.wire.written.some((frame) => frame.type === 'get_commands'));
+    const requestId = String(h.wire.written.find((frame) => frame.type === 'get_commands')?.id);
+    h.fake.say({
+      type: 'response',
+      id: requestId,
+      command: 'get_commands',
+      success: true,
+      data: { commands: [{ name: 'help' }, { name: `sandbase-gate-${SESSION_ID}` }] },
+    });
+
+    await expect(probe).resolves.toBeUndefined();
+  });
+
+  it('probes nothing when the session gates nothing', async () => {
+    const store = gateStore();
+    const h = harness({ interactions: store });
+
+    // An extra round trip on every start would be a claim about a tool set this
+    // session does not have, so a session with no gated tool asks for nothing.
+    await expect(h.session.verifyGateExtension()).resolves.toBeUndefined();
+    expect(h.wire.written).toEqual([]);
+  });
+
+  it('denies a gated call when no durable store can record the decision', async () => {
+    const h = harness({ gateTools: ['bash'] });
+    await h.session.prompt('run');
+    askGate(h);
+    await waitFor(() => decisions(h).length === 1);
+
+    // Without the store a decision cannot be proven to be consumed once, so the
+    // call is denied rather than opened.
+    expect(decisions(h)).toEqual([{ id: 'ui-gate-1', decision: 'deny' }]);
+    expect(h.session.pendingGateRequestId).toBeUndefined();
   });
 });

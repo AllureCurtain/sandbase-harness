@@ -456,7 +456,7 @@ sandbox is touched:
 | `harness`, `codex`, `claude` | `400` with `loop_engine_not_supported` and the descriptor reason. |
 | any other value or type | `400` with `loop_engine_invalid`. |
 
-The Pi adapter is available but limited: Runs the Pi CLI as a session-owned RPC child against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy. An unavailable engine is never silently downgraded to `builtin`.
+The Pi adapter is available but limited: Runs the Pi CLI as a session-owned RPC child against the host-local work directory; Pi native tools are not governed by Harness approval or sandbox path policy, and an always_ask native tool is gated by a SandBase-managed Pi extension before it executes. An unavailable engine is never silently downgraded to `builtin`.
 
 Pin a session to an immutable agent version snapshot:
 
@@ -672,8 +672,16 @@ message as a text block, so a client that only renders content keeps working.
 | Value | Meaning | Codes |
 | --- | --- | --- |
 | `retryable` | Transient; the same request may succeed. | `pi_session_busy` |
-| `not_retryable` | The runtime will refuse this request again. | `pi_cleanup_pending`, `pi_timed_out`, `pi_always_ask_not_supported`, `pi_tool_policy_not_supported`, `pi_sandbox_provider_not_supported`, `pi_user_event_not_supported`, `pi_message_content_not_supported`, `loop_engine_not_supported`, `loop_engine_invalid`, `unsupported_capability` |
+| `not_retryable` | The runtime will refuse this request again. | `pi_cleanup_pending`, `pi_timed_out`, `pi_rpc_gate_unavailable`, `pi_rpc_gate_lost`, `pi_rpc_approval_not_pending`, `pi_always_ask_not_supported`, `pi_tool_policy_not_supported`, `pi_sandbox_provider_not_supported`, `pi_user_event_not_supported`, `pi_message_content_not_supported`, `loop_engine_not_supported`, `loop_engine_invalid`, `unsupported_capability` |
 | `unknown` | Not classified. Treat as possibly retryable. | any other code, including a failure with no code |
+
+`pi_always_ask_not_supported` is retained in that table but is no longer produced:
+an `always_ask` native tool is now decided by the Pi session's pre-execution gate
+instead of being refused at admission, and the code stays classified for sessions
+created by an earlier build so a client branching on it does not fall back to
+`unknown`. The three gate codes are the new permanent failures — the gate
+extension did not load, a gated call executed with no decision attached, or a
+`user.tool_confirmation` named a gate this runtime was not waiting on.
 
 These three values are a SandBase profile: the published contract documents the
 `retry_status` field but does not enumerate its values, so a client must treat an
@@ -1999,8 +2007,18 @@ returns a retryable `pi_session_busy` error. Resume refusal, corrupt headers,
 path/schema mismatch, and missing SQLite continuity proof are visible errors;
 they never silently start a second Pi history.
 
-Pi-native tool events are trajectory records only. They do not carry Harness
-`requires_confirmation`, do not run through the builtin `ToolResolver`, and do
-not receive Harness local path confinement or an Allow/Deny card. Docker and
-Kubernetes Pi transport, RPC, and a Pi-to-Harness approval bridge are not part
-of this local demo.
+Pi-native tool events are trajectory records only while no policy gates them:
+they do not run through the builtin `ToolResolver`, receive no Harness local path
+confinement, and execute inside the Pi child. A native tool the agent declares
+`always_ask` is the exception. The session loads a SandBase-managed Pi extension
+for that tool, so the call is intercepted before it executes and the tool_use the
+session publishes carries `requires_confirmation: true`,
+`confirmation_group_id`, and the input a decision is being made against. The
+request is recorded durably in `pi_tool_interactions`, the session reports
+`requires_action`, and the matching `user.tool_confirmation` resolves that one
+pending call: it is consumed by a conditional update, so a duplicate, mismatched,
+or late decision is refused instead of executing anything. A decision that cannot
+be recorded, a gate extension that did not load, a decision whose replacement
+input is not a plain object, and a transport that dies while a decision is pending
+all deny the call rather than letting it run. Docker and Kubernetes Pi transport
+are not part of this local demo.

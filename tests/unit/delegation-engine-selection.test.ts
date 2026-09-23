@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DelegationService } from '@/core/session/delegation-service.js';
-import { PI_ALWAYS_ASK_UNSUPPORTED_CODE } from '@/core/session/pi-policy.js';
+import { assertPiAgentCanExecute } from '@/core/session/pi-policy.js';
 import { ModelRegistry } from '@/model/registry.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
@@ -135,7 +135,7 @@ describe('delegated session engine selection', () => {
     }]);
   });
 
-  it('rejects a delegated Pi target that declares always_ask before provisioning it', async () => {
+  it('admits a delegated Pi target that declares always_ask and keeps its gate plan', async () => {
     const restrictedTarget: AgentDefinition = {
       ...target,
       name: 'restricted-child',
@@ -144,10 +144,13 @@ describe('delegated session engine selection', () => {
         configs: [{ name: 'bash', permission_policy: { type: 'always_ask' } }],
       }],
     };
+    const delegated: AgentDefinition[] = [];
     const pi: AgentStrategy = {
       name: 'pi',
       requiresModel: false,
-      async *execute() {},
+      async *execute(context) {
+        delegated.push(context.session.agentDefinition as AgentDefinition);
+      },
     };
     const registry = new ModelRegistry();
     registry.register({
@@ -168,7 +171,7 @@ describe('delegated session engine selection', () => {
       buildSandboxTools: () => ({}),
     });
 
-    await expect((service as any).runSubAgentWithDefinition(
+    await (service as any).runSubAgentWithDefinition(
       restrictedTarget,
       'delegate to restricted Pi',
       { chain: ['parent'], depth: 0, maxDepth: 1 },
@@ -182,7 +185,14 @@ describe('delegated session engine selection', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
-    )).rejects.toMatchObject({ code: PI_ALWAYS_ASK_UNSUPPORTED_CODE });
-    expect(provisionSandbox).not.toHaveBeenCalled();
+    );
+
+    // Admission used to refuse this delegated target with
+    // `pi_always_ask_not_supported` before the sandbox was provisioned. The
+    // managed gate replaces the refusal: the delegation runs, and the gated tool
+    // still compiles into the plan the child launch receives.
+    expect(provisionSandbox).toHaveBeenCalled();
+    expect(delegated).toHaveLength(1);
+    expect(assertPiAgentCanExecute(delegated[0]).gate).toEqual(['bash']);
   });
 });

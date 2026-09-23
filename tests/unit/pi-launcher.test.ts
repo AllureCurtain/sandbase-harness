@@ -61,7 +61,12 @@ function rpcCli(directory: string): { command: string; commandArgs: string[]; re
   writeFileSync(script, `
 import { writeFileSync } from 'node:fs';
 const [resultPath, ...args] = process.argv.slice(2);
-writeFileSync(resultPath, JSON.stringify({ args, cwd: process.cwd() }));
+writeFileSync(resultPath, JSON.stringify({
+  args,
+  cwd: process.cwd(),
+  gateSessionId: process.env.SANDBASE_PI_SESSION_ID,
+  gatedTools: process.env.SANDBASE_PI_GATED_TOOLS,
+}));
 setInterval(() => {}, 1_000);
 `);
   return { command: process.execPath, commandArgs: [script, resultPath], resultPath };
@@ -558,5 +563,90 @@ describe('Pi launcher', () => {
     expect(observed.args).not.toContain('--tools');
 
     await handle.interrupt();
+  });
+
+  it('loads the managed gate extension for a launch that names gated tools', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-rpc-gate-launch-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = rpcCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+    });
+
+    const handle = await launcher.startRpc({
+      sessionId: 'sess_rpc_gate',
+      workDir,
+      systemPrompt: 'fixture system',
+      model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
+      toolArgs: ['--tools', 'read,bash'],
+      gateTools: ['bash'],
+    });
+    await waitForFile(cli.resultPath);
+    const observed = JSON.parse(readFileSync(cli.resultPath, 'utf8')) as {
+      args: string[];
+      gateSessionId?: string;
+      gatedTools?: string;
+    };
+
+    const extensionFile = join(directory, 'pi-sessions', 'sess_rpc_gate', 'gate-extension.mjs');
+    // Discovery off, then exactly one extension on: a project-local file in the
+    // work directory cannot add itself to, or replace, the gate.
+    expect(observed.args).toEqual([
+      '--mode', 'rpc', '--model', 'sandbase/gpt-4.1',
+      '--session', join(directory, 'pi-sessions', 'sess_rpc_gate.jsonl'),
+      '--tools', 'read,bash',
+      '--no-extensions', '--extension', extensionFile,
+    ]);
+    expect(handle.gateExtensionFile).toBe(extensionFile);
+    // The extension is written where the launch points, and it is the gate the
+    // runtime later proves loaded by looking for its marker command.
+    expect(existsSync(extensionFile)).toBe(true);
+    const source = readFileSync(extensionFile, 'utf8');
+    expect(source).toContain('sandbase-gate-');
+    expect(source).toContain('SANDBASE_PI_GATED_TOOLS');
+    expect(source).toContain('SANDBASE_PI_SESSION_ID');
+    // The gated names travel to the extension through its environment, so the
+    // child can block exactly those tools and nothing else.
+    expect(observed.gateSessionId).toBe('sess_rpc_gate');
+    expect(JSON.parse(observed.gatedTools ?? '[]')).toEqual(['bash']);
+
+    await handle.interrupt();
+  });
+
+  it('refuses a gate tool list with no usable name instead of launching ungated', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-pi-rpc-gate-blank-'));
+    directories.push(directory);
+    const workDir = join(directory, 'work');
+    mkdirSync(workDir);
+    const cli = rpcCli(directory);
+    const launcher = new PiLauncher({
+      dataDir: directory,
+      command: cli.command,
+      commandArgs: cli.commandArgs,
+      environment: restrictedTestEnvironment(),
+      terminateProcess: (child, _platform, force) => {
+        child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      },
+    });
+
+    // A blank name is a gated tool the extension could never match, so the launch
+    // fails rather than starting with nothing gated.
+    await expect(launcher.startRpc({
+      sessionId: 'sess_rpc_gate_blank',
+      workDir,
+      systemPrompt: 'fixture system',
+      model: { provider: 'openai', model: 'gpt-4.1', api_key: '${PI_MODEL_API_KEY}' },
+      toolArgs: ['--tools', 'bash'],
+      gateTools: [''],
+    })).rejects.toThrow('Pi gate tool list contains no usable native tool name');
+    expect(existsSync(cli.resultPath)).toBe(false);
   });
 });

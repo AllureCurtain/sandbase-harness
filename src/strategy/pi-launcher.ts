@@ -7,6 +7,8 @@ import { referencedEnvVars, resolveEnvVarsFrom } from '@/core/config/env-resolve
 import type { Database } from '@/core/db/database.js';
 import type { ModelConfig } from '@/types/model.js';
 import { acquirePiSessionFileLease, type PiSessionFileLease } from './pi/session-lease.js';
+import { PI_GATE_EXTENSION_FILENAME, piGateExtensionSource } from './pi/gate-extension.js';
+import { PI_GATE_ENV } from './pi/rpc-wire.js';
 import {
   assertPiSessionContinuity,
   markPiSessionContinuityFailure,
@@ -125,6 +127,8 @@ export interface PiRpcProcessHandle extends PiProcessHandle {
    * so a caller never reports a released workspace it does not own.
    */
   interrupt(): Promise<void>;
+  /** Absolute path of the managed gate extension, when one was written. */
+  readonly gateExtensionFile?: string;
 }
 
 /**
@@ -142,6 +146,16 @@ export interface PiRpcLaunchRequest {
   systemPrompt: string;
   model: PiModelConfig;
   toolArgs?: readonly string[];
+  /**
+   * Native tool names whose calls must pass the managed pre-execution gate.
+   *
+   * A launch that states gated names loads the SandBase-owned gate extension for
+   * exactly those tools, so a call to one of them is blocked and asked about
+   * before it executes. Omitted means nothing is gated, which is only safe when
+   * the agent declares no `always_ask` native tool: this list and the compiled
+   * tool flags come from the same plan.
+   */
+  gateTools?: readonly string[];
   skillDirs?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Hard cancellation for the whole child, shared with the cleanup ladder. */
@@ -400,6 +414,11 @@ export class PiLauncher {
    * - Continuity state, the lease, and the tool flags are the same ones the
    *   print-mode launch used, so the two modes cannot disagree about which tools
    *   an agent may use or which Pi conversation it is continuing.
+   * - A named `always_ask` tool gets a managed `--extension` gate, materialized
+   *   per session inside the private configuration directory and published to the
+   *   extension through its own environment. Without it the tool would be exposed
+   *   and run with nobody asked, so a launch that names gated tools and cannot
+   *   materialize the gate fails rather than starting ungated.
    */
   async startRpc(request: PiRpcLaunchRequest): Promise<PiRpcProcessHandle> {
     const model = this.resolveModel(request.model);
@@ -407,6 +426,12 @@ export class PiLauncher {
       ...referencedEnvVars(request.model.api_key),
       ...referencedEnvVars(request.model.base_url),
     ]);
+    // An empty or blank name would be a gated tool the extension can never match,
+    // so a list that names one is refused rather than silently gated by nothing.
+    const gateTools = (request.gateTools ?? []).filter((name) => name.length > 0);
+    if ((request.gateTools?.length ?? 0) > 0 && gateTools.length === 0) {
+      throw new Error('Pi gate tool list contains no usable native tool name');
+    }
     const paths = this.prepareSessionPaths(request.sessionId);
     const lease = await acquirePiSessionFileLease(paths.sessionFile, {
       staleAfterMs: this.leaseStaleAfterMs,
@@ -416,9 +441,15 @@ export class PiLauncher {
       if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
       this.materializeModelsConfig(paths.configDir, model);
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
+      const gateExtensionFile = gateTools.length > 0
+        ? this.materializeGateExtension(paths.configDir)
+        : undefined;
       const invocation = piInvocationFor([
         '--mode', 'rpc', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
         ...piToolArgsFor(request),
+        // Discovery off, then the one managed extension on: a project-local file
+        // in the work directory cannot add itself to, or replace, the gate.
+        ...(gateExtensionFile ? ['--no-extensions', '--extension', gateExtensionFile] : []),
         ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
         ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
       ], {
@@ -433,6 +464,12 @@ export class PiLauncher {
         PI_CODING_AGENT_DIR: paths.configDir,
         PI_TELEMETRY: '0',
         SANDBASE_PI_API_KEY: model.api_key,
+        ...(gateExtensionFile
+          ? {
+            [PI_GATE_ENV.sessionId]: request.sessionId,
+            [PI_GATE_ENV.gatedTools]: JSON.stringify(gateTools),
+          }
+          : {}),
       }, modelEnvironmentKeys);
 
       const abortController = new AbortController();
@@ -494,6 +531,7 @@ export class PiLauncher {
         stdin,
         sessionFile: paths.sessionFile,
         leaseRecovered: lease.recoveredStale,
+        ...(gateExtensionFile ? { gateExtensionFile } : {}),
         wait,
         interrupt: async () => {
           if (!abortController.signal.aborted) abortController.abort();
@@ -568,6 +606,27 @@ export class PiLauncher {
     if (model.base_url) providerConfig.baseUrl = model.base_url;
     const path = join(configDir, 'models.json');
     writePrivateFile(path, `${JSON.stringify({ providers: { sandbase: providerConfig } }, null, 2)}\n`, 'Pi models configuration');
+  }
+
+  /**
+   * Write the per-session managed gate extension into the private session
+   * configuration directory.
+   *
+   * `--extension` receives an absolute path inside that directory, which the
+   * launcher already created 0700 and which Pi reads through
+   * `PI_CODING_AGENT_DIR`. A project-local file in the work directory cannot
+   * shadow a path outside it, so repository content cannot replace the gate — and
+   * the path is re-checked here rather than trusted, because the whole point of
+   * the extension is that it is the platform's decision point.
+   */
+  private materializeGateExtension(configDir: string): string {
+    const resolvedConfigDir = resolve(configDir);
+    const path = resolve(resolvedConfigDir, PI_GATE_EXTENSION_FILENAME);
+    if (!path.startsWith(`${resolvedConfigDir}${sep}`)) {
+      throw new Error('Pi gate extension path escapes the session configuration directory');
+    }
+    writePrivateFile(path, piGateExtensionSource(), 'Pi gate extension');
+    return path;
   }
 
   private materializeAgentsPrompt(workDir: string, systemPrompt: string): void {
