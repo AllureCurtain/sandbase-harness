@@ -13,7 +13,7 @@ import {
   PI_SANDBOX_UNSUPPORTED_CODE,
   PI_SANDBOX_UNSUPPORTED_MESSAGE,
   PI_TOOL_POLICY_UNSUPPORTED_CODE,
-  PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
+  PiToolPolicyUnsupportedError,
   PI_USER_EVENT_UNSUPPORTED_CODE,
 } from '@/core/session/pi-policy.js';
 import { SessionManager } from '@/core/session/session-manager.js';
@@ -308,18 +308,19 @@ describe('session loop engine persistence', () => {
     db.close();
   });
 
-  it('rejects denied and disabled tool declarations before Pi session persistence or resume', async () => {
+  it('admits a denied or disabled tool declaration by excluding it instead of refusing the agent', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-pi-tool-policy-'));
     directories.push(directory);
     const db = new Database(join(directory, 'data.db'));
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
     const piManager = new SessionManager(db, undefined, 'pi');
-    let executorCalled = false;
-    piManager.setExecutor({
-      async *execute() { executorCalled = true; },
-    });
-    const restrictions = [
+
+    // A denied native tool no longer makes the agent unrunnable. The policy is
+    // expressed through Pi's own flags, so the tool is excluded from the
+    // allowlist; the compiled flags themselves are pinned in
+    // tests/unit/pi-native-tool-policy.test.ts.
+    const enforced = [
       {
         label: 'named-never-allow',
         toolset: {
@@ -352,7 +353,7 @@ describe('session loop engine persistence', () => {
       },
     ];
 
-    for (const [index, restriction] of restrictions.entries()) {
+    for (const [index, restriction] of enforced.entries()) {
       const agentId = `agent_pi_restricted_${index}`;
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
         agentId,
@@ -365,22 +366,36 @@ describe('session loop engine persistence', () => {
         }),
       );
 
-      expect(() => piManager.create({ agent: agentId })).toThrow(PI_TOOL_POLICY_UNSUPPORTED_MESSAGE);
+      expect(() => piManager.create({ agent: agentId })).not.toThrow();
       expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get(agentId))
-        .toEqual({ count: 0 });
-
-      const legacy = new SessionManager(db).create({ agent: agentId });
-      db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
-      await expect(piManager.sendEvent(legacy.id, {
-        type: 'user.message', content: [{ type: 'text', text: 'run' }],
-      })).rejects.toMatchObject({
-        code: PI_TOOL_POLICY_UNSUPPORTED_CODE,
-        message: PI_TOOL_POLICY_UNSUPPORTED_MESSAGE,
-      });
-      expect(piManager.getEventLogger().getEvents(legacy.id)).toEqual([]);
+        .toEqual({ count: 1 });
     }
 
-    expect(executorCalled).toBe(false);
+    // An MCP toolset the agent could actually use is a different matter: Pi has no
+    // MCP transport, so accepting it would promise a capability the engine lacks.
+    // The code is the stable contract; the message names which declaration caused
+    // the refusal, which is the part an operator needs.
+    db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
+      'agent_pi_mcp_enabled',
+      'mcp-enabled',
+      JSON.stringify({
+        name: 'mcp-enabled',
+        model: 'gpt-4o',
+        system: 'Use MCP.',
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'filesystem' }],
+      }),
+    );
+    let refused: unknown;
+    try {
+      piManager.create({ agent: 'agent_pi_mcp_enabled' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(PiToolPolicyUnsupportedError);
+    expect((refused as PiToolPolicyUnsupportedError).code).toBe(PI_TOOL_POLICY_UNSUPPORTED_CODE);
+    expect((refused as Error).message).toMatch(/no MCP transport/);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE agent_id = ?').get('agent_pi_mcp_enabled'))
+      .toEqual({ count: 0 });
     db.close();
   });
 

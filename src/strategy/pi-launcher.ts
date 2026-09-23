@@ -36,16 +36,35 @@ export interface PiLaunchRequest {
   /**
    * The agent's native tool policy, already compiled into Pi's own flags.
    *
-   * Optional in the type but never optional in effect: the launcher refuses a
-   * request without it, because an absent argument list would leave Pi's full
-   * built-in toolset in place — widening an agent's declared policy instead of
-   * enforcing it. A runtime refusal is used here rather than a required field so
-   * that the guard is a behaviour a test can pin, and so a construction site
-   * that is not exercising tools does not have to invent a policy.
+   * Omitted means "launch with no built-in tools at all" — see
+   * {@link piToolArgsFor}. It is deliberately not a required field, because the
+   * safe default is expressible: a launch that cannot say which tools are
+   * allowed exposes none, rather than inheriting Pi's full toolset and widening
+   * the agent's declared policy. The strategy always supplies the compiled plan.
    */
   toolArgs?: readonly string[];
   /** Cancels the in-flight child only after it has exited and released its workdir. */
   abortSignal?: AbortSignal;
+}
+
+/**
+ * Flags a launch that states no tool policy is given: none at all.
+ *
+ * `--no-builtin-tools` is the strict end of Pi's own surface, so an omitted
+ * policy cannot widen what the agent may do. It still leaves extension tools
+ * enabled, which is what the managed gate extension will need.
+ */
+export const PI_TOOL_ARGS_WHEN_UNSTATED = ['--no-builtin-tools'] as const;
+
+/**
+ * The tool flags one launch uses.
+ *
+ * A request that cannot say which tools are allowed is launched with none rather
+ * than with Pi's default set: the compiled plan is what makes a declared policy
+ * true, and guessing here would be the widening this field exists to prevent.
+ */
+export function piToolArgsFor(request: Pick<PiLaunchRequest, 'toolArgs'>): readonly string[] {
+  return request.toolArgs ?? PI_TOOL_ARGS_WHEN_UNSTATED;
 }
 
 export class PiCleanupPendingError extends Error {
@@ -232,18 +251,11 @@ export class PiLauncher {
 
     try {
       if (this.database) assertPiSessionContinuity(this.database, request.sessionId, paths.sessionFile);
-      // Fail closed rather than fall back to Pi's default toolset: a launch that
-      // cannot say which tools are allowed must not run at all.
-      if (!request.toolArgs) {
-        throw new Error(
-          'Pi launch requires the compiled native tool policy; refusing to launch a process with Pi\'s default toolset',
-        );
-      }
       this.materializeModelsConfig(paths.configDir, model);
       this.materializeAgentsPrompt(request.workDir, request.systemPrompt);
       const invocation = piInvocationFor([
         '-p', '--mode', 'json', '--model', `sandbase/${model.model}`, '--session', paths.sessionFile,
-        ...request.toolArgs,
+        ...piToolArgsFor(request),
         ...(request.thinkingLevel ? ['--thinking', request.thinkingLevel] : []),
         ...(request.skillDirs ?? []).flatMap((directory) => ['--skill', directory]),
       ], {
