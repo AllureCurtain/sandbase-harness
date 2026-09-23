@@ -68,10 +68,11 @@ instead — `--tools` for the enabled
 set, `--exclude-tools` for a tool denied by `never_allow` or `enabled: false`, and
 `--no-builtin-tools` when no native tool is left — and a declaration with no
 faithful expression is refused with `pi_tool_policy_not_supported`, whose message
-now names the declaration that caused it. The launch that sends those flags is its
-own change: until it lands, an agent declaring a denied or disabled tool is still
-refused rather than launched with a policy nothing enforces, and `always_ask`
-remains `pi_always_ask_not_supported`. A fully disabled `mcp_toolset` is admitted
+now names the declaration that caused it. The launch sends those flags, so a denied
+or disabled tool is enforced by the child rather than promised by the admission
+check, and an agent that states no policy at all is launched with
+`--no-builtin-tools` rather than with Pi's default toolset. `always_ask` is still
+refused: the gate that would ask is its own change. A fully disabled `mcp_toolset` is admitted
 instead of refused, because nothing is expected to run through it and Pi has no
 MCP transport to enforce: that is a correction of the earlier blanket refusal of
 any `enabled: false` entry, and it makes no tool available. Continuity is guarded
