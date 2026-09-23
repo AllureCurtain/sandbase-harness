@@ -1972,6 +1972,19 @@ curl -X PUT http://127.0.0.1:3000/v1/x/settings \
 Literal secrets are encrypted at rest. API responses return masked placeholders
 and `secret_states`; they never return plaintext or ciphertext.
 
+`loop_engine.options.approval_mode` selects how a gated Pi native tool call is
+answered. `interactive` (the default, and the resolution for an omitted key)
+waits for a person; `preauthorized_once` lets the runtime answer one call itself
+under a platform-owned rule. The key is optional, so a document written before it
+existed stays valid unchanged, and an unrecognized name is refused by
+`validate` and by `PUT` at the path `loop_engine.options.approval_mode` instead
+of being coerced to the default. Selecting the mode is the preauthorization
+authority and nothing more: every gated call still consumes exactly one durable
+decision, an automatically allowed call is recorded and published as
+`confirmation_source: "platform"` rather than as an approval a person gave, a
+call the rule does not name keeps waiting for a person, and no part of the mode
+becomes a standing permission or widens the agent's declared tool policy.
+
 Successful saves emit a `runtime_settings_saved` structured log with only the
 old revision, new revision, changed JSON paths, and restart flag. Secret values
 and internal managed-secret references are not logged.
@@ -2022,3 +2035,17 @@ be recorded, a gate extension that did not load, a decision whose replacement
 input is not a plain object, and a transport that dies while a decision is pending
 all deny the call rather than letting it run. Docker and Kubernetes Pi transport
 are not part of this local demo.
+
+The decision a gated call waits for does not have to be a person's. When the
+operator selected `loop_engine.options.approval_mode: "preauthorized_once"`, the
+runtime answers a gated call itself under the platform-owned rule that mode
+installs, through the same conditional consume: the decision is recorded with
+`decision_source: "platform"`, the published `agent.tool_use` carries
+`requires_confirmation: false` with `confirmation_source: "platform"` and
+`confirmation_decision: "allow"` (or `"deny"` when the rule refuses the call),
+and the session does not report `requires_action` for it. An automatically allowed
+call is still spent by being applied — a replay of the same call, a mismatched
+decision, and a person's answer for a call the platform already decided are all
+refused — the next gated call is decided again instead of inheriting a standing
+permission, a call the rule does not name keeps waiting for a person, and every
+path that cannot consume a trustworthy decision still denies.

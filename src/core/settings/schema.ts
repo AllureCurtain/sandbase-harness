@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MINIMAX_PROVIDER } from '@/core/model/minimax.js';
+import { PI_APPROVAL_MODES } from '@/strategy/pi/approval-mode.js';
 
 const optionsSchema = z.record(z.string(), z.unknown()).default({});
 const STORED_SECRET_PREFIX = '__managed_secret__:';
@@ -22,6 +23,13 @@ export const runtimeSettingsSchema = z.object({
     provider: z.enum(['builtin', 'pi', 'harness', 'codex', 'claude']),
     options: z.object({
       default_max_steps: z.number().int().min(1).max(1_000).default(25),
+      // Platform-owned Pi gate behaviour, declared here as well as in the adapter
+      // descriptor so a misspelled mode is a Settings error rather than a
+      // silently ignored key. Optional rather than defaulted, so a settings row
+      // written before this mode existed stays valid unchanged, and runtime
+      // resolution fails safe to `interactive`: unattended operation has to be
+      // chosen explicitly.
+      approval_mode: z.enum(PI_APPROVAL_MODES).optional(),
     }).catchall(z.unknown()),
   }).strict(),
   storage: z.object({

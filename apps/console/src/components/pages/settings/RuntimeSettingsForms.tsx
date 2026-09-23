@@ -45,6 +45,11 @@ export function ModelSettingsForm({ adapters, config, onChange, errors, resetKey
 }
 
 export function LoopEngineSettingsForm({ adapters, config, onChange, errors, resetKey }: SettingsFormProps) {
+  // Platform-owned, and off unless an operator selected it: a value the schema
+  // does not recognize is displayed as the safe default rather than as itself.
+  const approvalMode = config.loop_engine.options.approval_mode === 'preauthorized_once'
+    ? 'preauthorized_once'
+    : 'interactive';
   return (
     <>
       <FormField label="Provider" description="The engine that executes agent turns and tool loops." error={errors?.['loop_engine.provider']}>
@@ -62,6 +67,28 @@ export function LoopEngineSettingsForm({ adapters, config, onChange, errors, res
           value={config.loop_engine.options.default_max_steps}
           onChange={(event) => onChange({ ...config, loop_engine: { ...config.loop_engine, options: { ...config.loop_engine.options, default_max_steps: Number(event.target.value) } } })}
         />
+      </FormField>
+      <FormField
+        label="Pi gate approval mode"
+        description="How a gated Pi native tool call is answered. Interactive waits for a person. Preauthorized once lets the runtime answer the call itself under a platform rule: each decision is consumed once, is never recorded as a person's click, and never becomes a standing permission. Only the Pi loop engine reads this setting."
+        error={errors?.['loop_engine.options.approval_mode']}
+      >
+        <select
+          value={approvalMode}
+          onChange={(event) => onChange({
+            ...config,
+            loop_engine: {
+              ...config.loop_engine,
+              options: {
+                ...config.loop_engine.options,
+                approval_mode: event.target.value as RuntimeSettingsConfig['loop_engine']['options']['approval_mode'],
+              },
+            },
+          })}
+        >
+          <option value="interactive">Interactive (ask a person)</option>
+          <option value="preauthorized_once">Preauthorized once (platform decides)</option>
+        </select>
       </FormField>
       <OptionsJsonField
         value={config.loop_engine.options}

@@ -110,6 +110,38 @@ payload, a tool this session does not gate, no turn in flight, a second gate whi
 one is pending, a malformed reply, a turn past its deadline, and a transport that
 closes while a decision is pending. None of them asks, and none of them allows.
 
+### Preauthorized approval mode
+
+`loop_engine.options.approval_mode` selects who answers a gate. `interactive` is
+the default and the resolution for an omitted key: the call waits for a person.
+`preauthorized_once` is an explicit, operator-selected second way, and the
+runtime then answers the call itself under a platform-owned rule.
+
+What the mode is allowed to be, and all it is allowed to be:
+
+- **per call, never a standing permission.** The rule is consulted again at the
+  next gate, and a decision is spent by being applied: a replay of the same call,
+  a decision naming a different call, and a person's answer for a call the
+  platform already decided are all refused, so no earlier decision can authorize
+  a later one.
+- **never human.** The decision travels the same conditional consume as a
+  person's, and is recorded with `decision_source: "platform"` and published as
+  `requires_confirmation: false` with `confirmation_source: "platform"`, so no
+  client can read an automatic decision as a click by a person. The session does
+  not report `requires_action` for it.
+- **not a policy change.** The mode never reaches the child and never rewrites
+  the compiled plan: the launch carries the same `--tools`/`--exclude-tools` and
+  the same gated names it would carry under `interactive`.
+- **not a bypass.** A rule that does not name a call leaves the gate waiting for
+  a person rather than denying what a person could still approve, and every path
+  that cannot consume a trustworthy decision still denies.
+
+The mode is read per gate rather than latched on the session, so turning it off
+is honored by the following decision and a decision already recorded keeps the
+source it was recorded with. An unrecognized mode name is refused by Settings. An
+agent definition cannot reach the key, so no agent can make its own gated calls
+unattended.
+
 The current RPC adapter produces durable CMA events and visible Pi-native
 tool trajectory. Native Pi tools are not Harness `ToolResolver` tools: they do
 not run through the Harness tool loop and receive no Harness local path

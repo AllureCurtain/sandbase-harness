@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { join, resolve } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { describeSettingsAdapters, availabilityFromDescriptors } from '@/core/settings/adapters.js';
+import { describeSettingsAdapters, availabilityFromDescriptors, PI_APPROVAL_MODE_OPTION } from '@/core/settings/adapters.js';
 import { validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from '@/core/settings/schema.js';
 import { testRuntimeSettingsArea, testRuntimeSettingsAreaWithFetch } from '@/core/settings/test.js';
 import { Database } from '@/core/db/database.js';
@@ -312,6 +312,54 @@ describe('Settings V2 schema', () => {
     expect(descriptors.loop_engine.find((adapter) => adapter.id === 'codex')?.status).toBe('unavailable');
     expect(descriptors.storage.artifacts.find((adapter) => adapter.id === 's3')?.status).toBe('unavailable');
     expect(descriptors.memory.find((adapter) => adapter.id === 'mem0')?.status).toBe('unavailable');
+  });
+
+  it('refuses an unrecognized Pi gate approval mode instead of coercing it', () => {
+    const selected = validateRuntimeSettings({
+      ...validConfig,
+      loop_engine: {
+        provider: 'pi',
+        options: { default_max_steps: 25, [PI_APPROVAL_MODE_OPTION]: 'preauthorized_once' },
+      },
+    });
+    expect(selected.valid).toBe(true);
+    expect(selected.normalized_config?.loop_engine.options.approval_mode).toBe('preauthorized_once');
+
+    // Off by default: an omitted mode stays omitted, and the runtime resolves
+    // that to the interactive one. It is not defaulted in the document, so an
+    // existing settings row is unchanged by this key existing.
+    const omitted = validateRuntimeSettings(validConfig);
+    expect(omitted.valid).toBe(true);
+    expect(omitted.normalized_config?.loop_engine.options.approval_mode).toBeUndefined();
+
+    // An unrecognized name is a settings error naming the field, never a silent
+    // fallback: "the operator selected something this runtime does not know" must
+    // not be saved as "the operator selected interactive".
+    const unknown = validateRuntimeSettings({
+      ...validConfig,
+      loop_engine: {
+        provider: 'pi',
+        options: { default_max_steps: 25, [PI_APPROVAL_MODE_OPTION]: 'always_allow' },
+      },
+    });
+    expect(unknown.valid).toBe(false);
+    expect(unknown.errors).toContainEqual(expect.objectContaining({
+      path: 'loop_engine.options.approval_mode',
+      code: 'invalid_value',
+      message: expect.stringContaining('preauthorized_once'),
+    }));
+  });
+
+  it('publishes the Pi gate approval mode and its safe default in the adapter descriptor', () => {
+    const pi = describeSettingsAdapters().loop_engine.find((adapter) => adapter.id === 'pi');
+
+    // A Console that reads only the descriptor still offers the interactive mode
+    // as the default, and cannot offer a mode this runtime does not know.
+    expect((pi?.options_schema.properties as Record<string, unknown> | undefined)?.[PI_APPROVAL_MODE_OPTION]).toEqual({
+      type: 'string',
+      enum: ['interactive', 'preauthorized_once'],
+      default: 'interactive',
+    });
   });
 
   it('rejects missing and unresolved model credentials', () => {
@@ -770,6 +818,22 @@ describe('Settings V2 activation', () => {
       model: 'MiniMax-M2.7',
       base_url: MINIMAX_ENDPOINTS.cn_zh.openai_base_url,
     });
+    db.close();
+  });
+
+  it('seeds an explicit interactive Pi gate approval mode', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-approval-mode-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+
+    const settings = getOrSeedRuntimeSettings(db);
+
+    // The safe mode is written down rather than left implicit, so an operator
+    // reading a fresh workspace's saved config can see that no gated call is
+    // answered without a person.
+    expect(settings.saved_config.loop_engine.options.approval_mode).toBe('interactive');
+    expect(validateRuntimeSettings(settings.saved_config).valid).toBe(true);
     db.close();
   });
 
