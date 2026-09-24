@@ -8,7 +8,11 @@
  * unverified rather than silently counted as done.
  *
  * Contract documents under `contracts/anthropic-cma/` are the prose companion:
- * a `supported` entry there has a matching `supported` entry here.
+ * each one restates the status of the entries that cite it in a
+ * `<!-- capability-status … -->` block, cites only source and test files that
+ * exist, and lists the mounted route surface. `tests/unit/contract-honesty.test.ts`
+ * holds all three sides — this matrix, those documents, and the real mount graph —
+ * to the same fact, so none of them can drift alone.
  */
 
 /**
@@ -55,6 +59,7 @@ export const CAPABILITY_AREAS = [
   'github-repository',
   'operations',
   'capabilities',
+  'routes',
   'unsupported',
 ] as const;
 
@@ -126,7 +131,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'agents',
     id: 'model-object-profile',
     status: 'partial',
-    reason: 'String and object model forms parse, but effort, inference_geo, and the canonical multiagent roster are handled as structured unavailable results rather than executed.',
+    reason: 'String and object model forms parse field by field. `effort` is accepted and carried into the stored definition but does not change the provider request and is not projected back on read; `inference_geo` is refused by name with `unsupported_model_field` because this runtime has no inference-geography control.',
     contract: 'contracts/anthropic-cma/agents.md',
   },
   {
@@ -272,22 +277,22 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'github-repository',
     id: 'github-repository-materialization',
-    status: 'supported',
-    reason: 'A github_repository resource is cloned, checked out at the requested ref, mounted into the sandbox, and its .claude/skills are registered for the session, with staging cleaned up on every failure path and the token kept out of argv, events, and logs.',
+    status: 'partial',
+    reason: 'The materializer itself is implemented and covered by unit and host-level tests, but no runtime composition supplies it: SandboxLifecycle refuses to provision a session that attaches a github_repository resource unless a `githubMaterializer` dependency is injected, and neither `createRuntimeSessionServices` nor the executor passes one, so the session is accepted and then fails on its first turn instead of cloning. The skills a repository ships never reach the context builder either, because `discoveredRepositorySkills` has no caller. Not `supported` until the composition root wires the materializer and the discovered-skill path.',
     contract: 'contracts/anthropic-cma/github-repository.md',
   },
   {
     area: 'github-repository',
     id: 'github-repository-identity-freeze',
     status: 'supported',
-    reason: 'Changing the repository URL, checkout, or mount path of a running session is refused: the registered skills and any files already read cannot be retroactively corrected, so a new session is required.',
+    reason: 'Changing the repository URL, checkout, or mount path of a running session is refused by the resource PATCH route, which accepts only `authorization_token` and names every other field in the rejection: the registered skills and any files already read cannot be retroactively corrected, so a new session is required.',
     contract: 'contracts/anthropic-cma/github-repository.md',
   },
   {
     area: 'files',
     id: 'file-resources',
-    status: 'supported',
-    reason: 'Files are uploaded, listed, read, and mounted at a canonical sandbox path.',
+    status: 'partial',
+    reason: 'Upload, list, read, resource identity, and canonical mount-path derivation are implemented and tested, but mounting is not: SandboxLifecycle refuses to provision a session that attaches a file resource unless a `fileArtifactReader` dependency is injected, and no runtime composition supplies one, so a session created with file resources is accepted and then fails on its first turn. Not `supported` until the composition root wires the reader.',
     contract: 'contracts/anthropic-cma/files.md',
   },
   {
@@ -364,21 +369,28 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'capabilities',
     id: 'capability-status-truthfulness',
     status: 'supported',
-    reason: 'The six-value status enum distinguishes unimplemented from deliberately out-of-scope and from unverified.',
+    reason: 'The six-value status enum distinguishes unimplemented from deliberately out-of-scope and from unverified, and a guard test enforces the claim: every entry\'s contract document must restate that entry\'s status, cite no source or test file that does not exist, and list the mounted route surface with its methods.',
     contract: 'contracts/anthropic-cma/capabilities.md',
+  },
+  {
+    area: 'routes',
+    id: 'documented-route-surface',
+    status: 'supported',
+    reason: 'Every mounted /v1 route is listed with its method and path in contracts/anthropic-cma/routes.md, and every listed route is mounted; the guard compares method and path together, so a documented route answering a different verb fails as loudly as a route that is missing.',
+    contract: 'contracts/anthropic-cma/routes.md',
   },
   {
     area: 'unsupported',
     id: 'dreams',
-    status: 'not_applicable',
-    reason: 'Dreams are a cloud scheduling feature with no local-first analogue; not scheduled.',
+    status: 'unavailable',
+    reason: 'Dreams are a memory-consolidation pipeline: they read memory stores and historical sessions and produce new, reorganized stores. This phase deliberately does not implement it, and no route or field accepts one. Unavailable rather than not_applicable because the feature belongs in a local-first runtime — what it needs is a scheduled background worker and archived-session corpora, not a hosted service.',
     contract: 'contracts/anthropic-cma/unsupported.md',
   },
   {
     area: 'threads',
     id: 'threads-and-coordinator',
-    status: 'partial',
-    reason: 'Thread identity, lifecycle and message-direction events, cross-posting to the primary stream, the 25-thread limit with advisor exemption, roster validation and snapshotting, archive rules, per-thread event isolation and both documented endpoints are implemented. Delegation is still routed by the agent delegations list rather than by roster membership, no advisor consultation tool exists, and a session_thread_id on an interrupting event is not routed to a named thread.',
+    status: 'unavailable',
+    reason: 'Not implemented: there is no thread resource, no thread lifecycle or per-thread event isolation, no coordinator or advisor role, no /threads route, and no thread-scoped budget event. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface.',
     contract: 'contracts/anthropic-cma/threads.md',
   },
   {

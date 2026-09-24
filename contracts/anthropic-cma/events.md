@@ -6,6 +6,13 @@ Status: `supported`, with the error enumeration marked `unverified`, see §4.
 Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.ts`,
 `src/core/db/migrations.ts`.
 
+<!-- capability-status
+append-only-event-log: supported
+processed-at-lifecycle: supported
+session-error-structure: supported
+error-enum-completeness: unverified
+-->
+
 ---
 
 ## 1. Official definition
@@ -23,6 +30,10 @@ Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.
   answer".
 
 ## 2. Current SandBase shape
+
+The append path and the row shape are `src/core/session/session-manager.ts` and
+`src/core/db/migrations.ts`; the wire projection is `toApiEvent` in
+`src/api/standard.ts`.
 
 - Every event carries a monotonically increasing per-session `seq`. Ordering is
   `created_at` with a `rowid` tiebreak, because `created_at` has second
@@ -68,7 +79,7 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 | Error enumeration | The published contract does not exhaustively enumerate `session.error` codes. SandBase error codes are local and are marked `unverified` against upstream values. |
 | Event metadata storage | SandBase stores event payloads in a metadata column rather than per-field columns. This is a storage choice with no wire effect. |
 | Local event types | SandBase emits extension event types under `/v1/x` that are not part of the canonical domain set. |
-| `session.updated` | Emitted locally so the Console can react without polling. Not confirmed against the upstream event catalogue; treated as a local contract. |
+| No `session.updated` | The runtime emits no `session.updated` event. A session's `updated_at` field is the whole signal, and the Console reads it rather than subscribing to an event. An event with no producer and no consumer is not documented as if it existed. |
 | Outcome span vocabulary | `span.outcome_evaluation_*` is the local spelling for the outcome evaluation spans. The three-event shape and the verdict vocabulary are a SandBase profile: they are recorded here rather than presented as a verified upstream enumeration. |
 | Outcome progression | The grader's own reasoning is not published while an evaluation runs. `span.outcome_evaluation_ongoing` marks that the evaluation is in flight and carries no content, because a partial verdict derived from nothing would be a claim about the deliverable that the runtime cannot support. |
 
@@ -80,16 +91,17 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 - Storing payloads in metadata keeps the log forward-compatible. Adding a
   column per new event field would make migrations the bottleneck for changes
   that have no storage requirement.
-- `session.updated` exists because the local Console otherwise has no push
-  signal for non-status changes. It is labelled a local contract rather than
-  claimed as canonical.
+- `session.updated` was removed rather than implemented: `updated_at` already
+  carries the information, the Console reads that field instead of subscribing,
+  and an event no client consumes is scope rather than a contract.
 
 ## 6. Corresponding tests
 
 - `tests/integration/api.test.ts` — event list and stream ordering assertions,
   and the rejection of an unsupported `event_deltas[]` value.
-- `tests/unit/ordered-session-events.test.ts` — deterministic ordering under
-  equal timestamps.
+- `tests/unit/event-logger.test.ts` — the append path assigns a monotonically
+  increasing `seq` and the listing returns events in that order, plus the
+  `afterSeq` filter a resuming reader uses.
 - `tests/unit/cma-event-contract.test.ts` — `session.error` projection: the
   structured payload reaches the top level, the text `content` survives
   alongside it, an event without a payload omits `error` rather than inventing

@@ -8,6 +8,12 @@ Source: `src/api/routes/operations.ts`,
 `src/core/operations/webhook-signature.ts`, `src/core/operations/cron.ts`,
 `src/core/operations/scheduler.ts`, `src/core/operations/outcome-evaluator.ts`.
 
+<!-- capability-status
+webhook-subscriptions: partial
+scheduled-deployment-timers: partial
+outcome-evaluation: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -170,7 +176,7 @@ records.
 | Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
 | Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The published jittered 5–120 s backoff is not implemented: the local schedule is a fixed 60 s then 120 s. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
-| Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`session.updated`, `turn_complete`, `span.*`). |
+| Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`turn_complete`, `span.*`). The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
 | Deployment endpoint paths | The historical local `/v1/scheduled-deployments` is served; there is no `/v1/deployments` alias, so a client written against the published path gets no route. |
 | Deployment control surface | Create, read, update, archive, manual run and run-due. No pause and no unpause. |
 | Trigger representation | `trigger_type` is a key in the session's and the run's metadata. There is no `trigger_context` field and no `schedule` / `manual` polymorphic payload. |
@@ -228,11 +234,11 @@ records.
   window, a second rotation replaces the window rather than appending to it, an
   unknown subscription is a 404, and a subscription with no stored secret gains one
   and leaves the legacy derivation behind.
-- `tests/integration/operations-bridge.test.ts` and
-  `tests/integration/operations-runtime-composition.test.ts` — the broadcast
+- `tests/integration/operations-bridge.test.ts` — the broadcast
   listener projects a durable event to a matching subscription, the timers retry a
-  due delivery and run a due deployment, and a composed runtime has both a listener
-  and a running timer that its stop function clears.
+  due delivery and run a due deployment, a composed runtime has both a listener
+  and a running timer that its stop function clears, and the startup re-arm
+  restores a stale forward schedule while leaving a future one alone.
 - `tests/unit/cron-timezone.test.ts` — the field grammar, the refusal of a
   malformed or out-of-range field and of an unknown zone, the same wall time
   resolving to different instants per zone, the instant moving across a DST
@@ -262,3 +268,11 @@ not read as "implemented". Neither entry is `supported`; neither is `unavailable
 the resource, the delivery engine, the scheduler and the run records are real
 and exercised by the tests in §6. No claim is made that a client written against
 the published contract works unchanged.
+
+The two `supported` entries in this area are different in kind from the pair
+above: `outcome-evaluation` (this file) is a deterministic evaluator the
+published contract does not define, and `outcome-grading` (recorded in
+`sessions.md`) projects a declared outcome into a graded, self-revising loop.
+They are supported because that behaviour is implemented and tested, not because
+the published deployment contract is met. The status block at the top of this
+file carries this file's three entries, so the two groups cannot be read as one.

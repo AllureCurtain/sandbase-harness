@@ -4,6 +4,10 @@ Contract area: the `system.message` event domain.
 Status: `supported`.
 Source: `src/api/routes/system-message.ts`, `src/types/cma-protocol.ts`.
 
+<!-- capability-status
+system-message-events: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -15,6 +19,9 @@ Source: `src/api/routes/system-message.ts`, `src/types/cma-protocol.ts`.
 - It is an outbound event: the runtime emits it to the client.
 
 ## 2. Current SandBase shape
+
+The route is `src/api/routes/system-message.ts` and the event vocabulary is
+`src/types/cma-protocol.ts`.
 
 - `system.message` is accepted and persisted as its own event type, not folded
   into an agent or user domain.
