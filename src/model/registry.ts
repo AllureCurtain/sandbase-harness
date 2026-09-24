@@ -12,6 +12,11 @@ import { wrapLanguageModel, type LanguageModel, type LanguageModelMiddleware } f
 import { resolveEnvVars } from '@/core/config/env-resolver.js';
 import { MINIMAX_PROVIDER, miniMaxOpenAiBaseUrl } from '@/core/model/minimax.js';
 import {
+  ModelConfigInvalidError,
+  ModelNotFoundError,
+  ModelProviderNotConfiguredError,
+} from '@/model/errors.js';
+import {
   DEFAULT_RETRY_POLICY,
   type ModelConfig,
   type ModelProviderType,
@@ -19,6 +24,19 @@ import {
   type RuntimeConfigState,
   type RuntimeModelInfo,
 } from '@/types/model.js';
+
+export {
+  MODEL_AUTH_FAILED_CODE,
+  MODEL_CONFIG_INVALID_CODE,
+  MODEL_NOT_FOUND_CODE,
+  MODEL_PROVIDER_NOT_CONFIGURED_CODE,
+  ModelConfigInvalidError,
+  ModelNotFoundError,
+  ModelProviderNotConfiguredError,
+  ModelResolutionError,
+  RESUMABLE_MODEL_FAILURE_CODES,
+} from '@/model/errors.js';
+export type { ModelErrorCode } from '@/model/errors.js';
 
 export class ModelRegistry {
   private models = new Map<string, ModelConfig>();
@@ -89,7 +107,7 @@ export class ModelRegistry {
     const exact = this.models.get(name);
     if (exact?.model) return exact;
     if (exact && !exact.model) {
-      throw new ModelNotFoundError(
+      throw new ModelConfigInvalidError(
         name,
         available,
         'Provider configuration does not include a concrete model id. Set model on the Agent instead.',
@@ -104,7 +122,7 @@ export class ModelRegistry {
       const defaultConfig = this.getDefaultConfig();
       if (!defaultConfig) throw new ModelNotFoundError(name, available);
       const reason = unserviceableNamespaceReason(parsed.namespace, defaultConfig.provider);
-      if (reason) throw new ModelNotFoundError(name, available, reason);
+      if (reason) throw new ModelProviderNotConfiguredError(name, available, reason);
       return { ...defaultConfig, name, model: parsed.model, is_default: false };
     }
 
@@ -130,7 +148,7 @@ export class ModelRegistry {
    */
   createModelFromConfig(config: ModelConfig): LanguageModel {
     if (!config.model) {
-      throw new ModelNotFoundError(
+      throw new ModelConfigInvalidError(
         config.name,
         Array.from(this.models.keys()),
         'Agent model id is required.',
@@ -527,17 +545,8 @@ function createToolCallTypeSanitizer(): TransformStream<Uint8Array, Uint8Array> 
 // ============================================================
 // Errors
 // ============================================================
-
-export class ModelNotFoundError extends Error {
-  constructor(
-    public readonly modelName: string,
-    public readonly available: string[],
-    detail?: string,
-  ) {
-    const suggestion = available.length > 0
-      ? `Available models: ${available.join(', ')}`
-      : 'No models registered. Add a model provider in Dashboard Settings > Models';
-    super(`Model not found: "${modelName}". ${detail ? `${detail} ` : ''}${suggestion}`);
-    this.name = 'ModelNotFoundError';
-  }
-}
+//
+// `src/model/errors.ts` owns the model-resolution error classes and their codes
+// (re-exported at the top of this module). They live in their own file so the
+// strategy layer can classify a provider failure by code without importing the
+// provider clients.

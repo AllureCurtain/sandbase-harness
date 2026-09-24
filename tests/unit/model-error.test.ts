@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { describeModelError } from '@/strategy/default-strategy.js';
+import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 
 describe('describeModelError', () => {
   it('preserves a plain Error with a real message', () => {
@@ -73,5 +74,43 @@ describe('describeModelError', () => {
     expect(result.message).not.toContain('sk-ant-abcd1234efgh');
     expect(result.message).toContain('Bearer ***');
     expect(result.message).toContain('sk-***');
+  });
+
+  // A model failure used to reach `session.error` as the same `internal_error`
+  // every crashed turn got, so a client could not tell a wrong model id from a
+  // broken runtime.
+  it('codes a provider 404 as a missing model', () => {
+    const err = Object.assign(new Error('model not found'), { statusCode: 404 });
+    expect(describeModelError(err)).toMatchObject({ code: MODEL_NOT_FOUND_CODE });
+  });
+
+  it.each([401, 403])('codes a provider %i as an authentication failure', (statusCode) => {
+    const err = Object.assign(new Error('unauthorized'), { statusCode });
+    expect(describeModelError(err)).toMatchObject({ code: MODEL_AUTH_FAILED_CODE });
+  });
+
+  it('leaves an unclassified status uncoded', () => {
+    // Only a structured status is read: a body that merely mentions "404" must
+    // not be classified as a missing model, because a mis-classified failure is
+    // worse than an unclassified one.
+    const err = Object.assign(new Error('upstream said 404 for a deleted route'), { statusCode: 500 });
+    expect((describeModelError(err) as { code?: string }).code).toBeUndefined();
+    expect((describeModelError(new Error('turn blew up')) as { code?: string }).code).toBeUndefined();
+  });
+
+  it('does not write the code onto the error the caller still holds', () => {
+    // The SDK re-throws the same provider error object through the stream, so a
+    // caller further out may still inspect it.
+    const err = Object.assign(new Error('model not found'), { statusCode: 404 });
+    const described = describeModelError(err);
+    expect(described).not.toBe(err);
+    expect((err as { code?: string }).code).toBeUndefined();
+    expect(described.message).toContain(err.message);
+  });
+
+  it('keeps the code an error already carries', () => {
+    const err = Object.assign(new Error('Provider "openai" is not configured.'), { code: 'model_provider_not_configured' });
+    const described = describeModelError(err);
+    expect(described).toBe(err);
   });
 });

@@ -96,6 +96,13 @@ import {
   parseEnvironmentConfig,
   sandboxProviderForEnvironmentConfig,
 } from '@/sandbox/provider-names.js';
+import {
+  MODEL_AUTH_FAILED_CODE,
+  MODEL_CONFIG_INVALID_CODE,
+  MODEL_NOT_FOUND_CODE,
+  MODEL_PROVIDER_NOT_CONFIGURED_CODE,
+  RESUMABLE_MODEL_FAILURE_CODES,
+} from '@/model/errors.js';
 
 // ============================================================
 // Types
@@ -1437,6 +1444,12 @@ export class SessionManager {
           if (errorCode === PI_CLEANUP_PENDING_CODE) this.updateStatus(sessionId, 'cleanup_pending');
           else if (errorCode === PI_TIMED_OUT_CODE) this.updateStatus(sessionId, 'timed_out');
           else if (errorCode === PI_SESSION_BUSY_CODE) this.updateStatus(sessionId, 'paused');
+          // A model failure is a fixable configuration mistake, not a broken
+          // session: the caller corrects the provider or the agent's model id
+          // and sends the next event. Reporting it as `failed` publishes
+          // `session.status_terminated`, which reads to a client as "this
+          // session is over" — the cost of a mistake the operator can repair.
+          else if (RESUMABLE_MODEL_FAILURE_CODES.has(errorCode ?? '')) this.updateStatus(sessionId, 'paused');
           else this.updateStatus(sessionId, 'failed');
         }
         // A cleanup_pending child may still own the workspace. Never release it
@@ -1625,6 +1638,13 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     // call that cannot succeed until the runtime is fixed.
     case OUTCOME_EVALUATOR_UNAVAILABLE_CODE:
     case OUTCOME_RUBRIC_FILE_NOT_FOUND_CODE:
+    // A model-resolution failure is a configuration fact: the same request
+    // cannot succeed until the provider or the agent's model id is corrected,
+    // so telling a client to retry it would be wrong in the other direction.
+    case MODEL_NOT_FOUND_CODE:
+    case MODEL_PROVIDER_NOT_CONFIGURED_CODE:
+    case MODEL_CONFIG_INVALID_CODE:
+    case MODEL_AUTH_FAILED_CODE:
       return 'not_retryable';
     default:
       return 'unknown';
