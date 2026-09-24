@@ -242,12 +242,19 @@ export interface AgentThinkingEvent extends EventBase {
   providerOptions?: Record<string, unknown>;
 }
 
+/**
+ * A tool call the runtime emitted.
+ *
+ * `name` and `input` are projected to the top level by `toApiEvent`, which is
+ * where a client reads them. `content` carries the canonical `tool_use` block,
+ * and that block's `id` is the tool-call id — the event's own `id`, inherited
+ * from `EventBase`, is the persisted event id and is what a client answers with.
+ */
 export interface AgentToolUseEvent extends EventBase {
   type: 'agent.tool_use';
-  /** Tool use ID for pairing with tool_result */
-  id: string;
   name: string;
   input: Record<string, unknown>;
+  content?: ContentBlock[];
 }
 
 export interface AgentToolResultEvent extends EventBase {
@@ -259,10 +266,10 @@ export interface AgentToolResultEvent extends EventBase {
 
 export interface AgentMcpToolUseEvent extends EventBase {
   type: 'agent.mcp_tool_use';
-  id: string;
   mcp_server_name: string;
   name: string;
   input: Record<string, unknown>;
+  content?: ContentBlock[];
 }
 
 export interface AgentMcpToolResultEvent extends EventBase {
@@ -274,9 +281,9 @@ export interface AgentMcpToolResultEvent extends EventBase {
 
 export interface AgentCustomToolUseEvent extends EventBase {
   type: 'agent.custom_tool_use';
-  id: string;
   name: string;
   input: Record<string, unknown>;
+  content?: ContentBlock[];
 }
 
 export interface AgentThreadContextCompactedEvent extends EventBase {

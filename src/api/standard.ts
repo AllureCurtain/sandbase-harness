@@ -216,7 +216,23 @@ export interface ApiEvent {
   type: string;
   content: unknown[] | null;
   metadata?: Record<string, unknown>;
+  /**
+   * The tool call this event pairs with.
+   *
+   * On `user.tool_confirmation` it is the value the caller sent. On
+   * `agent.tool_result` it is lifted from the `tool_result` block, because the
+   * declared `AgentToolResultEvent.tool_use_id` is a top-level field and a
+   * client reading the event list otherwise sees it only inside `content`.
+   */
   tool_use_id?: string;
+  /**
+   * Id of the custom tool call a `user.custom_tool_result` answers.
+   *
+   * Lifted from the metadata carrier, because the event has no content block
+   * that names it. The accepted value's meaning is documented in
+   * `contracts/anthropic-cma/tools.md`.
+   */
+  custom_tool_use_id?: string;
   /**
    * Structured payload of a `session.error`, projected from the metadata
    * carrier. Always carries all three keys; a client must treat an
@@ -235,6 +251,14 @@ export interface ApiEvent {
   mcp_server_name?: string;
   /** Tool-use this MCP result answers. */
   mcp_tool_use_id?: string;
+  /**
+   * Name and input of a `tool_use` block, lifted to the top level where
+   * `src/types/cma-protocol.ts` and the published client loop read them.
+   * `content` still carries the block: this is a projection, not a move. The
+   * top-level `id` is the event id and is not replaced by the tool-call id.
+   */
+  name?: string;
+  input?: Record<string, unknown>;
   /**
    * Usage snapshot carried by `session.usage`. Emitted immediately before
    * `session.status_idle`. `list_cost` is present only when a cost profile
@@ -390,6 +414,25 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     : undefined;
   const mcpServerName = metadataString(event, 'mcp_server_name');
   const mcpToolUseId = event.type === 'agent.mcp_tool_result' ? contentToolUseId(event) : undefined;
+  // A tool event carries its payload inside `content[0]`, but both the declared
+  // types in `src/types/cma-protocol.ts` and the published client loop read
+  // `name` and `input` at the top level: the loop resolves a blocking event id
+  // from `stop_reason.event_ids`, then reads `toolEvent.name` and
+  // `toolEvent.input` off the event it found, so without this projection the call
+  // cannot be made at all. `id` is deliberately not among the lifted fields — the
+  // top-level `id` is the *event* id, which is the value that same loop answers
+  // with, and overwriting it with the tool-call id would break the addressing.
+  // The tool-call id stays reachable as `content[0].id`.
+  // `content` is kept as well: this is a projection, not a move.
+  const toolUse = contentToolUseBlock(event);
+  const toolUseId = event.type === 'agent.tool_result' ? contentToolUseId(event) : undefined;
+  // `user.custom_tool_result` has no content block that names the call it
+  // answers — the accepted value lives in the metadata carrier — while
+  // `UserCustomToolResultEvent` declares `custom_tool_use_id` as a top-level
+  // field. A client reading the declared type gets `undefined` without this.
+  const customToolUseId = event.type === 'user.custom_tool_result'
+    ? metadataString(event, 'custom_tool_use_id')
+    : undefined;
   // `user.define_outcome` is persisted through the generic metadata carrier and
   // projected to its documented top-level fields, on the same route as `session.usage`
   // and `session.error`.
@@ -414,6 +457,9 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     ...(defineOutcome ?? {}),
     ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
     ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
+    ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+    ...(customToolUseId ? { custom_tool_use_id: customToolUseId } : {}),
+    ...(toolUse ?? {}),
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
@@ -528,4 +574,41 @@ function contentToolUseId(event: SessionEvent): string | undefined {
   return typeof block?.tool_use_id === 'string' && block.tool_use_id.length > 0
     ? block.tool_use_id
     : undefined;
+}
+
+/**
+ * Top-level projection of a `tool_use` content block.
+ *
+ * Only `name` and `input` are lifted. The block's own `id` is deliberately left
+ * where it is: on this wire the top-level `id` is the persisted event id, which
+ * is what a client answers with and what `stop_reason.event_ids` names, so
+ * copying the tool-call id over it would break the addressing. `input` is copied
+ * as-is, because the block is what the runtime persisted and re-shaping it here
+ * would make the stream disagree with the log. Returns `undefined` for every
+ * other event type, so a field cannot leak onto an event whose declared type has
+ * no such field.
+ */
+function contentToolUseBlock(
+  event: SessionEvent,
+): { name?: string; input?: Record<string, unknown> } | undefined {
+  if (
+    event.type !== 'agent.tool_use'
+    && event.type !== 'agent.mcp_tool_use'
+    && event.type !== 'agent.custom_tool_use'
+  ) {
+    return undefined;
+  }
+  const block = event.content?.find((item) => item.type === 'tool_use') as
+    | { type: 'tool_use'; name?: unknown; input?: unknown }
+    | undefined;
+  if (!block) return undefined;
+  const name = typeof block.name === 'string' && block.name.length > 0 ? block.name : undefined;
+  const input = block.input && typeof block.input === 'object' && !Array.isArray(block.input)
+    ? block.input as Record<string, unknown>
+    : undefined;
+  if (name === undefined && input === undefined) return undefined;
+  return {
+    ...(name !== undefined ? { name } : {}),
+    ...(input !== undefined ? { input } : {}),
+  };
 }

@@ -42,6 +42,12 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   `toApiEvent`, so a new field does not require a schema migration.
 - `processed_at` is recorded once an inbound event is admitted.
 - `session.error` carries a structured payload.
+- A tool event carries its payload in `content[0]` and also projects `name` and
+  `input` to the top level for `agent.tool_use`, `agent.mcp_tool_use` and
+  `agent.custom_tool_use`, `tool_use_id` for `agent.tool_result`, and
+  `custom_tool_use_id` for `user.custom_tool_result`. The top-level `id` stays the
+  persisted event id and `content` is unchanged; [`tools.md`](./tools.md) records
+  why the two ids must not be conflated.
 - `session.usage` is emitted before the session goes idle, so a client reading
   the stream observes usage before the terminal status.
 - One outcome evaluation appends exactly three events, in order, and the end
@@ -138,6 +144,10 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   the status a stop leaves behind, the ceiling ending an outcome before its next
   grading pass or turn, and the admission refusal that keeps a declared outcome off
   a runtime with no grader.
+- `tests/integration/tool-event-fields.test.ts` — the tool-event projection: the
+  lifted `name` / `input` / `tool_use_id` / `custom_tool_use_id` fields, the
+  top-level `id` remaining the event id, `content` unchanged, and no field
+  reaching an event type that declares none.
 
 ## 7. Status
 

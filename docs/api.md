@@ -647,6 +647,24 @@ matching `session.status_idle` event carries metadata with
 `stop_reason.type: "requires_action"`, pending `event_ids`, and
 `action_type: "tool_confirmation"` for protocol compatibility.
 
+Tool events carry their payload both in `content[0]` and at the top level, so a
+client can read a call without unpacking the block:
+
+| Event | Top-level fields |
+| --- | --- |
+| `agent.tool_use` | `name`, `input` |
+| `agent.mcp_tool_use` | `name`, `input`, `mcp_server_name` |
+| `agent.custom_tool_use` | `name`, `input` |
+| `agent.tool_result` | `tool_use_id` |
+| `agent.mcp_tool_result` | `mcp_tool_use_id` |
+| `user.custom_tool_result` | `custom_tool_use_id` |
+| `user.tool_confirmation` | `tool_use_id` |
+
+A field the persisted block does not carry is omitted rather than sent as
+`null`. The top-level `id` on a tool event is the event's own id, not the
+tool-call id: the tool-call id stays available as `content[0].id`, and the two
+are different values.
+
 Session event records may include optional execution metadata when available:
 `model_used`, `tokens_in`, `tokens_out`, `stop_reason`, and `duration_ms`.
 Clients should treat absent fields as unknown and preserve the event's existing

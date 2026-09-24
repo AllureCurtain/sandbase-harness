@@ -123,13 +123,30 @@ MCP toolset approval (`standard.ts`, `tool-naming.ts`):
   tool Pi does not have, an enabled `mcp_toolset` — is still refused with
   `pi_tool_policy_not_supported` rather than admitted.
 
+Tool event fields (`src/api/standard.ts`):
+
+- A tool event persists its payload inside `content[0]`, and `toApiEvent`
+  projects `name` and `input` to the top level for `agent.tool_use`,
+  `agent.mcp_tool_use`, and `agent.custom_tool_use`; `agent.tool_result` gains a
+  top-level `tool_use_id` and `user.custom_tool_result` a top-level
+  `custom_tool_use_id`. `content` is unchanged and still carries the block — the
+  projection adds fields rather than moving them.
+- The top-level `id` is the persisted **event** id, not the tool-call id. The
+  published client loop resolves a blocking event id from
+  `stop_reason.event_ids`, then reads `name` and `input` off the event it found
+  and answers with that same event id, so the two must be the same value. The
+  tool-call id remains reachable as `content[0].id`.
+- A field is omitted rather than sent as `null` when the block does not carry it,
+  and no field is projected onto an event type whose declared shape has none.
+
 ## 3. Alignment
 
 Aligned for: the domain grammar and exclusivity rules, the empty-list rejection,
 the refusal to accept configuration the runtime cannot execute, a single
-unified overflow path rather than per-tool truncation, and the
+unified overflow path rather than per-tool truncation, the
 `always_allow` / `always_ask` split by toolset kind including dynamically
-discovered tools.
+discovered tools, and the projected tool-event field names the published client
+loop reads.
 
 ## 4. Differences
 
@@ -190,6 +207,12 @@ discovered tools.
 - `tests/unit/console-tool-permission.test.tsx` — the operator-visible half: the
   Console renders the effective policy per toolset, including the kind defaults,
   so a gated third-party MCP server is distinguishable from an ungated one.
+- `tests/integration/tool-event-fields.test.ts` — the projected tool-event
+  fields over the real event route: `name` / `input` on the three `tool_use`
+  types, `tool_use_id` on a built-in result, `mcp_tool_use_id` on an MCP result,
+  `custom_tool_use_id` on an accepted `user.custom_tool_result`, the top-level
+  `id` staying the event id, the fields being absent rather than `null` when the
+  block lacks them, and no field leaking onto an event type that declares none.
 
 ## 7. Status
 
