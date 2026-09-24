@@ -80,6 +80,29 @@ export { PI_LOOP_ENGINE_REASON };
 export const PI_APPROVAL_MODE_OPTION = 'approval_mode';
 
 /**
+ * Persisted settings key for the bounded parked wait.
+ *
+ * Named once so the settings schema, both engine descriptors that offer it, and
+ * the sweep that reads it cannot disagree about where it lives. It is offered on
+ * both engines because both can park: the builtin loop parks a custom tool call,
+ * and a Pi gate parks on a person's decision. Whatever parked the session, the
+ * session is the thing waiting.
+ *
+ * Declared with **no default** in every one of those places. The published
+ * behaviour is that a parked session waits indefinitely (`权限策略.md:668`), so a
+ * default would make this runtime non-conformant out of the box; the operator
+ * opts in.
+ */
+export const REQUIRES_ACTION_TIMEOUT_OPTION = 'requires_action_timeout_seconds';
+
+/** Shared schema fragment for the bounded parked wait, in seconds. */
+const REQUIRES_ACTION_TIMEOUT_SCHEMA = {
+  type: 'integer',
+  minimum: 1,
+  maximum: 2_592_000,
+} as const;
+
+/**
  * Single engine-discovery source of truth.
  *
  * Settings, session-creation admission, and the API reference all read this
@@ -89,6 +112,7 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
   return [
     descriptor('builtin', 'Default', true, 'runtime', objectSchema({
       default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
+      [REQUIRES_ACTION_TIMEOUT_OPTION]: REQUIRES_ACTION_TIMEOUT_SCHEMA,
     }), {
       capabilities: ['harness-tool-loop', 'tool-confirmation', 'sandbox-providers'],
     }),
@@ -105,6 +129,7 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
         enum: [...PI_APPROVAL_MODES],
         default: PI_APPROVAL_MODE_DEFAULT,
       },
+      [REQUIRES_ACTION_TIMEOUT_OPTION]: REQUIRES_ACTION_TIMEOUT_SCHEMA,
     }), {
       reason: PI_LOOP_ENGINE_REASON,
       requirements: [...PI_ADAPTER_REQUIREMENTS],

@@ -38,6 +38,16 @@ export interface ParkedCall {
   eventId: string;
   /** The `tool_use` block id — what an answer is recorded under and pairs against. */
   blockId: string;
+  /**
+   * When the call was parked: the `createdAt` of the event that emitted it.
+   *
+   * Carried because a bounded wait has to be measured from when the session
+   * actually stopped, not from when a later pass noticed it. A bound derived
+   * from the observer's own clock would restart on every sweep tick and would
+   * start from zero after a restart, so a session parked for a week would look
+   * freshly parked to a runtime that had just booted.
+   */
+  parkedAt: Date;
 }
 
 export function parkedCalls(events: SessionEvent[]): ParkedCall[] {
@@ -61,14 +71,16 @@ export function parkedCalls(events: SessionEvent[]): ParkedCall[] {
       const block = event.content?.find((item) => item.type === 'tool_use') as
         | { type: 'tool_use'; id: string }
         | undefined;
-      if (block) parked.push({ eventId: event.id, blockId: block.id });
+      if (block) parked.push({ eventId: event.id, blockId: block.id, parkedAt: event.createdAt });
       continue;
     }
     if (event.type !== 'agent.tool_use' && event.type !== 'agent.mcp_tool_use') continue;
     const block = event.content?.find((item) => item.type === 'tool_use') as
       | { type: 'tool_use'; id: string; requires_confirmation?: boolean }
       | undefined;
-    if (block?.requires_confirmation) parked.push({ eventId: event.id, blockId: block.id });
+    if (block?.requires_confirmation) {
+      parked.push({ eventId: event.id, blockId: block.id, parkedAt: event.createdAt });
+    }
   }
 
   return parked.filter((call) => !resolved.has(call.blockId));

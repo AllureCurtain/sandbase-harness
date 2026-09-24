@@ -700,6 +700,33 @@ Waiting is not an error and not a timeout: nothing changes until you answer the
 rest. A partial answer never terminates the session and never records a
 `session.error`.
 
+#### Bounding the wait (optional, off by default)
+
+By default a parked session waits indefinitely, exactly as the protocol
+specifies. An operator can bound that wait, which is useful for an unattended
+deployment where nobody is coming back to answer:
+
+```jsonc
+// runtime settings → loop_engine.options
+{ "requires_action_timeout_seconds": 3600 }
+```
+
+With a bound set, a session parked longer than that is ended: a `session.error`
+carrying `requires_action_timeout` (`retry_status: "not_retryable"`) is appended
+and the session reaches `timed_out`, published as `session.status_terminated`.
+
+- The bound is measured from the event that parked the session, so a session that
+  had already been parked longer than the bound when the runtime started ends on
+  the next pass instead of restarting its clock.
+- The parked calls are **not** answered. The session stops waiting; the runtime
+  does not decide on your behalf what your tools returned, so nothing enters the
+  log that you did not send.
+- A session that is also at its spending ceiling is **never** ended this way. It
+  is still waiting for the very event that settles its spend, and that answer is
+  still accepted.
+- Nothing is configured by default, and the key is not reachable from an agent
+  definition, so an agent cannot widen or remove its own bound.
+
 Tool events carry their payload both in `content[0]` and at the top level, so a
 client can read a call without unpacking the block:
 
