@@ -71,6 +71,20 @@ The session-level `stop_reason` (`toApiEvent`):
   confirmation and `end_turn` when it paused with nothing outstanding. An
   interrupt reports `end_turn` too: the published contract states there is no
   dedicated interrupt reason, so no separate value is invented here.
+- `event_ids` names the pending calls by the `agent.tool_use` /
+  `agent.mcp_tool_use` **event** id — the `id` the event listing reports for that
+  event. That is the address the published client sends back, so the two halves
+  of the exchange agree. Resolution is still tracked by the `tool_use` **block**
+  id, because a tool result pairs to its call by tool-call id, so a call that
+  already has a result is excluded even though the array reports event ids.
+- A `user.tool_confirmation` may address the call by that event id **or** by the
+  `tool_use` block id. The block id is a documented local fallback, kept because
+  this runtime's own callers and tests answer with one; widening which
+  identifier *selects* the call does not widen authority, since the pending check
+  and the one-shot resolution still decide whether anything runs. Whichever
+  arrives, the confirmation event's `metadata.tool_use_id` and the
+  `agent.tool_result` appended for the decision both carry the **block** id, and
+  a second decision for the same call is refused whichever spelling it uses.
 - An idle event whose metadata carries no `stop_reason` omits the top-level field
   rather than sending `null`.
 - Model-derived events keep the provider's `stop_reason` **string** from the
@@ -203,7 +217,7 @@ reference forms, and the tri-state override rule.
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
-| `stop_reason.event_ids` contents | **Not aligned.** The array currently holds the `tool_use` **block** id (`toolu_*`), because `lifecycleMetadataFor` pushes `block.id`. The published contract says the array holds the blocking **event** ids, and its client passes each entry straight back as an answer id (`会话事件流.md:1908` for `custom_tool_use_id`, `权限策略.md:669` for `tool_use_id`). The top-level projection makes the object readable; it deliberately does not change what the array contains, so a client that reads the array must not assume the published semantics yet. Changing the array's values, together with the matching acceptance in `user.tool_confirmation.tool_use_id` and `user.custom_tool_result.custom_tool_use_id`, is a separate change with its own test surface. |
+| `stop_reason.event_ids` for custom tools | **Partly not aligned.** For approval-gated `agent.tool_use` / `agent.mcp_tool_use` calls the array now names the pending events' own ids, and a `user.tool_confirmation` may address a call by that id. The `agent.custom_tool_use` half is not covered: those events are not scanned into `event_ids`, and `user.custom_tool_result.custom_tool_use_id` still accepts only the `tool_use` block id, so a conforming client's custom-tool answer is refused. That is a separate change with its own validator and answer event. |
 | `stop_reason.action_type` | `tool_confirmation` is a SandBase extension field inside the object, not part of the published shape. It is kept for the local Console and is not presented as a published field. |
 
 ## 5. Reason for the difference
@@ -271,6 +285,14 @@ reference forms, and the tri-state override rule.
   and agreeing with the projection, the provider's `stop_reason` string on a
   model event left untouched, no other event type gaining an object, and an idle
   event with no reason omitting the field rather than sending `null`.
+- `tests/integration/approval-event-id.test.ts` — the event-id exchange both
+  ways: `event_ids` naming the pending event's own id and not the block id, a
+  decision sent with that event id executing the tool, the block id still
+  accepted, the deny result and the confirmation metadata both recorded under the
+  block id so the model-facing pairing survives, a second decision refused even
+  when it uses the other spelling, an id naming neither refused, a resolved call
+  not re-decidable by its event id, and the refusal surfacing as
+  `400 invalid_request` over the real route.
 
 ## 7. Status
 

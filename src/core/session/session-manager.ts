@@ -717,6 +717,19 @@ export class SessionManager {
       return { accepted: true };
     }
 
+    // A confirmation addressed by the event id is answered with the call's block
+    // id from here on. `getConfirmationMetadata` already resolved and validated
+    // it, and the executor addresses the pending call by block id — the built-in
+    // resolver directly, and the Pi loop engine through its own interaction
+    // record, which is keyed by the same value. Handing the raw reference across
+    // would let a decision pass validation and then find no gate to consume,
+    // which is a refusal the caller cannot tell from a wrong id.
+    const turnEvent = event.type === 'user.tool_confirmation'
+      && typeof confirmationMetadata?.tool_use_id === 'string'
+      && confirmationMetadata.tool_use_id !== event.tool_use_id
+      ? { ...event, tool_use_id: confirmationMetadata.tool_use_id }
+      : event;
+
     // Execute asynchronously, serialized per session so turns never overlap.
     // The user event is already durably in the log; the chained turn will
     // read the full log (including this event) when it runs.
@@ -724,7 +737,7 @@ export class SessionManager {
       const prev = this.executionChains.get(sessionId) ?? Promise.resolve();
       const next = prev
         .catch(() => {}) // isolate failures so one bad turn doesn't wedge the chain
-        .then(() => this.runTurn(sessionId, event))
+        .then(() => this.runTurn(sessionId, turnEvent))
         .catch(() => {}); // never let a turn (even its prelude) reject the chain
       this.executionChains.set(sessionId, next);
       // Clean up the map entry once this is the last queued turn (L1 leak fix).
@@ -1488,6 +1501,50 @@ export class SessionManager {
   }
 }
 
+/**
+ * Resolve the caller's `tool_use_id` to the pending call it names.
+ *
+ * The published contract puts the `tool_use` **event** id in circulation: the
+ * client is told the blocking events' ids are in `stop_reason.event_ids`
+ * (`会话事件流.md:1876`) and passes each entry straight back here
+ * (`权限策略.md:669`, "在 `tool_use_id` 参数中传递事件 ID"). Local callers and
+ * this runtime's own tests answer with the `tool_use` **block** id instead, so
+ * both spellings select the call. Widening *which* identifier selects it does
+ * not widen authority: the pending check, the one-shot resolution below, and the
+ * tool-result pairing all still decide whether anything may run.
+ *
+ * The block id is what every downstream step needs — the tool result that pairs
+ * this call back to its `tool_use` block is written with it, and the
+ * model-facing message projection keys tool results by tool-call id — so the
+ * resolved block id is returned and persisted, whichever spelling arrived.
+ */
+function resolveConfirmedToolUse(
+  reference: string,
+  events: SessionEvent[],
+): { blockId: string; confirmationGroupId?: string } | undefined {
+  for (const loggedEvent of events) {
+    if (loggedEvent.type !== 'agent.tool_use' && loggedEvent.type !== 'agent.mcp_tool_use') continue;
+    // The event id is matched first, so an id that somehow answers to both
+    // spellings still resolves deterministically.
+    if (loggedEvent.id !== reference) {
+      const candidate = loggedEvent.content?.find((item) => item.type === 'tool_use') as
+        | { type: 'tool_use'; id: string }
+        | undefined;
+      if (candidate?.id !== reference) continue;
+    }
+    const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
+      | { type: 'tool_use'; id: string; requires_confirmation?: boolean; confirmation_group_id?: string }
+      | undefined;
+    if (!block?.requires_confirmation) continue;
+    const groupId = block.confirmation_group_id
+      ?? (typeof loggedEvent.metadata?.confirmation_group_id === 'string'
+        ? loggedEvent.metadata.confirmation_group_id
+        : undefined);
+    return { blockId: block.id, ...(groupId ? { confirmationGroupId: groupId } : {}) };
+  }
+  return undefined;
+}
+
 function getConfirmationMetadata(
   event: Extract<UserEvent, { type: 'user.tool_confirmation' }>,
   events: SessionEvent[],
@@ -1502,42 +1559,33 @@ function getConfirmationMetadata(
     throw new Error('Invalid tool confirmation: deny_message must be a string');
   }
 
-  const resolved = new Set<string>();
-  let confirmationGroupId: string | undefined;
-  let pending = false;
+  const target = resolveConfirmedToolUse(event.tool_use_id, events);
+  if (!target) {
+    throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
+  }
+
+  // Resolution and the duplicate check are both keyed on the canonical block id,
+  // so answering with the other spelling is not a way to decide one call twice.
   for (const loggedEvent of events) {
     if (loggedEvent.type === 'user.tool_confirmation'
-      && loggedEvent.metadata?.tool_use_id === event.tool_use_id) {
+      && loggedEvent.metadata?.tool_use_id === target.blockId) {
       throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
     }
     if (loggedEvent.type === 'agent.tool_result' || loggedEvent.type === 'agent.mcp_tool_result') {
       const block = loggedEvent.content?.find((item) => item.type === 'tool_result') as
         | { type: 'tool_result'; tool_use_id: string }
         | undefined;
-      if (block) resolved.add(block.tool_use_id);
-      continue;
+      if (block?.tool_use_id === target.blockId) {
+        throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
+      }
     }
-    if (loggedEvent.type !== 'agent.tool_use' && loggedEvent.type !== 'agent.mcp_tool_use') continue;
-    const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
-      | { type: 'tool_use'; id: string; requires_confirmation?: boolean; confirmation_group_id?: string }
-      | undefined;
-    if (block?.id !== event.tool_use_id || !block.requires_confirmation) continue;
-    pending = true;
-    confirmationGroupId = block.confirmation_group_id
-      ?? (typeof loggedEvent.metadata?.confirmation_group_id === 'string'
-        ? loggedEvent.metadata.confirmation_group_id
-        : undefined);
-  }
-
-  if (!pending || resolved.has(event.tool_use_id)) {
-    throw new Error('Invalid tool confirmation: the tool call is not awaiting approval');
   }
 
   return {
-    tool_use_id: event.tool_use_id,
+    tool_use_id: target.blockId,
     result: event.result,
     ...(event.deny_message !== undefined ? { deny_message: event.deny_message } : {}),
-    ...(confirmationGroupId ? { confirmation_group_id: confirmationGroupId } : {}),
+    ...(target.confirmationGroupId ? { confirmation_group_id: target.confirmationGroupId } : {}),
   };
 }
 
@@ -1545,8 +1593,16 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
   if (status === 'paused') return { stop_reason: { type: 'end_turn' } };
   if (status !== 'requires_action') return undefined;
 
+  // A tool result names the call it answers by the `tool_use` **block** id, so
+  // resolution is tracked by block id. What the array *reports* is the pending
+  // events' own ids, because that is the address the published contract puts in
+  // circulation: the client is told the blocking events' ids are here and passes
+  // each entry straight back as its answer parameter. The two are different
+  // values, so they are carried side by side rather than conflated — a call
+  // whose block id is resolved is excluded even though its event id is what
+  // would have been reported.
   const resolved = new Set<string>();
-  const pendingIds: string[] = [];
+  const pending: Array<{ eventId: string; blockId: string }> = [];
   for (const event of events) {
     if (event.type === 'agent.tool_result' || event.type === 'agent.mcp_tool_result') {
       const block = event.content?.find((item) => item.type === 'tool_result') as
@@ -1559,13 +1615,13 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
     const block = event.content?.find((item) => item.type === 'tool_use') as
       | { type: 'tool_use'; id: string; requires_confirmation?: boolean }
       | undefined;
-    if (block?.requires_confirmation) pendingIds.push(block.id);
+    if (block?.requires_confirmation) pending.push({ eventId: event.id, blockId: block.id });
   }
 
   return {
     stop_reason: {
       type: 'requires_action',
-      event_ids: pendingIds.filter((id) => !resolved.has(id)),
+      event_ids: pending.filter((call) => !resolved.has(call.blockId)).map((call) => call.eventId),
       action_type: 'tool_confirmation',
     },
   };
