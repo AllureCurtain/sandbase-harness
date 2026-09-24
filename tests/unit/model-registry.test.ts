@@ -1,5 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ModelRegistry, resolvedModelIdOf } from '@/model/registry.js';
+import {
+  MODEL_CONFIG_INVALID_CODE,
+  MODEL_NOT_FOUND_CODE,
+  MODEL_PROVIDER_NOT_CONFIGURED_CODE,
+  ModelRegistry,
+  resolvedModelIdOf,
+} from '@/model/registry.js';
+
+/** The `code` a throwing call reports, or undefined when it does not throw. */
+function codeOfThrow(run: () => unknown): string | undefined {
+  try {
+    run();
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+  return undefined;
+}
 
 describe('ModelRegistry runtime introspection', () => {
   it('returns safe model metadata without secrets', () => {
@@ -129,6 +145,25 @@ describe('ModelRegistry runtime introspection', () => {
       base_url: 'https://api.sandbase.ai/v1',
       is_default: false,
     });
+  });
+
+  it('classifies a missing model, a missing provider, and an unusable provider config apart', () => {
+    // All three used to throw the same `ModelNotFoundError`, whose cause a
+    // caller could not tell from a runtime crash. They are distinct fixes, so
+    // they are distinct codes.
+    const empty = new ModelRegistry();
+    expect(codeOfThrow(() => empty.resolveModelConfig('gpt-4o'))).toBe(MODEL_NOT_FOUND_CODE);
+
+    const unusable = new ModelRegistry();
+    unusable.register({ name: 'default', provider: 'openai', api_key: 'k', is_default: true });
+    expect(codeOfThrow(() => unusable.resolveModelConfig('default'))).toBe(MODEL_CONFIG_INVALID_CODE);
+    expect(codeOfThrow(() => unusable.createModelFromConfig({ name: 'x', provider: 'openai' })))
+      .toBe(MODEL_CONFIG_INVALID_CODE);
+
+    const anthropicOnly = new ModelRegistry();
+    anthropicOnly.register({ name: 'default', provider: 'anthropic', model: 'claude-sonnet', api_key: 'k', is_default: true });
+    expect(codeOfThrow(() => anthropicOnly.resolveModelConfig('openai/gpt-5.5')))
+      .toBe(MODEL_PROVIDER_NOT_CONFIGURED_CODE);
   });
 
   it('forwards any vendor namespace when the configured endpoint is a router', () => {

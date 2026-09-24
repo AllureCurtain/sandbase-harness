@@ -22,6 +22,7 @@ import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
+import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 import { resolvedModelIdOf } from '@/model/registry.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
@@ -42,8 +43,25 @@ import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
  * `error.message` or `String(error)` loses all of that and produces a blank or
  * `[object Object]` session.error. This extracts the informative parts so an
  * operator can see why a turn failed.
+ *
+ * A status the runtime can name also becomes an error code, so a wrong model id
+ * and a rejected credential stop being indistinguishable from a crashed
+ * runtime in `session.error.type`.
  */
 export function describeModelError(error: unknown): Error {
+  const described = buildModelError(error);
+  const code = providerErrorCode(error) ?? errorCodeOf(described);
+  if (!code || errorCodeOf(described) === code) return described;
+  // A provider error object is often thrown from more than one place (the SDK
+  // re-throws it through the stream), so the code is attached to a copy rather
+  // than written onto the value the caller still holds.
+  const coded = new Error(described.message);
+  coded.name = described.name;
+  coded.stack = described.stack;
+  return Object.assign(coded, { code });
+}
+
+function buildModelError(error: unknown): Error {
   if (error instanceof Error && !isEmptyErrorMessage(error)) {
     const detail = modelErrorDetail(error);
     if (detail) {
@@ -72,6 +90,30 @@ export function describeModelError(error: unknown): Error {
   const result = new Error(message);
   if (error instanceof Error) result.stack = error.stack;
   return result;
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
+
+/**
+ * The model code a provider response status implies, if any.
+ *
+ * Only a structured status is read. A status guessed out of an error message
+ * would classify a body that merely mentions "404" as a missing model, and a
+ * mis-classified failure is worse than an unclassified one.
+ */
+function providerErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const record = error as Record<string, unknown>;
+  const status = typeof record.statusCode === 'number' ? record.statusCode
+    : typeof record.status === 'number' ? record.status
+      : undefined;
+  if (status === 404) return MODEL_NOT_FOUND_CODE;
+  if (status === 401 || status === 403) return MODEL_AUTH_FAILED_CODE;
+  return undefined;
 }
 
 function isEmptyErrorMessage(error: Error): boolean {

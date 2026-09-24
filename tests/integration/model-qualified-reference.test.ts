@@ -152,4 +152,45 @@ describe('qualified model references reach the provider', () => {
     expect(events.some((event) => event.type === 'session.error')).toBe(false);
     expect(session.status).toBe('paused');
   });
+
+  it('reports a namespace the configured endpoint cannot serve as a fixable error', async () => {
+    // Only an Anthropic provider is configured, and `openai/gpt-5.5` names the
+    // other wire protocol. Forwarding it would answer with an upstream 404 that
+    // hides the real problem; the turn names the missing provider instead.
+    const registry = new ModelRegistry();
+    registry.register({
+      name: 'default',
+      provider: 'anthropic',
+      model: 'claude-sonnet',
+      api_key: 'test-key',
+      is_default: true,
+    });
+
+    const { session, events } = await runTurn('openai/gpt-5.5', registry);
+
+    const error = events.find((event) => event.type === 'session.error');
+    expect(error, 'no session.error was appended').toBeDefined();
+    expect(toApiEvent(error!).error).toMatchObject({
+      type: 'model_provider_not_configured',
+      retry_status: 'not_retryable',
+    });
+
+    // A configuration mistake the caller can repair leaves the session
+    // resumable: `session.status_terminated` would report it as over.
+    expect(events.some((event) => event.type === 'session.status_terminated')).toBe(false);
+    expect(session.status).toBe('paused');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('reports a model with no configured provider as a distinct fixable error', async () => {
+    const { session, events } = await runTurn('gpt-4o', new ModelRegistry());
+
+    const error = events.find((event) => event.type === 'session.error');
+    expect(toApiEvent(error!).error).toMatchObject({
+      type: 'model_not_found',
+      retry_status: 'not_retryable',
+    });
+    expect(session.status).toBe('paused');
+    expect(requests).toHaveLength(0);
+  });
 });
