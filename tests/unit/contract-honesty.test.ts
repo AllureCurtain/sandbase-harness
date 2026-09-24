@@ -505,10 +505,12 @@ describe('contract document parsing', () => {
 // ---------------------------------------------------------------------------
 
 describe('documented capability decisions', () => {
-  it('reports threads and the coordinator as unavailable', () => {
+  it('reports the canonical multiagent roster as unavailable and refuses it by name', () => {
+    expect(entry('multiagent-roster').status).toBe('unavailable');
     expect(entry('threads-and-coordinator').status).toBe('unavailable');
 
     const threads = documentNamed('threads.md').text;
+    expect(threads).toContain('multiagent-roster');
     expect(parseDocumentedRoutes(threads)).toEqual([]);
   });
 

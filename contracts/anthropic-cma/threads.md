@@ -57,7 +57,11 @@ What does exist is a **different, smaller mechanism**, and it is not this
 surface:
 
 - `src/core/agent/schema.ts` accepts `delegations` (a list of agent names) and
-  the boolean `enable_general_subagent`.
+  the boolean `enable_general_subagent`, and refuses a canonical `multiagent`
+  roster by name with the capability id `multiagent-roster`. Both write paths
+  refuse it: the create path in `validateAgentDefinition` and the update path in
+  `validateAgentUpdateRequest` via `src/core/agent/update.ts`, which special-cases
+  the key rather than reporting it as merely unknown.
 - `src/core/session/delegation-service.ts` builds one tool per allowed target
   (`delegate_to_<name>`) plus `general_subagent`, which runs a temporary copy of
   the agent for one level. `src/core/orchestrator/agent-orchestrator.ts`
@@ -86,6 +90,7 @@ with its own status transitions, while a delegated run is an internal turn.
 | --- | --- |
 | Threads | Absent. No thread resource, no lifecycle events, no per-thread context isolation, no listing or archive route. |
 | Coordinator and advisor roles | Absent. No coordinator may run several threads for one roster agent, and no advisor consultation exists. |
+| Canonical roster | A `multiagent` roster is **refused by name** on both agent write paths rather than stored and ignored. The refusal names the capability `multiagent-roster` and points at the local extension. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
 | Interrupt targeting | Absent. `user.interrupt` targets the session; a thread id has nothing to route to. |
 | Local delegation extension | `delegations` and `enable_general_subagent` are a one-level parent/child mechanism with its own tool names. It is a local extension, never presented as the canonical roster. |
@@ -95,6 +100,11 @@ with its own status transitions, while a delegated run is an internal turn.
 - The gap is a scope decision, not an oversight: threads, a coordinator role,
   advisor consultations, and per-thread event routing are a protocol surface of
   their own, and this phase implements none of them.
+- The refusal exists because the alternative is worse than the gap. Accepting a
+  `multiagent` roster and storing it would let a caller build on delegation by
+  roster — a controller that spawns threads, a UI that lists them, an
+  interrupt that targets one — none of which would ever happen, and the caller
+  would only find out from behaviour rather than from an error.
 - A partial implementation was rejected on purpose. Thread identity without
   context isolation, or a listed `anthropic.advisor` thread that no consultation
   ever uses, would be a surface that reports work it did not do. The runtime
@@ -102,6 +112,8 @@ with its own status transitions, while a delegated run is an internal turn.
 
 ## 6. Corresponding tests
 
+- `tests/integration/agent-roster-refusal.test.ts` — the refusal of a canonical
+  roster on create and update before anything is persisted.
 - `tests/integration/delegation.test.ts` — the local delegation extension: the
   tools built for an agent's `delegations` list, and a delegated run returning
   its result. Evidence that this mechanism exists and is *not* a thread surface.
@@ -113,4 +125,5 @@ with its own status transitions, while a delegated run is an internal turn.
 `unavailable` — nothing in this contract area is implemented. The runtime has no
 thread resource, no coordinator or advisor role, no thread lifecycle or
 message-direction events, no per-thread event isolation, no thread listing or
-archive route, and no thread-scoped budget signal.
+archive route, and no thread-scoped budget signal. A canonical `multiagent`
+roster is refused by name rather than stored and ignored.

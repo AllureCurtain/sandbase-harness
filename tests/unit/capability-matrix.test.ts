@@ -188,6 +188,13 @@ describe('capability matrix', () => {
     expect(reason).toContain('enable_general_subagent');
   });
 
+  it('reports the canonical multiagent roster as unavailable', () => {
+    // The roster is a canonical surface this runtime refuses by name rather than
+    // a stand-in for the single-level delegation extension that does exist.
+    expect(capabilityEntry('multiagent-roster').status).toBe('unavailable');
+    expect(capabilityEntry('multiagent-roster').reason.toLowerCase()).toContain('refused by name');
+  });
+
   it('throws on an unknown capability id instead of returning undefined', () => {
     expect(() => capabilityEntry('no-such-capability')).toThrow(/Unknown capability/);
   });

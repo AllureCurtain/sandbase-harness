@@ -499,15 +499,16 @@ describe('PUT /v1/agents/:id partial update', () => {
     expect(dangling.res.status).toBe(400);
     expect(JSON.stringify(dangling.body)).toContain('undeclared MCP server');
 
-    // The roster field is not part of this change, so it is rejected as an
-    // unknown field rather than silently discarded.
+    // The canonical roster is refused with the capability it names, so this
+    // path and the create path answer a `multiagent` field identically rather
+    // than one of them stripping it.
     const rosterAttempt = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
       multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: plain.id }] },
     });
     expect(rosterAttempt.res.status).toBe(400);
     expect(rosterAttempt.body.error.details).toContainEqual({
       path: 'multiagent',
-      message: 'Unknown agent update field "multiagent"',
+      message: expect.stringContaining('multiagent-roster'),
     });
   });
 
