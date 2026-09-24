@@ -654,29 +654,33 @@ jq -r 'select(.type == "session.status_idle") | .stop_reason.type // empty'
 
 | `stop_reason.type` | Meaning |
 | --- | --- |
-| `requires_action` | The session is waiting for an answer to a blocking tool call. `event_ids` lists the pending calls, by their own event id. |
+| `requires_action` | The session is waiting for an answer to a blocking tool call. `event_ids` lists the parked calls, by their own event id. |
 | `end_turn` | The turn ended with nothing outstanding. An interrupt reports `end_turn` as well; there is no separate interrupt reason. |
 
-The object is also kept under `metadata.stop_reason`, and `action_type:
-"tool_confirmation"` remains a SandBase extension inside it. An idle event with
-no reason omits the field rather than sending `null`.
+The object is also kept under `metadata.stop_reason`, and is exactly the
+published `{type, event_ids}`. An idle event with no reason omits the field
+rather than sending `null`.
 
-Each entry in `event_ids` is the `id` of the pending `agent.tool_use` /
-`agent.mcp_tool_use` event, and that is the value to answer with:
+Each entry in `event_ids` is the `id` of the parked event — an approval-gated
+`agent.tool_use` / `agent.mcp_tool_use`, or an `agent.custom_tool_use` the caller
+has not answered — and that is the value to answer with:
 
 ```json
 { "type": "user.tool_confirmation", "tool_use_id": "<event id from event_ids>", "result": "allow" }
 ```
 
-The `tool_use` block id is also accepted as `tool_use_id`, as a local
-convenience. Whichever you send, the confirmation event's `metadata.tool_use_id`
-and the `agent.tool_result` written for the decision carry the block id, which is
-what a `tool_result` pairs against, and a second decision for the same call is
-refused either way.
+```json
+{ "type": "user.custom_tool_result", "custom_tool_use_id": "<event id from event_ids>", "content": [{ "type": "text", "text": "{\"name\":\"Ada\"}" }] }
+```
 
-`user.custom_tool_result.custom_tool_use_id` is **not** covered yet: it still
-accepts only the `agent.custom_tool_use` block id, and custom tool calls are not
-scanned into `event_ids`. Send the block id for a custom tool result.
+The `tool_use` block id is also accepted in both fields, as a local convenience.
+Whichever you send, the confirmation event's `metadata.tool_use_id`, the
+`agent.tool_result` written for a decision, and a custom tool result's
+`metadata.custom_tool_use_id` all carry the block id, which is what a
+`tool_result` pairs against, and a second answer for the same call is refused
+either way.
+
+A custom tool call that has been answered stops being listed in `event_ids`.
 
 Tool events carry their payload both in `content[0]` and at the top level, so a
 client can read a call without unpacking the block:
