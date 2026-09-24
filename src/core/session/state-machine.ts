@@ -6,8 +6,13 @@
  *   queued → running
  *   running → paused | requires_action | completed | failed
  *   paused → running
- *   requires_action → running
+ *   requires_action → running | timed_out
  *   failed → running (resume) | completed (stopped/deleted)
+ *
+ * `requires_action → timed_out` is how a configured parked-wait bound ends a
+ * session nobody answered (`parked-wait.ts`). It reaches the same terminal
+ * status the Pi child's own timeout already used, which was simply not
+ * reachable from the one state that waits on a caller.
  *
  * Terminal states are completed, cancelled, timed_out, and cleanup_pending.
  * cleanup_pending deliberately has no outbound transition: the workspace

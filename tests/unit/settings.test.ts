@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { join, resolve } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { describeSettingsAdapters, availabilityFromDescriptors, PI_APPROVAL_MODE_OPTION } from '@/core/settings/adapters.js';
+import { describeSettingsAdapters, availabilityFromDescriptors, PI_APPROVAL_MODE_OPTION, REQUIRES_ACTION_TIMEOUT_OPTION } from '@/core/settings/adapters.js';
 import { validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from '@/core/settings/schema.js';
 import { testRuntimeSettingsArea, testRuntimeSettingsAreaWithFetch } from '@/core/settings/test.js';
 import { Database } from '@/core/db/database.js';
@@ -360,6 +360,58 @@ describe('Settings V2 schema', () => {
       enum: ['interactive', 'preauthorized_once'],
       default: 'interactive',
     });
+  });
+
+  it('accepts a bounded parked wait, refuses a nonsensical one, and defaults to none', () => {
+    const configured = validateRuntimeSettings({
+      ...validConfig,
+      loop_engine: {
+        provider: 'builtin',
+        options: { default_max_steps: 25, [REQUIRES_ACTION_TIMEOUT_OPTION]: 900 },
+      },
+    });
+    expect(configured.valid).toBe(true);
+    expect(configured.normalized_config?.loop_engine.options[REQUIRES_ACTION_TIMEOUT_OPTION]).toBe(900);
+
+    // No default, for a contract reason: the published behaviour is that a
+    // parked session waits indefinitely, so defaulting this would make the
+    // runtime non-conformant out of the box. An omitted key stays omitted.
+    const omitted = validateRuntimeSettings(validConfig);
+    expect(omitted.valid).toBe(true);
+    expect(omitted.normalized_config?.loop_engine.options[REQUIRES_ACTION_TIMEOUT_OPTION]).toBeUndefined();
+
+    // A bound of zero would end every parked session the instant it parked, and
+    // a fractional or absurd one is a typo rather than a policy. Both are
+    // refused by name instead of being coerced into something that runs.
+    for (const value of [0, -1, 1.5, 2_592_001, '300']) {
+      const refused = validateRuntimeSettings({
+        ...validConfig,
+        loop_engine: {
+          provider: 'builtin',
+          options: { default_max_steps: 25, [REQUIRES_ACTION_TIMEOUT_OPTION]: value },
+        },
+      });
+      expect(refused.valid).toBe(false);
+      expect(refused.errors).toContainEqual(expect.objectContaining({
+        path: `loop_engine.options.${REQUIRES_ACTION_TIMEOUT_OPTION}`,
+      }));
+    }
+  });
+
+  it('publishes the bounded parked wait, with no default, on both engines that can park', () => {
+    // Both engines park — the builtin loop on a custom tool call, a Pi gate on a
+    // decision — and the setting is a workspace-level bound either way, so an
+    // engine form that hid it would be the one an operator could not configure.
+    const expected = { type: 'integer', minimum: 1, maximum: 2_592_000 };
+    for (const id of ['builtin', 'pi']) {
+      const adapter = describeSettingsAdapters().loop_engine.find((item) => item.id === id);
+      const schema = (adapter?.options_schema.properties as Record<string, unknown> | undefined)
+        ?.[REQUIRES_ACTION_TIMEOUT_OPTION];
+      expect(schema).toEqual(expected);
+      // No `default` in the schema, so a Console that reads only the descriptor
+      // cannot offer a bound the runtime would then apply by default.
+      expect(schema).not.toHaveProperty('default');
+    }
   });
 
   it('rejects missing and unresolved model credentials', () => {

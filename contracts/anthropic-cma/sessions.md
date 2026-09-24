@@ -104,6 +104,16 @@ The session-level `stop_reason` (`toApiEvent`):
   a session over a documented answer. The gate and the `event_ids` array are one
   definition (`src/core/session/parked-calls.ts`), so "the array is non-empty" and
   "no turn may start" cannot disagree.
+- **The wait is unbounded unless an operator bounds it.** By default a parked
+  session waits exactly as the published contract says — indefinitely — and
+  nothing about that path changes. An operator may set
+  `loop_engine.options.requires_action_timeout_seconds`, and a session parked
+  longer than that is ended with a `session.error` carrying
+  `requires_action_timeout`, reaching `timed_out` (published as
+  `session.status_terminated`). The bound is measured from the event that parked
+  the session, not from when a sweep noticed it. The parked calls are **not**
+  answered: the session stops waiting, and nobody decides on the caller's behalf
+  what the tools returned. The setting is a local extension and §4 records it.
 - An idle event whose metadata carries no `stop_reason` omits the top-level field
   rather than sending `null`.
 - Model-derived events keep the provider's `stop_reason` **string** from the
@@ -236,6 +246,7 @@ reference forms, and the tri-state override rule.
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
+| Bounded parked wait | `loop_engine.options.requires_action_timeout_seconds` is a local runtime setting with no published equivalent, and the published contract states the opposite default: the session "会话会无限期等待响应" — it waits indefinitely (`权限策略.md:668`). The key is therefore absent unless an operator sets it, so the default path **is** the published behaviour, and it is offered on both loop engines because both can park. It is not reachable from an agent definition, so no agent can widen or remove its own bound. Two rules are local with it: the bound is measured from the event that parked the session rather than from when a sweep noticed it, and a session at its spending ceiling is never ended by it, because such a session is still `requires_action` here (a ceiling refuses the next event without changing status) and its answer is a settlement event the budget still accepts. |
 
 ## 5. Reason for the difference
 
@@ -331,6 +342,23 @@ reference forms, and the tri-state override rule.
   resolution by each result kind regardless of order in the log, a result that
   answers a different call not resolving anything, an unconfirmed `tool_use`
   ignored, and a malformed or unrelated event ignored.
+- `tests/unit/parked-wait.test.ts` — the bounded-wait rule: no bound configured
+  means no expiry, a zero or negative bound is treated as none rather than as
+  "expire now", the bound is measured from the oldest parked call, a session that
+  is parked but not the parked status or that has nothing parked is kept, and a
+  session at its ceiling is never expired.
+- `tests/integration/parked-wait-timeout.test.ts` — the same rule on the real
+  settings store, session manager and sweep: the default stays an indefinite
+  wait; a bound configured through the settings store and activated ends a parked
+  session with the coded `session.error` and the `timed_out` status; the parked
+  calls are left unanswered; an already-expired session ends on the first pass;
+  a gated call parks and expires the same way; a session at its ceiling is
+  untouched and still accepts its `user.custom_tool_result`; several expired
+  sessions end in one pass while an unexpired one stays; a second pass is a
+  no-op; and a bound that was saved but never activated has no effect.
+- `tests/unit/settings.test.ts` — the setting's document validation (accepted,
+  refused by name when nonsensical, and not defaulted) and its publication in
+  both engine descriptors with no default.
 - `tests/integration/custom-tool-execution.test.ts` — the pre-existing closure
   path, unchanged: a custom tool call pauses the session and the caller's result,
   sent by block id, resumes the model with the paired tool result.

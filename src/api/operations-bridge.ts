@@ -19,6 +19,7 @@ import {
   retryDueWebhookDeliveries,
 } from '@/core/operations/webhook-dispatcher.js';
 import { rearmScheduledDeployments, runDueScheduledDeployments } from '@/core/operations/scheduler.js';
+import { sweepExpiredParkedWaits } from '@/core/operations/parked-wait-sweep.js';
 
 export type OperationsBridgeOptions = {
   db: Database;
@@ -119,8 +120,9 @@ export function composeOperations(opts: OperationsBridgeOptions): ComposeOperati
 }
 
 /**
- * Start the operations timers: webhook retries whose backoff has elapsed, and
- * scheduled deployments whose cron time is due. Returns a stop function.
+ * Start the operations timers: webhook retries whose backoff has elapsed,
+ * scheduled deployments whose cron time is due, and parked sessions whose
+ * configured wait bound has passed. Returns a stop function.
  */
 export function startOperationsTimers(opts: OperationsBridgeOptions): () => void {
   const intervalMs = opts.intervalMs ?? 60_000;
@@ -135,6 +137,12 @@ export function startOperationsTimers(opts: OperationsBridgeOptions): () => void
     } catch {
       // A failed deployment run is recorded by the scheduler itself; the next
       // tick picks up anything still due.
+    }
+    try {
+      sweepExpiredParkedWaits({ db: opts.db, sessionManager: opts.sessionManager, dataDir: opts.dataDir });
+    } catch {
+      // A session this pass failed to end is still parked, which is the state it
+      // was already in; the next tick retries it.
     }
   }, intervalMs);
   // An operations timer must never keep a process alive on its own: shutdown is

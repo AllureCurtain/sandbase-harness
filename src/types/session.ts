@@ -34,7 +34,7 @@ export const SESSION_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   queued: ['running', 'completed', 'failed', 'cancelled', 'timed_out', 'cleanup_pending'],
   running: ['paused', 'requires_action', 'completed', 'failed', 'cancelled', 'timed_out', 'cleanup_pending'],
   paused: ['running', 'completed', 'failed', 'cancelled'],
-  requires_action: ['running', 'completed', 'failed', 'cancelled'],
+  requires_action: ['running', 'completed', 'failed', 'cancelled', 'timed_out'],
   completed: [],
   failed: ['running', 'completed', 'cancelled'],
   cancelled: [],

@@ -67,6 +67,19 @@ function customResult(id: string, blockId: string): SessionEvent {
   });
 }
 
+/**
+ * Every fixture above is stamped with this instant, so an expectation can name
+ * the whole reported shape without repeating a date literal. `parkedAt` is part
+ * of that shape on purpose: a bounded wait has to be measured from when the
+ * session parked rather than from when a later pass noticed it, which is only
+ * possible if each parked call carries the time.
+ */
+const PARKED_AT = new Date(0);
+
+function parked(eventId: string, blockId: string) {
+  return { eventId, blockId, parkedAt: PARKED_AT };
+}
+
 describe('parkedCalls', () => {
   it('reports nothing for an empty log', () => {
     expect(parkedCalls([])).toEqual([]);
@@ -74,19 +87,19 @@ describe('parkedCalls', () => {
 
   it('reports a gated call by its event id and block id', () => {
     expect(parkedCalls([gatedUse('sevt_a', 'call_1')]))
-      .toEqual([{ eventId: 'sevt_a', blockId: 'call_1' }]);
+      .toEqual([parked('sevt_a', 'call_1')]);
   });
 
   it('reports a pending custom call, which carries no requires_confirmation', () => {
     // A custom call is parked because the runtime has no executor for it, not
     // because a policy gated it, so the flag is absent.
     expect(parkedCalls([customUse('sevt_c', 'custom_1')]))
-      .toEqual([{ eventId: 'sevt_c', blockId: 'custom_1' }]);
+      .toEqual([parked('sevt_c', 'custom_1')]);
   });
 
   it('reports an MCP call the same way as a built-in one', () => {
     expect(parkedCalls([mcpUse('sevt_m', 'mcp_1')]))
-      .toEqual([{ eventId: 'sevt_m', blockId: 'mcp_1' }]);
+      .toEqual([parked('sevt_m', 'mcp_1')]);
   });
 
   it('ignores a tool_use that is not awaiting confirmation', () => {
@@ -126,7 +139,7 @@ describe('parkedCalls', () => {
 
   it('keeps a call whose result answers a different call', () => {
     expect(parkedCalls([gatedUse('sevt_a', 'call_1'), toolResult('sevt_r', 'call_2')]))
-      .toEqual([{ eventId: 'sevt_a', blockId: 'call_1' }]);
+      .toEqual([parked('sevt_a', 'call_1')]);
   });
 
   it('keeps a result that answers nothing from resolving a later call', () => {
@@ -135,8 +148,8 @@ describe('parkedCalls', () => {
     // *pairing* uses, so the two families stay separable.
     const events = [customUse('sevt_c', 'custom_1'), customResult('sevt_r', 'custom_2'), gatedUse('sevt_a', 'call_1')];
     expect(parkedCalls(events)).toEqual([
-      { eventId: 'sevt_c', blockId: 'custom_1' },
-      { eventId: 'sevt_a', blockId: 'call_1' },
+      parked('sevt_c', 'custom_1'),
+      parked('sevt_a', 'call_1'),
     ]);
   });
 
@@ -147,9 +160,9 @@ describe('parkedCalls', () => {
       mcpUse('sevt_m', 'mcp_1'),
     ];
     expect(parkedCalls(events)).toEqual([
-      { eventId: 'sevt_a', blockId: 'call_1' },
-      { eventId: 'sevt_c', blockId: 'custom_1' },
-      { eventId: 'sevt_m', blockId: 'mcp_1' },
+      parked('sevt_a', 'call_1'),
+      parked('sevt_c', 'custom_1'),
+      parked('sevt_m', 'mcp_1'),
     ]);
   });
 
@@ -159,14 +172,14 @@ describe('parkedCalls', () => {
       customUse('sevt_c', 'custom_1'),
       toolResult('sevt_r', 'call_1'),
     ];
-    expect(parkedCalls(events)).toEqual([{ eventId: 'sevt_c', blockId: 'custom_1' }]);
+    expect(parkedCalls(events)).toEqual([parked('sevt_c', 'custom_1')]);
   });
 
   it('ignores a custom result that carries no usable id', () => {
     // A malformed carrier must not silently resolve a call.
     const malformed = event('sevt_r', 'user.custom_tool_result', { metadata: { custom_tool_use_id: 7 } });
     expect(parkedCalls([customUse('sevt_c', 'custom_1'), malformed]))
-      .toEqual([{ eventId: 'sevt_c', blockId: 'custom_1' }]);
+      .toEqual([parked('sevt_c', 'custom_1')]);
   });
 
   it('ignores a tool event whose content holds no matching block', () => {

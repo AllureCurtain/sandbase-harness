@@ -67,6 +67,12 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   last one is answered. Both the array and that gate read one definition
   (`src/core/session/parked-calls.ts`), so an entry can never name a call the
   gate is not waiting on, nor the gate wait on a call the array omits.
+- When an operator has configured a bounded parked wait, that wait ends as a
+  coded `session.error` (`requires_action_timeout`) plus the terminal `timed_out`
+  status, which publishes `session.status_terminated` — the same pairing the Pi
+  child's own timeout already used. The reason is the code, not the prose message.
+  The event is appended once per session and the parked calls are left unanswered.
+  With no bound configured — the default — none of this happens.
 - One outcome evaluation appends exactly three events, in order, and the end
   event is appended on every path — including the one where the grader throws or
   cannot run, so a client waiting on it cannot hang on an outcome that is already

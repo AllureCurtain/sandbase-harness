@@ -16,7 +16,8 @@ import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
 import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
 import { findOrphanedToolUses } from './session-recovery.js';
-import { parkedCalls } from './parked-calls.js';
+import { parkedCalls, type ParkedCall } from './parked-calls.js';
+import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
 import { buildSessionUsageSnapshot } from './session-usage.js';
 import {
@@ -255,6 +256,59 @@ export class SessionManager {
   private budgetExhaustedFor(session: Session): boolean {
     if (!session.budget) return false;
     return budgetReached(this.getSessionSpend(session.id), session.budget);
+  }
+
+  /**
+   * End a session whose parked wait has expired, if it has.
+   *
+   * Returns the calls that were still unanswered when it was ended, or
+   * `undefined` when nothing was done — which is every case except a genuinely
+   * expired bound on a genuinely parked session. `parked-wait.ts` owns the
+   * decision; this method owns the exchange, so the status, the event, and the
+   * broadcast cannot be produced by different callers in different orders.
+   *
+   * The parked calls are deliberately **not** answered. The session stops
+   * waiting; it does not decide on the caller's behalf what the tool returned.
+   * A fabricated result would put an answer in the append-only log that nobody
+   * gave, and the log is the record of what actually happened.
+   *
+   * The ceiling is passed in from this manager's own predicate rather than
+   * recomputed, so the bound and the budget refusal cannot disagree about
+   * whether a session is out of budget — the same reason the parked set has one
+   * definition (frozen decision D23).
+   */
+  expireParkedWait(
+    sessionId: string,
+    timeoutSeconds: number | undefined,
+    now: Date = new Date(),
+  ): ParkedCall[] | undefined {
+    const session = this.get(sessionId);
+    if (!session) return undefined;
+
+    const expired = expiredParkedWait({
+      status: session.status,
+      budgetExhausted: this.budgetExhaustedFor(session),
+      events: this.eventLogger.getEvents(sessionId),
+      timeoutSeconds,
+      now,
+    });
+    if (!expired) return undefined;
+
+    const message = `Session ${sessionId} waited ${Math.round(expired.parkedForMs / 1000)}s `
+      + `for an answer to ${expired.calls.length} parked tool call(s) and the configured `
+      + `${timeoutSeconds}s bound passed. The calls were not answered; the session was ended.`;
+    const errorEvent = this.eventLogger.append(sessionId, {
+      type: 'session.error',
+      content: [{ type: 'text', text: message }],
+      metadata: sessionErrorMetadata(new Error(message), PARKED_WAIT_TIMEOUT_CODE),
+    });
+    this.broadcast(sessionId, errorEvent);
+    // Unconditional, and safe to be: the decision above only returns for a
+    // session in `requires_action`, and that transition is the one this feature
+    // added. `updateStatus` validates anyway and no-ops on a status it cannot
+    // reach, so this cannot move a terminal session.
+    this.updateStatus(sessionId, 'timed_out');
+    return expired.calls;
   }
 
   /**
@@ -1661,6 +1715,10 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
       return 'retryable';
     case PI_CLEANUP_PENDING_CODE:
     case PI_TIMED_OUT_CODE:
+    // The parked-wait bound is not a condition a retry fixes either: the runtime
+    // decided to stop waiting, and re-running the request it was waiting on would
+    // ask the same unanswered question again.
+    case PARKED_WAIT_TIMEOUT_CODE:
     case PI_ALWAYS_ASK_UNSUPPORTED_CODE:
     // The gate codes are permanent for the same reason: a gate extension that did
     // not load, a gated call that ran with no decision, and a decision naming a

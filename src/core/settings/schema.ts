@@ -30,6 +30,15 @@ export const runtimeSettingsSchema = z.object({
       // resolution fails safe to `interactive`: unattended operation has to be
       // chosen explicitly.
       approval_mode: z.enum(PI_APPROVAL_MODES).optional(),
+      // How long a session may stay parked waiting for a caller's answer before
+      // the runtime ends it (`parked-wait.ts`). Optional with **no default**, for
+      // a contract reason rather than a stylistic one: the published behaviour is
+      // that the session "waits indefinitely for a response"
+      // (`权限策略.md:668`), so defaulting this would make the runtime
+      // non-conformant out of the box. Absent means the published indefinite
+      // wait. The upper bound is 30 days — a typo guard, not a policy, since a
+      // bound an operator sets has to be one they could plausibly mean.
+      requires_action_timeout_seconds: z.number().int().min(1).max(2_592_000).optional(),
     }).catchall(z.unknown()),
   }).strict(),
   storage: z.object({
