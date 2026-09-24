@@ -38,7 +38,7 @@ export function streamRoutes(deps: ServerDeps) {
     ];
     const parsedDeltas = parseEventDeltas(requestedDeltas.length > 0 ? requestedDeltas : undefined);
     if (!parsedDeltas.ok) {
-      return c.json({ error: { type: 'invalid_request', message: parsedDeltas.message } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: parsedDeltas.message } }, 400);
     }
     const projector = new EventDeltaProjector(parsedDeltas.types);
 

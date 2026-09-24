@@ -66,7 +66,7 @@ describe('CMA admission: anthropic-version', () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error.type).toBe('invalid_request');
+    expect(body.error.type).toBe('invalid_request_error');
     expect(body.error.code).toBe(CMA_ADMISSION_CODES.missingVersion);
   });
 

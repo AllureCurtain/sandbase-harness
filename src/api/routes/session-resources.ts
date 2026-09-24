@@ -38,6 +38,26 @@ import {
 } from './session-normalizers.js';
 import { isTerminal } from '@/core/session/state-machine.js';
 
+/**
+ * The core's local mutation code, as the wire spelling for `error.type`.
+ *
+ * `session-resources.ts` in `core` returns a small local vocabulary
+ * (`not_found` / `invalid_request` / `conflict`) that also decides the HTTP
+ * status. That vocabulary is **internal** and stays as it is; the response is a
+ * different contract, and `invalid_request` is not its canonical spelling. The
+ * two were the same string, so the response type silently followed the core code
+ * — which is exactly why canonicalising the route literals alone would have left
+ * three paths still emitting the legacy value.
+ *
+ * Written as an explicit map rather than a `.replace()` so an unrecognized code
+ * surfaces as a compile error instead of being passed through unmapped.
+ */
+const WIRE_ERROR_TYPE: Record<'invalid_request' | 'not_found' | 'conflict', string> = {
+  invalid_request: 'invalid_request_error',
+  not_found: 'not_found',
+  conflict: 'conflict',
+};
+
 /** PATCH accepts exactly one mutating field. */
 const GITHUB_ROTATION_FIELDS = ['authorization_token'] as const;
 
@@ -103,7 +123,7 @@ export function sessionResourceRoutes(deps: ServerDeps) {
       ...(typeof normalized.value.mount_path === 'string' ? { mountPath: normalized.value.mount_path } : {}),
     });
     if (!result.ok) {
-      return c.json({ error: { type: result.code, message: result.message } }, 400);
+      return c.json({ error: { type: WIRE_ERROR_TYPE[result.code], message: result.message } }, 400);
     }
     return c.json(toApiSessionResourceInstance(result.instance), 201);
   });
@@ -184,7 +204,7 @@ export function sessionResourceRoutes(deps: ServerDeps) {
       ...encryptSecret(token.trim(), deps.workspace?.dataDir),
     });
     if (!result.ok) {
-      return c.json({ error: { type: result.code, message: result.message } }, 400);
+      return c.json({ error: { type: WIRE_ERROR_TYPE[result.code], message: result.message } }, 400);
     }
     return c.json(toApiSessionResourceInstance(result.instance));
   });
@@ -197,7 +217,7 @@ export function sessionResourceRoutes(deps: ServerDeps) {
     }
     const result = deleteSessionResource(deps.db, sessionId, resourceId);
     if (!result.ok) {
-      return c.json({ error: { type: result.code, message: result.message } }, result.code === 'not_found' ? 404 : 400);
+      return c.json({ error: { type: WIRE_ERROR_TYPE[result.code], message: result.message } }, result.code === 'not_found' ? 404 : 400);
     }
     return c.json(toApiSessionResourceInstance(result.instance));
   });

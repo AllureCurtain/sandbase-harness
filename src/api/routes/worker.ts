@@ -22,13 +22,13 @@ export function workerRoutes(queue: WorkQueue, db?: Database) {
     const body = await c.req.json().catch(() => ({}));
     const workerId = body.worker_id;
     if (!workerId || typeof workerId !== 'string') {
-      return c.json({ error: { type: 'invalid_request', message: 'worker_id is required' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'worker_id is required' } }, 400);
     }
     const auth = db ? validateEnvironmentWorkerKey(db, body.environment_key) : { ok: true as const, environmentId: undefined };
     if (!auth.ok) return c.json({ error: { type: 'unauthorized', message: auth.message } }, 401);
     const requestedEnvironmentId = typeof body.environment_id === 'string' ? body.environment_id : undefined;
     if (auth.environmentId && requestedEnvironmentId && requestedEnvironmentId !== auth.environmentId) {
-      return c.json({ error: { type: 'invalid_request', message: 'environment_id does not match environment_key scope' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'environment_id does not match environment_key scope' } }, 400);
     }
     const item = queue.claim(
       workerId,
@@ -42,7 +42,7 @@ export function workerRoutes(queue: WorkQueue, db?: Database) {
   app.post('/complete', async (c) => {
     const body = await c.req.json().catch(() => ({}));
     if (!body.id || typeof body.id !== 'string' || !body.worker_id || typeof body.worker_id !== 'string') {
-      return c.json({ error: { type: 'invalid_request', message: 'id and worker_id are required' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'id and worker_id are required' } }, 400);
     }
     const outcome = queue.complete(body.id, body.worker_id, body.result, body.failed === true);
     if (outcome === 'not_found') {

@@ -94,17 +94,17 @@ async function readOptionalJsonBody(c: any): Promise<{ ok: true; value: Record<s
   if (!contentType.includes('json')) {
     return {
       ok: false,
-      response: c.json({ error: { type: 'invalid_request', message: 'content-type must be application/json' } }, 400),
+      response: c.json({ error: { type: 'invalid_request_error', message: 'content-type must be application/json' } }, 400),
     };
   }
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, response: c.json({ error: { type: 'invalid_request', message: 'body must be a JSON object' } }, 400) };
+      return { ok: false, response: c.json({ error: { type: 'invalid_request_error', message: 'body must be a JSON object' } }, 400) };
     }
     return { ok: true, value: parsed as Record<string, unknown> };
   } catch {
-    return { ok: false, response: c.json({ error: { type: 'invalid_request', message: 'body must be valid JSON' } }, 400) };
+    return { ok: false, response: c.json({ error: { type: 'invalid_request_error', message: 'body must be valid JSON' } }, 400) };
   }
 }
 

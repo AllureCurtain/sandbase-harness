@@ -153,7 +153,7 @@ describe('initial_events transaction semantics', () => {
     });
 
     expect(status).toBe(400);
-    expect(body.error.type).toBe('invalid_request');
+    expect(body.error.type).toBe('invalid_request_error');
     expect(countSessions()).toBe(sessionsBefore);
     expect(countEvents()).toBe(eventsBefore);
     expect(countResources()).toBe(resourcesBefore);

@@ -26,20 +26,20 @@ export function skillsRoutes(deps: ServerDeps) {
   app.get('/', (c) => {
     const source = c.req.query('source');
     if (source && source !== 'custom' && source !== 'anthropic') {
-      return c.json({ error: { type: 'invalid_request', message: 'source must be custom or anthropic' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'source must be custom or anthropic' } }, 400);
     }
     const page = skillPage(listSkillResources(deps, source as SkillSourceFilter | undefined), {
       limit: c.req.query('limit'),
       page: c.req.query('page'),
       source: source as SkillSourceFilter | undefined,
     });
-    if (!page.ok) return c.json({ error: { type: 'invalid_request', message: page.message } }, 400);
+    if (!page.ok) return c.json({ error: { type: 'invalid_request_error', message: page.message } }, 400);
     return c.json(page.page);
   });
 
   app.post('/', async (c) => {
     if (!deps.workspace?.dataDir) {
-      return c.json({ error: { type: 'invalid_request', message: 'Workspace data directory is not configured' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Workspace data directory is not configured' } }, 400);
     }
 
     try {
@@ -52,7 +52,7 @@ export function skillsRoutes(deps: ServerDeps) {
         const message = skillPackage.skillContent.startsWith('---')
           ? 'SKILL.md frontmatter must include name and description.'
           : 'SKILL.md must start with YAML frontmatter (---).';
-        return c.json({ error: { type: 'invalid_request', message } }, 400);
+        return c.json({ error: { type: 'invalid_request_error', message } }, 400);
       }
       if (existingSkills.some((skill) => skill.name === parsed.name)) {
         return c.json({ error: { type: 'conflict', message: `Skill name ${parsed.name} already exists` } }, 409);
@@ -72,7 +72,7 @@ export function skillsRoutes(deps: ServerDeps) {
       return c.json(skillResource(saved), 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return c.json({ error: { type: 'invalid_request', message } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message } }, 400);
     }
   });
 
@@ -90,7 +90,7 @@ export function skillsRoutes(deps: ServerDeps) {
       return c.json({ error: { type: 'not_found', message: 'Skill not found' } }, 404);
     }
     if (skill.source === 'anthropic') {
-      return c.json({ error: { type: 'invalid_request', message: 'Anthropic skills are built-in and cannot be deleted' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Anthropic skills are built-in and cannot be deleted' } }, 400);
     }
 
     deps.db.prepare(`

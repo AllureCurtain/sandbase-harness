@@ -583,7 +583,7 @@ describe('Managed Agents API', () => {
       expect(res.status).toBe(400);
       expect(body).toEqual({
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: 'pi_sandbox_provider_not_supported',
           message: 'Pi loop engine requires the local sandbox provider because it needs a host-accessible work directory.',
         },
@@ -673,7 +673,7 @@ describe('Managed Agents API', () => {
       db.prepare('UPDATE sessions SET loop_engine = ? WHERE id = ?').run('pi', legacy.id);
       const expected = {
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: 'pi_tool_policy_not_supported',
           message: 'Pi 0.84.4 has no MCP transport; mcp_toolset "tools-server" cannot be enforced',
         },
@@ -712,7 +712,7 @@ describe('Managed Agents API', () => {
       expect(created.res.status).toBe(201);
       const expected = {
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: 'pi_user_event_not_supported',
           message: 'Pi loop engine supports only user.message, user.interrupt, user.steer, and user.tool_confirmation events.',
         },
@@ -915,7 +915,7 @@ describe('Managed Agents API', () => {
       });
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error.type).toBe('invalid_request');
+      expect(body.error.type).toBe('invalid_request_error');
     });
 
     it('rejects non-user event types with 400', async () => {
@@ -1654,7 +1654,7 @@ describe('Managed Agents API', () => {
       });
       expect(invalidTestArea.res.status).toBe(400);
       expect(invalidTestArea.body.error).toMatchObject({
-        type: 'invalid_request',
+        type: 'invalid_request_error',
       });
 
       const unavailable = await postJson('/v1/x/settings/validate', {
@@ -1783,7 +1783,7 @@ describe('Managed Agents API', () => {
       const invalidRevision = await postJson('/v1/x/settings', { revision: 0, config: updatedConfig }, 'PUT');
       expect(invalidRevision.res.status).toBe(400);
       expect(invalidRevision.body.error).toMatchObject({
-        type: 'invalid_request',
+        type: 'invalid_request_error',
         message: 'revision must be a positive integer',
       });
 
@@ -2364,7 +2364,7 @@ description: Uploaded from a compressed package.
         config: { hosting_type: 'cloud' },
       });
       expect(cloudOnly.res.status).toBe(400);
-      expect(cloudOnly.body.error.type).toBe('invalid_request');
+      expect(cloudOnly.body.error.type).toBe('invalid_request_error');
       expect(cloudOnly.body.error.message).toContain('hosting_type "cloud"');
       expect(cloudOnly.body.error.message).toContain('Use one of: local, docker, kubernetes, self_hosted');
 

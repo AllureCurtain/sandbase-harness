@@ -281,7 +281,7 @@ describe('Approval-gated call addressed by event id', () => {
     });
     expect(res.status).toBe(400);
     const body = await res.json() as any;
-    expect(body.error.type).toBe('invalid_request');
+    expect(body.error.type).toBe('invalid_request_error');
     expect(body.error.message).toMatch(/not awaiting approval/);
   });
 });
