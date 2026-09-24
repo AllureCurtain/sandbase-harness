@@ -7,7 +7,22 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - dependencies
-      - security
+    # Packages that must move together are proposed as one reviewable PR.
+    # Bumping half of a coupled set fails the suite instead of upgrading it:
+    # react without react-dom renders "Incompatible React versions" in the
+    # Console tests, and ai without a matching @ai-sdk/* provider drifts the
+    # model SDK out of lockstep.
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+      ai-sdk:
+        patterns:
+          - ai
+          - '@ai-sdk/*'
   - package-ecosystem: github-actions
     directory: /.github/workflows
     schedule:
@@ -15,4 +30,10 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - dependencies
-      - security
+    # The codeql-action sub-actions load one CodeQL bundle version between
+    # them. Bumping init or analyze alone fails the analysis with a version
+    # mismatch, so all three move in one PR.
+    groups:
+      codeql-action:
+        patterns:
+          - github/codeql-action*
