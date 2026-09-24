@@ -93,7 +93,7 @@ with its own status transitions, while a delegated run is an internal turn.
 | Canonical roster | A `multiagent` roster is **refused by name** on both agent write paths rather than stored and ignored. The refusal names the capability `multiagent-roster` and points at the local extension. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
 | Interrupt targeting | Absent. `user.interrupt` targets the session; a thread id has nothing to route to. |
-| Local delegation extension | `delegations` and `enable_general_subagent` are a one-level parent/child mechanism with its own tool names. It is a local extension, never presented as the canonical roster. |
+| Local delegation extension | `delegations` and `enable_general_subagent` are a one-level parent/child mechanism with its own tool names. It is recorded as a local extension, never as the canonical roster. |
 
 ## 5. Reason for the difference
 
@@ -113,7 +113,8 @@ with its own status transitions, while a delegated run is an internal turn.
 ## 6. Corresponding tests
 
 - `tests/integration/agent-roster-refusal.test.ts` — the refusal of a canonical
-  roster on create and update before anything is persisted.
+  roster on create and update before anything is persisted, and the acceptance of
+  the local `enable_general_subagent` extension on both write paths.
 - `tests/integration/delegation.test.ts` — the local delegation extension: the
   tools built for an agent's `delegations` list, and a delegated run returning
   its result. Evidence that this mechanism exists and is *not* a thread surface.
@@ -125,5 +126,6 @@ with its own status transitions, while a delegated run is an internal turn.
 `unavailable` — nothing in this contract area is implemented. The runtime has no
 thread resource, no coordinator or advisor role, no thread lifecycle or
 message-direction events, no per-thread event isolation, no thread listing or
-archive route, and no thread-scoped budget signal. A canonical `multiagent`
-roster is refused by name rather than stored and ignored.
+archive route, and no thread-scoped budget signal. The neighbouring local
+delegation extension is recorded separately in the capability matrix and is not
+presented as threads.

@@ -510,6 +510,15 @@ describe('PUT /v1/agents/:id partial update', () => {
       path: 'multiagent',
       message: expect.stringContaining('multiagent-roster'),
     });
+
+    // The local delegation extension is a different field: both write paths
+    // accept it, because the executor honours it when it builds delegation
+    // tools.
+    const subagentAttempt = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      enable_general_subagent: true,
+    });
+    expect(subagentAttempt.res.status).toBe(200);
+    expect(JSON.parse(storedRow(ctx, agent.id).definition).enable_general_subagent).toBe(true);
   });
 
   it('keeps response, stored row, versions, list, and the in-memory cache consistent', async () => {

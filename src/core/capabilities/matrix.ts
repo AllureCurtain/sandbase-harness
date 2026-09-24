@@ -142,6 +142,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     contract: 'contracts/anthropic-cma/agents.md',
   },
   {
+    area: 'agents',
+    id: 'local-delegation-subagent',
+    status: 'supported',
+    reason: 'A local extension, not the canonical roster: `delegations` names the agents an agent may call through `delegate_to_<name>` tools, and the boolean `enable_general_subagent` exposes a `general_subagent` tool that runs a temporary copy of the agent as a one-level child that cannot delegate further. Both are string/boolean fields the published contract does not define.',
+    contract: 'contracts/anthropic-cma/agents.md',
+  },
+  {
     area: 'sessions',
     id: 'session-lifecycle',
     status: 'supported',

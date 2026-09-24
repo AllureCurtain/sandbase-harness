@@ -1,10 +1,15 @@
 /**
- * The canonical `multiagent` roster is refused on both agent write paths.
+ * The canonical `multiagent` roster is refused, and local delegation is not it.
  *
- * Both paths must answer a roster the same way: with a 400 that names the
- * capability and the reason. A create that strips the field is the worst case
- * of the two, because the caller receives a 201 and a normal-looking agent
- * while the delegation they asked for does not exist.
+ * Both agent write paths must answer a roster the same way: with a 400 that
+ * names the capability and the reason. A create that strips the field is the
+ * worst case of the two, because the caller receives a 201 and a normal-looking
+ * agent while the delegation they asked for does not exist.
+ *
+ * The local delegation extension is a different field with a different answer:
+ * `enable_general_subagent` is accepted on both paths because the executor
+ * builds delegation tools from it, and it is not presented as the canonical
+ * roster.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -106,5 +111,17 @@ describe('canonical multiagent roster', () => {
       path: 'multiagent',
       message: expect.stringContaining('multiagent-roster'),
     });
+  });
+
+  it('accepts the local delegation extension on both write paths', async () => {
+    const ctx = context();
+
+    const created = await request(ctx.app, 'POST', '/v1/agents', { ...definition, enable_general_subagent: true });
+    expect(created.res.status).toBe(201);
+    expect(storedDefinitions(ctx)[0]?.enable_general_subagent).toBe(true);
+
+    const updated = await request(ctx.app, 'PUT', `/v1/agents/${created.body.id}`, { enable_general_subagent: false });
+    expect(updated.res.status).toBe(200);
+    expect(storedDefinitions(ctx)[0]?.enable_general_subagent).toBe(false);
   });
 });

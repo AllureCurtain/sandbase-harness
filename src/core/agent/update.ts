@@ -42,10 +42,13 @@ const UPDATE_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   max_turns: z.union([z.number().int().positive().max(1000), z.null()]),
   temperature: z.union([z.number().min(0).max(2), z.null()]),
   delegations: z.union([z.array(z.string()), z.null()]),
-  // `multiagent` is deliberately absent from this table. An update carrying a
-  // roster is refused above with its own capability-naming error, before the
-  // table is consulted, so it never falls through to the generic unknown-field
-  // message that a missing schema would otherwise produce.
+  // The local delegation extension, accepted on this path for the same reason
+  // the create path accepts it: the executor honours `enable_general_subagent`
+  // when it builds the agent's delegation tools, so refusing it here would make
+  // the two write paths disagree about a field the runtime does act on. It is a
+  // local extension and is not the canonical `multiagent` roster, which stays
+  // refused below.
+  enable_general_subagent: z.union([z.boolean(), z.null()]),
   strategy: z.union([z.string(), z.null()]),
   environment: z.union([z.string(), z.null()]),
 };
