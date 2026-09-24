@@ -539,6 +539,14 @@ describe('documented capability decisions', () => {
     }
   });
 
+  it('leads the credential-injection deviation with plaintext and egress substitution', () => {
+    const reason = entry('credential-injection-execution').reason;
+    expect(entry('credential-injection-execution').status).toBe('partial');
+    expect(reason).toMatch(/plaintext/);
+    expect(reason).toMatch(/no opaque placeholder and no substitution at the network egress/);
+    expect(documentNamed('credentials.md').text).toMatch(/plaintext/);
+  });
+
   it('removed the session.updated claim and only mentions it to say it is absent', () => {
     // `session.updated` was removed from the contract rather than implemented.
     // A document may say so — that is the point of recording a deletion — but
