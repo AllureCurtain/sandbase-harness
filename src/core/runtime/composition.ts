@@ -5,8 +5,12 @@ import type { RuntimeSettings } from '@/core/settings/schema.js';
 import { activateRuntimeSettings, localArtifactStorageDir, modelConfigFromRuntimeSettings, type RuntimeSettingsRecord, type RuntimeSettingsSeed } from '@/core/settings/store.js';
 import { LocalArtifactStore } from '@/core/storage/artifact-store.js';
 import type { ModelRegistry } from '@/model/registry.js';
-import { sandboxProviderForSettings } from '@/sandbox/provider-names.js';
-import type { EnvironmentConfig, KubernetesEnvironmentConfig, SandboxProviderType } from '@/types/sandbox.js';
+import {
+  parseEnvironmentConfig,
+  sandboxProviderForEnvironmentConfig,
+  sandboxProviderForSettings,
+} from '@/sandbox/provider-names.js';
+import type { EnvironmentConfig, KubernetesEnvironmentConfig } from '@/types/sandbox.js';
 
 export interface RuntimeComposition {
   settings: RuntimeSettingsRecord;
@@ -66,9 +70,14 @@ export function composeRuntimeFromSettings({
 }
 
 export function normalizeRuntimeEnvironment(row: { id: string; name: string; config: string }): EnvironmentConfig {
-  const parsed = parseJsonObject(row.config);
-  const sandboxProvider = parseSandboxProvider(parsed.sandbox_provider)
-    ?? (parsed.hosting_type === 'self_hosted' ? 'self_hosted' : 'local');
+  const context = `Environment ${row.id}${row.name ? ` ("${row.name}")` : ''}`;
+  const parsed = parseEnvironmentConfig(row.config, context);
+  // The declared backend — or the hosting type behind it — decides where this
+  // Environment runs. An unreadable row, `hosting_type: "cloud"`, or any other
+  // value this runtime cannot serve is refused here instead of being replaced
+  // by the local backend, which used to run isolated configurations on the host
+  // with no error at all.
+  const sandboxProvider = sandboxProviderForEnvironmentConfig(parsed, context);
 
   return {
     ...parsed,
@@ -115,26 +124,4 @@ function stringOption(value: unknown): string | undefined {
 function optionalString(key: string, value: unknown): Record<string, string> {
   const resolved = stringOption(value);
   return resolved ? { [key]: resolved } : {};
-}
-
-/**
- * Read the configured backend name without judging whether it exists.
- *
- * Availability is the sandbox registry's call, not this function's: rewriting
- * an unrecognized name to a default here is what previously turned a typo (or
- * a provider whose optional dependency is missing) into a silent switch to
- * unsandboxed local execution. Any non-empty string is preserved so the
- * registry can reject it at provision time and name the registered backends.
- */
-function parseSandboxProvider(value: unknown): SandboxProviderType | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function parseJsonObject(value: string): Record<string, any> {
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }

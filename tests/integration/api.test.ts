@@ -588,6 +588,39 @@ describe('Managed Agents API', () => {
       db.prepare('DELETE FROM environments WHERE id = ?').run('env_pi_docker');
     });
 
+    it('refuses an Environment the runtime cannot resolve before the session exists', async () => {
+      db.prepare('INSERT INTO environments (id, name, config) VALUES (?, ?, ?)').run(
+        'env_cloud',
+        'Cloud hosting',
+        JSON.stringify({ hosting_type: 'cloud' }),
+      );
+      db.prepare('INSERT INTO environments (id, name, config) VALUES (?, ?, ?)').run(
+        'env_damaged',
+        'Damaged config',
+        '{oops',
+      );
+
+      const cloud = await postJson('/v1/sessions', {
+        agent: 'agent_echo-agent',
+        environment_id: 'env_cloud',
+      });
+      expect(cloud.res.status).toBe(400);
+      expect(cloud.body.error.code).toBe('unsupported_hosting_type');
+      expect(cloud.body.error.message).toContain('hosting_type "cloud"');
+
+      const damaged = await postJson('/v1/sessions', {
+        agent: 'agent_echo-agent',
+        environment_id: 'env_damaged',
+      });
+      expect(damaged.res.status).toBe(400);
+      expect(damaged.body.error.code).toBe('invalid_environment_config');
+
+      expect(db.prepare(
+        `SELECT COUNT(*) AS count FROM sessions WHERE environment_id IN ('env_cloud', 'env_damaged')`,
+      ).get()).toEqual({ count: 0 });
+      db.prepare(`DELETE FROM environments WHERE id IN ('env_cloud', 'env_damaged')`).run();
+    });
+
     it('admits Pi sessions for agents requesting always_ask instead of refusing them', async () => {
       db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
         'agent_pi_always_ask',
@@ -897,6 +930,39 @@ describe('Managed Agents API', () => {
         body: JSON.stringify({ events: [{ type: 'user.message', content: [{ type: 'text', text: 'hi' }] }] }),
       });
       expect(res.status).toBe(404);
+    });
+
+    it('refuses an event when the session Environment no longer resolves', async () => {
+      db.prepare('INSERT INTO environments (id, name, config) VALUES (?, ?, ?)').run(
+        'env_local_hosting',
+        'Local hosting',
+        JSON.stringify({ hosting_type: 'local' }),
+      );
+      const created = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: 'agent_echo-agent', environment_id: 'env_local_hosting' }),
+      });
+      expect(created.status).toBe(201);
+      const sessionId = (await created.json()).id as string;
+
+      // The Environment is edited into a hosting type this runtime cannot run.
+      // Admission must report that as a client error before the append-only log
+      // or any execution, instead of resolving to the local backend.
+      db.prepare(`UPDATE environments SET config = '{"hosting_type":"cloud"}' WHERE id = 'env_local_hosting'`).run();
+      const res = await app.request(`/v1/sessions/${sessionId}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: [{ type: 'user.message', content: [{ type: 'text', text: 'hi' }] }] }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe('unsupported_hosting_type');
+      expect(db.prepare('SELECT COUNT(*) AS count FROM events WHERE session_id = ?').get(sessionId))
+        .toEqual({ count: 0 });
+      // Archived rather than deleted: the session still references this row.
+      db.prepare(`UPDATE environments SET archived_at = datetime('now') WHERE id = 'env_local_hosting'`).run();
     });
   });
 
@@ -2234,15 +2300,29 @@ description: Uploaded from a compressed package.
       expect(body.config.sandbox_provider).toBe('local');
     });
 
-    it('updates environment fields', async () => {
-      const res = await app.request('/v1/environments/env_default', {
+    it('reports a backend-declared environment as that backend, not as cloud', async () => {
+      const { res, body } = await postJson('/v1/environments', {
+        name: 'Kubernetes runner',
+        config: {
+          sandbox_provider: 'kubernetes',
+          kubernetes: { namespace: 'agents' },
+        },
+      });
+
+      expect(res.status).toBe(201);
+      // `hosting_type` used to fall through to `cloud` for any config that did
+      // not declare it, which described hosting this runtime does not have.
+      expect(body.hosting_type).toBe('kubernetes');
+      expect(body.sandbox_provider).toBe('kubernetes');
+
+      const updated = await app.request(`/v1/environments/${body.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: 'Cloud runner',
+          name: 'Kubernetes runner',
           description: 'Container template for console sessions.',
           config: {
-            hosting_type: 'cloud',
+            hosting_type: 'kubernetes',
             sandbox_provider: 'kubernetes',
             network: {
               type: 'limited',
@@ -2256,27 +2336,145 @@ description: Uploaded from a compressed package.
         }),
       });
 
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.name).toBe('Cloud runner');
-      expect(body.description).toBe('Container template for console sessions.');
-      expect(body.hosting_type).toBe('cloud');
-      // hosting_type and sandbox_provider are independent axes: `cloud` is a
-      // hosting descriptor, not an execution backend.
-      expect(body.sandbox_provider).toBe('kubernetes');
-      expect(body.network.allowed_hosts).toEqual(['api.github.com']);
-      expect(body.packages[0].package).toBe('ruff==0.5.0');
-      expect(body.config.hosting_type).toBe('cloud');
-      expect(body.config.network.allowed_hosts).toEqual(['api.github.com']);
-      expect(body.config.packages[0].package).toBe('ruff==0.5.0');
-      expect(body.metadata.owner).toBe('platform');
+      expect(updated.status).toBe(200);
+      const updatedBody = await updated.json();
+      expect(updatedBody.name).toBe('Kubernetes runner');
+      expect(updatedBody.description).toBe('Container template for console sessions.');
+      expect(updatedBody.hosting_type).toBe('kubernetes');
+      expect(updatedBody.sandbox_provider).toBe('kubernetes');
+      expect(updatedBody.network.allowed_hosts).toEqual(['api.github.com']);
+      expect(updatedBody.packages[0].package).toBe('ruff==0.5.0');
+      expect(updatedBody.config.hosting_type).toBe('kubernetes');
+      expect(updatedBody.config.network.allowed_hosts).toEqual(['api.github.com']);
+      expect(updatedBody.config.packages[0].package).toBe('ruff==0.5.0');
+      expect(updatedBody.metadata.owner).toBe('platform');
+    });
+
+    it('refuses cloud hosting because this runtime has no cloud backend', async () => {
+      // `hosting_type: "cloud"` used to be stored, and every resolver then read
+      // it as the local backend, so an operator who asked for hosted execution
+      // silently got unsandboxed execution on the runtime host.
+      const cloudOnly = await postJson('/v1/environments', {
+        name: 'Cloud only',
+        config: { hosting_type: 'cloud' },
+      });
+      expect(cloudOnly.res.status).toBe(400);
+      expect(cloudOnly.body.error.type).toBe('invalid_request');
+      expect(cloudOnly.body.error.message).toContain('hosting_type "cloud"');
+      expect(cloudOnly.body.error.message).toContain('Use one of: local, docker, kubernetes, self_hosted');
+
+      const cloudWithBackend = await postJson('/v1/environments', {
+        name: 'Cloud with backend',
+        hosting_type: 'cloud',
+        sandbox_provider: 'docker',
+      });
+      expect(cloudWithBackend.res.status).toBe(400);
+      expect(cloudWithBackend.body.error.message).toContain('hosting_type "cloud"');
+
+      const unknownHosting = await postJson('/v1/environments', {
+        name: 'Unknown hosting',
+        config: { hosting_type: 'team_server' },
+      });
+      expect(unknownHosting.res.status).toBe(400);
+      expect(unknownHosting.body.error.message).toContain('not a known hosting type');
+
+      // A malformed declaration is refused rather than dropped: dropping it
+      // would create an Environment that resolves to the local backend while
+      // the caller believed it had asked for something else.
+      const malformedHosting = await postJson('/v1/environments', {
+        name: 'Malformed hosting',
+        config: { hosting_type: 7 },
+      });
+      expect(malformedHosting.res.status).toBe(400);
+      expect(malformedHosting.body.error.message).toContain('hosting_type must be a string');
+
+      const malformedConfig = await postJson('/v1/environments', {
+        name: 'Malformed config',
+        config: 'hosting_type=cloud',
+      });
+      expect(malformedConfig.res.status).toBe(400);
+      expect(malformedConfig.body.error.message).toContain('config must be an object');
+    });
+
+    it('refuses to rewrite a stored cloud environment', async () => {
+      // A row written before cloud hosting was refused still declares hosting
+      // this runtime cannot serve, so the stored config is the merge base and an
+      // update that does not replace it is refused. Replacing it is the repair
+      // path, and that is a deliberate choice rather than a rename that quietly
+      // becomes a local Environment.
+      db.prepare(
+        `INSERT INTO environments (id, name, config) VALUES ('env_legacy_cloud', 'legacy cloud', '{"hosting_type":"cloud"}')`,
+      ).run();
+      try {
+        const renamed = await app.request('/v1/environments/env_legacy_cloud', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'renamed' }),
+        });
+        expect(renamed.status).toBe(400);
+        expect((await renamed.json()).error.message).toContain('hosting_type "cloud"');
+
+        const repaired = await app.request('/v1/environments/env_legacy_cloud', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'repaired', config: { hosting_type: 'local', sandbox_provider: 'local' } }),
+        });
+        expect(repaired.status).toBe(200);
+        expect((await repaired.json()).hosting_type).toBe('local');
+      } finally {
+        db.prepare(`DELETE FROM environments WHERE id = 'env_legacy_cloud'`).run();
+      }
+    });
+
+    it('refuses to merge over a config that is not valid JSON', async () => {
+      db.prepare(
+        `INSERT INTO environments (id, name, config) VALUES ('env_damaged', 'damaged', '{oops')`,
+      ).run();
+      try {
+        // Reading it reports the damage rather than the backend an empty config
+        // would resolve to, so the Console cannot show `local` for a row whose
+        // backend is unknown and then save it back as a local Environment.
+        const read = await app.request('/v1/environments/env_damaged');
+        expect(read.status).toBe(200);
+        const damaged = await read.json();
+        expect(damaged.hosting_type).toBe('unknown');
+        expect(damaged.sandbox_provider).toBeNull();
+
+        const renamed = await app.request('/v1/environments/env_damaged', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'renamed' }),
+        });
+        expect(renamed.status).toBe(400);
+        expect((await renamed.json()).error.code).toBe('invalid_environment_config');
+
+        // Saving the projection back is refused too, and the message names the
+        // hosting type rather than a backend the operator never chose.
+        const savedBack = await app.request('/v1/environments/env_damaged', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'renamed', config: { hosting_type: 'unknown', sandbox_provider: 'cloud' } }),
+        });
+        expect(savedBack.status).toBe(400);
+        expect((await savedBack.json()).error.message).toContain('hosting_type "unknown"');
+
+        const repaired = await app.request('/v1/environments/env_damaged', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'repaired', config: { hosting_type: 'local', sandbox_provider: 'local' } }),
+        });
+        expect(repaired.status).toBe(200);
+        expect((await repaired.json()).config.hosting_type).toBe('local');
+      } finally {
+        db.prepare(`DELETE FROM environments WHERE id = 'env_damaged'`).run();
+      }
     });
 
     it('accepts standard top-level environment fields', async () => {
       const { res, body } = await postJson('/v1/environments', {
         name: 'Standard top level',
         description: 'Uses the same shape as the Console create form.',
-        hosting_type: 'cloud',
+        hosting_type: 'docker',
         sandbox_provider: 'docker',
         network: {
           type: 'limited',
@@ -2288,11 +2486,11 @@ description: Uploaded from a compressed package.
       });
 
       expect(res.status).toBe(201);
-      expect(body.hosting_type).toBe('cloud');
+      expect(body.hosting_type).toBe('docker');
       expect(body.sandbox_provider).toBe('docker');
       expect(body.network.allowed_hosts).toEqual(['docs.anthropic.com']);
       expect(body.packages[0].package).toBe('tsx@latest');
-      expect(body.config.hosting_type).toBe('cloud');
+      expect(body.config.hosting_type).toBe('docker');
       expect(body.config.packages[0].manager).toBe('npm');
     });
 

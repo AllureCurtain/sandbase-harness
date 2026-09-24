@@ -927,6 +927,47 @@ describe('Settings V2 activation', () => {
     db.close();
   });
 
+  it('refuses to seed the workspace default from an unservable Environment', () => {
+    // The seed IS the workspace default backend. `cloud` used to be reduced to
+    // `local` here, which made every session without an explicit Environment run
+    // unsandboxed on the runtime host.
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-environment-seed-fail-closed-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    db.prepare(`INSERT INTO environments (id, name, config) VALUES (?, ?, ?)`).run(
+      'env_default',
+      'default',
+      JSON.stringify({ hosting_type: 'cloud' }),
+    );
+
+    try {
+      expect(() => getOrSeedRuntimeSettings(db, {}, directory)).toThrow(/no cloud execution backend/);
+      // Nothing was persisted, so the workspace is not left half-seeded.
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM runtime_settings`).get()).toEqual({ count: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('refuses to seed the workspace default from a damaged Environment record', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ma-settings-environment-seed-damaged-'));
+    directories.push(directory);
+    const db = new Database(join(directory, 'settings.db'));
+    db.runMigrations();
+    db.prepare(`INSERT INTO environments (id, name, config) VALUES (?, ?, ?)`).run(
+      'env_default',
+      'default',
+      '{oops',
+    );
+
+    try {
+      expect(() => getOrSeedRuntimeSettings(db, {}, directory)).toThrow(/not valid JSON/);
+    } finally {
+      db.close();
+    }
+  });
+
   it('ignores fake legacy provider rows that were never wired to the runtime', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ma-settings-legacy-provider-rows-'));
     directories.push(directory);

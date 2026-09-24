@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeRuntimeEnvironment } from '@/core/runtime/composition.js';
+import { ENVIRONMENT_CONFIG_ERROR_CODES } from '@/sandbox/provider-names.js';
 
 describe('runtime environment normalization', () => {
   it('defaults to local sandbox with a stable timeout', () => {
@@ -60,5 +61,77 @@ describe('runtime environment normalization', () => {
     })).toMatchObject({
       sandbox_provider: 'dokcer',
     });
+  });
+
+  it('honors docker and kubernetes declared only as hosting types', () => {
+    // A `hosting_type` without `sandbox_provider` used to resolve to `local`,
+    // so an Environment that asked for a container boundary ran on the host.
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_docker_hosting',
+      name: 'docker hosting',
+      config: '{"hosting_type":"docker"}',
+    })).toMatchObject({ sandbox_provider: 'docker' });
+
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_k8s_hosting',
+      name: 'k8s hosting',
+      config: '{"hosting_type":"kubernetes"}',
+    })).toMatchObject({ sandbox_provider: 'kubernetes' });
+
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_local_hosting',
+      name: 'local hosting',
+      config: '{"hosting_type":"local"}',
+    })).toMatchObject({ sandbox_provider: 'local' });
+  });
+
+  it('refuses cloud hosting instead of falling back to local execution', () => {
+    expect(() => normalizeRuntimeEnvironment({
+      id: 'env_cloud',
+      name: 'cloud',
+      config: '{"hosting_type":"cloud"}',
+    })).toThrow(/no cloud execution backend/);
+  });
+
+  it('resolves an explicitly named backend over an unusable hosting descriptor', () => {
+    // Resolution answers "where does this run" and the registry validates the
+    // named backend; the API refuses the `cloud` descriptor at write time so no
+    // new row can be created this way. An existing row still executes on the
+    // backend it names rather than on the local host.
+    expect(normalizeRuntimeEnvironment({
+      id: 'env_cloud_docker',
+      name: 'cloud docker',
+      config: '{"hosting_type":"cloud","sandbox_provider":"docker"}',
+    })).toMatchObject({ sandbox_provider: 'docker' });
+  });
+
+  it('refuses a stored config it cannot parse', () => {
+    // A damaged row used to normalize to `{}` and therefore to local execution.
+    try {
+      normalizeRuntimeEnvironment({ id: 'env_damaged', name: 'damaged', config: '{oops' });
+      expect.unreachable('a damaged config must not resolve');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe(ENVIRONMENT_CONFIG_ERROR_CODES.invalidConfig);
+      expect((err as Error).message).toContain('env_damaged');
+    }
+
+    expect(() => normalizeRuntimeEnvironment({
+      id: 'env_array',
+      name: 'array',
+      config: '[]',
+    })).toThrow(/must be a JSON object/);
+  });
+
+  it('refuses a hosting type it does not know', () => {
+    try {
+      normalizeRuntimeEnvironment({
+        id: 'env_unknown_hosting',
+        name: 'unknown',
+        config: '{"hosting_type":"team_server"}',
+      });
+      expect.unreachable('an unknown hosting type must not resolve');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe(ENVIRONMENT_CONFIG_ERROR_CODES.unsupportedHostingType);
+    }
   });
 });

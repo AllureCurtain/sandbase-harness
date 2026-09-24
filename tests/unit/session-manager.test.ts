@@ -54,6 +54,41 @@ describe('Session Manager', () => {
       });
       expect(session.metadata).toEqual({ project: 'test' });
     });
+
+    it('refuses an Environment whose config cannot be resolved', () => {
+      // The session row must not exist at all: a session that can only fail
+      // when it provisions a sandbox would already have accepted work.
+      db.prepare(`INSERT INTO environments (id, name, config) VALUES ('env_cloud', 'cloud', '{"hosting_type":"cloud"}')`).run();
+      db.prepare(`INSERT INTO environments (id, name, config) VALUES ('env_damaged', 'damaged', '{oops')`).run();
+
+      expect(() => manager.create({ agent: 'agent_test', environmentId: 'env_cloud' }))
+        .toThrow(/no cloud execution backend/);
+      expect(() => manager.create({ agent: 'agent_test', environmentId: 'env_damaged' }))
+        .toThrow(/not valid JSON/);
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM sessions`).get()).toEqual({ count: 0 });
+    });
+
+    it('resolves a container backend declared only as a hosting type', () => {
+      db.prepare(`INSERT INTO environments (id, name, config) VALUES ('env_docker_hosting', 'docker', '{"hosting_type":"docker"}')`).run();
+      // Creation succeeds — the backend exists — and the session points at the
+      // Environment that names it, not at the workspace default.
+      const session = manager.create({ agent: 'agent_test', environmentId: 'env_docker_hosting' });
+      expect(session.environmentId).toBe('env_docker_hosting');
+    });
+  });
+
+  describe('event admission', () => {
+    it('refuses to accept an event for a session whose Environment stopped resolving', () => {
+      db.prepare(`INSERT INTO environments (id, name, config) VALUES ('env_docker_hosting', 'docker', '{"hosting_type":"docker"}')`).run();
+      const session = manager.create({ agent: 'agent_test', environmentId: 'env_docker_hosting' });
+      // A later edit replaced the Environment with a hosting type this runtime
+      // cannot run. Admission must refuse before the append-only log or any
+      // execution, rather than resolving to the local backend.
+      db.prepare(`UPDATE environments SET config = '{"hosting_type":"cloud"}' WHERE id = 'env_docker_hosting'`).run();
+      expect(() => manager.assertSessionCanAcceptEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'hi' }] } as never))
+        .toThrow(/no cloud execution backend/);
+      expect(manager.getEventLogger().getEvents(session.id)).toHaveLength(0);
+    });
   });
 
   describe('get', () => {

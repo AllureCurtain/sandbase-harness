@@ -340,6 +340,30 @@
   wrapper (`tests/integration/post-terminal-authority.test.ts`), not just
   the library's own test suite.
 
+- Stops an Environment's hosting declaration from silently becoming local
+  execution. `hosting_type` was written but never read by the resolver, so an
+  Environment that asked for `cloud`, `docker`, or `kubernetes` and did not also
+  name a `sandbox_provider` ran on the local backend — the one backend that is
+  not a security boundary — and an unusable declaration was indistinguishable
+  from no declaration at all. An Environment is now resolved fail-closed:
+  `cloud` names hosting on machines this runtime does not own, has no backend
+  here, and is refused rather than lowered to local; an unknown hosting type is
+  refused with `unsupported_hosting_type`; a config that is not valid JSON, not a
+  JSON object, or that declares a hosting field which is not a name is refused
+  with `invalid_environment_config`; and a declared
+  `docker`, `kubernetes`, or `self_hosted` hosting type now selects that backend.
+  An explicit `sandbox_provider` continues to win over `hosting_type` and is
+  preserved verbatim, so an out-of-tree provider still reaches the registry,
+  which rejects an unregistered name by name. The refusal is raised when the
+  session is created or when an event is admitted — before any row is written
+  and before the session can accept work — and is served as a `400` carrying the
+  stable error code, instead of surfacing later as a provisioning failure. The
+  workspace default seed refuses the same inputs rather than reducing them to
+  local. Read paths are unaffected: `GET /v1/environments` reports the backend an
+  Environment declares, so a Kubernetes Environment is no longer projected as
+  `cloud`, and a declared hosting type is echoed even when this build refuses to
+  execute it, so an operator can still see what the record says.
+
 ### Documentation
 
 - Documents the verified git-hosted DSH install flow: the first add fails with
