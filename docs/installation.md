@@ -164,10 +164,34 @@ Configure the workspace model vendor, then click `Validate` or
 - `Base URL`: required for OpenAI-compatible local or hosted endpoints
 - `API key`: the provider key for model requests
 
-Runtime model connection settings live in `.managed-agents/config.yaml`. Agents
-set concrete model IDs in their own definitions, for example `model: gpt-4o` or
-`model: openai/gpt-5.5`. The workspace model config supplies provider
-credentials and base URL only.
+The Dashboard writes the effective model configuration. `.managed-agents/config.yaml`
+seeds it once, on the first start of a workspace:
+
+```yaml
+model:
+  provider: openai_compatible
+  base_url: https://gateway.example.com/v1
+  api_key: ${GATEWAY_API_KEY}
+```
+
+On that first start the `model` section above is imported into the workspace
+settings and becomes the effective configuration. On every later start the saved
+settings document is the single effective source, so editing this section
+afterwards changes nothing — the runtime warns at startup when the file and the
+effective settings differ, and says which source wins. Update the model provider
+in `Settings > Models`, or start from a new workspace to re-import the file.
+
+The `model` section supplies the provider, the base URL, and the API key. Two
+things placed there are not applied, and the runtime names them at startup rather
+than dropping them silently: a concrete model ID, which belongs to an Agent, and
+the vendor `options` bag, which has no column in the model record this file
+seeds.
+
+A model ID that carries a vendor namespace is passed to the provider unchanged,
+which is what an OpenAI-compatible gateway expects. A reference is read as
+`provider/model` only when the leading token names a configured provider — the
+provider type, such as `openai` or `anthropic`, or the name a provider is
+registered under. Otherwise the whole string is the model ID.
 
 For MiniMax regional endpoints and supported model IDs, follow the
 [MiniMax configuration guide](minimax.md).

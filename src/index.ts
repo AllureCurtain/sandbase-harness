@@ -14,7 +14,7 @@ import { createServer } from './api/server.js';
 import { composeOperations, webhookSigningSecret } from './api/operations-bridge.js';
 import { logDirForFile, resolveConfigPath, resolveDataDir, resolveLogFile, resolveUserPath, resolveWorkspaceRoot } from './core/config/paths.js';
 import { composeRuntimeFromSettings } from './core/runtime/composition.js';
-import { ensureDefaultEnvironment, loadRuntimeConfigBootstrap } from './core/runtime/config-bootstrap.js';
+import { ensureDefaultEnvironment, configModelWarnings, loadRuntimeConfigBootstrap } from './core/runtime/config-bootstrap.js';
 import { createRuntimeStopper } from './core/runtime/lifecycle.js';
 import { loadRuntimeAgentSkillState, reloadRuntimeAgents } from './core/runtime/agent-skill-bootstrap.js';
 import { bootstrapRuntimeModelRegistry } from './core/runtime/model-bootstrap.js';
@@ -95,6 +95,14 @@ async function startServer(opts: StartServerOptions) {
   });
   const effectiveSettings = runtimeComposition.settings.effective_config;
   const memory = runtimeComposition.memory;
+
+  // config.yaml is a first-start import, not a live setting. Saying so at
+  // startup is what keeps an edit that will not take effect from presenting
+  // itself as an endpoint that "still uses the old base URL".
+  for (const warning of configModelWarnings(configBootstrap, effectiveSettings.model)) {
+    logger.warn('config_model_not_effective', { detail: warning });
+    console.warn(`  Warning:   ${warning}`);
+  }
 
   const loopEngine = bootstrapRuntimeLoopEngine(effectiveSettings, { dataDir, database: db });
   const artifactStore = runtimeComposition.artifactStore;
