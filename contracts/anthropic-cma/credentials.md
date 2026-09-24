@@ -1,10 +1,17 @@
 # CMA Contract — credentials and vaults
 
 Contract area: `/v1/vaults` and vault credentials.
-Status: `supported` for the wire profile and rotation; OAuth refresh is
-`unavailable`, see §4 and §7.
+Status: `supported` for the wire profile and rotation; `partial` for injection
+execution; OAuth refresh is `unavailable`, see §4 and §7.
 Source: `src/core/credentials/canonical-credential.ts`,
 `src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`.
+
+<!-- capability-status
+canonical-credential-wire-profile: supported
+credential-rotation: supported
+credential-injection-execution: partial
+oauth-refresh: unavailable
+-->
 
 ---
 

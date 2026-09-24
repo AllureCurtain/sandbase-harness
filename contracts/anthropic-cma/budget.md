@@ -6,6 +6,10 @@ Source: `src/core/session/session-budget.ts`, `src/core/session/cost-profile.ts`
 `src/core/session/session-manager.ts`, `src/api/routes/sessions.ts`,
 `src/api/standard.ts`, migration `035_session_budget`.
 
+<!-- capability-status
+session-budget: partial
+-->
+
 ---
 
 ## 1. Official definition

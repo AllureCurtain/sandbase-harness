@@ -5,6 +5,11 @@ and delta previews.
 Status: `supported`.
 Source: `src/api/routes/stream.ts`, `src/core/session/event-deltas.ts`.
 
+<!-- capability-status
+resumable-sse: supported
+agent-message-stream-preview: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -16,6 +21,9 @@ Source: `src/api/routes/stream.ts`, `src/core/session/event-deltas.ts`.
   the buffered `agent.message`, not per-token fragments.
 
 ## 2. Current SandBase shape
+
+The stream route is `src/api/routes/stream.ts` and the delta projection is
+`src/core/session/event-deltas.ts`.
 
 Resume:
 
