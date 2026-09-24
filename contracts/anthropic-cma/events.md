@@ -62,6 +62,11 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   keeps it too; a model-derived event keeps the provider's `stop_reason`
   **string** from the `events.stop_reason` column, and the two shapes are
   distinguished by event type. [`sessions.md`](./sessions.md) records both.
+- The listed calls are exactly the ones still holding the turn back: while
+  `event_ids` is non-empty no resume turn starts, and the turn starts when the
+  last one is answered. Both the array and that gate read one definition
+  (`src/core/session/parked-calls.ts`), so an entry can never name a call the
+  gate is not waiting on, nor the gate wait on a call the array omits.
 - One outcome evaluation appends exactly three events, in order, and the end
   event is appended on every path — including the one where the grader throws or
   cannot run, so a client waiting on it cannot hang on an outcome that is already
@@ -173,6 +178,13 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   tool call, including that answering one call drops it from the array while an
   unanswered one stays, and that the projected object carries exactly
   `{type, event_ids}`.
+- `tests/unit/parked-calls.test.ts` — the shared parked-set definition both the
+  array and the gate read: which event types park, the event id reported versus
+  the block id that resolves, and resolution by each result kind.
+- `tests/integration/resume-gate.test.ts` — that definition's consequence on a
+  live session: a partial answer leaves the session in `requires_action` with no
+  error and no turn across every combination of parked families, and the last
+  answer resumes it with every call paired.
 
 ## 7. Status
 

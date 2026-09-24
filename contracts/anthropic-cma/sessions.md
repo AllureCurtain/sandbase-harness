@@ -95,6 +95,15 @@ The session-level `stop_reason` (`toApiEvent`):
   `metadata.tool_use_id`, the `agent.tool_result` appended for a decision, and the
   result's `metadata.custom_tool_use_id` all carry the **block** id, and a second
   answer for one call is refused whichever spelling it uses.
+- **The resume turn starts only once nothing is parked.** Each answer is recorded
+  as it arrives and the session stays in `requires_action` while any call is
+  still waiting, so the published client's loop — one answer per entry of
+  `event_ids`, in turn — works as written and the last answer is what starts the
+  turn. Starting it earlier would carry a tool call with no result, which
+  providers refuse with `Tool result is missing for tool call <id>`, terminating
+  a session over a documented answer. The gate and the `event_ids` array are one
+  definition (`src/core/session/parked-calls.ts`), so "the array is non-empty" and
+  "no turn may start" cannot disagree.
 - An idle event whose metadata carries no `stop_reason` omits the top-level field
   rather than sending `null`.
 - Model-derived events keep the provider's `stop_reason` **string** from the
@@ -227,7 +236,6 @@ reference forms, and the tri-state override rule.
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
-| Resuming while another call is still parked | A `user.custom_tool_result` that answers one of several custom tool calls parked at once leaves the others unanswered, and the next model request is refused with `Tool result is missing for tool call <id>`, terminating the session. The published contract does not say what a partial answer does to the calls still waiting. Answering every parked call before resuming works and is the supported path. |
 
 ## 5. Reason for the difference
 
@@ -310,6 +318,19 @@ reference forms, and the tri-state override rule.
   is kept, a second answer refused even when it uses the other spelling, an id
   naming nothing refused, and the projected object carrying exactly
   `{type, event_ids}` with no `action_type`.
+- `tests/integration/resume-gate.test.ts` — the resume rule, on the real strategy
+  and status transition: a partial answer to two custom calls, to a gated call
+  with a custom call parked, and to a custom call with a gated call parked each
+  leave the session in `requires_action` with no `session.error` and no turn,
+  drop only the answered call from `event_ids`, and resume with everything paired
+  once the last answer arrives; two gated calls in one confirmation group keep
+  their existing behaviour; and a single parked call still resumes in one step.
+- `tests/unit/parked-calls.test.ts` — the shared parked-set definition's own edge
+  cases: both families and the MCP event types reported together in log order,
+  an event id distinct from the block id in what is reported versus what resolves,
+  resolution by each result kind regardless of order in the log, a result that
+  answers a different call not resolving anything, an unconfirmed `tool_use`
+  ignored, and a malformed or unrelated event ignored.
 - `tests/integration/custom-tool-execution.test.ts` — the pre-existing closure
   path, unchanged: a custom tool call pauses the session and the caller's result,
   sent by block id, resumes the model with the paired tool result.

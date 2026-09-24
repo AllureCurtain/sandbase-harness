@@ -22,6 +22,7 @@ import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import { ModelRegistry } from '@/model/registry.js';
 import type { McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { EventLogger } from './event-logger.js';
+import { parkedCalls } from './parked-calls.js';
 import { ContextCompactor } from './context-compactor.js';
 import type { Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
@@ -229,10 +230,30 @@ export class DefaultSessionExecutor implements SessionExecutor {
         options?.broadcast ?? (() => {}),
       );
       if (!resolution.handled) return;
-      if (!resolution.groupComplete) {
-        options?.onRequiresAction?.();
-        return;
-      }
+    }
+
+    // 3b. A turn may start only once nothing is parked. The answer just handled
+    // is one of possibly several calls the session is waiting on, and the
+    // resume-turn request carries every parked call the log still holds. Starting
+    // it while another call is unanswered builds a request with an unpaired tool
+    // call, which providers reject with "Tool result is missing for tool call
+    // <id>" — terminating a session for what was a documented, well-formed
+    // answer. The published client answers each id in `stop_reason.event_ids` in
+    // turn, so the intermediate answers are the normal case, not an edge case.
+    //
+    // The parked set is read from `parkedCalls`, the same definition the
+    // `stop_reason` projection publishes from, so "the array is non-empty" and
+    // "no turn may start" cannot drift apart.
+    //
+    // Pi is excluded on the same grounds as 3a: it resolves its own gate and
+    // appends the paired result when that call actually finishes, so at this
+    // point its gated call is legitimately still in the log and holding the turn
+    // would leave the decision undelivered.
+    const answeredAParkedCall = event.type === 'user.custom_tool_result'
+      || (event.type === 'user.tool_confirmation' && session.loopEngine !== 'pi');
+    if (answeredAParkedCall && parkedCalls(eventLogger.getEvents(session.id)).length > 0) {
+      options?.onRequiresAction?.();
+      return;
     }
 
     const broadcast = options?.broadcast ?? (() => {});
