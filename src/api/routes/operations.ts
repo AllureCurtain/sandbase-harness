@@ -26,6 +26,7 @@ import {
   type OperationMountOptions,
 } from './operation-helpers.js';
 import { deploymentRoutes } from './deployments.js';
+import { deploymentRunsRoutes } from './deployment-runs.js';
 
 /**
  * Which envelope this mount serves.
@@ -49,6 +50,16 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
   // `/v1/x/deployments` the same legacy envelope as its canonical twin.
   app.route('/scheduled-deployments', deploymentRoutes(deps, options));
   app.route('/deployments', deploymentRoutes(deps, options));
+
+  // A deployment's *runs* are their own top-level resource in the published
+  // contract, addressable by their own id, so they cannot be a path alias of the
+  // nested `/{id}/runs` route: that route answers a different question (this one
+  // deployment's runs) at a different path, and a path alias cannot express a
+  // top-level collection filtered by a query parameter. Mounted here for the same
+  // reason the deployment router is — this router is mounted at `/v1` and `/v1/x`,
+  // so one registration yields the canonical route and the legacy mirror with the
+  // correct per-mount envelope.
+  app.route('/deployment_runs', deploymentRunsRoutes(deps, options));
 
   app.get('/webhooks', (c) => {
     const rows = deps.db.prepare('SELECT * FROM webhooks WHERE archived_at IS NULL ORDER BY created_at DESC').all() as WebhookRow[];

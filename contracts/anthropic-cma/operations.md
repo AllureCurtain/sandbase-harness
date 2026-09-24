@@ -127,6 +127,25 @@ merely because it was paused through a different route. Pausing suppresses
 scheduled triggers only — a manual `run` still works, and an archived deployment
 is a 404 on every route rather than a paused one.
 
+A deployment's **runs** are a second module, `src/api/routes/deployment-runs.ts`,
+mounted once from `operations.ts` at `/deployment_runs`. It is a top-level
+resource in the published contract with its own id, not a sub-path of a
+deployment, so it cannot be a path alias of the nested `GET /deployments/{id}/runs`:
+that route answers a different question, and a path alias cannot express a
+top-level collection narrowed by a query parameter. Mounting it from
+`operationsRoutes` is what gives it the `/v1/x/deployment_runs` mirror with the
+legacy envelope for free, and why one registration serves both.
+
+The run projection is a **read view**: `schedule_id` becomes `deployment_id` and
+`started_at` becomes `created_at` on the way out only, and nothing that writes a
+run row changes. `agent` is joined from the session the run created, so it is the
+agent that ran and the version it ran as; a run that failed before a session
+existed has no recorded version, so it reports `version: null` and the
+deployment's current `agent_id` rather than a guess. `error` is lifted from the
+stored message string into the published `{type, message}` object, and
+`trigger_context.scheduled_at` is omitted because the runtime records when a run
+started, not when its trigger was due.
+
 `scheduler.ts` is the run engine:
 
 - `nextCronRun` refuses an unrecognized zone rather than defaulting to UTC and
@@ -145,7 +164,9 @@ is a 404 on every route rather than a paused one.
 - `initial_events` is never passed. The session is created with `agent`,
   `environmentId`, `title` and a `metadata` block carrying
   `scheduled_deployment_id`, `scheduled_deployment_run_id` and `trigger_type`,
-  so the trigger is a value in run metadata rather than a `trigger_context`.
+  so the trigger is a value in run metadata rather than a stored
+  `trigger_context`. The published `trigger_context` object is **projected** from
+  that stored value by the run collection, read-only, and carries only `type`.
 
 `timezone` is a real column on `scheduled_deployments` (migration `M037`) and
 `scheduleTimeZone` reads it, falling back to `UTC` for a row written before the
@@ -172,13 +193,15 @@ rather than assumed. The header set is wired into every attempt: a retry keeps
 the delivery id and carries its own timestamp. The one local choice left is the
 persisted `signature` column, which holds the legacy value.
 
-**The deployment paths are now aligned; the rest is local behaviour that overlaps
-the published contract in name only.** A deployment answers at the published
-`/v1/deployments*` as well as the local `/v1/scheduled-deployments*`, from one
-router mounted twice. The delivery envelope, the disable policy, the retry
-schedule, the update verb, the control surface, the trigger representation and
-the failure behaviour are all either absent or implemented differently, as §4
-records.
+**The deployment paths are now aligned, and a run is readable as the published
+resource; the rest is local behaviour that overlaps the published contract in name
+only.** A deployment answers at the published `/v1/deployments*` as well as the
+local `/v1/scheduled-deployments*`, from one router mounted twice, and a run
+answers at the published `/v1/deployment_runs*` with the published field names.
+The delivery envelope, the disable policy, the retry schedule, the update verb,
+the run error vocabulary and `trigger_context.scheduled_at`, the failure
+behaviour, and the deployment lifecycle events are all either absent or
+implemented differently, as §4 records.
 
 ## 4. Differences
 
@@ -196,6 +219,11 @@ records.
 | Deployment control surface | Create, read, update, archive, manual run, run-due, **pause and unpause**. `POST /{id}/pause` records `paused_reason: {"type": "manual"}`; `POST /{id}/unpause` clears it and resumes from the next scheduled instant. Pause suppresses the scheduler and leaves the `run` endpoint open, which the published contract requires. The automatic pause after a non-recoverable trigger failure is **not** implemented, so `paused_reason` only ever holds `manual`: a caller can tell "paused by a person" from "not paused", but not yet from "paused by the runtime". |
 | Paused semantics | A paused deployment still accepts a manual `run`. The route previously refused any status but `active`, which was reachable only through `paused` — the one status `定时部署.md:490` says must still run. The scheduler path was already correct (`runDueScheduledDeployments` selects `status = 'active'`), so pause already suppressed timed runs and only the manual path was wrongly closed. Unpausing does not catch up missed triggers: a stored `next_run_at` that has already passed is recomputed forward, and one still in the future is left alone. |
 | Pause reason | `paused_reason` is a column added by `M042`, derived from `status` on every write path (create and update included) so the two cannot disagree. It reads `null` on a row that was paused before the migration, rather than back-filling `manual`: the runtime did not observe who paused it, and an invented reason would be indistinguishable from an observed one. |
+| Deployment run collection | `GET /v1/deployment_runs` and `GET /v1/deployment_runs/{id}` exist and carry the published field names. `deployment_id` and `has_error` are the two filters implemented; the published reference page that would list every filter is not available offline, so a third published filter would still be silently ignored, and unknown query parameters are not yet refused. |
+| Deployment run error type | The published `error.type` values name causes (`environment_archived_error`, `agent_archived_error`, `session_rate_limited_error`). This runtime cannot supply one: `sessionManager.create` throws bare `Error`s with free-text messages, so classification would mean matching on message strings. The published `{type, message}` **shape** is emitted with a single local `deployment_run_failed` type, which says the run failed and that the runtime did not classify it. Introducing the published vocabulary is a change to the session-creation error path, not to this projection. |
+| Deployment run trigger context | `trigger_context.type` is `schedule` for a timed run (the runtime stores `scheduled`) and `manual` for a hand-triggered one, passed through unchanged because the published docs show only the timed case. `trigger_context.scheduled_at` is **absent**: the runtime records when a run started, not the instant its trigger was due, and does not persist the due instant on the run row. Reporting `started_at` there would answer a question about the schedule with a fact about execution. |
+| Deployment run agent | `agent` is `{type, id, version}` taken from the session the run created, so both are the ones that ran. On a failed run there is no session and no recorded version, so `version` is `null` and `id` is the deployment's **current** agent — which may have changed since the attempt. Persisting the resolved agent on the run row at attempt time is a separate change. |
+| Deployment run ids | Stored run ids keep their local `srun_` prefix. The published sample uses `drun_`, but an id is opaque to the client and the value is already returned by the nested route and recorded in session metadata, so it is not renamed. |
 | Trigger representation | `trigger_type` is a key in the session's and the run's metadata. There is no `trigger_context` field and no `schedule` / `manual` polymorphic payload. |
 | Session startup | `sessionManager.create` without `initial_events`; a schedule cannot seed startup events the way the canonical session path can. |
 | Failure behaviour | Symmetric: every thrown session-creation error records a `failed` run and advances the cadence. No split by error class, no failure class recorded beyond the message, no preflight, no auto-pause, no auto-archive. |
@@ -278,6 +306,12 @@ records.
   (asserted by the absent run, not only by `next_run_at`), a future `next_run_at`
   left alone, idempotence, and an archived deployment 404ing on pause, unpause and
   run.
+- `tests/integration/deployment-runs-collection.test.ts` — the top-level run
+  collection and item routes: the published shape on a run that really created a
+  session, the `error` object and the agent fallback on one that really failed,
+  both filters, the unusable-`has_error` refusal, the unfiltered ordering, the
+  404, agreement with the nested route on every field both describe, and the
+  legacy mirror's own envelope.
 - `tests/unit/database.test.ts` — `M042` on a fresh workspace and on one that
   stopped at `M041`, where an already-paused deployment upgrades with no recorded
   reason rather than a back-filled one.
