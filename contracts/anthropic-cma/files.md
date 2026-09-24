@@ -1,9 +1,15 @@
 # CMA Contract — files
 
 Contract area: `/v1/files` and file session resources.
-Status: `supported`.
-Source: `src/core/session/file-mount-path.js`,
+Status: `partial` — the Files API and the mount-path form are implemented, but a
+session's file resources are not mounted by any runtime composition. See §4.
+Source: `src/core/session/file-mount-path.ts`,
 `src/api/routes/session-resources.ts`, `src/core/session/session-resources.ts`.
+
+<!-- capability-status
+file-resources: partial
+file-mount-path: supported
+-->
 
 ---
 
@@ -15,6 +21,10 @@ Source: `src/core/session/file-mount-path.js`,
 - The mount path is a logical sandbox path, not a host path.
 
 ## 2. Current SandBase shape
+
+The mount-path rules are `src/core/session/file-mount-path.ts`; the resource
+lifecycle is `src/core/session/session-resources.ts` and its route is
+`src/api/routes/session-resources.ts`.
 
 Files API:
 
@@ -35,6 +45,17 @@ Session file resources:
   differs from `memory_store` (creation-only) and `github_repository` (token
   rotation only).
 
+Mounting is the part that is not wired:
+
+- `SandboxLifecycle.materializeFileResources` writes each attached file into the
+  sandbox by calling an injected `fileArtifactReader`, and throws
+  `File session resources require an artifact reader` when that dependency is
+  absent. Nothing in `src/` supplies it: `createRuntimeSessionServices` and
+  `DefaultSessionExecutor` pass no reader, and the only callers that do are
+  tests. A session created with a file resource therefore succeeds and then
+  fails on its first turn, rather than failing at creation with the dependency
+  named.
+
 ## 3. Alignment
 
 Aligned for: upload/list/read, resource attachment, canonical mount path form,
@@ -47,6 +68,7 @@ and independent resource identity.
 | Resource identity | SandBase gives each session resource instance its own `sesrsc_` id. The published contract documents independent resource identity; the id prefix is a local spelling. |
 | Deleting a running-session file resource | SandBase soft-deletes (`deleted_at`), so the record survives for audit while the resource stops being live. The published contract allows deletion without fixing the mechanism. |
 | Mount root | SandBase mounts under its own sandbox root layout. The published contract specifies a logical path, not a host directory. |
+| Mounting is not composed | The mount path is derived and validated, but no runtime composition injects the artifact reader the provisioning pass needs, so an attached file is not written into the sandbox and the first turn fails. Recorded as `partial` rather than `supported` until the composition root supplies the reader. |
 
 ## 5. Reason for the difference
 
@@ -56,6 +78,11 @@ and independent resource identity.
 - Soft delete keeps an audit trail: a resource that was attached to a session
   and later removed is a fact worth retaining, and a hard delete would erase
   the evidence that it was ever mounted.
+- The reader is injected rather than imported so the lifecycle stays free of
+  host storage concerns, and a test can attach a fixture file. That choice is
+  what makes the missing production wiring a configuration gap instead of a
+  compile error, which is why the entry is `partial` and not `supported`: the
+  code path exists, but a caller cannot reach it from a started runtime.
 
 ## 6. Corresponding tests
 
@@ -65,8 +92,17 @@ and independent resource identity.
   independent id assignment against a real database.
 - `tests/integration/api.test.ts` — adding and removing a file resource on a
   running session, and addressing a resource by its own id.
+- `tests/integration/session-resources.test.ts` — the provisioning pass that
+  writes an attached file into the sandbox: the canonical mount path under
+  `/mnt/session/uploads`, a legacy pre-canonical row, the write happening after a
+  snapshot restore and exactly once per bound sandbox, and a traversal path
+  cleaning up the failed provision. The reader is injected by the test, which is
+  precisely the dependency a runtime composition does not supply.
 
 ## 7. Status
 
-`supported` — file upload/list/read, mount path handling, and running-session
-file resource lifecycle are implemented and covered by tests.
+`partial` — file upload/list/read, mount path derivation, resource identity, and
+the running-session resource lifecycle are implemented and covered by tests,
+while mounting an attached file into a session's sandbox is not reachable from a
+started runtime. The mount-path entry is `supported` on its own, because path
+derivation and validation are complete and tested.

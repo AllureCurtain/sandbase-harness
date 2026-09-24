@@ -2,12 +2,18 @@
 
 Contract area: `/v1/sessions` — lifecycle, status transitions, initial events,
 resources, budget.
-Status: `supported` for lifecycle and initial events. The session budget is a
-separate contract area with its own status and is not claimed here; see
-`budget.md`.
+Status: `supported` for lifecycle, initial events, and the declared-outcome loop.
+The session budget is a separate contract area with its own status and is not
+claimed here; see `budget.md`.
 Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
 `src/api/routes/session-normalizers.ts`, `src/api/standard.ts`,
 `src/core/agent/overrides.ts`, `src/core/session/session-manager.ts`.
+
+<!-- capability-status
+session-lifecycle: supported
+initial-events: supported
+outcome-grading: supported
+-->
 
 ---
 
@@ -30,6 +36,12 @@ Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
 - The session-scoped event stream is the canonical way to observe progress.
 
 ## 2. Current SandBase shape
+
+The routes are `src/api/routes/sessions.ts` with
+`src/api/routes/initial-events.ts` and `src/api/routes/session-normalizers.ts`;
+the lifecycle and the outcome loop live in `src/core/session/session-manager.ts`;
+override resolution is `src/core/agent/overrides.ts`; the wire projection is
+`src/api/standard.ts`.
 
 Status projection (`toApiSessionStatus`):
 
@@ -232,8 +244,8 @@ reference forms, and the tri-state override rule.
 ## 7. Status
 
 `supported` for lifecycle, status vocabulary, initial events, the `agent`
-reference including `agent_with_overrides`, and the declared-outcome evaluation.
-`partial` for the declared-outcome *loop*: grading is delivered, revision is not,
-and the capability matrix records that split rather than claiming the loop. The
-session budget is `partial` in its own contract file, and this file does not
-claim it.
+reference including `agent_with_overrides`, and the declared-outcome loop:
+grading runs in its own context window over what the agent produced, a
+`needs_revision` verdict is appended as a real `user.message` and re-enters the
+executor, and the loop is bounded by the declared `max_iterations`. The session
+budget is `partial` in its own contract file, and this file does not claim it.

@@ -5,6 +5,10 @@ Status: `supported` — with the code-string caveat in §4.
 Source: `src/api/routes/resource-utils.ts`, `src/api/cma-admission.ts`,
 `src/api/capability-errors.ts`.
 
+<!-- capability-status
+structured-error-envelope: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -15,6 +19,10 @@ Source: `src/api/routes/resource-utils.ts`, `src/api/cma-admission.ts`,
   the resource was absent, or the request conflicts with current state.
 
 ## 2. Current SandBase shape
+
+The envelope helpers are `src/api/routes/resource-utils.ts`; admission failures
+are raised by `src/api/cma-admission.ts` and capability refusals by
+`src/api/capability-errors.ts`.
 
 Errors are produced by shared helpers so every route answers in one shape:
 

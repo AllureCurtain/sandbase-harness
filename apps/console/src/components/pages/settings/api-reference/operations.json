@@ -25,7 +25,7 @@
     "title": "List runtime capabilities",
     "method": "GET",
     "path": "/v1/x/capabilities",
-    "summary": "Read the canonical inventory of locally executable built-in capabilities. Capabilities that are unavailable (for example web_fetch and web_search) are reported here and rejected before agent or session persistence.",
+    "summary": "Read the canonical inventory of locally executable built-in capabilities. A capability this build cannot execute (web_search, which has no provider) is reported here and rejected before agent or session persistence.",
     "response": [
       {
         "name": "type",

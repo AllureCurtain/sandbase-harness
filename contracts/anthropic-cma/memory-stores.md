@@ -6,6 +6,13 @@ Status: `supported`.
 Source: `src/core/memory/semantics.ts`, `src/api/routes/memory-stores.ts`,
 `src/core/db/migrations.ts`.
 
+<!-- capability-status
+memory-crud: supported
+memory-limits-and-preconditions: supported
+memory-version-audit: supported
+memory-multi-mount: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -127,12 +134,14 @@ per-write version auditing.
 - `tests/unit/memory.test.ts` — store and memory CRUD.
 - `tests/integration/api.test.ts` — the memory beta mutual-exclusion rule and
   the at-creation attachment rule for session resources.
-- `tests/integration/memory-multi-store.test.ts` — the multi-store behaviour:
-  binding resolution per store, the ContextBuilder searching every attached
-  store rather than only the first, a write fanning out to every writable store
-  while skipping read-only ones, a failing store not stopping the others, and
-  `read_only` blocking `write` / `edit` / `bash` at the tool layer while leaving
-  a `read_write` mount and an unattached session unguarded.
+- `tests/integration/memory-mounts.test.ts` — the multi-store behaviour: several
+  stores bound at once with the longest nested mount winning and a lookalike
+  workspace path staying an ordinary workspace path, each store read back through
+  its own binding, `read_only` blocking `write` / `edit` / `bash` at the tool
+  layer (including a literal `//mnt/memory/...` path) while leaving a
+  `read_write` mount unguarded, an absent provider failing closed, and the
+  ContextBuilder searching every bound store while extraction reaches only the
+  writable ones.
 - `tests/integration/memory-wiring.test.ts` — the legacy `context_id` memory path
   still injects its own section, so the resource-scoped path did not replace it.
 

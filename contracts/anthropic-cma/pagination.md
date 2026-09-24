@@ -4,6 +4,11 @@ Contract area: collection envelopes and cursors.
 Status: `partial` — `/v1/x` extension collections keep the local envelope, see §4.
 Source: Claude Managed Agents public documentation plus `src/api/standard.ts`.
 
+<!-- capability-status
+opaque-cursors: partial
+cursor-query-binding: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -131,13 +136,8 @@ the cursor records only what the query actually filters on.
   malformed cursor and one issued for another `source`, and the credential audit
   listings reach an older event through `next_page`: a two-page trail reports `null`
   on the last page and a cursor on a cut one, which the local envelope could not
-  express.
-- `tests/integration/canonical-collection-envelope.test.ts` — enumerates every
-  canonical collection and asserts the envelope, asserts the extension
-  collections still use the local one, follows a cursor to a second page without
-  repeating a row, and pins the filter binding in both directions (a different
-  filter is rejected; the same filter, and an omitted filter equal to its
-  default, are accepted).
+  express. This file also pins the filter binding on both sides (a cursor issued
+  for a different filter is rejected; the same filter keeps working).
 - `tests/unit/cma-pagination-contract.test.ts` — cursor encode/decode round
   trips, malformed-cursor rejection, and the `prev`/`next` null semantics.
 - `tests/unit/skill-resources.test.ts` — the resource collection that previously
@@ -150,4 +150,7 @@ the cursor records only what the query actually filters on.
 every canonical collection is enumerated by a contract test, and cursors are
 bound to both the ordering and the filter that produced them. The `/v1/x`
 extension envelope, the null-cursor case, and the offset-based position scheme
-are documented deviations rather than upstream behaviour.
+are documented deviations rather than upstream behaviour. The second entry this
+file carries, `cursor-query-binding`, is `supported`: a cursor that is replayed
+against a different filter is refused rather than silently answered with a page
+from another ordering, and both directions of that rule are asserted.
