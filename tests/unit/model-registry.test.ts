@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ModelRegistry } from '@/model/registry.js';
+import { ModelRegistry, resolvedModelIdOf } from '@/model/registry.js';
 
 describe('ModelRegistry runtime introspection', () => {
   it('returns safe model metadata without secrets', () => {
@@ -107,7 +107,9 @@ describe('ModelRegistry runtime introspection', () => {
   it('reuses the default provider endpoint for a same-family qualified model id', () => {
     // An agent references `openai/...` while the configured provider is an
     // openai_compatible gateway. The request must stay on the configured base
-    // URL/key (same protocol family), not hit api.openai.com.
+    // URL/key (same protocol family), not hit api.openai.com. The model id
+    // travels verbatim: a gateway addresses its models as `vendor/model`, so
+    // stripping the leading token would address a model it does not serve.
     const registry = new ModelRegistry();
     registry.register({
       name: 'default',
@@ -122,11 +124,129 @@ describe('ModelRegistry runtime introspection', () => {
     expect(resolved).toMatchObject({
       name: 'openai/gpt-5.6-luna',
       provider: 'openai_compatible',
-      model: 'gpt-5.6-luna',
+      model: 'openai/gpt-5.6-luna',
       api_key: '${SANDBASE_API_KEY}',
       base_url: 'https://api.sandbase.ai/v1',
       is_default: false,
     });
+  });
+
+  it('forwards any vendor namespace when the configured endpoint is a router', () => {
+    // An OpenAI-compatible endpoint is the routing authority for its own model
+    // ids: a router serves `anthropic/...` and `deepseek/...` side by side, so
+    // refusing one of them would break the gateway shapes this resolution
+    // exists to support. Only a first-party vendor API, which cannot serve
+    // another vendor's namespaced id at all, refuses.
+    const registry = new ModelRegistry();
+    registry.register({
+      name: 'default',
+      provider: 'openai_compatible',
+      api_key: 'k',
+      base_url: 'https://router.invalid/v1',
+      is_default: true,
+    });
+
+    expect(registry.resolveModelConfig('anthropic/claude-sonnet-4')).toMatchObject({
+      provider: 'openai_compatible',
+      model: 'anthropic/claude-sonnet-4',
+      base_url: 'https://router.invalid/v1',
+    });
+  });
+});
+
+// Guards the wiring, not just the config object: asserting only that
+// resolveModelConfig keeps the field would pass even if it never reached the model.
+describe('ModelRegistry qualified model reference on the wire', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Capture the request the provider would send. */
+  function stubFetch(): { body: () => Record<string, unknown>; url: () => string } {
+    let captured: Record<string, unknown> = {};
+    let url = '';
+    vi.stubGlobal('fetch', async (requestUrl: unknown, init: { body?: string }) => {
+      url = String(requestUrl);
+      captured = JSON.parse(init?.body ?? '{}');
+      return new Response(
+        JSON.stringify({
+          id: 'x',
+          created: 0,
+          model: 'm',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    return { body: () => captured, url: () => url };
+  }
+
+  function gatewayRegistry(): ModelRegistry {
+    const registry = new ModelRegistry();
+    registry.register({
+      name: 'default',
+      provider: 'openai_compatible',
+      api_key: 'test-key',
+      base_url: 'https://gateway.invalid/v1',
+      is_default: true,
+    });
+    return registry;
+  }
+
+  const prompt = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }];
+
+  it('sends a vendor-namespaced model id to the provider unchanged', async () => {
+    // `https://api.sandbase.ai/v1` (like every OpenRouter-shaped gateway)
+    // addresses models as `vendor/model`. Reading `deepseek` as a provider
+    // prefix truncated this to `deepseek-v4-flash`, an id no endpoint serves,
+    // so nothing on that endpoint could be addressed at all. The assertion is
+    // on the request body: a response-shaped assertion passes even when the
+    // provider was asked for the wrong model.
+    const fetchStub = stubFetch();
+
+    await (gatewayRegistry().createModel('deepseek/deepseek-v4-flash') as any).doGenerate({ prompt });
+
+    expect(fetchStub.body()['model']).toBe('deepseek/deepseek-v4-flash');
+    expect(fetchStub.url()).toBe('https://gateway.invalid/v1/chat/completions');
+  });
+
+  it('sends an unqualified model id to the provider unchanged', async () => {
+    const fetchStub = stubFetch();
+
+    await (gatewayRegistry().createModel('deepseek-v4-flash') as any).doGenerate({ prompt });
+
+    expect(fetchStub.body()['model']).toBe('deepseek-v4-flash');
+  });
+
+  it('still reads a registered provider prefix as a provider selector', async () => {
+    const registry = gatewayRegistry();
+    registry.register({
+      name: 'openai',
+      provider: 'openai',
+      api_key: 'openai-key',
+      base_url: 'https://api.openai.invalid/v1',
+    });
+    const fetchStub = stubFetch();
+
+    await (registry.createModel('openai/gpt-5.5') as any).doGenerate({ prompt });
+
+    // The prefix selected the provider, so the model id it is addressed with is
+    // the part after the prefix — and it went to that provider's endpoint.
+    expect(fetchStub.body()['model']).toBe('gpt-5.5');
+    expect(fetchStub.url()).toBe('https://api.openai.invalid/v1/chat/completions');
+  });
+
+  it('records the id the provider was asked for, not the agent reference', () => {
+    // `model_used` and the usage records projected from it must name a model
+    // that exists upstream; recording the agent's reference verbatim would
+    // attribute spend to an id the endpoint never served.
+    const registry = gatewayRegistry();
+
+    expect(resolvedModelIdOf(registry.createModel('deepseek/deepseek-v4-flash')))
+      .toBe('deepseek/deepseek-v4-flash');
+    expect(resolvedModelIdOf(registry.createModel('deepseek-v4-flash')))
+      .toBe('deepseek-v4-flash');
   });
 });
 

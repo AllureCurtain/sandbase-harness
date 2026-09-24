@@ -22,6 +22,7 @@ import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
+import { resolvedModelIdOf } from '@/model/registry.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
 /**
@@ -131,7 +132,7 @@ export class DefaultStrategy implements AgentStrategy {
   readonly requiresModel = true;
 
   async *execute(context: StrategyContext): AsyncIterable<SessionEvent> {
-    const { session, systemPrompt, messages, model, tools, customToolNames, sandbox: _sandbox, eventLog, broadcast, config, abortSignal } = context;
+    const { session, systemPrompt, messages, model, modelConfig, tools, customToolNames, sandbox: _sandbox, eventLog, broadcast, config, abortSignal } = context;
     if (!model) throw new Error('Default strategy requires an AI SDK model');
     const maxSteps = config.maxSteps ?? 25;
 
@@ -162,7 +163,15 @@ export class DefaultStrategy implements AgentStrategy {
       tokensOut: number;
       stopReason?: string;
     }> = [];
-    const modelUsed = modelIdentifier(model, '');
+    // The id recorded against every event this turn produces. Resolution order
+    // is by how directly each source knows the request: the registry recorded
+    // the id the client was built with, a caller-supplied configuration is the
+    // same answer for a strategy that never built a client, and the SDK's own
+    // `modelId` is the fallback for a model the registry did not construct.
+    // What must never be recorded is the agent's raw reference: for a
+    // gateway-style `vendor/model` id it is not what the endpoint was asked
+    // for, so usage and cost would be attributed to a model that does not exist.
+    const modelUsed = resolvedModelIdOf(model) ?? modelConfig?.model ?? modelIdentifier(model, '');
     const startTime = Date.now();
     // Declared MCP server names, used to attribute `agent.mcp_*` events back to
     // the server that produced them when several servers expose the same tool.
