@@ -157,6 +157,7 @@ means archive and recreate.
 
 | Difference | Detail |
 | --- | --- |
+| Credential exposure in the sandbox | This is a **security-model** difference, not a placement detail. SandBase puts the secret itself into the sandbox command environment as plaintext, so any command the agent runs can read it and send it anywhere it can reach. The published model keeps the secret out of the process and substitutes it at the network egress, so the value the model's code can observe is an opaque placeholder. There is no placeholder in this runtime and no egress substitution: `vault_ids` currently means "export these secrets into the process". |
 | OAuth refresh | There is no refresh loop, no refresh-failure event, and no validate endpoint. A supplied `refresh` block is parsed, recorded, and reported back as **not executed**, with a warning on the response. |
 | Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
@@ -166,6 +167,14 @@ means archive and recreate.
 
 ## 5. Reason for the difference
 
+- Plaintext injection is recorded as a difference rather than folded into
+  "alignment" because the two models give a caller different guarantees. Under
+  the published model, running untrusted code beside a credential is survivable:
+  the code sees a placeholder and the real value is attached on the way out.
+  Here the value is in the environment, so the same untrusted code can read it,
+  print it, or post it elsewhere. Writing this as an injection-location detail
+  would tell a caller their secret never reaches the process, which is the
+  opposite of what happens.
 - OAuth refresh is reported rather than silently stored because the failure mode
   matters: a session would keep presenting an expired access token and report
   nothing. A warning that reaches the caller is the difference between a
@@ -212,5 +221,8 @@ means archive and recreate.
 ## 7. Status
 
 `supported` for the wire profile, write-only handling, locked fields, and
-rotation. OAuth refresh is `unavailable` and is recorded as such in the capability
-matrix rather than presented as supported.
+rotation. `partial` for injection execution: the sandbox environment path works
+and is tested, but it exports the plaintext secret into the process and has no
+egress substitution, and the delegated child path receives no vault. OAuth
+refresh is `unavailable` and is recorded as such in the capability matrix rather
+than presented as supported.
