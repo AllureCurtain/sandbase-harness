@@ -53,6 +53,11 @@ is `src/api/routes/session-normalizers.ts`.
   id, because the model-facing projection pairs a custom tool result to its call
   by tool-call id. A call that has been answered stops being listed, and a second
   answer for one call — by either spelling — is refused.
+- The turn resumes when the **last** parked call is answered. A custom tool call
+  and an approval-gated call parked in the same step are answered independently
+  and in either order; each answer is recorded as it arrives and the session
+  stays in `requires_action` until none is left. Answering only some of them does
+  not start a turn, does not fail the session, and leaves the rest listed.
 
 ## 3. Alignment
 
@@ -89,6 +94,10 @@ name, and the absence of a runtime-side permission policy on the declaration.
   kept, a second answer refused even when it uses the other spelling, an id
   naming nothing refused, and the projected `stop_reason` carrying exactly
   `{type, event_ids}` with no `action_type`.
+- `tests/integration/resume-gate.test.ts` — a partial answer, in every
+  combination including a custom call parked beside an approval-gated one, leaves
+  the session in `requires_action` with no `session.error` and starts no turn,
+  and the remaining answers resume it with every call paired.
 - `tests/integration/api.test.ts` — agent round-trip carrying a custom tool.
 
 ## 7. Status

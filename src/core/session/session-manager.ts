@@ -16,6 +16,7 @@ import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
 import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
 import { findOrphanedToolUses } from './session-recovery.js';
+import { parkedCalls } from './parked-calls.js';
 import { rowToSession, type SessionRow } from './session-records.js';
 import { buildSessionUsageSnapshot } from './session-usage.js';
 import {
@@ -1593,60 +1594,21 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
   if (status === 'paused') return { stop_reason: { type: 'end_turn' } };
   if (status !== 'requires_action') return undefined;
 
-  // A tool result names the call it answers by the `tool_use` **block** id, so
-  // resolution is tracked by block id. What the array *reports* is the pending
-  // events' own ids, because that is the address the published contract puts in
-  // circulation: the client is told the blocking events' ids are here and passes
-  // each entry straight back as its answer parameter. The two are different
-  // values, so they are carried side by side rather than conflated — a call
-  // whose block id is resolved is excluded even though its event id is what
-  // would have been reported.
-  //
-  // Both parked-work families are scanned, because the published contract parks
-  // them the same way: an approval-gated `agent.tool_use` and a custom
-  // `agent.custom_tool_use` both leave the session in `requires_action` waiting
-  // for a `user` answer, and both are answered by the blocking event's id. A
-  // custom call carries no `requires_confirmation` — the runtime has no executor
-  // for it, which is why it is parked at all — so its presence without a result
-  // is what makes it pending.
+  // The parked set comes from `parkedCalls`, which the resume gate in the
+  // executor reads too. One definition, because a client is told which ids to
+  // answer by this projection while that gate decides whether a turn may start:
+  // two derivations is how they drift into disagreeing about whether the session
+  // is still waiting. `parked-calls.ts` records what parks a session and why
+  // resolution is tracked by block id while the event id is what is reported.
   //
   // `action_type` is deliberately not written: it is absent from the published
-  // contract and nothing reads it, and with both families able to be pending at
+  // contract and nothing reads it, and with both families able to be parked at
   // once no single value of it would be true. What remains is exactly the
   // published shape, `{ type, event_ids }`.
-  const resolved = new Set<string>();
-  const pending: Array<{ eventId: string; blockId: string }> = [];
-  for (const event of events) {
-    if (event.type === 'agent.tool_result' || event.type === 'agent.mcp_tool_result') {
-      const block = event.content?.find((item) => item.type === 'tool_result') as
-        | { type: 'tool_result'; tool_use_id: string }
-        | undefined;
-      if (block) resolved.add(block.tool_use_id);
-      continue;
-    }
-    if (event.type === 'user.custom_tool_result') {
-      const id = event.metadata?.custom_tool_use_id;
-      if (typeof id === 'string') resolved.add(id);
-      continue;
-    }
-    if (event.type === 'agent.custom_tool_use') {
-      const block = event.content?.find((item) => item.type === 'tool_use') as
-        | { type: 'tool_use'; id: string }
-        | undefined;
-      if (block) pending.push({ eventId: event.id, blockId: block.id });
-      continue;
-    }
-    if (event.type !== 'agent.tool_use' && event.type !== 'agent.mcp_tool_use') continue;
-    const block = event.content?.find((item) => item.type === 'tool_use') as
-      | { type: 'tool_use'; id: string; requires_confirmation?: boolean }
-      | undefined;
-    if (block?.requires_confirmation) pending.push({ eventId: event.id, blockId: block.id });
-  }
-
   return {
     stop_reason: {
       type: 'requires_action',
-      event_ids: pending.filter((call) => !resolved.has(call.blockId)).map((call) => call.eventId),
+      event_ids: parkedCalls(events).map((call) => call.eventId),
     },
   };
 }

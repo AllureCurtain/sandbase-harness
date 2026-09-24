@@ -682,6 +682,24 @@ either way.
 
 A custom tool call that has been answered stops being listed in `event_ids`.
 
+**Answer every id, then the turn resumes.** Each answer is recorded as it
+arrives, and the session stays in `requires_action` while any call in
+`event_ids` is still unanswered. The turn starts when the last one is answered.
+So a loop that sends one answer per entry — as the published client does — is
+the supported path, and sending only some of them leaves the session waiting
+rather than failing it:
+
+```bash
+# Answer every parked call; the last one starts the turn.
+for id in $(jq -r '.stop_reason.event_ids[]' <<<"$idle_event"); do
+  # ... send the matching tool_confirmation or custom_tool_result for "$id"
+done
+```
+
+Waiting is not an error and not a timeout: nothing changes until you answer the
+rest. A partial answer never terminates the session and never records a
+`session.error`.
+
 Tool events carry their payload both in `content[0]` and at the top level, so a
 client can read a call without unpacking the block:
 
