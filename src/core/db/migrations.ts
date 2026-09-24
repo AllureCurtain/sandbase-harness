@@ -929,6 +929,31 @@ ALTER TABLE pi_session_state ADD COLUMN policy_fingerprint TEXT;
 ALTER TABLE pi_session_state ADD COLUMN work_dir TEXT;
 `;
 
+/**
+ * Why a scheduled deployment is paused, on the row that is paused.
+ *
+ * `status` already carries `paused`, so the column is not needed to know *that* a
+ * deployment is paused. It is needed to know *why*, and the published contract
+ * makes that a read field: `paused_reason` is `{"type": "manual"}` when a person
+ * paused it and is cleared when they resume it. The contract also defines a
+ * second kind — an automatic pause after a non-recoverable trigger failure, whose
+ * reason carries the failed run's `error.type` — and a single `status` column
+ * cannot tell the two apart, so an operator could not tell an intentional pause
+ * from a broken deployment.
+ *
+ * Nullable, with no default: a row written before this migration has no recorded
+ * reason, and the projection reports `null` for it rather than inventing
+ * `{"type": "manual"}`. That is the same choice `M037` and `M041` made, and for
+ * the same reason — an upgrade must not claim a fact it did not observe.
+ *
+ * This migration only ever records the manual reason. The automatic one needs the
+ * failure taxonomy of the run path, so it arrives with that work rather than
+ * being half-written here.
+ */
+const M042_SCHEDULED_PAUSED_REASON = `
+ALTER TABLE scheduled_deployments ADD COLUMN paused_reason TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -971,4 +996,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 39, name: '039_webhook_previous_secret', sql: M039_WEBHOOK_PREVIOUS_SECRET },
   { version: 40, name: '040_pi_tool_interactions', sql: M040_PI_TOOL_INTERACTIONS },
   { version: 41, name: '041_pi_session_policy_binding', sql: M041_PI_SESSION_POLICY_BINDING },
+  { version: 42, name: '042_scheduled_paused_reason', sql: M042_SCHEDULED_PAUSED_REASON },
 ];

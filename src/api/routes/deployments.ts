@@ -71,12 +71,13 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     if (!agentId) return invalid(c, 'agent_id is required');
     const schedule = parseScheduleFields(body.value);
     if (!schedule.ok) return invalid(c, schedule.message);
+    const status = normalizeScheduleStatus(body.value.status);
     const id = `sched_${nanoid(18)}`;
     deps.db.prepare(`
       INSERT INTO scheduled_deployments (
-        id, name, agent_id, environment_id, cron, timezone, payload, status, next_run_at, metadata, created_at, updated_at
+        id, name, agent_id, environment_id, cron, timezone, payload, status, paused_reason, next_run_at, metadata, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name,
@@ -85,7 +86,8 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       schedule.expression,
       schedule.timezone,
       JSON.stringify(objectField(body.value.payload)),
-      normalizeScheduleStatus(body.value.status),
+      status,
+      pauseReasonFor(status),
       stringField(body.value.next_run_at) ?? nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null,
       JSON.stringify(objectField(body.value.metadata)),
       now(),
@@ -126,10 +128,11 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     const nextRunAt = body.value.next_run_at === undefined
       ? (cadenceChanged ? computedNextRunAt : existing.next_run_at)
       : stringField(body.value.next_run_at) ?? computedNextRunAt;
+    const status = normalizeScheduleStatus(body.value.status ?? existing.status);
     deps.db.prepare(`
       UPDATE scheduled_deployments
       SET name = ?, agent_id = ?, environment_id = ?, cron = ?, timezone = ?, payload = ?, status = ?,
-          next_run_at = ?, metadata = ?, updated_at = ?
+          paused_reason = ?, next_run_at = ?, metadata = ?, updated_at = ?
       WHERE id = ?
     `).run(
       stringField(body.value.name) ?? existing.name,
@@ -138,12 +141,37 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       schedule.expression,
       schedule.timezone,
       JSON.stringify(body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload)),
-      normalizeScheduleStatus(body.value.status ?? existing.status),
+      status,
+      pauseReasonFor(status),
       nextRunAt,
       JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
       now(),
       id,
     );
+    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    return c.json(toScheduledDeployment(row));
+  });
+
+  app.post('/:id/pause', (c) => {
+    const id = c.req.param('id');
+    const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
+    if (!existing) return notFound(c, 'Scheduled deployment not found');
+    // Idempotent: pausing a paused deployment re-records the same reason rather
+    // than erroring, because the caller's intent is already satisfied and a 409
+    // would make a retried request fail for no reason.
+    deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, updated_at = ? WHERE id = ?')
+      .run('paused', pauseReasonFor('paused'), now(), id);
+    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    return c.json(toScheduledDeployment(row));
+  });
+
+  app.post('/:id/unpause', (c) => {
+    const id = c.req.param('id');
+    const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
+    if (!existing) return notFound(c, 'Scheduled deployment not found');
+    const resumeAt = nextRunAfterResume(existing);
+    deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
+      .run('active', null, resumeAt, now(), id);
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
     return c.json(toScheduledDeployment(row));
   });
@@ -162,7 +190,18 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     if (!body.ok) return body.response;
     const schedule = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as ScheduledDeploymentRow | undefined;
     if (!schedule) return notFound(c, 'Scheduled deployment not found');
-    if (schedule.status !== 'active') return invalid(c, 'scheduled deployment must be active before it can run');
+    // A paused deployment is still runnable by hand. The published contract says
+    // so outright — "暂停期间仍允许通过 `run` 端点进行手动运行" (`定时部署.md:490`) —
+    // because pause suppresses the *scheduler*, not the endpoint. This route used
+    // to refuse any status other than `active`, which made pause mean "cannot be
+    // run at all" and left an operator with no way to drain a paused deployment.
+    //
+    // The refusal is removed rather than narrowed to `paused` alone, because the
+    // guard was unreachable for every other value: the query above already
+    // excludes archived rows, and `normalizeScheduleStatus` maps everything that
+    // is not `paused` to `active`. So the only status it could ever have seen
+    // besides `active` is the one the contract says must be allowed, and an
+    // `=== 'archived'` check here would be dead code asserting nothing.
     const payload = {
       ...parseObject(schedule.payload),
       ...objectField(body.value.payload),
@@ -193,6 +232,11 @@ function toScheduledDeployment(row: ScheduledDeploymentRow) {
     timezone: row.timezone || 'UTC',
     payload: parseObject(row.payload),
     status: row.archived_at ? 'archived' : row.status,
+    // Read as null when nothing recorded a reason, rather than as an empty object
+    // or as `manual`. A row written before M042 is paused with no recorded reason,
+    // and reporting `manual` for it would claim the operator's intent was observed
+    // when it was not.
+    paused_reason: row.paused_reason ? parseObject(row.paused_reason) : null,
     last_run_at: row.last_run_at ?? null,
     next_run_at: row.next_run_at ?? null,
     metadata: parseObject(row.metadata),
@@ -200,6 +244,50 @@ function toScheduledDeployment(row: ScheduledDeploymentRow) {
     updated_at: row.updated_at,
     archived_at: row.archived_at ?? null,
   };
+}
+
+/**
+ * The reason recorded for a status, or `null` when the status has none.
+ *
+ * Every write path derives the reason from the status it is writing rather than
+ * setting the two fields separately, so `status` and `paused_reason` cannot
+ * disagree — a paused deployment always carries a reason, and an active one never
+ * carries a stale one. The same reasoning that put the parked-wait timestamp
+ * beside the parked call rather than in a second place.
+ *
+ * `manual` is the only reason this runtime records. The contract's other kind —
+ * an automatic pause after a non-recoverable trigger failure, whose `error.type`
+ * is copied from the failed run — belongs with the run-failure taxonomy, so a
+ * caller can currently distinguish "paused by a person" from "not paused" but not
+ * yet "paused by the runtime" from "paused by a person".
+ */
+function pauseReasonFor(status: 'active' | 'paused'): string | null {
+  return status === 'paused' ? JSON.stringify({ type: 'manual' }) : null;
+}
+
+/**
+ * The instant an unpaused deployment should next run.
+ *
+ * The contract is explicit that unpausing resumes "from the next scheduled
+ * instant" and that missed triggers are **not** caught up (`定时部署.md:535`).
+ * Those two sentences are one rule: while a deployment is paused nothing advances
+ * `next_run_at`, so a paused deployment whose slots elapsed still holds a past
+ * instant, and leaving it there would make the next due pass fire every missed run
+ * — the catch-up the contract forbids.
+ *
+ * A stored instant that is still in the future is kept as-is. It is already the
+ * next scheduled instant, and recomputing it would discard a `next_run_at` the
+ * caller set explicitly through the update route.
+ *
+ * The stored value is parsed rather than compared as a string, because
+ * `next_run_at` is caller-supplied and need not carry the same precision or
+ * form as `new Date().toISOString()`.
+ */
+function nextRunAfterResume(row: ScheduledDeploymentRow): string | null {
+  const stored = row.next_run_at;
+  const storedMs = stored ? Date.parse(stored) : Number.NaN;
+  if (Number.isFinite(storedMs) && storedMs > Date.now()) return stored;
+  return nextCronRun(row.cron, new Date(), row.timezone || 'UTC')?.toISOString() ?? null;
 }
 
 function toScheduledDeploymentRun(row: ScheduledDeploymentRunRow) {
@@ -265,6 +353,7 @@ type ScheduledDeploymentRow = {
   timezone: string;
   payload: string;
   status: string;
+  paused_reason: string | null;
   last_run_at: string | null;
   next_run_at: string | null;
   metadata: string;

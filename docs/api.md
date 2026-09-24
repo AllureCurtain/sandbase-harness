@@ -1766,10 +1766,21 @@ is neither deprecated nor redirected.
 | `POST` | `/v1/deployments`, `/v1/scheduled-deployments` | Create a scheduled deployment plan. |
 | `GET` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Retrieve a scheduled deployment plan. |
 | `PUT` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Update a scheduled deployment plan. |
+| `POST` | `/v1/deployments/{schedule_id}/pause`, `/v1/scheduled-deployments/{schedule_id}/pause` | Stop the schedule from producing timed runs. Recorded as `paused_reason: {"type": "manual"}`. |
+| `POST` | `/v1/deployments/{schedule_id}/unpause`, `/v1/scheduled-deployments/{schedule_id}/unpause` | Resume the schedule from the next scheduled instant, clearing `paused_reason`. |
 | `POST` | `/v1/deployments/{schedule_id}/archive`, `/v1/scheduled-deployments/{schedule_id}/archive` | Archive a scheduled deployment plan. |
 | `GET` | `/v1/deployments/{schedule_id}/runs`, `/v1/scheduled-deployments/{schedule_id}/runs` | List schedule run records. |
-| `POST` | `/v1/deployments/{schedule_id}/run`, `/v1/scheduled-deployments/{schedule_id}/run` | Manually trigger a schedule and create a session. |
+| `POST` | `/v1/deployments/{schedule_id}/run`, `/v1/scheduled-deployments/{schedule_id}/run` | Manually trigger a schedule and create a session. A paused schedule still runs by hand. |
 | `POST` | `/v1/deployments/run-due`, `/v1/scheduled-deployments/run-due` | Run all active schedules whose `next_run_at` is due. |
+
+Pausing suppresses the timed path only. A paused deployment keeps its sessions
+running, still accepts a manual `run`, and reads `paused_reason` as
+`{"type": "manual"}` so an operator can tell an intentional pause apart from a
+deployment that was never paused. Resuming does **not** catch up the trigger
+instants that elapsed while it was paused: the schedule picks up at the next
+instant, so a deployment paused over a weekend does not fire every missed run at
+once. An archived deployment is a 404 on every route, including `run` — pause and
+archive are different states and only one of them is reversible.
 
 ```bash
 curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \

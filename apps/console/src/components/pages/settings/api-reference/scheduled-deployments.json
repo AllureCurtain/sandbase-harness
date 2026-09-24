@@ -88,6 +88,11 @@
         "description": "Current schedule state."
       },
       {
+        "name": "paused_reason",
+        "type": "object | null",
+        "description": "Why the schedule is paused, or null when it is not. Currently always `{\"type\": \"manual\"}` when paused."
+      },
+      {
         "name": "next_run_at",
         "type": "string",
         "description": "Computed next run time, or null when the cron expression has no future match."
@@ -121,6 +126,11 @@
         "name": "status",
         "type": "active | paused",
         "description": "Current schedule state."
+      },
+      {
+        "name": "paused_reason",
+        "type": "object | null",
+        "description": "Why the schedule is paused, or null when it is not."
       }
     ]
   },
@@ -197,6 +207,61 @@
     ]
   },
   {
+    "id": "schedules-pause",
+    "group": "Scheduled deployments",
+    "title": "Pause scheduled deployment",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments/{schedule_id}/pause",
+    "summary": "Stop the schedule from producing timed runs. Sessions already running keep running, and a manual run is still allowed.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Schedule identifier."
+      },
+      {
+        "name": "status",
+        "type": "paused",
+        "description": "Schedule state after pausing."
+      },
+      {
+        "name": "paused_reason",
+        "type": "object",
+        "description": "`{\"type\": \"manual\"}`. Tells an intentional pause apart from an automatic one."
+      }
+    ]
+  },
+  {
+    "id": "schedules-unpause",
+    "group": "Scheduled deployments",
+    "title": "Unpause scheduled deployment",
+    "method": "POST",
+    "path": "/v1/scheduled-deployments/{schedule_id}/unpause",
+    "summary": "Resume the schedule from the next scheduled instant. Triggers missed while paused are not caught up.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Schedule identifier."
+      },
+      {
+        "name": "status",
+        "type": "active",
+        "description": "Schedule state after unpausing."
+      },
+      {
+        "name": "paused_reason",
+        "type": "null",
+        "description": "Cleared, so a resumed schedule never reads as paused with a reason."
+      },
+      {
+        "name": "next_run_at",
+        "type": "string",
+        "description": "The next scheduled instant. Recomputed forward when the stored one had already passed."
+      }
+    ]
+  },
+  {
     "id": "schedules-archive",
     "group": "Scheduled deployments",
     "title": "Archive scheduled deployment",
@@ -242,7 +307,7 @@
     "title": "Run scheduled deployment now",
     "method": "POST",
     "path": "/v1/scheduled-deployments/{schedule_id}/run",
-    "summary": "Manually trigger a schedule and create a session. The schedule must be active.",
+    "summary": "Manually trigger a schedule and create a session. A paused schedule can still be run by hand; only an archived one is gone.",
     "parameters": [
       {
         "name": "payload",
