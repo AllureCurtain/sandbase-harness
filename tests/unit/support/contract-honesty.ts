@@ -66,6 +66,10 @@ export const PRODUCTION_WIRING: Readonly<Record<string, { file: string; symbol: 
     file: 'src/core/runtime/session-runtime.ts',
     symbol: 'fileArtifactReader',
   },
+  'local-delegation-subagent': {
+    file: 'src/core/session/delegation-service.ts',
+    symbol: 'enable_general_subagent',
+  },
 };
 
 export interface ContractDocument {
