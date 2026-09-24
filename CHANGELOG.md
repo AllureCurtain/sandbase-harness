@@ -297,6 +297,31 @@
   budget `not_applicable` and `unsupported.md` calling it `partial`. The entry and
   both documents now state that the design is published and nothing implements it.
 
+- Holds the SQLite state database to the connection settings the runtime was
+  already assuming. `src/core/db/database.ts` opened the workspace database with
+  `journal_mode = WAL` and `foreign_keys = ON` and nothing else: no
+  `busy_timeout`, no `synchronous`, no `trusted_schema`, and no read-back, so a
+  pragma that did not take effect — on another platform, another Node version or
+  another driver — left the runtime running with a weaker guarantee than it
+  reported. A connection now sets and then verifies
+  `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`,
+  `synchronous=FULL` and `trusted_schema=OFF`, and a value that does not read
+  back refuses startup instead of being logged and ignored. The two macOS-only
+  pragmas in the recipe this follows (`fullfsync` and `checkpoint_fullfsync`) are
+  deliberately not claimed: Node's bundled SQLite defines no
+  `SQLITE_ENABLE_FULLFSYNC`, and the pragma is a flag that reads back as set on
+  any platform, so verifying it could not show the guarantee was in effect, while
+  `synchronous=FULL` is the durability guarantee that applies here. An
+  in-memory database is accepted with the one journal SQLite can give it, and
+  every other setting is verified for it too. `Database.transaction()` now opens
+  with `BEGIN IMMEDIATE`, so the write lock is taken when the transaction starts
+  rather than at its first write: with the CLI and a server pointed at the same
+  file, a deferred transaction could hold a read snapshot that another process's
+  commit made unpromotable, which failed with `SQLITE_BUSY_SNAPSHOT` after the
+  transaction body had already run. The same conflict is now a bounded wait.
+  Existing workspaces need no migration — the settings are connection-level and
+  the WAL conversion happens on open.
+
 ### Security
 
 - Redacts credential secrets from values that are logged or returned. A redactor

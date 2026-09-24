@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { MIGRATIONS, type Migration } from './migrations.js';
+import { applyConnectionPragmas, verifyConnectionPragmas } from './pragmas.js';
 
 // Load node:sqlite via createRequire so bundlers (esbuild/tsup) don't rewrite
 // the specifier. A static `import ... from 'node:sqlite'` gets its node:
@@ -28,9 +29,19 @@ export class Database {
 
     this.db = new DatabaseSync(dbPath);
 
-    // Enable WAL mode for better concurrent read performance
-    this.db.exec('PRAGMA journal_mode = WAL');
-    this.db.exec('PRAGMA foreign_keys = ON');
+    // Connection hardening, then a read-back of every value. A connection whose
+    // pragmas did not take effect is closed and refused rather than handed out:
+    // the runtime relies on WAL, on enforced foreign keys, on a bounded wait for
+    // another process's write lock, and on a commit that survives a crash, and a
+    // missing pragma would turn each of those into a silent difference. See
+    // ./pragmas.js for the required values and why each one is what it is.
+    try {
+      applyConnectionPragmas(this.db);
+      verifyConnectionPragmas(this.db);
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
   }
 
   /**
@@ -48,10 +59,19 @@ export class Database {
   }
 
   /**
-   * Run a function inside a transaction. Auto-rollback on error.
+   * Run a function inside an immediate (write-locking) transaction.
+   * Auto-rollback on error.
+   *
+   * `BEGIN IMMEDIATE` takes the write lock when the transaction starts instead
+   * of at its first write. A deferred transaction reads from a snapshot and can
+   * only be promoted to a writer while no other connection has committed since;
+   * with the CLI and a server pointed at the same file, that promotion is where
+   * an unrelated write turns into SQLITE_BUSY_SNAPSHOT after the transaction
+   * body has already done its work. Taking the lock up front makes the same
+   * conflict a bounded wait (`busy_timeout`) at a point the caller can retry.
    */
   transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN');
+    this.db.exec('BEGIN IMMEDIATE');
     try {
       const result = fn();
       this.db.exec('COMMIT');
