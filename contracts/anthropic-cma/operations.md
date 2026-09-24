@@ -109,10 +109,15 @@ private-address rule, the sustained-failure window, `disabled_reason`, and the
 reset-on-success rule — have no implementation here, and neither does the
 published 5–120 s jitter.
 
-Scheduled deployments live under `/v1/scheduled-deployments`, the historical
-local spelling only; there is no `/v1/deployments` alias. `operations.ts`
+Scheduled deployments live in `src/api/routes/deployments.ts` and are mounted at
+**both** `/v1/deployments` (the published spelling) and `/v1/scheduled-deployments`
+(the historical local one). One factory, two mounts: the routes are declared
+relative to the mount, so the pair cannot diverge route by route. The module
 exposes create, read, update, archive, `POST /:id/run`, `GET /:id/runs` and
-`POST /run-due`, and no pause or unpause route.
+`POST /run-due`, and no pause or unpause route. It is a separate module rather
+than part of `operations.ts` because that file also serves `/webhooks` and
+`/outcomes` from one router, and making its paths relative to alias the
+deployments would have placed those families under `/v1/deployments/` too.
 
 `scheduler.ts` is the run engine:
 
@@ -159,9 +164,11 @@ rather than assumed. The header set is wired into every attempt: a retry keeps
 the delivery id and carries its own timestamp. The one local choice left is the
 persisted `signature` column, which holds the legacy value.
 
-**The rest is local behaviour that overlaps the published contract in name
-only.** The delivery envelope, the disable policy, the retry schedule, the
-deployment endpoint paths, the control surface, the trigger representation and
+**The deployment paths are now aligned; the rest is local behaviour that overlaps
+the published contract in name only.** A deployment answers at the published
+`/v1/deployments*` as well as the local `/v1/scheduled-deployments*`, from one
+router mounted twice. The delivery envelope, the disable policy, the retry
+schedule, the update verb, the control surface, the trigger representation and
 the failure behaviour are all either absent or implemented differently, as §4
 records.
 
@@ -177,7 +184,7 @@ records.
 | Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The published jittered 5–120 s backoff is not implemented: the local schedule is a fixed 60 s then 120 s. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
 | Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`turn_complete`, `span.*`). The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
-| Deployment endpoint paths | The historical local `/v1/scheduled-deployments` is served; there is no `/v1/deployments` alias, so a client written against the published path gets no route. |
+| Deployment endpoint paths | Both spellings are served: the published `/v1/deployments` and the historical local `/v1/scheduled-deployments`. They are one router mounted twice (`src/api/routes/deployments.ts`), so they cannot diverge route by route, and the local spelling is neither deprecated nor redirected. The published contract also updates a deployment with `POST /v1/deployments/{id}` while this runtime uses `PUT`; the verb is not aliased, so a client written against the published verb still gets no route for that one call. |
 | Deployment control surface | Create, read, update, archive, manual run and run-due. No pause and no unpause. |
 | Trigger representation | `trigger_type` is a key in the session's and the run's metadata. There is no `trigger_context` field and no `schedule` / `manual` polymorphic payload. |
 | Session startup | `sessionManager.create` without `initial_events`; a schedule cannot seed startup events the way the canonical session path can. |
@@ -254,6 +261,18 @@ records.
   rows differing only in `timezone` advance in their own zones.
 - `tests/unit/outcome-evaluator.test.ts` — deterministic criteria evaluation and
   the honest unsupported result when no model provider exists.
+- `tests/integration/deployment-path-aliases.test.ts` — both deployment spellings
+  over HTTP: a deployment created at the published path read back at both,
+  identical lists, update and archive at the published path with archive hiding it
+  from both, the short-circuit refusals (`run` on a non-active deployment, an
+  unknown id) answering identically at both, every route reachable at the
+  published prefix, no other resource family appearing under either prefix, and
+  the `/v1/x` mirror still serving its own collection envelope for both spellings.
+- `tests/unit/deployment-path-parity.test.ts` — the mounted route table gives
+  every canonical deployment route a published twin and every published route a
+  canonical one, every one of them still sourced from
+  `src/api/routes/deployments.ts`, and no webhook or outcome route below either
+  prefix.
 
 ## 7. Status
 

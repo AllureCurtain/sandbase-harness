@@ -1753,16 +1753,23 @@ local one cannot disagree about what a deployment's cadence is. Both fields are
 echoed on every deployment response, and an update that changes the cadence
 re-arms `next_run_at` in the resolved zone unless the update supplies its own.
 
+Every route below is served under **two** prefixes: `/v1/deployments*`, which is
+the path the published contract addresses a deployment at, and
+`/v1/scheduled-deployments*`, which is this runtime's own spelling and the one the
+Console and the TypeScript SDK use. They are the same routes and the same rows —
+one router mounted twice, so the two cannot drift apart — and the local spelling
+is neither deprecated nor redirected.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/scheduled-deployments` | List scheduled deployment plans. |
-| `POST` | `/v1/scheduled-deployments` | Create a scheduled deployment plan. |
-| `GET` | `/v1/scheduled-deployments/{schedule_id}` | Retrieve a scheduled deployment plan. |
-| `PUT` | `/v1/scheduled-deployments/{schedule_id}` | Update a scheduled deployment plan. |
-| `POST` | `/v1/scheduled-deployments/{schedule_id}/archive` | Archive a scheduled deployment plan. |
-| `GET` | `/v1/scheduled-deployments/{schedule_id}/runs` | List schedule run records. |
-| `POST` | `/v1/scheduled-deployments/{schedule_id}/run` | Manually trigger a schedule and create a session. |
-| `POST` | `/v1/scheduled-deployments/run-due` | Run all active schedules whose `next_run_at` is due. |
+| `GET` | `/v1/deployments`, `/v1/scheduled-deployments` | List scheduled deployment plans. |
+| `POST` | `/v1/deployments`, `/v1/scheduled-deployments` | Create a scheduled deployment plan. |
+| `GET` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Retrieve a scheduled deployment plan. |
+| `PUT` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Update a scheduled deployment plan. |
+| `POST` | `/v1/deployments/{schedule_id}/archive`, `/v1/scheduled-deployments/{schedule_id}/archive` | Archive a scheduled deployment plan. |
+| `GET` | `/v1/deployments/{schedule_id}/runs`, `/v1/scheduled-deployments/{schedule_id}/runs` | List schedule run records. |
+| `POST` | `/v1/deployments/{schedule_id}/run`, `/v1/scheduled-deployments/{schedule_id}/run` | Manually trigger a schedule and create a session. |
+| `POST` | `/v1/deployments/run-due`, `/v1/scheduled-deployments/run-due` | Run all active schedules whose `next_run_at` is due. |
 
 ```bash
 curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \

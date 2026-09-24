@@ -104,14 +104,22 @@ every row is mounted, and every mounted route has a row.
 | PUT | `/v1/outcomes/{id}` | `src/api/routes/operations.ts` |
 | POST | `/v1/outcomes/{id}/archive` | `src/api/routes/operations.ts` |
 | POST | `/v1/runs` | `src/api/routes/runs.ts` |
-| GET | `/v1/scheduled-deployments` | `src/api/routes/operations.ts` |
-| POST | `/v1/scheduled-deployments` | `src/api/routes/operations.ts` |
-| GET | `/v1/scheduled-deployments/{id}` | `src/api/routes/operations.ts` |
-| PUT | `/v1/scheduled-deployments/{id}` | `src/api/routes/operations.ts` |
-| POST | `/v1/scheduled-deployments/{id}/archive` | `src/api/routes/operations.ts` |
-| POST | `/v1/scheduled-deployments/{id}/run` | `src/api/routes/operations.ts` |
-| GET | `/v1/scheduled-deployments/{id}/runs` | `src/api/routes/operations.ts` |
-| POST | `/v1/scheduled-deployments/run-due` | `src/api/routes/operations.ts` |
+| GET | `/v1/deployments` | `src/api/routes/deployments.ts` |
+| POST | `/v1/deployments` | `src/api/routes/deployments.ts` |
+| GET | `/v1/deployments/{id}` | `src/api/routes/deployments.ts` |
+| PUT | `/v1/deployments/{id}` | `src/api/routes/deployments.ts` |
+| POST | `/v1/deployments/{id}/archive` | `src/api/routes/deployments.ts` |
+| POST | `/v1/deployments/{id}/run` | `src/api/routes/deployments.ts` |
+| GET | `/v1/deployments/{id}/runs` | `src/api/routes/deployments.ts` |
+| POST | `/v1/deployments/run-due` | `src/api/routes/deployments.ts` |
+| GET | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
+| POST | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
+| GET | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
+| PUT | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
+| POST | `/v1/scheduled-deployments/{id}/archive` | `src/api/routes/deployments.ts` |
+| POST | `/v1/scheduled-deployments/{id}/run` | `src/api/routes/deployments.ts` |
+| GET | `/v1/scheduled-deployments/{id}/runs` | `src/api/routes/deployments.ts` |
+| POST | `/v1/scheduled-deployments/run-due` | `src/api/routes/deployments.ts` |
 | GET | `/v1/sessions` | `src/api/routes/sessions.ts` |
 | POST | `/v1/sessions` | `src/api/routes/sessions.ts` |
 | DELETE | `/v1/sessions/{id}` | `src/api/routes/sessions.ts` |
@@ -183,8 +191,9 @@ Reading the table:
 
 Aligned for: the canonical `/v1` collections the published contract defines
 (agents, sessions and their events and stream, files, memory stores, runs, and
-vaults under their local spelling), one verb per documented action, and no
-documented route that is absent from the running server.
+vaults and deployments under both their published and their local spelling), one
+verb per documented action, and no documented route that is absent from the
+running server.
 
 ## 4. Differences
 
@@ -192,6 +201,7 @@ documented route that is absent from the running server.
 | --- | --- |
 | Extension routes | `/v1/x/*` (runtime, settings, metrics, logs, workspace, templates, handoff bundles, worker claim/complete) are local surfaces the published contract does not define, kept in the extension namespace so no cloud beta header can gate them. |
 | Local collections | `/v1/skills`, `/v1/api-keys`, `/v1/environments`, `/v1/credential-vaults`, `/v1/scheduled-deployments`, `/v1/webhooks` and `/v1/outcomes` are SandBase resources. The published contract describes neither their paths nor their verbs. |
+| Aliased resources | Vaults and deployments answer at both spellings — `/v1/vaults*` beside `/v1/credential-vaults*`, and `/v1/deployments*` beside `/v1/scheduled-deployments*`. Each pair is one router mounted twice, so the two cannot diverge route by route, and the local spelling is neither deprecated nor redirected. The aliases are mounts rather than curated lists, so a local extension route is reachable at the published prefix too: `/v1/vaults/{id}/audit` and `/v1/deployments/run-due` have no published equivalent but answer nonetheless, because a caller who learned the published spelling should not have to learn which routes answer at it. |
 | Lifecycle verbs | `/v1/agents/{id}/archive`, `/v1/sessions/{id}/stop`, `/v1/environments/{id}/archive`, `/v1/memory_stores/{id}/archive`, `/v1/scheduled-deployments/{id}/run` and their siblings are local action spellings. |
 | Mirror visibility | The `/v1/x` mirror of a canonical route is deliberately not a second documented route: it answers the same handler and would otherwise double every row in this table. |
 
