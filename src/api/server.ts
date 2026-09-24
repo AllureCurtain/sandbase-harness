@@ -21,6 +21,7 @@ import { sessionResourceRoutes } from './routes/session-resources.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
 import { createCmaRequestAdmissionMiddleware } from './cma-admission.js';
+import { notFound } from './routes/resource-utils.js';
 import {
   createInboundRateLimiter,
   resolveInboundRateLimitPolicy,
@@ -207,6 +208,16 @@ app.route('/v1/runs', runsRoutes(deps));
     const path = c.req.path.replace(/^\/dashboard\/?/, '') || 'index.html';
     return serveConsoleAsset(c, path, deps.consoleRoot);
   });
+
+  // A path this runtime does not serve is a rejection like any other, so it
+  // answers in the same envelope as a mounted route whose resource is absent.
+  // Hono's default fallback is `text/plain` "404 Not Found", which makes a
+  // client's error decoder fail while parsing rather than branch on
+  // `error.type` — the caller sees a transport-shaped failure for what is
+  // really a 404. The message deliberately does not echo the requested path:
+  // the body is `application/json`, but there is no reason to reflect caller
+  // input, and the status plus `error.type` already carry the meaning.
+  app.notFound((c) => notFound(c, 'No route matches this request'));
 
   return app;
 }
