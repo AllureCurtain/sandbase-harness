@@ -1472,20 +1472,28 @@ Credential vaults group secrets that sessions can attach by id.
 Vault names are human-readable labels and do not need to be unique. Use the
 returned `vlt_...` id when attaching a vault to a session.
 
+Every route below is served under **two** prefixes: `/v1/vaults*`, which is the
+path the published contract addresses vaults at, and `/v1/credential-vaults*`,
+which is this runtime's own spelling and the one the Console and the TypeScript
+SDK use. They are the same routes and the same rows — one router mounted twice,
+so the two cannot drift apart — and the local spelling is neither deprecated nor
+redirected. The published prefix requires the same `anthropic-beta` as the local
+one.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/credential-vaults` | List vaults. |
-| `POST` | `/v1/credential-vaults` | Create a vault. |
-| `GET` | `/v1/credential-vaults/{vault_id}` | Retrieve a vault. |
-| `POST` | `/v1/credential-vaults/{vault_id}/archive` | Archive a vault. |
-| `GET` | `/v1/credential-vaults/{vault_id}/credentials` | List credentials. |
-| `POST` | `/v1/credential-vaults/{vault_id}/credentials` | Add a credential. |
-| `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/rotate` | Replace the encrypted secret value. |
-| `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/mark-used` | Mark a credential as used and append an audit event. |
-| `GET` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/audit` | List credential audit events. |
-| `GET` | `/v1/credential-vaults/{vault_id}/audit` | List every credential audit event in a vault. |
-| `POST` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/archive` | Archive a credential. |
-| `DELETE` | `/v1/credential-vaults/{vault_id}/credentials/{credential_id}` | Delete a credential. |
+| `GET` | `/v1/vaults`, `/v1/credential-vaults` | List vaults. |
+| `POST` | `/v1/vaults`, `/v1/credential-vaults` | Create a vault. |
+| `GET` | `/v1/vaults/{vault_id}`, `/v1/credential-vaults/{vault_id}` | Retrieve a vault. |
+| `POST` | `/v1/vaults/{vault_id}/archive`, `/v1/credential-vaults/{vault_id}/archive` | Archive a vault. |
+| `GET` | `/v1/vaults/{vault_id}/credentials`, `/v1/credential-vaults/{vault_id}/credentials` | List credentials. |
+| `POST` | `/v1/vaults/{vault_id}/credentials`, `/v1/credential-vaults/{vault_id}/credentials` | Add a credential. |
+| `POST` | `/v1/vaults/{vault_id}/credentials/{credential_id}/rotate`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/rotate` | Replace the encrypted secret value. |
+| `POST` | `/v1/vaults/{vault_id}/credentials/{credential_id}/mark-used`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/mark-used` | Mark a credential as used and append an audit event. |
+| `GET` | `/v1/vaults/{vault_id}/credentials/{credential_id}/audit`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/audit` | List credential audit events. |
+| `GET` | `/v1/vaults/{vault_id}/audit`, `/v1/credential-vaults/{vault_id}/audit` | List every credential audit event in a vault. |
+| `POST` | `/v1/vaults/{vault_id}/credentials/{credential_id}/archive`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/archive` | Archive a credential. |
+| `DELETE` | `/v1/vaults/{vault_id}/credentials/{credential_id}`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}` | Delete a credential. |
 
 Credential `auth_type` values:
 

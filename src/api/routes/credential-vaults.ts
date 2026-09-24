@@ -31,12 +31,24 @@ type ResourceKind = 'credential_vault';
 export function credentialVaultRoutes(deps: ServerDeps) {
   const app = new Hono();
 
-  app.get('/credential-vaults', (c) => {
+  // Paths in this router are **relative to its mount**, because the resource is
+  // served under two prefixes: the published `/v1/vaults` the contract addresses
+  // vaults at, and the local `/v1/credential-vaults` the Console, the SDK and
+  // existing stored references already use. `resources.ts` mounts this same
+  // factory at both, so the two spellings cannot diverge route by route — a route
+  // added here is reachable at both prefixes with no second edit. It is also why
+  // the paths are literals rather than built from a base-path variable: the
+  // mounted-route table the Console guard reads
+  // (`tests/unit/support/route-table.ts`) expands `app.<method>('<literal>'` and
+  // `app.route('<prefix>', factory)` statically, so a computed path would make
+  // these routes invisible to a guard whose whole purpose is to notice exactly
+  // that kind of drift.
+  app.get('/', (c) => {
     const rows = deps.db.prepare(`${vaultSelect('WHERE v.archived_at IS NULL')} ORDER BY v.created_at DESC`).all() as unknown as VaultRow[];
     return c.json(cursorPageOf(rows.map((row) => toVault(row, deps)), {}));
   });
 
-  app.post('/credential-vaults', async (c) => {
+  app.post('/', async (c) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
     const name = stringField(body.value.name);
@@ -59,18 +71,18 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     }
   });
 
-  app.get('/credential-vaults/:id', (c) => {
+  app.get('/:id', (c) => {
     const row = deps.db.prepare(vaultSelect('WHERE v.id = ? AND v.archived_at IS NULL')).get(c.req.param('id')) as VaultRow | undefined;
     return row ? c.json(toVault(row, deps)) : notFound(c, 'Credential vault not found');
   });
 
-  app.get('/credential-vaults/:id/credentials', (c) => {
+  app.get('/:id/credentials', (c) => {
     const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!vault) return notFound(c, 'Credential vault not found');
     return c.json(cursorPageOf(listCredentials(deps, c.req.param('id')), {}));
   });
 
-  app.post('/credential-vaults/:id/credentials', async (c) => {
+  app.post('/:id/credentials', async (c) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
     const vaultId = c.req.param('id');
@@ -126,11 +138,11 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     return c.json(withWarnings(toCredential(row), parsed.warnings), 201);
   });
 
-  app.post('/credential-vaults/:id/credentials/:credentialId/archive', (c) => updateCredentialState(c, deps, 'archived'));
+  app.post('/:id/credentials/:credentialId/archive', (c) => updateCredentialState(c, deps, 'archived'));
 
-  app.delete('/credential-vaults/:id/credentials/:credentialId', (c) => updateCredentialState(c, deps, 'deleted'));
+  app.delete('/:id/credentials/:credentialId', (c) => updateCredentialState(c, deps, 'deleted'));
 
-  app.post('/credential-vaults/:id/archive', (c) => archiveResource(c, deps, 'credential_vaults', (row) => toVault(row, deps)));
+  app.post('/:id/archive', (c) => archiveResource(c, deps, 'credential_vaults', (row) => toVault(row, deps)));
 
   // --- Credential rotation, use and audit (published) ----------------------
   //
@@ -139,7 +151,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   // `credential_audit_events` (M028), which records what happened to a secret
   // without ever recording the secret.
 
-  app.post('/credential-vaults/:id/credentials/:credentialId/rotate', async (c) => {
+  app.post('/:id/credentials/:credentialId/rotate', async (c) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
     const vaultId = c.req.param('id');
@@ -185,7 +197,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     return c.json(toCredential(row));
   });
 
-  app.post('/credential-vaults/:id/credentials/:credentialId/mark-used', async (c) => {
+  app.post('/:id/credentials/:credentialId/mark-used', async (c) => {
     // Marking a credential used is the management call a client makes without a
     // body, so an absent body is read as an empty one rather than rejected.
     const raw = await c.req.json().catch(() => ({}));
@@ -209,7 +221,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     return c.json(toCredential(row));
   });
 
-  app.get('/credential-vaults/:id/credentials/:credentialId/audit', (c) => {
+  app.get('/:id/credentials/:credentialId/audit', (c) => {
     const vaultId = c.req.param('id');
     const credentialId = c.req.param('credentialId');
     if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
@@ -223,7 +235,7 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     return auditPage(c, deps, { vaultId, credentialId });
   });
 
-  app.get('/credential-vaults/:id/audit', (c) => {
+  app.get('/:id/audit', (c) => {
     const vaultId = c.req.param('id');
     if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
       return notFound(c, 'Credential vault not found');
