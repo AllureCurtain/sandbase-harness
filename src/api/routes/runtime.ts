@@ -11,6 +11,7 @@ import {
   toRuntimeStorageProviderInfo,
 } from '@/core/storage/providers.js';
 import type { ServerDeps } from '../server.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 const LOG_LEVELS = new Set<LogLevel>(['debug', 'info', 'warn', 'error']);
 
@@ -68,6 +69,8 @@ export function runtimeRoutes(deps: ServerDeps) {
   });
 
   app.get('/logs', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['level', 'limit', 'q']);
+    if (rejected) return rejected;
     const rawLevel = c.req.query('level');
     const level = rawLevel as LogLevel | undefined;
     if (rawLevel && !LOG_LEVELS.has(level as LogLevel)) {
@@ -163,6 +166,8 @@ export function runtimeRoutes(deps: ServerDeps) {
     });
   });
   app.get('/mcp/status', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['session_id']);
+    if (rejected) return rejected;
     const sessionId = c.req.query('session_id');
     if (!sessionId) {
       return c.json({ error: { type: 'invalid_request_error', message: 'session_id query param is required' } }, 400);

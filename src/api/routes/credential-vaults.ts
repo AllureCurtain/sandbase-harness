@@ -25,6 +25,18 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
+
+/**
+ * The audit listing's own parameters, named once because two routes expose it.
+ *
+ * The refusal runs in the route handlers rather than in `auditPage`, because
+ * `auditPage` is reached only after the vault exists: a request carrying a
+ * parameter this route does not implement would otherwise be answered `404` for
+ * a missing vault, which tells the caller their parameter was understood. The
+ * request is judged before state is read.
+ */
+const AUDIT_QUERY_PARAMS: readonly string[] = ['limit', 'page'];
 
 type ResourceKind = 'credential_vault';
 
@@ -222,6 +234,8 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   });
 
   app.get('/:id/credentials/:credentialId/audit', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, AUDIT_QUERY_PARAMS);
+    if (rejected) return rejected;
     const vaultId = c.req.param('id');
     const credentialId = c.req.param('credentialId');
     if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
@@ -236,6 +250,8 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   });
 
   app.get('/:id/audit', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, AUDIT_QUERY_PARAMS);
+    if (rejected) return rejected;
     const vaultId = c.req.param('id');
     if (!deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ?').get(vaultId)) {
       return notFound(c, 'Credential vault not found');

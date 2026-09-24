@@ -56,6 +56,41 @@ authentication, throttling, and compatibility admission are mounted before
 routing, an unmatched `/v1/*` path still answers `401`, `429`, or an admission
 `400` before the fallback can run.
 
+A query parameter the route does not implement is refused the same way, by
+`src/api/routes/query-params.ts`: `400 invalid_request_error`, naming the
+parameter and listing the ones the route does accept. The urgency is that the
+alternative is not a lesser answer but a **wrong** one — a silently dropped
+filter returns `200` with an unscoped list, which looks exactly like a scoped
+list that happens to contain more than the caller expected. This is the rule
+`agents.md` §2 already states for request fields (`Unknown keys and unsupported
+field values are rejected, not silently discarded`) applied to the query string,
+which had no equivalent.
+
+Two properties of the mechanism are deliberate:
+
+- **The allow-list is passed by the handler that reads the parameters**, not held
+  in a table in the admission module. A central route-to-parameters table would
+  be a second description of the same fact and the kind that drifts; the handler
+  is the only thing positioned to keep it true.
+- **The refusal runs before resource lookup.** A request is judged malformed
+  before any state is read, so a request that is wrong in both ways reports the
+  malformation rather than a `404` that would imply the parameter was understood.
+  Validation precedes reading state, the order admission middleware already uses.
+
+`beta` is accepted on every route and **ignored**. It is not a parameter this
+runtime implements: 36 published examples put it on the URL rather than in a
+header, so refusing it would make this runtime unreachable from a client built
+against the published documentation. It is deliberately absent from the message's
+"accepts" list, because that list names implemented parameters and accepting
+`beta` must not be read as honouring it.
+
+Routes that read no query parameters are **not** covered yet: refusing every
+parameter on a handler that declares none is the same principle but a different
+mechanism, and it is recorded as outstanding rather than assumed. `GET /v1/files`
+is the one case where that gap has teeth — the published call is
+`GET /v1/files?scope_id=<session_id>`, the handler reads no parameters at all, and
+`scope_id` is therefore silently ignored today (tracked separately).
+
 Admission failures add a stable code from `CMA_ADMISSION_CODES`:
 
 | Code | Condition |
@@ -77,8 +112,9 @@ the caller learns which request field to remove rather than receiving a generic
 ## 3. Alignment
 
 Aligned for: structured envelope, category separation (invalid / conflict /
-missing), a machine-readable code where a client must branch, and an error that
-names the exact offending capability, field, or precondition.
+missing), a machine-readable code where a client must branch, an error that
+names the exact offending capability, field, or precondition, and an error that
+names the query parameter it refused rather than ignoring it.
 
 ## 4. Differences
 
@@ -86,6 +122,9 @@ names the exact offending capability, field, or precondition.
 | --- | --- |
 | Code strings | SandBase `code` values are local and stable. The published contract documents error categories, not SandBase's code vocabulary; no code string here is claimed to be an upstream value. |
 | `invalid_request` as a wire type | Superseded: the canonical spelling is `invalid_request_error`, and every route emits it. `invalid_request` remains a **valid alias** for the same category — a client that branches on `error.type` may treat the two as equal — until the official SDK conformance suite passes against the canonical value, at which point the alias is retired. The value was never an upstream one; the published pages that name this category use `invalid_request_error`. |
+| Unknown query parameters | Refused by name, on the routes that read query parameters. The published contract does not state what an unrecognized parameter should do, so this is a local extension of the field rule in `agents.md` §2 rather than a published requirement — but the alternative is a silently unscoped answer, which is a wrong answer rather than a difference in strictness. |
+| `beta` as a query parameter | Accepted everywhere and ignored, because 36 published examples send it on the URL. Accepted is not implemented: the compatibility semantics are not modelled. |
+| Routes that read no query parameters | Not yet covered. They still ignore every parameter, so `GET /v1/files?scope_id=...` — a published call — is answered with the unscoped list. Recorded as outstanding rather than silently included in the claim above. |
 | HTTP status mapping | SandBase maps a memory content-hash mismatch to 409 `precondition_failed`. The published contract states the precondition concept but not this exact status pairing. |
 | Extensions | `unsupported_capability` and `precondition_failed` are SandBase codes covering local runtime facts. |
 
@@ -119,8 +158,16 @@ names the exact offending capability, field, or precondition.
   type comes from the core `code`, all report `invalid_request_error`; and a
   source scan asserts no route module emits the legacy literal as a wire type,
   so the canonical spelling cannot drift back one envelope at a time.
+- `tests/integration/query-param-admission.test.ts` — every handler that reads a
+  query parameter is driven with one it does not implement, and each case asserts
+  the refusal, the advertised list, and that `beta` is accepted without being
+  advertised; the Console's and the SDK's own parameters are pinned as still
+  accepted, and one case pins the ordering rule by sending a bad parameter with a
+  session that does not exist.
 
 ## 7. Status
 
 `supported` — the envelope and category separation are enforced and tested. The
 specific code strings are a documented local projection, not an upstream claim.
+Query-parameter refusal covers the routes that read query parameters; routes that
+read none are recorded in §4 as outstanding.

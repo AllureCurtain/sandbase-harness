@@ -34,6 +34,7 @@ import {
   normalizeVaultIds,
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import { normalizeDefineOutcome, normalizeInitialEvents } from './initial-events.js';
 import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
 import { isOutcomeGraderUnavailableError } from '@/core/outcomes/loop.js';
@@ -177,6 +178,8 @@ export function sessionsRoutes(deps: ServerDeps) {
 
   // GET / - List sessions
   app.get('/', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['limit', 'status', 'agent_id', 'page']);
+    if (rejected) return rejected;
     const rawLimit = parseInt(c.req.query('limit') ?? '20', 10) || 20;
     const pageSize = Math.min(1000, Math.max(1, rawLimit)); // cap at 1000
     const status = c.req.query('status');
@@ -604,6 +607,8 @@ export function sessionsRoutes(deps: ServerDeps) {
 
   // GET /:id/events - List events (paginated)
   app.get('/:id/events', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['limit', 'after_id']);
+    if (rejected) return rejected;
     const sessionId = c.req.param('id');
 
     // 404 if session does not exist.

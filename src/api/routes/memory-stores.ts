@@ -23,6 +23,7 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 type ResourceKind = 'memory_store';
 
@@ -65,6 +66,8 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   });
 
   app.get('/memory_stores/:id/memories', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['path_prefix', 'depth']);
+    if (rejected) return rejected;
     const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!store) return notFound(c, 'Memory store not found');
     // `path_prefix` must be an absolute path ending in `/`, and `depth` must be
@@ -188,6 +191,8 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   // Every write records a version, so the history of a memory is reconstructable
   // without diffing snapshots of the store.
   app.get('/memory_stores/:id/memory_versions', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['memory_id']);
+    if (rejected) return rejected;
     const storeId = c.req.param('id');
     const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(storeId);
     if (!store) return notFound(c, 'Memory store not found');

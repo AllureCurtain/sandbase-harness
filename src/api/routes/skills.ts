@@ -19,11 +19,14 @@ import {
   skillResource,
   type SkillSourceFilter,
 } from './skill-resources.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 export function skillsRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['source', 'limit', 'page']);
+    if (rejected) return rejected;
     const source = c.req.query('source');
     if (source && source !== 'custom' && source !== 'anthropic') {
       return c.json({ error: { type: 'invalid_request_error', message: 'source must be custom or anthropic' } }, 400);
