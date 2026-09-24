@@ -21,6 +21,22 @@ project-owned features only.
 - Add optional long-term memory provider support.
 - Expand context-window metadata and compaction controls.
 - Improve graceful shutdown reporting for in-flight turns.
+- Re-evaluate the state database's write durability only together with its
+  contract. Connections hold `journal_mode=WAL`, `foreign_keys=ON`,
+  `busy_timeout=5000`, `synchronous=FULL` and `trusted_schema=OFF`, and
+  `src/core/db/pragmas.ts` refuses a connection that cannot show those values.
+  `synchronous=FULL` is deliberate: local write volume is low and writes are
+  serialized by an immediate transaction, so one fsync per commit is affordable
+  and it covers the host crash that `NORMAL` does not. Changing a value means
+  changing that rationale, the expected value in the pragma spec and the
+  recovery guarantee together; dropping `busy_timeout` or the immediate
+  transaction would reintroduce the deferred-transaction conflict the CLI and
+  the server hit when they share one `data.db`. `fullfsync` and
+  `checkpoint_fullfsync` are the one part of the recipe this runtime does not
+  claim, because Node's bundled SQLite defines no
+  `SQLITE_ENABLE_FULLFSYNC` and the pragma verifies as a plain flag either way;
+  add them, to the spec and the verification together, when a Node release
+  enables F_FULLFSYNC and a macOS host can confirm it.
 
 ## Sandboxes
 
