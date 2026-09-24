@@ -50,6 +50,15 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   why the two ids must not be conflated.
 - `session.usage` is emitted before the session goes idle, so a client reading
   the stream observes usage before the terminal status.
+- `session.status_idle` carries the session-level `stop_reason` **object at the
+  top level**, which is where the published client reads
+  `stop_reason.type` to choose between answering a blocking call and stopping. It
+  is persisted in the metadata carrier and lifted by `toApiEvent`, so `metadata`
+  keeps it too; a model-derived event keeps the provider's `stop_reason`
+  **string** from the `events.stop_reason` column, and the two shapes are
+  distinguished by event type. [`sessions.md`](./sessions.md) records both, and
+  records that the array's `event_ids` contents are not yet the blocking event
+  ids the published contract describes.
 - One outcome evaluation appends exactly three events, in order, and the end
   event is appended on every path — including the one where the grader throws or
   cannot run, so a client waiting on it cannot hang on an outcome that is already
@@ -148,6 +157,10 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   lifted `name` / `input` / `tool_use_id` / `custom_tool_use_id` fields, the
   top-level `id` remaining the event id, `content` unchanged, and no field
   reaching an event type that declares none.
+- `tests/integration/session-stop-reason.test.ts` — the `session.status_idle`
+  projection: the object readable at the top level for both `requires_action` and
+  `end_turn`, the metadata carrier kept and agreeing, the model-event string
+  untouched, and the field omitted rather than `null` when there is no reason.
 
 ## 7. Status
 

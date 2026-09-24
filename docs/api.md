@@ -642,10 +642,28 @@ Approval-gated `tool_use` blocks include `requires_confirmation: true` and a
 `confirmation_group_id`. The corresponding `user.tool_confirmation` event
 stores its target and decision in event metadata. The session stays in
 `requires_action` until every tool use in that group has a paired result. The
-session response exposes that state as `status: "requires_action"`; the
-matching `session.status_idle` event carries metadata with
-`stop_reason.type: "requires_action"`, pending `event_ids`, and
-`action_type: "tool_confirmation"` for protocol compatibility.
+session response exposes that state as `status: "requires_action"`.
+
+The matching `session.status_idle` event carries a session-level `stop_reason`
+**object at the top level**, which is where the published client reads it:
+
+```bash
+# the reason the turn ended: "requires_action" or "end_turn"
+jq -r 'select(.type == "session.status_idle") | .stop_reason.type // empty'
+```
+
+| `stop_reason.type` | Meaning |
+| --- | --- |
+| `requires_action` | The session is waiting for an answer to a blocking tool call. `event_ids` lists the pending calls. |
+| `end_turn` | The turn ended with nothing outstanding. An interrupt reports `end_turn` as well; there is no separate interrupt reason. |
+
+The object is also kept under `metadata.stop_reason`, and `action_type:
+"tool_confirmation"` remains a SandBase extension inside it. An idle event with
+no reason omits the field rather than sending `null`.
+`event_ids` currently lists the `tool_use` **block** ids (`toolu_*`), not the
+event ids the published contract describes for its answer parameters. Read the
+array, but do not yet pass its entries back as `tool_use_id` /
+`custom_tool_use_id` on the assumption that they are event ids.
 
 Tool events carry their payload both in `content[0]` and at the top level, so a
 client can read a call without unpacking the block:

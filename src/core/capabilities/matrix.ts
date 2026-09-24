@@ -152,7 +152,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'sessions',
     id: 'session-lifecycle',
     status: 'supported',
-    reason: 'Sessions are created, resumed, interrupted, and terminated with the canonical status transitions.',
+    reason: 'Sessions are created, resumed, interrupted, and terminated with the canonical status transitions, and a `session.status_idle` event exposes the session-level `stop_reason` object at the top level, which is where the published client reads `stop_reason.type` to decide between answering a blocking call and stopping. The array inside it is not yet aligned: `event_ids` lists `tool_use` block ids rather than the blocking event ids the published contract describes, and that gap is recorded in the contract.',
     contract: 'contracts/anthropic-cma/sessions.md',
   },
   {

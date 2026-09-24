@@ -1,7 +1,7 @@
 import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
 import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { Session, SessionEvent, SessionLoopEngine } from '@/types/session.js';
-import type { SessionBudget } from '@/types/cma-protocol.js';
+import type { SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
 
 export interface ApiPage<T extends { id: string }> {
   data: T[];
@@ -291,7 +291,18 @@ export interface ApiEvent {
   model_used?: string;
   tokens_in?: number;
   tokens_out?: number;
-  stop_reason?: string;
+  /**
+   * Why the turn ended. Two declared shapes share this field name and are
+   * distinguished by the event type, exactly as the published contract has it:
+   *
+   * - a **string** on a model-derived event, from the `events.stop_reason`
+   *   column — the provider's own reason for one response;
+   * - an **object** on `session.status_idle`, from the metadata carrier — the
+   *   session-level reason, which the published client reads as
+   *   `stop_reason.type` (`会话事件流.md:1893`). Both share the name because
+   *   both published shapes spell it `stop_reason`.
+   */
+  stop_reason?: string | NonNullable<SessionStatusIdleEvent['stop_reason']>;
   duration_ms?: number;
   delta?: string;
   message_id?: string;
@@ -443,6 +454,24 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
         ...(typeof event.metadata?.max_iterations === 'number' ? { max_iterations: event.metadata.max_iterations } : {}),
       }
     : undefined;
+  // `session.status_idle` persists the session-level reason as an object in the
+  // metadata carrier — the events table has no column for one — and the
+  // published client reads it at the top level: the documented loop is
+  // `select(.type == "session.status_idle") | .stop_reason.type`, which yields
+  // the empty string while the object stays nested, so a conforming client
+  // cannot tell "awaiting your answer" from "the turn ended". `metadata` keeps
+  // the object as well, because `src/api/routes/runs.ts` reads the persisted
+  // path to choose between a `202` and a terminal body: this is a projection,
+  // not a move.
+  //
+  // This is deliberately the *only* event type that gains an object here. A
+  // model event's `stop_reason` is the provider's string from the column, and a
+  // status event has no model response behind it, so the two cannot collide;
+  // the object is spread after the column anyway so an idle event's own reason
+  // wins if one ever carried both.
+  const sessionStopReason = event.type === 'session.status_idle'
+    ? metadataObject(event, 'stop_reason') as NonNullable<SessionStatusIdleEvent['stop_reason']> | undefined
+    : undefined;
   return {
     id: event.id,
     seq: event.seq,
@@ -464,6 +493,7 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
     ...(event.stopReason !== undefined ? { stop_reason: event.stopReason } : {}),
+    ...(sessionStopReason ? { stop_reason: sessionStopReason } : {}),
     ...(event.durationMs !== undefined ? { duration_ms: event.durationMs } : {}),
     ...(streamEvent.delta !== undefined ? { delta: streamEvent.delta } : {}),
     ...(streamEvent.message_id !== undefined ? { message_id: streamEvent.message_id } : {}),

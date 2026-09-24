@@ -56,6 +56,28 @@ Status projection (`toApiSessionStatus`):
 | `cleanup_pending` | `cleanup_pending` |
 | anything else | `idle` |
 
+The session-level `stop_reason` (`toApiEvent`):
+
+- A `session.status_idle` event carries the session-level reason as an **object
+  at the top level**, which is where the published client reads it:
+  `select(.type == "session.status_idle") | .stop_reason.type`. The published
+  loop uses that value to choose between answering a blocking call and stopping.
+- It is persisted in the generic metadata carrier (`lifecycleMetadataFor` writes
+  `metadata.stop_reason`), so the projection lifts it and `metadata` keeps it —
+  this is a projection, not a move. `src/api/routes/runs.ts` reads the persisted
+  path to choose between a `202` with `wait_deadline_reached` and a terminal
+  body, and that reader is unaffected.
+- `type` is `requires_action` when the session is waiting for a tool
+  confirmation and `end_turn` when it paused with nothing outstanding. An
+  interrupt reports `end_turn` too: the published contract states there is no
+  dedicated interrupt reason, so no separate value is invented here.
+- An idle event whose metadata carries no `stop_reason` omits the top-level field
+  rather than sending `null`.
+- Model-derived events keep the provider's `stop_reason` **string** from the
+  `events.stop_reason` column. The two shapes share the field name because both
+  published shapes spell it `stop_reason`; they are distinguished by event type
+  and a status event has no model response behind it.
+
 `initial_events`:
 
 - At most 50 events (`MAX_INITIAL_EVENTS`).
@@ -181,6 +203,8 @@ reference forms, and the tri-state override rule.
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
+| `stop_reason.event_ids` contents | **Not aligned.** The array currently holds the `tool_use` **block** id (`toolu_*`), because `lifecycleMetadataFor` pushes `block.id`. The published contract says the array holds the blocking **event** ids, and its client passes each entry straight back as an answer id (`会话事件流.md:1908` for `custom_tool_use_id`, `权限策略.md:669` for `tool_use_id`). The top-level projection makes the object readable; it deliberately does not change what the array contains, so a client that reads the array must not assume the published semantics yet. Changing the array's values, together with the matching acceptance in `user.tool_confirmation.tool_use_id` and `user.custom_tool_result.custom_tool_use_id`, is a separate change with its own test surface. |
+| `stop_reason.action_type` | `tool_confirmation` is a SandBase extension field inside the object, not part of the published shape. It is kept for the local Console and is not presented as a published field. |
 
 ## 5. Reason for the difference
 
@@ -240,6 +264,13 @@ reference forms, and the tri-state override rule.
   boundary: a rejected initial event leaves no session row and no attached
   resource behind, a successful batch creates the session and delivers every
   event, and the events' order and `processed_at` reflect admission.
+- `tests/integration/session-stop-reason.test.ts` — the projected session-level
+  `stop_reason`: `stop_reason.type` readable at the top level of a real
+  `requires_action` pause and of a paused session reporting `end_turn`, the
+  persisted `metadata.stop_reason` path a `202` decision reads still resolving
+  and agreeing with the projection, the provider's `stop_reason` string on a
+  model event left untouched, no other event type gaining an object, and an idle
+  event with no reason omitting the field rather than sending `null`.
 
 ## 7. Status
 
