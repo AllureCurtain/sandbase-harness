@@ -155,7 +155,15 @@ export class ToolResolver {
               : undefined),
         };
         pendingUses.push(candidate);
-        if (candidate.id === event.tool_use_id) pendingUse = candidate;
+        // The published contract circulates the `tool_use` **event** id and local
+        // callers use the `tool_use` **block** id, so the reference may be either.
+        // Only `candidate.id` — the block id — is used from here on: the tool
+        // result that pairs this call back to its block, the resolved set, and
+        // the group membership are all keyed by tool-call id, so answering with
+        // an event id must not leak into any of them.
+        if (candidate.id === event.tool_use_id || loggedEvent.id === event.tool_use_id) {
+          pendingUse = candidate;
+        }
       } else if (loggedEvent.type === 'agent.tool_result' || loggedEvent.type === 'agent.mcp_tool_result') {
         const block = loggedEvent.content?.find((item) => item.type === 'tool_result') as
           | { type: 'tool_result'; tool_use_id: string } | undefined;
@@ -163,7 +171,7 @@ export class ToolResolver {
       }
     }
 
-    if (!pendingUse || resolved.has(event.tool_use_id)) {
+    if (!pendingUse || resolved.has(pendingUse.id)) {
       return { handled: false, groupComplete: false };
     }
 
@@ -205,14 +213,14 @@ export class ToolResolver {
     const groupId = pendingUse.confirmationGroupId ?? pendingUse.id;
     const resultEvent = eventLogger.append(session.id, {
       type: 'agent.tool_result',
-      content: [{ type: 'tool_result', tool_use_id: event.tool_use_id, content: resultText, is_error: isError }],
+      content: [{ type: 'tool_result', tool_use_id: pendingUse.id, content: resultText, is_error: isError }],
       metadata: { confirmation_group_id: groupId },
     });
     broadcast(resultEvent);
 
     const groupComplete = pendingUses
       .filter((toolUse) => (toolUse.confirmationGroupId ?? toolUse.id) === groupId)
-      .every((toolUse) => resolved.has(toolUse.id) || toolUse.id === event.tool_use_id);
+      .every((toolUse) => resolved.has(toolUse.id) || toolUse.id === pendingUse.id);
     return { handled: true, groupComplete };
   }
 

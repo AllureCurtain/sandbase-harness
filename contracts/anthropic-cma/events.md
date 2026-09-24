@@ -52,13 +52,14 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   the stream observes usage before the terminal status.
 - `session.status_idle` carries the session-level `stop_reason` **object at the
   top level**, which is where the published client reads
-  `stop_reason.type` to choose between answering a blocking call and stopping. It
-  is persisted in the metadata carrier and lifted by `toApiEvent`, so `metadata`
-  keeps it too; a model-derived event keeps the provider's `stop_reason`
-  **string** from the `events.stop_reason` column, and the two shapes are
-  distinguished by event type. [`sessions.md`](./sessions.md) records both, and
-  records that the array's `event_ids` contents are not yet the blocking event
-  ids the published contract describes.
+  `stop_reason.type` to choose between answering a blocking call and stopping. Its
+  `event_ids` names the pending calls by their own event id, and a
+  `user.tool_confirmation` may address a call by that id (or by the local
+  `tool_use` block id). The object is persisted in the metadata carrier and lifted
+  by `toApiEvent`, so `metadata` keeps it too; a model-derived event keeps the
+  provider's `stop_reason` **string** from the `events.stop_reason` column, and
+  the two shapes are distinguished by event type. [`sessions.md`](./sessions.md)
+  records both, including the custom-tool path the array does not yet cover.
 - One outcome evaluation appends exactly three events, in order, and the end
   event is appended on every path — including the one where the grader throws or
   cannot run, so a client waiting on it cannot hang on an outcome that is already
@@ -161,6 +162,11 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   projection: the object readable at the top level for both `requires_action` and
   `end_turn`, the metadata carrier kept and agreeing, the model-event string
   untouched, and the field omitted rather than `null` when there is no reason.
+- `tests/integration/approval-event-id.test.ts` — the event-id address: the
+  pending call's own event id reported in `event_ids` and not the block id, a
+  decision naming it executed, the block-id spelling still accepted, and every
+  refusal — a second decision for one call, an id naming nothing, a resolved
+  call — preserved.
 
 ## 7. Status
 
