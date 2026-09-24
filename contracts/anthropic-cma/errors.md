@@ -33,6 +33,16 @@ Errors are produced by shared helpers so every route answers in one shape:
 | `notFound(c, message)` | 404 | `not_found` | — |
 | `unsupportedCapability(c, error)` | 400 | `unsupported_capability` | `details.capabilities: [{id, reason}]` |
 
+The same `notFound` envelope answers a path this server does not serve. It is
+registered as the server's fallback in `src/api/server.ts`, so an unrouted
+request gets `application/json` and `error.type: "not_found"` rather than the
+framework's `text/plain` body. Its message is `No route matches this request`,
+which is deliberately a fixed sentence: it does not echo the requested path, and
+it stays distinguishable from a route's own missing-resource message. Because
+authentication, throttling, and compatibility admission are mounted before
+routing, an unmatched `/v1/*` path still answers `401`, `429`, or an admission
+`400` before the fallback can run.
+
 Admission failures add a stable code from `CMA_ADMISSION_CODES`:
 
 | Code | Condition |
@@ -79,6 +89,11 @@ names the exact offending capability, field, or precondition.
 
 - `tests/integration/api.test.ts` — rejection cases assert `error.type` and the
   presence of a stable code; resource lifecycle cases assert 404 vs 409.
+- `tests/integration/unrouted-path-404.test.ts` — an unrouted path in the
+  managed-agents, extension, and non-`/v1` namespaces, and an unmounted verb on a
+  mounted path, each answer the JSON `not_found` envelope; a missing resource
+  keeps its own message; the Console surface keeps its status codes; and
+  authentication still precedes routing.
 - `tests/unit/memory-semantics.test.ts` — precondition evaluation returns
   `precondition_failed` with the current hash.
 

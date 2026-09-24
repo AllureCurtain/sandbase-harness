@@ -152,6 +152,14 @@ Error responses:
 Common error types are `invalid_request`, `not_found`, `conflict`,
 `not_available`, and `internal_error`.
 
+A path the server does not serve answers the same `not_found` envelope with the
+same `application/json` content type, so a client decodes one shape whether the
+resource is missing or the route is. The message for an unrouted path is
+`No route matches this request`, which keeps it distinguishable from a missing
+resource's own message such as `Agent not found: <id>`. Authentication,
+throttling, and compatibility admission run before routing, so an unmatched
+`/v1/*` path still answers `401`, `429`, or an admission `400` when those apply.
+
 A rejected compatibility request also carries a stable `error.code`, so a
 client can branch on the cause instead of matching the message text. The
 admission codes are:

@@ -15,7 +15,9 @@ that every Claude hosted capability exists locally.
   under either prefix; the contract names which is which.
 - Errors use `{ error: { type, message } }`. A rejected compatibility
   request also carries a stable `error.code` from the published
-  admission-code set.
+  admission-code set. A path the server does not serve answers the same
+  envelope as JSON with `not_found`, rather than the framework's plain-text
+  body, so one decoder handles an unrouted path and a missing resource alike.
 - CMA requests using `x-api-key`, `anthropic-version`, or `anthropic-beta` are
   admitted before `/v1` CMA handlers: version `2023-06-01` and beta
   `managed-agents-2026-04-01` are required, except `/v1/memory_stores` routes
