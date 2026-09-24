@@ -1782,6 +1782,47 @@ instant, so a deployment paused over a weekend does not fire every missed run at
 once. An archived deployment is a 404 on every route, including `run` — pause and
 archive are different states and only one of them is reversible.
 
+### Deployment runs
+
+Each attempt to trigger a deployment — timed or manual — records a deployment run.
+Runs are their own resource, addressable at the top level, because the published
+`deployment_run` event carries a run id and a caller needs a route that resolves
+it.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/deployment_runs` | List runs, newest first. `?deployment_id=` narrows to one deployment and `?has_error=true\|false` to failed or successful ones. |
+| `GET` | `/v1/deployment_runs/{deployment_run_id}` | Retrieve one run. |
+
+```bash
+curl "http://127.0.0.1:3000/v1/deployment_runs?deployment_id=$DEPLOYMENT_ID&has_error=true"
+curl "http://127.0.0.1:3000/v1/deployment_runs/$RUN_ID"
+```
+
+A run carries the published field names: `deployment_id`, `trigger_context`,
+`session_id`, `error` as `{type, message}`, `agent` as `{type, id, version}`, and
+`created_at`. Three of those are projections of local storage rather than stored
+fields, and each is partial:
+
+- `error.type` is the local `deployment_run_failed`. The published vocabulary
+  names causes (`environment_archived_error`, `agent_archived_error`,
+  `session_rate_limited_error`) and this runtime does not classify a failure —
+  session creation throws a free-text message — so the shape is honoured and the
+  cause is not invented.
+- `trigger_context.scheduled_at` is absent. The runtime records when a run
+  *started*, not the instant its trigger was *due*, and does not persist the due
+  instant on the run row.
+- `agent` comes from the session the run created, so it is the agent that ran and
+  the version it ran as. A run that failed before a session existed reports
+  `version: null` and the deployment's current `agent_id`.
+
+`has_error` with any value other than `true` or `false` is refused rather than
+ignored, so a filtered question is never answered with an unfiltered list. The
+same routes also answer under `/v1/x/deployment_runs` with the older
+`has_more`-style envelope, and the nested
+`GET /v1/deployments/{id}/runs` keeps its original field names for existing
+consumers.
+
 ```bash
 curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \
   -H "Content-Type: application/json" \

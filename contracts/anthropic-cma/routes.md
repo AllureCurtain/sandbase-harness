@@ -114,6 +114,8 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/deployments/{id}/run` | `src/api/routes/deployments.ts` |
 | GET | `/v1/deployments/{id}/runs` | `src/api/routes/deployments.ts` |
 | POST | `/v1/deployments/run-due` | `src/api/routes/deployments.ts` |
+| GET | `/v1/deployment_runs` | `src/api/routes/deployment-runs.ts` |
+| GET | `/v1/deployment_runs/{id}` | `src/api/routes/deployment-runs.ts` |
 | GET | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
 | POST | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
 | GET | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
