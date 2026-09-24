@@ -53,13 +53,15 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
 - `session.status_idle` carries the session-level `stop_reason` **object at the
   top level**, which is where the published client reads
   `stop_reason.type` to choose between answering a blocking call and stopping. Its
-  `event_ids` names the pending calls by their own event id, and a
-  `user.tool_confirmation` may address a call by that id (or by the local
-  `tool_use` block id). The object is persisted in the metadata carrier and lifted
-  by `toApiEvent`, so `metadata` keeps it too; a model-derived event keeps the
-  provider's `stop_reason` **string** from the `events.stop_reason` column, and
-  the two shapes are distinguished by event type. [`sessions.md`](./sessions.md)
-  records both, including the custom-tool path the array does not yet cover.
+  `event_ids` names the parked calls by their own event id — both the
+  approval-gated `agent.tool_use` / `agent.mcp_tool_use` calls and the unanswered
+  `agent.custom_tool_use` calls — and a `user.tool_confirmation` or
+  `user.custom_tool_result` may address a call by that id, or by the local
+  `tool_use` block id. The object is exactly the published `{type, event_ids}`. It
+  is persisted in the metadata carrier and lifted by `toApiEvent`, so `metadata`
+  keeps it too; a model-derived event keeps the provider's `stop_reason`
+  **string** from the `events.stop_reason` column, and the two shapes are
+  distinguished by event type. [`sessions.md`](./sessions.md) records both.
 - One outcome evaluation appends exactly three events, in order, and the end
   event is appended on every path — including the one where the grader throws or
   cannot run, so a client waiting on it cannot hang on an outcome that is already
@@ -167,6 +169,10 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   decision naming it executed, the block-id spelling still accepted, and every
   refusal — a second decision for one call, an id naming nothing, a resolved
   call — preserved.
+- `tests/integration/custom-tool-event-id.test.ts` — the same for a parked custom
+  tool call, including that answering one call drops it from the array while an
+  unanswered one stays, and that the projected object carries exactly
+  `{type, event_ids}`.
 
 ## 7. Status
 

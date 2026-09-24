@@ -43,6 +43,16 @@ is `src/api/routes/session-normalizers.ts`.
   does not have.
 - A tool call for a custom tool is persisted and surfaced to the caller; the
   runtime waits for the caller's result rather than executing anything.
+- The waiting loop is the published one: `agent.custom_tool_use` is emitted, the
+  session pauses with `stop_reason.type: "requires_action"`, and the call's
+  **event** id is listed in `stop_reason.event_ids` alongside any approval-gated
+  call parked at the same time. The caller answers with
+  `user.custom_tool_result`, passing that event id in `custom_tool_use_id`. The
+  `tool_use` block id is accepted there too, as a documented local convenience.
+  Whichever arrives, the persisted `metadata.custom_tool_use_id` is the **block**
+  id, because the model-facing projection pairs a custom tool result to its call
+  by tool-call id. A call that has been answered stops being listed, and a second
+  answer for one call — by either spelling — is refused.
 
 ## 3. Alignment
 
@@ -70,6 +80,15 @@ name, and the absence of a runtime-side permission policy on the declaration.
   canonical projection.
 - `tests/unit/custom-tool-loop.test.ts` — the caller-executed loop: the runtime
   surfaces the call and accepts the caller's result without executing anything.
+- `tests/integration/custom-tool-event-id.test.ts` — the published answer
+  exchange end to end against the real strategy and status transition: the
+  parked call's own event id in `event_ids` and not the block id, an answer
+  naming it accepted and the model resumed with the paired result, the block-id
+  spelling still accepted, the persisted `metadata.custom_tool_use_id` staying
+  the block id, an answered call no longer listed while an unanswered one is
+  kept, a second answer refused even when it uses the other spelling, an id
+  naming nothing refused, and the projected `stop_reason` carrying exactly
+  `{type, event_ids}` with no `action_type`.
 - `tests/integration/api.test.ts` — agent round-trip carrying a custom tool.
 
 ## 7. Status

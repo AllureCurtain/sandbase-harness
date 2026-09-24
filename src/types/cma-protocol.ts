@@ -309,7 +309,6 @@ export interface SessionStatusIdleEvent extends EventBase {
   stop_reason?: {
     type: 'end_turn' | 'requires_action';
     event_ids?: string[];
-    action_type?: 'tool_confirmation' | 'custom_tool_result';
   };
 }
 

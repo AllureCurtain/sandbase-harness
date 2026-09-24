@@ -1601,6 +1601,19 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
   // values, so they are carried side by side rather than conflated — a call
   // whose block id is resolved is excluded even though its event id is what
   // would have been reported.
+  //
+  // Both parked-work families are scanned, because the published contract parks
+  // them the same way: an approval-gated `agent.tool_use` and a custom
+  // `agent.custom_tool_use` both leave the session in `requires_action` waiting
+  // for a `user` answer, and both are answered by the blocking event's id. A
+  // custom call carries no `requires_confirmation` — the runtime has no executor
+  // for it, which is why it is parked at all — so its presence without a result
+  // is what makes it pending.
+  //
+  // `action_type` is deliberately not written: it is absent from the published
+  // contract and nothing reads it, and with both families able to be pending at
+  // once no single value of it would be true. What remains is exactly the
+  // published shape, `{ type, event_ids }`.
   const resolved = new Set<string>();
   const pending: Array<{ eventId: string; blockId: string }> = [];
   for (const event of events) {
@@ -1609,6 +1622,18 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
         | { type: 'tool_result'; tool_use_id: string }
         | undefined;
       if (block) resolved.add(block.tool_use_id);
+      continue;
+    }
+    if (event.type === 'user.custom_tool_result') {
+      const id = event.metadata?.custom_tool_use_id;
+      if (typeof id === 'string') resolved.add(id);
+      continue;
+    }
+    if (event.type === 'agent.custom_tool_use') {
+      const block = event.content?.find((item) => item.type === 'tool_use') as
+        | { type: 'tool_use'; id: string }
+        | undefined;
+      if (block) pending.push({ eventId: event.id, blockId: block.id });
       continue;
     }
     if (event.type !== 'agent.tool_use' && event.type !== 'agent.mcp_tool_use') continue;
@@ -1622,7 +1647,6 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[]): Re
     stop_reason: {
       type: 'requires_action',
       event_ids: pending.filter((call) => !resolved.has(call.blockId)).map((call) => call.eventId),
-      action_type: 'tool_confirmation',
     },
   };
 }
@@ -1744,6 +1768,41 @@ function defineOutcomeMetadataFor(
   };
 }
 
+/**
+ * Resolve the caller's `custom_tool_use_id` to the pending custom tool call it names.
+ *
+ * The same two-spelling rule as `resolveConfirmedToolUse`, for the other event
+ * family: the published contract emits `agent.custom_tool_use`, pauses with the
+ * blocking event ids in `stop_reason.event_ids`, and has the client answer with
+ * `user.custom_tool_result` passing the **event** id in `custom_tool_use_id`
+ * (`会话事件流.md:1876`-`:1877`, `权限策略.md:669`). Local callers and this
+ * runtime's own tests answer with the `tool_use` **block** id instead, so both
+ * select the call.
+ *
+ * A custom tool call is not approval-gated — it is parked because the runtime has
+ * no executor for it — so there is no `requires_confirmation` to check here. The
+ * block id is again what is returned and persisted: `metadata.custom_tool_use_id`
+ * is what the model-facing projection pairs this result against, and that
+ * projection keys tool results by tool-call id.
+ */
+function resolveCustomToolUse(
+  reference: string,
+  events: SessionEvent[],
+): { blockId: string } | undefined {
+  for (const loggedEvent of events) {
+    if (loggedEvent.type !== 'agent.custom_tool_use') continue;
+    const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
+      | { type: 'tool_use'; id: string }
+      | undefined;
+    if (!block) continue;
+    // The event id is matched first, so an id that somehow answers to both
+    // spellings still resolves deterministically.
+    if (loggedEvent.id !== reference && block.id !== reference) continue;
+    return { blockId: block.id };
+  }
+  return undefined;
+}
+
 function getCustomToolResultMetadata(
   event: Extract<UserEvent, { type: 'user.custom_tool_result' }>,
   events: SessionEvent[],
@@ -1758,25 +1817,27 @@ function getCustomToolResultMetadata(
     throw new Error('Invalid custom tool result: is_error must be a boolean');
   }
 
-  let pending = false;
-  for (const loggedEvent of events) {
-    if (loggedEvent.type === 'agent.custom_tool_use') {
-      const block = loggedEvent.content?.find((item) => item.type === 'tool_use') as
-        | { type: 'tool_use'; id: string } | undefined;
-      if (block?.id === event.custom_tool_use_id) pending = true;
-    }
-    if (loggedEvent.type === 'user.custom_tool_result'
-      && loggedEvent.metadata?.custom_tool_use_id === event.custom_tool_use_id) {
-      throw new Error('Invalid custom tool result: the custom tool call is not pending');
+  const target = resolveCustomToolUse(event.custom_tool_use_id, events);
+
+  // The duplicate check is keyed on the canonical block id, so answering the
+  // same call twice — including once with each spelling — is refused. It runs
+  // before the not-found check so an already-answered call keeps reporting that
+  // reason rather than "does not reference a pending custom tool call".
+  if (target) {
+    for (const loggedEvent of events) {
+      if (loggedEvent.type === 'user.custom_tool_result'
+        && loggedEvent.metadata?.custom_tool_use_id === target.blockId) {
+        throw new Error('Invalid custom tool result: the custom tool call is not pending');
+      }
     }
   }
 
-  if (!pending) {
+  if (!target) {
     throw new Error('Invalid custom tool result: custom_tool_use_id does not reference a pending custom tool call');
   }
 
   return {
-    custom_tool_use_id: event.custom_tool_use_id,
+    custom_tool_use_id: target.blockId,
     ...(event.is_error !== undefined ? { is_error: event.is_error } : {}),
   };
 }

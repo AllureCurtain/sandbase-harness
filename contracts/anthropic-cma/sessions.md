@@ -68,23 +68,33 @@ The session-level `stop_reason` (`toApiEvent`):
   path to choose between a `202` with `wait_deadline_reached` and a terminal
   body, and that reader is unaffected.
 - `type` is `requires_action` when the session is waiting for a tool
-  confirmation and `end_turn` when it paused with nothing outstanding. An
-  interrupt reports `end_turn` too: the published contract states there is no
-  dedicated interrupt reason, so no separate value is invented here.
-- `event_ids` names the pending calls by the `agent.tool_use` /
-  `agent.mcp_tool_use` **event** id — the `id` the event listing reports for that
-  event. That is the address the published client sends back, so the two halves
-  of the exchange agree. Resolution is still tracked by the `tool_use` **block**
-  id, because a tool result pairs to its call by tool-call id, so a call that
-  already has a result is excluded even though the array reports event ids.
-- A `user.tool_confirmation` may address the call by that event id **or** by the
-  `tool_use` block id. The block id is a documented local fallback, kept because
-  this runtime's own callers and tests answer with one; widening which
-  identifier *selects* the call does not widen authority, since the pending check
-  and the one-shot resolution still decide whether anything runs. Whichever
-  arrives, the confirmation event's `metadata.tool_use_id` and the
-  `agent.tool_result` appended for the decision both carry the **block** id, and
-  a second decision for the same call is refused whichever spelling it uses.
+  confirmation or for a custom tool result, and `end_turn` when it paused with
+  nothing outstanding. An interrupt reports `end_turn` too: the published
+  contract states there is no dedicated interrupt reason, so no separate value is
+  invented here.
+- `event_ids` names the parked calls by their own **event** id — the `id` the
+  event listing reports for that event. Both parked-work families are included,
+  because the published contract parks them the same way: an approval-gated
+  `agent.tool_use` / `agent.mcp_tool_use`, and an `agent.custom_tool_use` the
+  caller has not answered. That is the address the published client sends back,
+  so the two halves of the exchange agree. Resolution is still tracked by the
+  `tool_use` **block** id, because a tool result pairs to its call by tool-call
+  id, so a call that already has a result is excluded even though the array
+  reports event ids.
+- The object carries exactly the published shape, `{ type, event_ids }`. It
+  previously also carried `action_type`, a local field absent from the published
+  contract and read by nothing; with both families able to be parked at once no
+  single value of it was true, so it is no longer written.
+- A `user.tool_confirmation` may address an approval-gated call by that event id
+  **or** by the `tool_use` block id, and a `user.custom_tool_result` may address
+  a custom tool call the same two ways. The block id is in both cases a
+  documented local fallback, kept because this runtime's own callers and tests
+  answer with one; widening which identifier *selects* the call does not widen
+  authority, since the pending check and the one-shot resolution still decide
+  whether anything runs. Whichever arrives, the confirmation event's
+  `metadata.tool_use_id`, the `agent.tool_result` appended for a decision, and the
+  result's `metadata.custom_tool_use_id` all carry the **block** id, and a second
+  answer for one call is refused whichever spelling it uses.
 - An idle event whose metadata carries no `stop_reason` omits the top-level field
   rather than sending `null`.
 - Model-derived events keep the provider's `stop_reason` **string** from the
@@ -217,8 +227,7 @@ reference forms, and the tri-state override rule.
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
-| `stop_reason.event_ids` for custom tools | **Partly not aligned.** For approval-gated `agent.tool_use` / `agent.mcp_tool_use` calls the array now names the pending events' own ids, and a `user.tool_confirmation` may address a call by that id. The `agent.custom_tool_use` half is not covered: those events are not scanned into `event_ids`, and `user.custom_tool_result.custom_tool_use_id` still accepts only the `tool_use` block id, so a conforming client's custom-tool answer is refused. That is a separate change with its own validator and answer event. |
-| `stop_reason.action_type` | `tool_confirmation` is a SandBase extension field inside the object, not part of the published shape. It is kept for the local Console and is not presented as a published field. |
+| Resuming while another call is still parked | A `user.custom_tool_result` that answers one of several custom tool calls parked at once leaves the others unanswered, and the next model request is refused with `Tool result is missing for tool call <id>`, terminating the session. The published contract does not say what a partial answer does to the calls still waiting. Answering every parked call before resuming works and is the supported path. |
 
 ## 5. Reason for the difference
 
@@ -293,6 +302,17 @@ reference forms, and the tri-state override rule.
   when it uses the other spelling, an id naming neither refused, a resolved call
   not re-decidable by its event id, and the refusal surfacing as
   `400 invalid_request` over the real route.
+- `tests/integration/custom-tool-event-id.test.ts` — the same exchange for the
+  custom tool family: a parked `agent.custom_tool_use` listed by its event id, an
+  answer naming it accepted and the model resumed with the paired result, the
+  block-id spelling still accepted, the persisted `metadata.custom_tool_use_id`
+  staying the block id, an answered call no longer listed while an unanswered one
+  is kept, a second answer refused even when it uses the other spelling, an id
+  naming nothing refused, and the projected object carrying exactly
+  `{type, event_ids}` with no `action_type`.
+- `tests/integration/custom-tool-execution.test.ts` — the pre-existing closure
+  path, unchanged: a custom tool call pauses the session and the caller's result,
+  sent by block id, resumes the model with the paired tool result.
 
 ## 7. Status
 
