@@ -145,5 +145,5 @@ function parseBetaHeader(value: string): string[] | null {
  * in the same envelope shape the routes use: a typed error with a stable code.
  */
 function invalidRequest(c: Context, code: CmaAdmissionCode, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', code, message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', code, message } }, 400);
 }

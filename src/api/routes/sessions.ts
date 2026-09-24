@@ -157,7 +157,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       }
       if (isPiSessionAdmissionError(err)) {
         return c.json({ error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: err.code,
           message: err.message,
         } }, 400);
@@ -191,13 +191,13 @@ export function sessionsRoutes(deps: ServerDeps) {
     const rawPage = c.req.query('page');
     const decoded = rawPage === undefined ? { ok: true as const, state: undefined } : decodeCursor(rawPage);
     if (!decoded.ok) {
-      return c.json({ error: { type: 'invalid_request', message: 'page must be a cursor returned by this endpoint' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'page must be a cursor returned by this endpoint' } }, 400);
     }
     const mismatch = cursorQueryMismatch(decoded.state, { order: SESSION_LIST_ORDER, filter });
-    if (mismatch) return c.json({ error: { type: 'invalid_request', message: mismatch } }, 400);
+    if (mismatch) return c.json({ error: { type: 'invalid_request_error', message: mismatch } }, 400);
     const page = readSessionPage(decoded.state);
     if (page === undefined) {
-      return c.json({ error: { type: 'invalid_request', message: 'page must be a cursor returned by this endpoint' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'page must be a cursor returned by this endpoint' } }, 400);
     }
 
     const result = sessionManager.list({
@@ -293,12 +293,12 @@ export function sessionsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
 
     const events = Array.isArray(body.events) ? body.events : null;
     if (!events) {
-      return c.json({ error: { type: 'invalid_request', message: 'events must be an array' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'events must be an array' } }, 400);
     }
 
     // Validate every event carries a string `type` before touching the log
@@ -307,7 +307,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         return c.json(
           {
             error: {
-              type: 'invalid_request',
+              type: 'invalid_request_error',
               message: 'Each event must be an object with a non-empty string "type" field',
             },
           },
@@ -324,7 +324,7 @@ export function sessionsRoutes(deps: ServerDeps) {
           return c.json(
             {
               error: {
-                type: 'invalid_request',
+                type: 'invalid_request_error',
                 message: systemMessageContentError(event.content)
                   ?? 'system.message content must be a non-empty array of valid content blocks',
               },
@@ -340,7 +340,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         return c.json(
           {
             error: {
-              type: 'invalid_request',
+              type: 'invalid_request_error',
               message: `Only system.message and user.* events can be sent to a session (got "${event.type}")`,
             },
           },
@@ -357,7 +357,7 @@ export function sessionsRoutes(deps: ServerDeps) {
           return c.json(
             {
               error: {
-                type: 'invalid_request',
+                type: 'invalid_request_error',
                 code: 'invalid_define_outcome',
                 message: `user.define_outcome.${outcome.message}`,
               },
@@ -376,7 +376,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         const problem = steerPayloadProblem(event);
         if (problem) {
           return c.json(
-            { error: { type: 'invalid_request', message: `user.steer ${problem}` } },
+            { error: { type: 'invalid_request_error', message: `user.steer ${problem}` } },
             400,
           );
         }
@@ -420,7 +420,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       }
       if (isPiSessionAdmissionError(err)) {
         return c.json({ error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: err.code,
           message: err.message,
         } }, 400);
@@ -451,7 +451,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         return c.json({ error: { type: 'conflict', message: err.message } }, 409);
       }
       if (err.message?.startsWith('Invalid ')) {
-        return c.json({ error: { type: 'invalid_request', message: err.message } }, 400);
+        return c.json({ error: { type: 'invalid_request_error', message: err.message } }, 400);
       }
       return c.json({ error: { type: 'internal_error', message: err.message } }, 500);
     }
@@ -465,7 +465,7 @@ export function sessionsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
 
     const content = normalizeMessageContent(body && typeof body === 'object' ? body.content : undefined);
@@ -473,7 +473,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       return c.json(
         {
           error: {
-            type: 'invalid_request',
+            type: 'invalid_request_error',
             message: 'content must be a string or an array of content blocks',
           },
         },
@@ -506,7 +506,7 @@ export function sessionsRoutes(deps: ServerDeps) {
       if (err instanceof UnsupportedCapabilityError) return unsupportedCapability(c, err);
       if (isPiSessionAdmissionError(err)) {
         return c.json({ error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: err.code,
           message: err.message,
         } }, 400);
@@ -534,7 +534,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         }
         if (isPiSessionAdmissionError(err)) {
           return c.json({ error: {
-            type: 'invalid_request',
+            type: 'invalid_request_error',
             code: err.code,
             message: err.message,
           } }, 400);
@@ -755,9 +755,9 @@ function mediaTypeForArtifactName(name: string): string {
   return 'application/octet-stream';
 }
 function invalid(c: any, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', message } }, 400);
 }
 
 function invalidWithCode(c: any, code: string, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', code, message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', code, message } }, 400);
 }

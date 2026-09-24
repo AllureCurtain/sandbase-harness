@@ -110,7 +110,7 @@ describe('collections with followable cursors', () => {
 
     const malformed = await get('/v1/skills?limit=1&page=not-a-cursor');
     expect(malformed.res.status).toBe(400);
-    expect(malformed.body.error.type).toBe('invalid_request');
+    expect(malformed.body.error.type).toBe('invalid_request_error');
 
     const anthropic = await get('/v1/skills?source=anthropic&limit=1');
     expect(anthropic.res.status).toBe(200);
@@ -192,7 +192,7 @@ describe('collections with followable cursors', () => {
 
     const malformed = await get(`/v1/credential-vaults/${vault.body.id}/audit?page=not-a-cursor`);
     expect(malformed.res.status).toBe(400);
-    expect(malformed.body.error.type).toBe('invalid_request');
+    expect(malformed.body.error.type).toBe('invalid_request_error');
 
     // The scope's own cursor is still accepted.
     const own = await get(`${credentialsPath}?limit=1`);

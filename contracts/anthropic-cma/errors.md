@@ -28,10 +28,23 @@ Errors are produced by shared helpers so every route answers in one shape:
 
 | Helper | HTTP | `error.type` | Extra |
 | --- | --- | --- | --- |
-| `invalid(c, message, code?)` | 400 | `invalid_request` | optional stable `code` |
+| `invalid(c, message, code?)` | 400 | `invalid_request_error` | optional stable `code` |
 | `conflict(c, message, code?)` | 409 | `conflict` | optional stable `code` |
 | `notFound(c, message)` | 404 | `not_found` | — |
 | `unsupportedCapability(c, error)` | 400 | `unsupported_capability` | `details.capabilities: [{id, reason}]` |
+
+One category, one wire value. The 400 type above is emitted from the shared
+helper, from `operation-helpers.ts`'s twin of it, and from the remaining
+hand-written envelopes in individual route modules — so the spelling is a
+single decision applied everywhere rather than a per-family choice.
+
+There is exactly one place where the wire type is not a literal: the session
+resource routes, whose core layer (`src/core/session/session-resources.ts`)
+returns a local `code` that also selects the HTTP status. That code vocabulary is
+internal and stays as it is; the route translates it through an explicit
+`WIRE_ERROR_TYPE` map before answering. The two were the same string, so
+canonicalising only the route literals would have left three paths emitting the
+legacy value — the kind of gap a value-by-value grep does not reveal.
 
 The same `notFound` envelope answers a path this server does not serve. It is
 registered as the server's fallback in `src/api/server.ts`, so an unrouted
@@ -72,11 +85,16 @@ names the exact offending capability, field, or precondition.
 | Difference | Detail |
 | --- | --- |
 | Code strings | SandBase `code` values are local and stable. The published contract documents error categories, not SandBase's code vocabulary; no code string here is claimed to be an upstream value. |
+| `invalid_request` as a wire type | Superseded: the canonical spelling is `invalid_request_error`, and every route emits it. `invalid_request` remains a **valid alias** for the same category — a client that branches on `error.type` may treat the two as equal — until the official SDK conformance suite passes against the canonical value, at which point the alias is retired. The value was never an upstream one; the published pages that name this category use `invalid_request_error`. |
 | HTTP status mapping | SandBase maps a memory content-hash mismatch to 409 `precondition_failed`. The published contract states the precondition concept but not this exact status pairing. |
 | Extensions | `unsupported_capability` and `precondition_failed` are SandBase codes covering local runtime facts. |
 
 ## 5. Reason for the difference
 
+- The invalid-request spelling was unified because the two values were in use at
+  once, so a client branching on `error.type` had to know which route family it
+  was talking to in order to compare one category. The alias is time-limited
+  rather than permanent: a permanent second spelling would be a second contract.
 - Local code strings exist because a client that retries needs to distinguish a
   fixable request bug from a state conflict. Collapsing every 400 into one
   opaque body would make correct retry logic impossible, which the admission
@@ -96,6 +114,11 @@ names the exact offending capability, field, or precondition.
   authentication still precedes routing.
 - `tests/unit/memory-semantics.test.ts` — precondition evaluation returns
   `precondition_failed` with the current hash.
+- `tests/integration/invalid-request-spelling.test.ts` — a rejection from each
+  route family that can answer 400, including the session resource path whose
+  type comes from the core `code`, all report `invalid_request_error`; and a
+  source scan asserts no route module emits the legacy literal as a wire type,
+  so the canonical spelling cannot drift back one envelope at a time.
 
 ## 7. Status
 

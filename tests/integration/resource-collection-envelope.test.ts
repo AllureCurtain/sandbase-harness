@@ -222,7 +222,7 @@ describe('resource collection envelope', () => {
     // "page one".
     const malformed = await get('/v1/sessions?page=2');
     expect(malformed.res.status).toBe(400);
-    expect(malformed.body.error.type).toBe('invalid_request');
+    expect(malformed.body.error.type).toBe('invalid_request_error');
   });
 
   it('binds a session cursor to the filter it was issued for', async () => {

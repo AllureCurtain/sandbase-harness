@@ -62,7 +62,7 @@ describe('event_deltas[] route boundary', () => {
 
     expect(result.status).toBe(400);
     expect(result.contentType).toContain('application/json');
-    expect(JSON.parse(result.body).error.type).toBe('invalid_request');
+    expect(JSON.parse(result.body).error.type).toBe('invalid_request_error');
   });
 
   it('rejects an empty value rather than treating it as no previews', async () => {

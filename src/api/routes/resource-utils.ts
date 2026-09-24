@@ -55,7 +55,7 @@ export function arrayOfStrings(value: unknown): string[] {
  * when no code applies.
  */
 export function invalid(c: any, message: string, code?: string): Response {
-  return c.json({ error: { type: 'invalid_request', message, ...(code ? { code } : {}) } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', message, ...(code ? { code } : {}) } }, 400);
 }
 
 export function conflict(c: any, message: string, code?: string): Response {

@@ -64,7 +64,7 @@ function stringField(value: unknown): string | undefined {
 }
 
 function invalid(c: any, message: string): Response {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', message } }, 400);
 }
 
 function notFound(c: any, message: string): Response {

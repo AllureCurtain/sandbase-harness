@@ -43,12 +43,12 @@ export function agentsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
 
     const result = validateAgentDefinition(body);
     if (!result.valid || !result.data) {
-      return c.json({ error: { type: 'invalid_request', message: 'Invalid agent definition', details: result.errors } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Invalid agent definition', details: result.errors } }, 400);
     }
 
     const agent = result.data;
@@ -90,7 +90,7 @@ export function agentsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
 
     const id = c.req.param('id');
@@ -105,7 +105,7 @@ export function agentsRoutes(deps: ServerDeps) {
     // pair it produces.
     const patch = validateAgentUpdateRequest(body);
     if (!patch.valid) {
-      return c.json({ error: { type: 'invalid_request', message: 'Invalid agent update', details: patch.errors } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Invalid agent update', details: patch.errors } }, 400);
     }
     if (patch.expectedVersion !== undefined && patch.expectedVersion !== (existing.version ?? 1)) {
       return c.json({
@@ -125,7 +125,7 @@ export function agentsRoutes(deps: ServerDeps) {
 
     const result = validateAgentDefinition(merged);
     if (!result.valid || !result.data) {
-      return c.json({ error: { type: 'invalid_request', message: 'Invalid agent definition', details: result.errors } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Invalid agent definition', details: result.errors } }, 400);
     }
 
     const agent = result.data;

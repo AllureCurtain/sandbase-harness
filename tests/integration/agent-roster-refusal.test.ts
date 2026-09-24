@@ -87,7 +87,7 @@ describe('canonical multiagent roster', () => {
     const attempt = await request(ctx.app, 'POST', '/v1/agents', { ...definition, multiagent: roster });
 
     expect(attempt.res.status).toBe(400);
-    expect(attempt.body.error.type).toBe('invalid_request');
+    expect(attempt.body.error.type).toBe('invalid_request_error');
     expect(attempt.body.error.details).toContainEqual({
       path: 'multiagent',
       message: expect.stringContaining('multiagent-roster'),

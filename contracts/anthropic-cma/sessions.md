@@ -320,7 +320,7 @@ reference forms, and the tri-state override rule.
   block id so the model-facing pairing survives, a second decision refused even
   when it uses the other spelling, an id naming neither refused, a resolved call
   not re-decidable by its event id, and the refusal surfacing as
-  `400 invalid_request` over the real route.
+  `400 invalid_request_error` over the real route.
 - `tests/integration/custom-tool-event-id.test.ts` — the same exchange for the
   custom tool family: a parked `agent.custom_tool_use` listed by its event id, an
   answer naming it accepted and the model resumed with the paired result, the

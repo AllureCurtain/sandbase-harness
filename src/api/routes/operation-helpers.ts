@@ -9,12 +9,13 @@ import type { ServerDeps } from '../server.js';
  * a second copy of `invalid`/`notFound` is exactly how two resources come to
  * answer with different error envelopes.
  *
- * They are deliberately byte-for-byte the previous implementations. In
- * particular the error type strings are the local `invalid_request` /
- * `not_found` spellings, not the canonical `invalid_request_error` /
- * `not_found_error` ones: migrating the spelling is its own change across the
- * whole API surface, and smuggling it into a routing change would alter the body
- * of every existing deployment response.
+ * These are byte-for-byte the previous implementations apart from the error type
+ * string, which was canonicalised across the whole API surface in its own
+ * change. `not_found` was left alone: there is no canonical counterpart for it in
+ * the published contract, so renaming it would have been invention rather than
+ * alignment. The comment that stood here claimed `not_found_error` was the
+ * canonical spelling — that value appears nowhere in the published material, and
+ * the claim is the kind of unverified confidence this file exists to avoid.
  */
 
 export type JsonObject = Record<string, unknown>;
@@ -61,7 +62,7 @@ export async function readObjectBody(c: any): Promise<{ ok: true; value: JsonObj
 }
 
 export function invalid(c: any, message: string) {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', message } }, 400);
 }
 
 export function notFound(c: any, message: string) {

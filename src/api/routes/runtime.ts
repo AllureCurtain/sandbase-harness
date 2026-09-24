@@ -73,7 +73,7 @@ export function runtimeRoutes(deps: ServerDeps) {
     if (rawLevel && !LOG_LEVELS.has(level as LogLevel)) {
       return c.json({
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           message: 'level must be one of debug, info, warn, or error',
         },
       }, 400);
@@ -165,7 +165,7 @@ export function runtimeRoutes(deps: ServerDeps) {
   app.get('/mcp/status', (c) => {
     const sessionId = c.req.query('session_id');
     if (!sessionId) {
-      return c.json({ error: { type: 'invalid_request', message: 'session_id query param is required' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'session_id query param is required' } }, 400);
     }
     if (!deps.sessionManager.get(sessionId)) {
       return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);

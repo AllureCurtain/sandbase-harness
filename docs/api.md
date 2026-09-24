@@ -76,13 +76,13 @@ anthropic-beta: agent-memory-2026-07-22
 ```
 
 Do not combine that beta with `managed-agents-2026-04-01` on a memory-store
-request: admission rejects the pair with `400 invalid_request`. The documented
+request: admission rejects the pair with `400 invalid_request_error`. The documented
 read-only exception, `GET /v1/memory_stores/{id}/memories`, accepts either of
 those two betas when sent alone.
 
 `anthropic-beta` accepts comma-separated identifiers; the required identifier
 must appear in the list. Missing, malformed, or unsupported compatibility
-headers return `400` with the standard `invalid_request` error envelope before
+headers return `400` with the standard `invalid_request_error` error envelope before
 route business logic executes. Runtime extension endpoints under `/v1/x` do not
 use CMA header admission.
 
@@ -143,13 +143,13 @@ Error responses:
 ```json
 {
   "error": {
-    "type": "invalid_request",
+    "type": "invalid_request_error",
     "message": "name is required"
   }
 }
 ```
 
-Common error types are `invalid_request`, `not_found`, `conflict`,
+Common error types are `invalid_request_error`, `not_found`, `conflict`,
 `not_available`, and `internal_error`.
 
 A path the server does not serve answers the same `not_found` envelope with the
@@ -572,7 +572,7 @@ curl -N "http://127.0.0.1:3000/v1/sessions/SESSION_ID/events/stream?event_deltas
 
 `event_deltas[]` is repeated once per preview type. Two types are accepted:
 `agent.message` and `agent.thinking`. An unsupported value, an empty value, and
-more than 100 values each return `400 invalid_request` before the stream opens, so
+more than 100 values each return `400 invalid_request_error` before the stream opens, so
 the rejection arrives as a normal response rather than as an error frame on an
 established stream. Exactly 100 values are accepted, and a repeated value is
 collapsed rather than previewed twice.
@@ -614,7 +614,7 @@ curl -X POST http://127.0.0.1:3000/v1/sessions/SESSION_ID/events \
 
 `content` must be a non-empty array of at most 1000 valid blocks. An empty array,
 a bare string, a block whose text is empty or whitespace-only, and a batch over
-the ceiling each return `400 invalid_request`. A size violation is reported as a
+the ceiling each return `400 invalid_request_error`. A size violation is reported as a
 size violation, naming the ceiling, rather than as a generic shape error.
 
 `system.message` is privileged system-level context, not a user turn. It applies to

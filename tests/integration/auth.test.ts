@@ -255,7 +255,7 @@ describe('API authentication', () => {
       // The code is part of the published contract, so the wire value is
       // pinned here rather than read from the module under test.
       expect(await res.json()).toEqual({
-        error: { type: 'invalid_request', code, message },
+        error: { type: 'invalid_request_error', code, message },
       });
     });
 
@@ -273,7 +273,7 @@ describe('API authentication', () => {
       expect(rejected.status).toBe(400);
       expect(await rejected.json()).toEqual({
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: 'unsupported_anthropic_beta',
           message: 'Unsupported anthropic-beta. Expected "agent-memory-2026-07-22".',
         },
@@ -306,7 +306,7 @@ describe('API authentication', () => {
       expect(combinedBetas.status).toBe(400);
       expect(await combinedBetas.json()).toEqual({
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           code: 'conflicting_memory_store_beta',
           message: 'Do not combine managed-agents and agent-memory beta headers for memory-store requests.',
         },

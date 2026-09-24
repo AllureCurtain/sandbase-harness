@@ -77,13 +77,13 @@ export function settingsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
     const area = body?.area;
     if (typeof area !== 'string' || !SETTINGS_TEST_AREAS.has(area as RuntimeSettingsTestArea)) {
       return c.json({
         error: {
-          type: 'invalid_request',
+          type: 'invalid_request_error',
           message: 'area must be one of model, loop_engine, storage.metadata, storage.artifacts, memory, or sandbox',
         },
       }, 400);
@@ -128,10 +128,10 @@ export function settingsRoutes(deps: ServerDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: { type: 'invalid_request', message: 'Request body must be valid JSON' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
     if (!body || typeof body !== 'object' || !Number.isInteger(body.revision) || (body.revision as number) < 1) {
-      return c.json({ error: { type: 'invalid_request', message: 'revision must be a positive integer' } }, 400);
+      return c.json({ error: { type: 'invalid_request_error', message: 'revision must be a positive integer' } }, 400);
     }
     const adapters = describeSettingsAdapters(deps.runtime?.sandboxProviders);
     const validation = validateRuntimeSettings(body.config, availabilityFromDescriptors(adapters));

@@ -104,7 +104,7 @@ export function runsRoutes(deps: ServerDeps) {
 function respondAdmissionError(c: any, err: unknown) {
   if (isLoopEngineAdmissionError(err) || isPiSessionAdmissionError(err) || isEnvironmentConfigError(err)) {
     const code = (err as { code: string }).code;
-    return c.json({ error: { type: 'invalid_request', code, message: (err as Error).message } }, 400);
+    return c.json({ error: { type: 'invalid_request_error', code, message: (err as Error).message } }, 400);
   }
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes('Agent not found')) {
@@ -464,12 +464,12 @@ function runAccepted(sessionId: string, status: 'running' | 'requires_action') {
 }
 
 function invalid(c: any, message: string) {
-  return c.json({ error: { type: 'invalid_request', message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', message } }, 400);
 }
 
 function invalidWithCode(c: any, code: string | undefined, message: string) {
   // A rejection with no published code still answers in the same envelope; the
   // `code` key is omitted rather than filled with a placeholder the client
   // could mistake for a stable identifier.
-  return c.json({ error: { type: 'invalid_request', ...(code ? { code } : {}), message } }, 400);
+  return c.json({ error: { type: 'invalid_request_error', ...(code ? { code } : {}), message } }, 400);
 }
