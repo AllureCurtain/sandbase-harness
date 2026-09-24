@@ -1273,6 +1273,44 @@ curl -X POST http://127.0.0.1:3000/v1/environments \
 }'
 ```
 
+An environment's backend is resolved fail-closed, and the resolution is the same
+one sessions use:
+
+- `sandbox_provider` names the execution backend and always wins when it is
+  present. It is stored exactly as written and validated by the sandbox
+  registry, so an unregistered name is refused there by name rather than
+  replaced with another backend. A runtime that registers a provider this build
+  does not ship can still name it.
+- Otherwise `hosting_type` selects the backend: `local`, `docker`,
+  `kubernetes`, and `self_hosted` map to the backend of the same name.
+- Otherwise the environment runs on `local`, the runtime default. An
+  environment that declares neither is the only case that resolves to `local`;
+  a declaration this runtime cannot serve is never lowered to it.
+
+`hosting_type: "cloud"` is refused with `400 invalid_request_error` and code
+`unsupported_hosting_type`: cloud names hosting on machines this runtime does
+not own, so no setting of this runtime can honor it. The same refusal covers any
+other unrecognized `hosting_type`. A `config` that is not a JSON object, a
+stored `config` that is not valid JSON, or a declared `hosting_type` /
+`sandbox_provider` that is not a string is refused with code
+`invalid_environment_config` or `unsupported_hosting_type`; an update that does
+not supply a replacement `config` cannot be applied over a damaged record.
+
+Resolution failures surface at `POST /v1/sessions`, before any session row is
+written, and at `POST /v1/sessions/{id}/events`, before any event is appended,
+so a session whose environment cannot be resolved never accepts work. Responses
+report the backend the environment declares: a Kubernetes environment is
+reported as `kubernetes`, and a declared `hosting_type` is echoed as written
+even when this runtime would refuse to execute it. An environment whose stored
+`config` cannot be read is reported as `hosting_type: "unknown"` with a null
+`sandbox_provider` rather than as `local`, so repairing it is a deliberate
+choice: an update that does not carry a replacement `config` is refused.
+
+`env_default` is the workspace fallback Environment, so its backend is the
+workspace runtime setting (`sandbox.provider`) and its stored `config` is the
+legacy seed those settings were derived from; a named Environment decides its own
+backend as described above.
+
 Worker keys and work queues are advanced self-hosted controls. They are not
 needed for the default local runtime.
 

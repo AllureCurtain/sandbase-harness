@@ -38,6 +38,7 @@ import { normalizeDefineOutcome, normalizeInitialEvents } from './initial-events
 import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
 import { isOutcomeGraderUnavailableError } from '@/core/outcomes/loop.js';
 import { isPiSessionAdmissionError } from '@/core/session/pi-policy.js';
+import { isEnvironmentConfigError } from '@/sandbox/provider-names.js';
 import {
   isLoopEngineAdmissionError,
   resolveRequestedLoopEngine,
@@ -160,6 +161,12 @@ export function sessionsRoutes(deps: ServerDeps) {
           code: err.code,
           message: err.message,
         } }, 400);
+      }
+      // An Environment this runtime cannot resolve is refused here, before the
+      // session row exists. It is a configuration fault in the request's target,
+      // not an internal failure, so it answers with its own code instead of 500.
+      if (isEnvironmentConfigError(err)) {
+        return invalidWithCode(c, err.code, err.message);
       }
       if (err instanceof Error && err.message.includes('Agent not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
@@ -431,6 +438,12 @@ export function sessionsRoutes(deps: ServerDeps) {
       if (isOutcomeGraderUnavailableError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
+      // Admission resolves the session's Environment for every engine, so a
+      // damaged config or an unsupported hosting type is a client error the
+      // caller can act on, not a runtime fault.
+      if (isEnvironmentConfigError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
       if (err.message?.includes('not found')) {
         return c.json({ error: { type: 'not_found', message: err.message } }, 404);
       }
@@ -503,6 +516,11 @@ export function sessionsRoutes(deps: ServerDeps) {
       if (isBudgetError(err)) {
         return invalidWithCode(c, err.code, err.message);
       }
+      // An Environment the runtime cannot resolve is refused before SSE opens,
+      // so the caller still gets the standard JSON error envelope.
+      if (isEnvironmentConfigError(err)) {
+        return invalidWithCode(c, err.code, err.message);
+      }
       throw err;
     }
 
@@ -522,6 +540,9 @@ export function sessionsRoutes(deps: ServerDeps) {
           } }, 400);
         }
         if (isBudgetError(err)) {
+          return invalidWithCode(c, err.code, err.message);
+        }
+        if (isEnvironmentConfigError(err)) {
           return invalidWithCode(c, err.code, err.message);
         }
         if (err.message?.includes('not found')) {

@@ -3,7 +3,7 @@ import { relative, resolve, sep } from 'node:path';
 import { resolveEnvVars } from '@/core/config/env-resolver.js';
 import { defaultSettingsAvailability, runtimeSettingsSchema, validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from './schema.js';
 import { MINIMAX_PROVIDER, miniMaxModelId, miniMaxOpenAiBaseUrl } from '@/core/model/minimax.js';
-import { sandboxSettingForProvider } from '@/sandbox/provider-names.js';
+import { parseEnvironmentConfig, sandboxSettingForProvider, workspaceDefaultSettingForEnvironmentConfig } from '@/sandbox/provider-names.js';
 import type { ModelConfig } from '@/types/model.js';
 import {
   cleanupUnreferencedRuntimeSettingsSecrets,
@@ -292,15 +292,17 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
     ORDER BY CASE WHEN id = 'env_default' THEN 0 ELSE 1 END, created_at ASC
     LIMIT 1
   `).get() as { config: string } | undefined;
-  const envConfig = parseObject(environment?.config);
+  const envConfig = environment
+    ? parseEnvironmentConfig(environment.config, 'The workspace default Environment')
+    : {};
   const { vendor, base_url: baseUrl } = normalizeModelSource(model?.provider, model?.base_url ?? undefined);
-  // Seeding from pre-Settings-V2 workspace data: an absent or unrecognized
-  // legacy value means "was never configured", so local is the right seed here.
-  // This is the one place a default is correct — runtime resolution must still
-  // fail loud rather than substitute a backend (see sandbox/registry).
-  const sandbox = typeof envConfig.sandbox_provider === 'string'
-    ? sandboxSettingForProvider(envConfig.sandbox_provider) ?? 'local'
-    : 'local';
+  // Seeding from pre-Settings-V2 workspace data. A row that declares nothing was
+  // never configured, so local is the right seed; a row that declares a backend
+  // or hosting type this runtime cannot serve is refused instead, because this
+  // seed IS the workspace default and substituting local here would run every
+  // session without an explicit Environment on the runtime host. Runtime
+  // resolution applies the same rule rather than replacing a backend.
+  const sandbox = workspaceDefaultSettingForEnvironmentConfig(envConfig, 'The workspace default Environment');
   const memoryEnabled = seed.memory?.enabled ?? seed.memoryEnabled === true;
 
   return {
@@ -352,16 +354,6 @@ function normalizeVendor(provider?: string): RuntimeSettings['model']['vendor'] 
   if (provider === MINIMAX_PROVIDER) return MINIMAX_PROVIDER;
   if (!provider || provider === 'openai') return 'openai';
   return 'openai_compatible';
-}
-
-function parseObject(value?: string): Record<string, unknown> {
-  if (!value) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 function numberValue(value: unknown): number | undefined {

@@ -93,6 +93,10 @@ import {
   PI_RPC_GATE_UNAVAILABLE_CODE,
 } from '@/strategy/pi/rpc-wire.js';
 import {
+  parseEnvironmentConfig,
+  sandboxProviderForEnvironmentConfig,
+} from '@/sandbox/provider-names.js';
+import {
   MODEL_AUTH_FAILED_CODE,
   MODEL_CONFIG_INVALID_CODE,
   MODEL_NOT_FOUND_CODE,
@@ -422,9 +426,13 @@ export class SessionManager {
     // tool or model set than the one that was checked.
     const effectiveDefinition = this.resolveSessionAgentDefinition(agentSnapshot.definition, params.agentOverrides);
     this.assertAgentCapabilities(effectiveDefinition);
+    // Resolved for every engine, not only Pi: an Environment the runtime cannot
+    // resolve must be refused before the row exists, so a session is never
+    // created that can only fail once it tries to provision a sandbox.
+    const environmentProvider = this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default');
     if (loopEngine === 'pi') {
       assertPiAgentCanExecute(effectiveDefinition);
-      assertPiEnvironmentCanExecute(this.resolveEnvironmentSandboxProvider(params.environmentId ?? 'env_default'));
+      assertPiEnvironmentCanExecute(environmentProvider);
     }
 
     // A budget can only be metered when the model the session runs has a list
@@ -577,6 +585,12 @@ export class SessionManager {
    * Session admission also runs in embedded/direct manager use, where runtime
    * composition is not available. Read only the declared Environment backend
    * here; Settings V2 separately validates the workspace default backend.
+   *
+   * A config this build cannot read, or a declaration this build cannot serve,
+   * is refused rather than reported as "nothing declared": the fallback that
+   * used to answer a damaged record with the local backend turned it into
+   * unsandboxed local execution, and a bare `hosting_type: "docker"` row into
+   * the same.
    */
   private declaredEnvironmentSandboxProvider(environmentId: string): string | undefined {
     // The workspace default is overlaid from active Settings V2 at runtime and
@@ -586,15 +600,20 @@ export class SessionManager {
       'SELECT config FROM environments WHERE id = ? AND archived_at IS NULL',
     ).get(environmentId) as { config: string } | undefined;
     if (!row) return undefined;
-    try {
-      const config = JSON.parse(row.config) as Record<string, unknown>;
-      if (typeof config.sandbox_provider === 'string' && config.sandbox_provider.trim()) {
-        return config.sandbox_provider;
-      }
-      return config.hosting_type === 'self_hosted' ? 'self_hosted' : 'local';
-    } catch {
-      return 'local';
-    }
+    const context = `Environment ${environmentId}`;
+    return sandboxProviderForEnvironmentConfig(parseEnvironmentConfig(row.config, context), context);
+  }
+
+  /**
+   * Refuse a session whose Environment cannot resolve to an execution backend.
+   *
+   * Runs at creation and at event admission, so an unsupported hosting type, a
+   * damaged config, or a backend this process does not have is reported to the
+   * caller before any model request, tool call, confirmation, event append, or
+   * sandbox provision can happen — rather than mid-stream as a session error.
+   */
+  private assertEnvironmentProviderResolvable(session: Session): void {
+    this.resolveEnvironmentSandboxProvider(session.environmentId);
   }
 
   /**
@@ -613,6 +632,10 @@ export class SessionManager {
     // Existing Pi rows can predate the creation guard. Reject them before
     // repair/persistence or queuing so a resumed turn cannot bypass policy.
     this.assertPiSessionCanExecute(session, event);
+    // Runs for every engine: a session whose Environment stopped resolving (a
+    // later edit wrote an unsupported hosting type, or the stored config was
+    // damaged) is refused here, before the append-only log or any execution.
+    this.assertEnvironmentProviderResolvable(session);
     // Checked after the engine policy so an unsupported engine keeps its own
     // error code: a client that must switch engines should hear that, not a
     // budget refusal it cannot act on.

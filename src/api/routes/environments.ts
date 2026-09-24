@@ -15,6 +15,13 @@ import {
 } from './resource-utils.js';
 import { SHIPPED_SANDBOX_PROVIDER_TYPES } from '@/types/sandbox.js';
 import {
+  environmentHostingProjection,
+  hostingTypeError,
+  isEnvironmentConfigError,
+  parseEnvironmentConfig,
+  UNREADABLE_HOSTING_TYPE,
+} from '@/sandbox/provider-names.js';
+import {
   createEnvironmentWorkerKey,
   listEnvironmentWorkerKeys,
   revokeEnvironmentWorkerKey,
@@ -35,7 +42,9 @@ export function environmentRoutes(deps: ServerDeps) {
     if (!body.ok) return body.response;
     const name = stringField(body.value.name);
     if (!name) return invalid(c, 'name is required');
-    const config = normalizeEnvironmentConfig(body.value);
+    const normalized = normalizeEnvironmentConfig(body.value);
+    if (!normalized.ok) return invalid(c, normalized.message);
+    const config = normalized.config;
     const providerError = sandboxProviderError(config);
     if (providerError) return invalid(c, providerError);
     const id = `env_${nanoid(18)}`;
@@ -70,7 +79,23 @@ export function environmentRoutes(deps: ServerDeps) {
     if (!existing) return notFound(c, 'Environment not found');
 
     const name = stringField(body.value.name) ?? existing.name;
-    const config = normalizeEnvironmentConfig(body.value, parseObject(existing.config));
+    // The stored config is the merge base, so an unreadable one is refused
+    // rather than silently replaced by `{}` — which would rewrite a damaged
+    // Environment into an Environment that declares nothing and therefore runs
+    // locally. A request that carries a complete `config` is the repair path.
+    let storedConfig: Record<string, unknown>;
+    try {
+      storedConfig = parseEnvironmentConfig(existing.config, `Environment ${id}`);
+    } catch (err) {
+      if (isEnvironmentConfigError(err) && isPlainObject(body.value.config)) {
+        storedConfig = {};
+      } else {
+        return invalid(c, err instanceof Error ? err.message : String(err), isEnvironmentConfigError(err) ? err.code : undefined);
+      }
+    }
+    const normalized = normalizeEnvironmentConfig(body.value, storedConfig);
+    if (!normalized.ok) return invalid(c, normalized.message);
+    const config = normalized.config;
     const providerError = sandboxProviderError(config);
     if (providerError) return invalid(c, providerError);
     deps.db.prepare(
@@ -177,6 +202,10 @@ function parseLimit(value: string | undefined): number | undefined {
   return Math.trunc(parsed);
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 /** The environment id when it names a live (non-archived) environment. */
 function activeEnvironmentId(c: any, deps: ServerDeps): string | undefined {
   const id = c.req.param('id');
@@ -185,13 +214,24 @@ function activeEnvironmentId(c: any, deps: ServerDeps): string | undefined {
 }
 
 function toEnvironment(row: EnvironmentRow) {
-  const config = parseObject(row.config);
+  let config: Record<string, unknown>;
+  let unreadable = false;
+  try {
+    config = parseEnvironmentConfig(row.config, `Environment ${row.id}`);
+  } catch {
+    // A row this build cannot read is reported as unreadable rather than as the
+    // backend an empty config would resolve to: showing `local` is what let an
+    // operator open the damaged Environment, save the form, and thereby store a
+    // local one. `unknown` is unservable, so that save is refused instead.
+    config = {};
+    unreadable = true;
+  }
   return {
     id: row.id,
     type: 'environment' as ResourceKind,
     name: row.name,
     description: row.description ?? '',
-    hosting_type: environmentHostingType(config),
+    hosting_type: unreadable ? UNREADABLE_HOSTING_TYPE : environmentHostingType(config),
     sandbox_provider: typeof config.sandbox_provider === 'string' ? config.sandbox_provider : null,
     network: objectField(config.network),
     packages: Array.isArray(config.packages) ? config.packages : [],
@@ -204,10 +244,21 @@ function toEnvironment(row: EnvironmentRow) {
   };
 }
 
+/**
+ * Merge the request's declared hosting fields over the stored config.
+ *
+ * A `config` that is not an object is refused rather than dropped: ignoring it
+ * would leave the Environment resolving to a backend the caller did not ask
+ * for. Individual field shapes are validated on the merged config by
+ * {@link sandboxProviderError}.
+ */
 function normalizeEnvironmentConfig(
   body: Record<string, unknown>,
   existing: Record<string, unknown> = {},
-): Record<string, unknown> {
+): { ok: true; config: Record<string, unknown> } | { ok: false; message: string } {
+  if (body.config !== undefined && (!body.config || typeof body.config !== 'object' || Array.isArray(body.config))) {
+    return { ok: false, message: 'config must be an object' };
+  }
   const config = {
     ...existing,
     ...objectField(body.config),
@@ -215,32 +266,65 @@ function normalizeEnvironmentConfig(
   for (const key of ['hosting_type', 'sandbox_provider', 'network', 'packages'] as const) {
     if (body[key] !== undefined) config[key] = body[key];
   }
-  return config;
+  return { ok: true, config };
 }
 
 /**
- * Reject `sandbox_provider` values that no registered backend can serve.
+ * Reject an Environment whose declared backend or hosting type this runtime
+ * cannot execute.
  *
- * Without this the environment is accepted at write time and only fails much
- * later, when a session tries to boot a sandbox that does not exist.
+ * Without this the environment is accepted at write time and then either fails
+ * much later, when a session tries to boot a sandbox that does not exist, or —
+ * for `hosting_type` — silently ran on the local backend instead.
  */
 function sandboxProviderError(config: Record<string, unknown>): string | undefined {
+  const malformed = hostingFieldError(config);
+  if (malformed) return malformed;
+  // `hosting_type` is checked first so the message names the field the caller
+  // most likely wrote: the Console derives the backend from it, so a hosting
+  // value this runtime cannot serve would otherwise be reported as a backend
+  // name the operator never typed.
+  const hostingType = stringField(config.hosting_type);
+  const hostingError = hostingType ? hostingTypeError(hostingType) : undefined;
+  if (hostingError) return hostingError;
   const provider = stringField(config.sandbox_provider);
-  if (!provider) return undefined;
-  if ((SHIPPED_SANDBOX_PROVIDER_TYPES as readonly string[]).includes(provider)) return undefined;
-  return `sandbox_provider "${provider}" is not a known sandbox backend `
-    + `(expected one of: ${SHIPPED_SANDBOX_PROVIDER_TYPES.join(', ')})`;
+  if (provider && !(SHIPPED_SANDBOX_PROVIDER_TYPES as readonly string[]).includes(provider)) {
+    return `sandbox_provider "${provider}" is not a known sandbox backend `
+      + `(expected one of: ${SHIPPED_SANDBOX_PROVIDER_TYPES.join(', ')})`;
+  }
+  return undefined;
 }
 
-function environmentHostingType(config: Record<string, unknown>): 'cloud' | 'local' | 'docker' | 'self_hosted' {
-  if (config.hosting_type === 'self_hosted') return 'self_hosted';
-  if (config.hosting_type === 'docker') return 'docker';
-  if (config.hosting_type === 'local') return 'local';
-  if (config.hosting_type === 'cloud') return 'cloud';
-  if (config.sandbox_provider === 'self_hosted') return 'self_hosted';
-  if (config.sandbox_provider === 'docker') return 'docker';
-  if (config.sandbox_provider === 'local') return 'local';
-  return 'cloud';
+/**
+ * Refuse a hosting field that is present but cannot name a backend.
+ *
+ * A non-string (`7`, `{ type: "cloud" }`) is refused rather than dropped:
+ * dropping it would leave the Environment resolving to the default local
+ * backend while the caller believed it had declared something. `null` and an
+ * empty string mean "not declared" — how a client clears a field — and are left
+ * to the resolver's documented default.
+ */
+function hostingFieldError(config: Record<string, unknown>): string | undefined {
+  for (const key of ['hosting_type', 'sandbox_provider'] as const) {
+    const value = config[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string') return `${key} must be a string`;
+  }
+  return undefined;
+}
+
+/**
+ * The public `hosting_type` an Environment reports.
+ *
+ * Shared with the runtime so a backend the runtime can execute is never
+ * described as hosting it does not have: a `kubernetes` Environment used to be
+ * reported as `cloud`, and a config that declared only a backend used to fall
+ * through to `cloud` as well. A declared value that this runtime does not
+ * recognize is echoed verbatim rather than replaced, and a config that declares
+ * nothing reports the backend it resolves to.
+ */
+function environmentHostingType(config: Record<string, unknown>): string {
+  return environmentHostingProjection(config);
 }
 
 interface EnvironmentRow {
