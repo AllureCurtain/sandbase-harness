@@ -214,6 +214,45 @@ export interface ValidationResult {
 // ============================================================
 
 /**
+ * Capability id the canonical `multiagent` roster refusal points at.
+ *
+ * Exported so the create path, the update path, and the capability matrix name
+ * the same capability: a refusal a caller cannot look up is a refusal they
+ * cannot act on.
+ */
+export const MULTIAGENT_ROSTER_CAPABILITY_ID = 'multiagent-roster';
+
+/**
+ * The refusal for a canonical `multiagent` roster.
+ *
+ * Returned rather than letting the schema strip the field. `agentDefinitionSchema`
+ * drops what it does not declare, so without this check a create request carrying
+ * a roster would answer 201 and behave as if the roster did not exist — the
+ * caller would believe delegation by roster was in effect. The runtime implements
+ * no thread, coordinator, or advisor surface, so the only honest answer is a named
+ * refusal that points at the capability and at the local delegation extension.
+ */
+export function multiagentRosterRefusal(): ValidationError {
+  return {
+    path: 'multiagent',
+    message:
+      `The canonical multiagent roster is unavailable in this runtime (capability "${MULTIAGENT_ROSTER_CAPABILITY_ID}"): no thread, coordinator, or advisor surface is implemented, so the roster is refused rather than accepted and ignored. `
+      + 'Use the local delegation extension instead — "delegations" names agents to call, and "enable_general_subagent" allows a one-level temporary sub-agent. '
+      + 'GET /v1/x/capabilities records the gap.',
+  };
+}
+
+/** True when the caller's own payload carries a `multiagent` key. */
+export function declaresMultiagentRoster(input: unknown): boolean {
+  return (
+    !!input
+    && typeof input === 'object'
+    && !Array.isArray(input)
+    && Object.prototype.hasOwnProperty.call(input, 'multiagent')
+  );
+}
+
+/**
  * Validate an unknown object against the AgentDefinition schema.
  * Returns structured errors with field paths on failure.
  */
@@ -227,6 +266,12 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     }));
 
     return { valid: false, errors };
+  }
+
+  // Refused from the caller's own value, before the schema's stripped copy is
+  // trusted, so the field cannot be dropped on the way to the store.
+  if (declaresMultiagentRoster(input)) {
+    return { valid: false, errors: [multiagentRosterRefusal()] };
   }
 
   // Domain-list rules the schema cannot express without losing the exact

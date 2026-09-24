@@ -33,8 +33,10 @@ mcp-tunnel: not_applicable
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
-Threads, the coordinator, and the advisor are **not** implemented either; they
-have their own file, [`threads.md`](./threads.md), which records the gap.
+Threads, the coordinator, the advisor, and the canonical `multiagent` roster are
+**not** implemented either; they have their own file,
+[`threads.md`](./threads.md), which records the gap and the refusal that keeps a
+caller from assuming otherwise.
 
 Failure mechanism:
 
@@ -88,6 +90,9 @@ unsupported capability and its reason, and separating "not implemented" from
   rejected and no session is created.
 - `tests/unit/loop-engine-truthfulness.test.ts` — no capability is reported as
   available when it cannot execute.
+- `tests/integration/agent-roster-refusal.test.ts` — the related refusal this
+  file's threads gap depends on: a canonical `multiagent` roster is rejected by
+  name before anything is persisted.
 
 ## 7. Status
 

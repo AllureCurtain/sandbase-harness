@@ -131,7 +131,14 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'agents',
     id: 'model-object-profile',
     status: 'partial',
-    reason: 'String and object model forms parse field by field. `effort` is accepted and carried into the stored definition but does not change the provider request and is not projected back on read; `inference_geo` is refused by name with `unsupported_model_field` because this runtime has no inference-geography control.',
+    reason: 'String and object model forms parse field by field. `effort` is accepted and carried into the stored definition but does not change the provider request and is not projected back on read; `inference_geo` is refused by name with `unsupported_model_field` because this runtime has no inference-geography control; and a canonical `multiagent` roster is refused by name rather than executed.',
+    contract: 'contracts/anthropic-cma/agents.md',
+  },
+  {
+    area: 'agents',
+    id: 'multiagent-roster',
+    status: 'unavailable',
+    reason: 'A canonical `multiagent` roster is refused by name on both agent create and agent update, because no thread, coordinator, or advisor surface exists to honour it; accepting it would let a caller believe delegation by roster is in effect. Local delegation is registered separately as an extension.',
     contract: 'contracts/anthropic-cma/agents.md',
   },
   {
@@ -390,7 +397,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'threads',
     id: 'threads-and-coordinator',
     status: 'unavailable',
-    reason: 'Not implemented: there is no thread resource, no thread lifecycle or per-thread event isolation, no coordinator or advisor role, no /threads route, and no thread-scoped budget event. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface.',
+    reason: 'Not implemented: there is no thread resource, no thread lifecycle or per-thread event isolation, no coordinator or advisor role, no /threads route, and no thread-scoped budget event. A request carrying a `multiagent` roster is refused by name rather than silently stripped. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface.',
     contract: 'contracts/anthropic-cma/threads.md',
   },
   {

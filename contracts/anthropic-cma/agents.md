@@ -1,7 +1,8 @@
 # CMA Contract — agents
 
 Contract area: `/v1/agents` — agent definitions, model profile, toolsets.
-Status: `supported` for CRUD; `partial` for the model object profile. See §4.
+Status: `supported` for CRUD; `partial` for the model object profile; the
+canonical `multiagent` roster is `unavailable`. See §4.
 Source: `src/core/agent/schema.ts`, `src/core/agent/update.ts`,
 `src/core/agent/model-object.ts`, `src/api/routes/agents.ts`,
 `src/api/routes/session-normalizers.ts`.
@@ -9,6 +10,7 @@ Source: `src/core/agent/schema.ts`, `src/core/agent/update.ts`,
 <!-- capability-status
 agent-crud: supported
 model-object-profile: partial
+multiagent-roster: unavailable
 -->
 
 ---
@@ -42,6 +44,13 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
   rejected instead of being stored partially.
 - `web_tool.configuration` is fully validated (domain grammar, allowed/blocked
   exclusivity, empty-list rejection). See [`tools.md`](./tools.md).
+- A canonical `multiagent` roster is **refused by name** on both write paths. An
+  agent's create path checks the caller's own payload in
+  `validateAgentDefinition`, because the Zod schema strips keys it does not
+  declare and a stripped roster would answer 201 while doing nothing. The update
+  path special-cases the key in `validateAgentUpdateRequest` so both answers are
+  identical. Both name the capability `multiagent-roster` and point at the local
+  extension.
 
 ## 3. Alignment
 
@@ -56,7 +65,9 @@ field the runtime cannot honour instead of dropping it.
 | `model.speed` | Accepted and stored as the local config spelling; `fast` / `standard` / `extended` are local vocabulary. |
 | `model.effort` | Parsed, validated, and carried into the stored definition, but it does not change the provider request, and the API read projection does not return it. Recorded as accepted-but-no-effect rather than as executed. |
 | `model.inference_geo` | Refused by name with `unsupported_model_field` when a well-formed pin is sent: this runtime has no inference-geography control, so accepting it would promise a pin it cannot hold. An unknown value is `invalid_inference_geo` first. |
+| `multiagent` roster | Refused by name on create and update (capability `multiagent-roster`) because no thread, coordinator, or advisor surface exists. The published roster is not implemented. See [`threads.md`](./threads.md). |
 | Version retention | SandBase keeps prior agent versions readable in its own archive table. The published contract states versioning but not the retention mechanism. |
+| Unknown create fields | The create schema is not strict, so a field neither the schema nor an explicit check declares is dropped rather than refused. The fields that matter — `multiagent` and the model profile — have explicit checks; a general unknown-field refusal is not part of this contract. |
 
 ## 5. Reason for the difference
 
@@ -68,6 +79,11 @@ field the runtime cannot honour instead of dropping it.
   carries it and the value is worth preserving for a provider that can use it
   later; it is recorded as having no effect today so no caller infers a quality
   change from it.
+- The `multiagent` roster is a substantial protocol surface (threads,
+  coordinator role, advisor role). Mapping a local delegation helper onto it
+  would overstate coverage, and accepting the field would let a caller build on
+  delegation by roster that never happens. Refusing it is the only answer that
+  cannot be misread.
 
 ## 6. Corresponding tests
 
@@ -77,11 +93,15 @@ field the runtime cannot honour instead of dropping it.
   field's acceptance or refusal, including `effort` carried through validation
   and `inference_geo` refused by name.
 - `tests/integration/agent-update-contract.test.ts` — the unified partial-update
-  semantics and the unknown-field refusal.
+  semantics, the unknown-field refusal, and the roster refusal on the update
+  path.
+- `tests/integration/agent-roster-refusal.test.ts` — the create path's roster
+  refusal before anything is persisted, and the same refusal on update.
 - `tests/unit/web-tool-policy.test.ts` — per-tool web configuration validation.
 
 ## 7. Status
 
 `supported` for agent CRUD and toolset validation. `partial` overall, because
 the model object profile is understood but partly unexecuted: `effort` has no
-effect and `inference_geo` is refused rather than honoured.
+effect and `inference_geo` is refused rather than honoured. The canonical
+`multiagent` roster is `unavailable` and refused by name.

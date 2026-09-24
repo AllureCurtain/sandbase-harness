@@ -22,6 +22,7 @@ import {
   agentNameSchema,
   agentToolsetSchema,
   mcpServerConfigSchema,
+  multiagentRosterRefusal,
   skillRefSchema,
   type ValidationError,
 } from './schema.js';
@@ -41,8 +42,10 @@ const UPDATE_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   max_turns: z.union([z.number().int().positive().max(1000), z.null()]),
   temperature: z.union([z.number().min(0).max(2), z.null()]),
   delegations: z.union([z.array(z.string()), z.null()]),
-  // `multiagent` is deliberately absent: the roster schema is not part of this
-  // change, so the field is rejected as unknown until that behaviour lands.  enable_general_subagent: z.union([z.boolean(), z.null()]),
+  // `multiagent` is deliberately absent from this table. An update carrying a
+  // roster is refused above with its own capability-naming error, before the
+  // table is consulted, so it never falls through to the generic unknown-field
+  // message that a missing schema would otherwise produce.
   strategy: z.union([z.string(), z.null()]),
   environment: z.union([z.string(), z.null()]),
 };
@@ -91,6 +94,13 @@ export function validateAgentUpdateRequest(input: unknown): AgentUpdateRequestRe
 
   for (const [key, value] of Object.entries(body)) {
     if (key === 'expected_version') continue;
+    // The canonical roster gets its own refusal rather than the generic
+    // unknown-field message, so this path and the create path answer a roster
+    // with the same capability id and the same reason.
+    if (key === 'multiagent') {
+      errors.push(multiagentRosterRefusal());
+      continue;
+    }
     const schema = UPDATE_FIELD_SCHEMAS[key];
     if (!schema) {
       errors.push({ path: key, message: `Unknown agent update field "${key}"` });
