@@ -16,6 +16,7 @@ import type { SessionEvent } from '@/types/session.js';
 import { toApiEvent } from '@/api/standard.js';
 import { EventDeltaProjector, parseEventDeltas } from '@/core/session/event-deltas.js';
 import type { ServerDeps } from '../server.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 export function streamRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -23,6 +24,8 @@ export function streamRoutes(deps: ServerDeps) {
 
   // GET /:id/events/stream — SSE stream
   app.get('/:id/events/stream', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['event_deltas', 'event_deltas[]', 'last_event_id']);
+    if (rejected) return rejected;
     const sessionId = c.req.param('id');
     const session = sessionManager.get(sessionId);
 

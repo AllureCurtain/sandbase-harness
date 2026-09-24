@@ -13,6 +13,7 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import { SHIPPED_SANDBOX_PROVIDER_TYPES } from '@/types/sandbox.js';
 import {
   environmentHostingProjection,
@@ -168,6 +169,8 @@ export function environmentRoutes(deps: ServerDeps) {
   // has no work" must not read the same.
 
   app.get('/environments/:id/work-items', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['limit']);
+    if (rejected) return rejected;
     const environmentId = activeEnvironmentId(c, deps);
     if (!environmentId) return notFound(c, 'Environment not found');
     const queue = deps.workQueue;

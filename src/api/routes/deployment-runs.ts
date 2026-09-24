@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 import type { ServerDeps } from '../server.js';
 import { collectionPager } from '../standard.js';
 import { invalid, notFound, type OperationMountOptions } from './operation-helpers.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 /**
  * The `error.type` reported on a failed run.
@@ -85,6 +86,8 @@ export function deploymentRunsRoutes(deps: ServerDeps, options: OperationMountOp
   const collections = collectionPager<{ id: string }>(options.pageShape ?? 'canonical');
 
   app.get('/', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['deployment_id', 'has_error']);
+    if (rejected) return rejected;
     const deploymentId = c.req.query('deployment_id');
     const hasError = parseHasError(c.req.query('has_error'));
     if (hasError === null) return invalid(c, 'has_error must be "true" or "false"');

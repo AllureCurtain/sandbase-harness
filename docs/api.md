@@ -160,6 +160,36 @@ resource's own message such as `Agent not found: <id>`. Authentication,
 throttling, and compatibility admission run before routing, so an unmatched
 `/v1/*` path still answers `401`, `429`, or an admission `400` when those apply.
 
+A query parameter a route does not implement is refused rather than ignored:
+
+```json
+{
+  "error": {
+    "type": "invalid_request_error",
+    "message": "Unknown query parameter \"include_archived\". This route accepts: limit, status, agent_id, page."
+  }
+}
+```
+
+A dropped filter is worse than an error, because the response is plausible:
+`GET /v1/sessions?include_archived=true` used to answer `200` with the same list
+it would have returned without the parameter, so a caller had no way to tell that
+their filter never applied. The refusal names the parameter and lists the ones
+that route accepts. It is decided before the resource is looked up, so a request
+that is wrong in both ways reports the parameter rather than a `404` that would
+imply it was understood.
+
+`beta` is accepted on every route and ignored. It is not a parameter this runtime
+implements — the published examples put it on the URL (`?beta=true`) rather than
+in a header, so refusing it would break a client built against the published
+documentation. It is not listed among a route's accepted parameters, because
+those are the ones that do something.
+
+Routes that read no query parameters are not covered by this yet, so they still
+ignore everything. `GET /v1/files` is the case to know about: the published call
+is `GET /v1/files?scope_id=<session_id>`, and the route currently reads no
+parameters, so it answers with the unscoped list.
+
 A rejected compatibility request also carries a stable `error.code`, so a
 client can branch on the cause instead of matching the message text. The
 admission codes are:

@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import type { ServerDeps } from '../server.js';
 import { pageOf } from '../standard.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import {
   createHandoffBundle,
   getHandoffBundle,
@@ -72,6 +73,8 @@ export function handoffRoutes(deps: ServerDeps) {
   });
 
   app.get('/handoff-bundles', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, ['session_id', 'limit']);
+    if (rejected) return rejected;
     const sessionId = c.req.query('session_id');
     const limit = parsePositiveInteger(c.req.query('limit'));
     const summaries = listHandoffBundles(deps.db, { sessionId, limit });
