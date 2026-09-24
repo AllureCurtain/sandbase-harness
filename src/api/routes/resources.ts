@@ -10,7 +10,15 @@ export function resourceRoutes(deps: ServerDeps) {
 
   app.route('/', environmentRoutes(deps));
   app.route('/', fileRoutes(deps));
-  app.route('/', credentialVaultRoutes(deps));
+  // Vaults answer under two prefixes, and both are the same routes: the published
+  // `/v1/vaults*` the contract addresses them at, and the local
+  // `/v1/credential-vaults*` the Console, the TypeScript SDK and existing stored
+  // references use. That router declares its paths relative to its mount, so this
+  // pair of mounts *is* the alias — there is no second route list to keep in step,
+  // and a route added there is reachable at both prefixes with no edit here. The
+  // local spelling is neither deprecated, nor redirected, nor removed.
+  app.route('/credential-vaults', credentialVaultRoutes(deps));
+  app.route('/vaults', credentialVaultRoutes(deps));
   app.route('/', memoryStoreRoutes(deps));
 
   return app;

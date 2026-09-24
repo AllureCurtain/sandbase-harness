@@ -45,6 +45,20 @@ oauth-refresh: unavailable
 
 ## 2. Current SandBase shape
 
+Paths:
+
+- Vaults answer at **both** the published `/v1/vaults*` and the local
+  `/v1/credential-vaults*`. They are not two implementations: one router declares
+  its paths relative to its mount and `src/api/routes/resources.ts` mounts that
+  same factory at both prefixes, so the two spellings cannot diverge route by
+  route, and a vault route added later is reachable at both. Both prefixes are CMA
+  resource paths, so both inherit the same version and beta admission — the
+  published prefix is not an admission shortcut. `tests/unit/vault-path-parity.test.ts`
+  asserts the parity and `tests/integration/vault-path-aliases.test.ts` asserts a
+  vault created through one spelling is readable through the other.
+- The local spelling is not deprecated, redirected, or removed: the Console, the
+  TypeScript SDK and existing stored references all use it.
+
 Wire profile:
 
 - `display_name` is read from the **top level** of the payload, a sibling of
@@ -146,7 +160,8 @@ Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
 the `injection_location` create rules and the both-fields-resolved read
 projection, rotation that preserves identity and reconnects the MCP transports of
-the sessions that reference the vault, and the session path that injects a
+the sessions that reference the vault, the published `/v1/vaults*` paths, and the
+session path that injects a
 vault's environment into its own sandbox commands and into a stdio MCP server the
 agent declares, attaches a `static_bearer` credential to the url-transport server
 whose URL it was keyed to, and redacts what each of them returns.
@@ -164,6 +179,7 @@ means archive and recreate.
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
 | Delegated execution | A session's vault environment reaches its own sandbox commands and a stdio MCP server it declares, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
+| Local management routes answer at the published prefix too | `rotate`, `mark-used` and both `audit` routes are local extensions with no published equivalent, and they are reachable under `/v1/vaults*` as well as `/v1/credential-vaults*`. The alias is a mount, not a curated list, so a caller who learned the published spelling does not have to learn which routes answer at it. This is recorded rather than curated because curating would create exactly the per-route divergence the mount prevents. |
 
 ## 5. Reason for the difference
 
@@ -217,6 +233,15 @@ means archive and recreate.
   covers the route that asks for it.
 - `tests/integration/credential-rotation.test.ts` — the rotation route notifies
   every active Session that references the rotated Vault.
+- `tests/integration/vault-path-aliases.test.ts` — both spellings over HTTP: a
+  vault created at the published path read back at both, identical list payloads,
+  a credential created at one spelling and read at the other with the secret still
+  masked, archive hiding the vault from both lists and 404ing on both, every local
+  management route reachable at the published prefix, and the published prefix
+  admitted under the managed-agents beta and refused without it.
+- `tests/unit/vault-path-parity.test.ts` — the mounted route table gives every
+  canonical vault route a published twin and every published route a canonical
+  one, with anchors so the comparison cannot pass by finding nothing.
 
 ## 7. Status
 
