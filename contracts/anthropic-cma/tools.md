@@ -2,11 +2,19 @@
 
 Contract area: built-in tools — availability, web tool domain policy, MCP
 toolset approval, and tool output overflow.
-Status: `partial` — web tools are configurable but not executable, and the local
-overflow threshold differs, see §4.
+Status: `partial` — web_fetch executes with documented limits, web_search has no
+provider, and the local overflow threshold differs, see §4.
 Source: `src/core/capabilities/registry.ts`, `src/core/agent/web-tool-policy.ts`,
 `src/core/agent/standard.ts`, `src/core/mcp/tool-naming.ts`,
-`src/core/session/tool-output-overflow.ts`.
+`src/core/session/tool-output-overflow.ts`, `src/core/web/web-fetch.ts`.
+
+<!-- capability-status
+builtin-tool-execution: partial
+web-fetch-execution: partial
+web-tool-domain-policy: supported
+tool-output-overflow: partial
+mcp-tool-approval-gate: supported
+-->
 
 ---
 
@@ -27,17 +35,35 @@ Source: `src/core/capabilities/registry.ts`, `src/core/agent/web-tool-policy.ts`
 
 ## 2. Current SandBase shape
 
+Availability comes from `src/core/capabilities/registry.ts`; domain policy is
+`src/core/agent/web-tool-policy.ts`; execution is `src/core/web/web-fetch.ts`,
+`src/core/agent/standard.ts`, `src/core/mcp/tool-naming.ts`, and
+`src/core/session/tool-output-overflow.ts`.
+
 Tool availability (`RuntimeCapabilityRegistry`):
 
 | Tool | Status |
 | --- | --- |
 | `bash`, `edit`, `read`, `write`, `glob`, `grep` | available |
-| `web_fetch`, `web_search` | unavailable — no safe executable implementation |
+| `web_fetch` | available — one HTTP/HTTPS fetch behind an address guard, see below |
+| `web_search` | unavailable — no search provider is bundled or configured |
 
 An agent requesting an unavailable tool is rejected through
 `UnsupportedCapabilityError`, which returns 400 `unsupported_capability` with
 the offending ids and reasons. The check runs before a session is persisted, so
 an unsupported request never leaves state behind.
+
+`web_fetch` execution (`web-fetch.ts`):
+
+- One `createWebFetchTool` entry point performs the fetch: HTTP and HTTPS only,
+  the private-address rule applied to the resolved address and re-checked on
+  every redirect, with the redirect chain bounded, a request timeout, a byte
+  cap, and an independent `max_content_tokens` budget over the extracted text.
+- Content is converted to text for text-like types; a binary type is reported as
+  unsupported rather than returned as mojibake.
+- Two deviations are recorded in §4 rather than presented as alignment: only
+  text-like content is converted, and `max_content_tokens` is a character
+  estimate rather than a tokenizer count.
 
 Domain policy (`web-tool-policy.ts`):
 
@@ -52,7 +78,9 @@ Domain policy (`web-tool-policy.ts`):
 
 Two layers are deliberately distinguished: **expression** (the schema can
 represent the configuration) and **execution** (the runtime can act on it).
-`web_tool.configuration` is `supported`; `web_tool.execution` is `unavailable`.
+`web_tool.configuration` is `supported` for both tools; execution is not one
+answer for the pair — `web_fetch` executes behind the address guard and its
+documented limits, while `web_search` has no provider and is `unavailable`.
 
 Tool output overflow (`tool-output-overflow.ts`):
 
@@ -107,18 +135,22 @@ discovered tools.
 
 | Difference | Detail |
 | --- | --- |
-| Web tool execution | SandBase has no safe executable web tool, so requests using one fail before a session is persisted. The published contract describes an executable tool. |
-| Overflow threshold | 50,000 locals chars versus the published 100,000. The published value is recorded rather than silently replaced. |
+| `web_search` execution | SandBase has no search provider, so a request enabling `web_search` fails before a session is persisted. The published contract describes an executable tool. |
+| `web_fetch` content types | Only text-like content is converted. An image, PDF, or other binary response is reported as its media type and size instead of being inlined, so the model is told what it did not receive. |
+| `web_fetch` content budget | `max_content_tokens` is enforced through a chars-per-token estimate, and the truncation marker says so. The published contract describes a token budget without fixing the unit. |
+| Overflow threshold | 50,000 local chars versus the published 100,000. The published value is recorded rather than silently replaced. |
 | Overflow file location | `/mnt/session/tool_outputs`. The published contract states "a sandbox file" without fixing the directory. |
 | Per-tool config shape | SandBase accepts named per-tool config blocks in a toolset. Field names inside the web policy follow the published ones. |
 
 ## 5. Reason for the difference
 
-- Web tools are `unavailable` rather than `planned` because there is no safe
-  local implementation: fetching arbitrary URLs from the host exposes the
-  runtime's own network position, which is exactly what a sandbox is supposed
-  to prevent. Marking them `planned` would imply a local implementation is
-  coming.
+- `web_search` is `unavailable` rather than `planned` because there is no local
+  implementation to plan: a search provider is a third-party service and
+  scraping a search engine's HTML is not an accepted substitute, so the
+  declaration is refused instead of accepted and ignored. `web_fetch` is a
+  different question — a single URL with a known host is answerable in-process
+  behind the address guard, which is why it executes while `web_search` does
+  not.
 - The lower local overflow threshold keeps a single tool result from dominating
   a local model's context window, where a hosted runtime has more headroom. The
   canonical constant is kept in the code so the divergence is visible.
@@ -129,8 +161,13 @@ discovered tools.
 
 - `tests/unit/web-tool-policy.test.ts` — 46 cases covering the domain grammar,
   exclusivity, empty-list rejection, path rules, and error paths.
+- `tests/integration/web-fetch-execution.test.ts` — the executed half against a
+  real local HTTP server: the address guard refusing a private target, the
+  domain policy applied before the request, a redirect revalidated at each hop,
+  the byte cap and timeout, text extraction, and the `max_content_tokens`
+  truncation marker.
 - `tests/integration/api.test.ts` — unavailable tool rejection before session
-  persistence.
+  persistence, including `web_search`.
 - `tests/unit/tool-output-overflow.test.ts` — spill, preview, and marker
   behaviour, including the write-failure path that reports no path rather than a
   path that does not exist.
@@ -156,7 +193,9 @@ discovered tools.
 
 ## 7. Status
 
-`partial` — configuration validation matches the published rules, and the MCP
-toolset approval default applies to dynamically discovered tools. Execution of
-web tools is `unavailable` and the local overflow threshold differs from the
-published one; both are recorded in the capability matrix.
+`partial` — configuration validation matches the published rules, `web_fetch`
+executes behind the address guard, and the MCP toolset approval default applies
+to dynamically discovered tools. `web_search` execution is `unavailable`, only
+text-like fetch content is converted, the fetch content budget is a character
+estimate, and the local overflow threshold differs from the published one; all
+four are recorded in the capability matrix.

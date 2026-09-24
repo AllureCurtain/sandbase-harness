@@ -295,8 +295,7 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
   const envConfig = environment
     ? parseEnvironmentConfig(environment.config, 'The workspace default Environment')
     : {};
-  const vendor = normalizeVendor(model?.provider);
-  const baseUrl = resolvedOptionalUrl(model?.base_url ?? undefined);
+  const { vendor, base_url: baseUrl } = normalizeModelSource(model?.provider, model?.base_url ?? undefined);
   // Seeding from pre-Settings-V2 workspace data. A row that declares nothing was
   // never configured, so local is the right seed; a row that declares a backend
   // or hosting type this runtime cannot serve is refused instead, because this
@@ -332,6 +331,22 @@ function resolvedOptionalUrl(value?: string): string | undefined {
   const resolvedValue = resolveEnvVars(value, false).trim();
   if (!resolvedValue || /\$\{[^}]+\}/.test(resolvedValue)) return undefined;
   return resolvedValue;
+}
+
+/**
+ * The vendor and base URL a workspace model record contributes to Settings V2,
+ * normalized the way the first-time seed normalizes it.
+ *
+ * Exported so the config.yaml bootstrap can compare what the file declared with
+ * what is in effect without reimplementing the normalization: a second copy
+ * would drift, and a comparison that normalizes one side differently reports a
+ * difference that does not exist (or hides one that does).
+ */
+export function normalizeModelSource(
+  provider?: string,
+  baseUrl?: string,
+): { vendor: RuntimeSettings['model']['vendor']; base_url?: string } {
+  return { vendor: normalizeVendor(provider), base_url: resolvedOptionalUrl(baseUrl) };
 }
 
 function normalizeVendor(provider?: string): RuntimeSettings['model']['vendor'] {

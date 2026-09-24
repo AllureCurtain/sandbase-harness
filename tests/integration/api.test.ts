@@ -19,6 +19,7 @@ import {
   CAPABILITY_AREAS,
   CAPABILITY_STATUSES,
   CMA_CAPABILITY_MATRIX,
+  capabilityMatrixJson,
 } from '@/core/capabilities/matrix.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
@@ -429,6 +430,10 @@ describe('Managed Agents API', () => {
       expect(body.capabilities).toContainEqual({ id: 'read', kind: 'tool', status: 'available' });
 
       const contract = body.contract;
+      // Verbatim, not merely consistent in shape: `/v1/x/capabilities` is the
+      // machine copy of `matrix.ts`, and a field that drifts from the module is
+      // a capability claim nothing else would catch.
+      expect(contract).toEqual(capabilityMatrixJson());
       expect(contract.type).toBe('capability_matrix');
       expect(contract.statuses).toEqual([...CAPABILITY_STATUSES]);
       // The served entry count agrees with the matrix data, so the endpoint cannot

@@ -5,6 +5,11 @@ Status: `supported`.
 Source: `src/core/capabilities/matrix.ts`,
 `src/core/capabilities/registry.ts`, `src/api/routes/runtime.ts`.
 
+<!-- capability-status
+capability-inventory-endpoint: supported
+capability-status-truthfulness: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -16,6 +21,10 @@ Source: `src/core/capabilities/matrix.ts`,
   refuses it.
 
 ## 2. Current SandBase shape
+
+The matrix is `src/core/capabilities/matrix.ts`, the runtime tool inventory is
+`src/core/capabilities/registry.ts`, and the route that serves both is
+`src/api/routes/runtime.ts`.
 
 Two complementary inventories are served from `GET /v1/x/capabilities`:
 
@@ -48,6 +57,27 @@ Properties the matrix enforces:
   published JSON cannot drift apart.
 - `capabilityEntry(id)` throws on an unknown id, so a typo in a consumer fails
   loudly instead of silently finding nothing.
+
+The truthfulness claim is enforced, not asserted. A guard test
+(`tests/unit/contract-honesty.test.ts`) holds the matrix, the contract documents
+under this directory, and the real mount graph to the same facts:
+
+- every matrix entry's `contract` path exists and no `id` repeats;
+- every contract file restates its entries' statuses in a machine-readable
+  block, and the guard fails when the block and the matrix disagree in either
+  direction;
+- every source and test path a contract file cites in backticks exists;
+- §2 is the evidence for an implementation claim: an entry that is not
+  `unavailable` must name an existing source file there, and a `supported` entry
+  must name an existing test in §6;
+- a capability the composition root has to wire cannot be `supported` while
+  nothing wires it — and cannot stay below `supported` once something does;
+- the routes listed in `routes.md` and the routes the server mounts are the same
+  set of `method + path` pairs.
+
+The guard is itself tested against deliberately broken fixtures — and against
+copies of the real documents with a single character or verb changed — so the
+check that catches a false claim cannot pass by finding nothing.
 
 The runtime tool inventory remains separate because it answers a different
 question: the matrix describes protocol coverage, while the inventory describes
@@ -88,8 +118,16 @@ from "deliberately out of scope".
 - `tests/integration/api.test.ts` — the HTTP response serves both inventories; the
   served matrix is checked for its entry count, an entry for every contract area, a
   `reason` on every non-`supported` entry, and a `contract` path that exists on disk.
+- `tests/unit/contract-honesty.test.ts` — the guard described in §2: contract
+  existence and unique ids, the status block against the matrix, cited source and
+  test paths, implementation evidence for a claimed status, and the documented
+  route set against `mountedRoutes()`. It also drives each check with input that
+  must fail, so the guard's own teeth are covered.
 
 ## 7. Status
 
 `supported` — both inventories are served, the six-value enum is enforced with a
-required reason per entry, and the rejection path is covered by tests.
+required reason per entry, and the truthfulness claim is backed by a guard test
+that compares the matrix, the contract documents, and the mounted route surface
+rather than restating any one of them. The guard's failure modes are themselves
+tested, so a renamed test file or a stale status block turns the suite red.

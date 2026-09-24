@@ -54,6 +54,7 @@ deviation. If the reason stops being true, the difference should be removed.
 | [`github-repository.md`](./github-repository.md) | Cloning, mounting, and skill discovery for the `github_repository` resource |
 | [`operations.md`](./operations.md) | Webhook delivery behaviour and scheduled deployments (published contract), plus the local outcome evaluator |
 | [`capabilities.md`](./capabilities.md) | Capability reporting and status truthfulness |
+| [`routes.md`](./routes.md) | The mounted `/v1` route surface, method by path |
 | [`unsupported.md`](./unsupported.md) | Behaviour not implemented, and why |
 
 ## Status vocabulary
@@ -74,6 +75,43 @@ served by `GET /v1/x/capabilities`. Statuses:
 Every non-`supported` entry carries a reason. `not_applicable` is a decision,
 not a gap: it is recorded so a coverage report does not count it as missing
 work, and `unverified` exists so an unchecked claim is not counted as done.
+
+### Machine-readable status block
+
+Each contract file restates the status of every matrix entry that cites it, in
+one block placed after the file header:
+
+```html
+<!-- capability-status
+agent-crud: supported
+model-object-profile: partial
+-->
+```
+
+The block is the document's half of the status contract, and
+`tests/unit/contract-honesty.test.ts` fails when it and the matrix disagree in
+either direction — an entry that cites this file but is absent from the block, a
+block line naming an entry that does not cite this file, an unknown status word,
+or a status that differs from the matrix. Prose in §7 explains the statuses; the
+block is what the guard reads. When a status changes, change the matrix and the
+block in the same commit.
+
+Four more properties the same guard enforces, because prose alone does not:
+
+- Every source and test path a contract file cites in backticks must exist. A
+  cited test that was renamed or never written is how a coverage claim becomes
+  fiction.
+- §2 is the evidence for an implementation claim, and §6 for a tested one. An
+  entry that is not `unavailable` must name an existing source file in §2, and a
+  `supported` entry must name an existing test in §6. A path mentioned in some
+  other section is a citation, not evidence, so a difference table cannot stand
+  in for an implementation.
+- A capability the composition root must wire cannot be `supported` while
+  nothing wires it. This runs both ways: wiring the symbol without raising the
+  status fails too, so neither half can move alone.
+- The `routes.md` table and the routes the server actually mounts must be equal
+  as `method + path` pairs. A route documented with the wrong verb fails as
+  loudly as a route that is missing, which a URL-keyed check cannot see.
 
 ## Verification
 
@@ -106,4 +144,10 @@ instance — the entry is marked `unverified` rather than guessed.
 3. Add an entry to
    [`matrix.ts`](../../src/core/capabilities/matrix.ts), including a `reason`
    for any non-`supported` status.
-4. Add the file to the table above.
+4. Add the machine-readable status block described above, with one line per
+   entry that cites this file.
+5. Add the file to the table above, and add its area to `CAPABILITY_AREAS` in
+   `matrix.ts`.
+6. Run `npx vitest run tests/unit/contract-honesty.test.ts`. It is the check
+   that keeps the matrix, this directory, and the mounted routes describing the
+   same build.

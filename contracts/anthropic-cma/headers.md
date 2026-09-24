@@ -5,6 +5,11 @@ Status: `partial` — one documented deviation, see §4.
 Source: Claude Managed Agents public documentation (`anthropic-version`,
 `anthropic-beta` compatibility headers) plus `src/api/cma-admission.ts`.
 
+<!-- capability-status
+compatibility-header-admission: partial
+extension-namespace-exclusion: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -81,4 +86,7 @@ request that omits them entirely, as described in §4.
 
 `partial` — the admission contract is enforced and tested; the local bearer
 path and the local error-code strings are documented deviations rather than
-upstream behaviour.
+upstream behaviour. The second entry this file carries,
+`extension-namespace-exclusion`, is `supported`: `/v1/x/*` never enters CMA
+admission at all (the last row of the table in §2), so a local extension cannot
+be gated by a cloud beta header.

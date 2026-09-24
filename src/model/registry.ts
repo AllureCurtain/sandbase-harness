@@ -25,7 +25,6 @@ export class ModelRegistry {
   private defaultModelName: string | undefined;
 
   constructor(private readonly retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY) {}
-
   /**
    * Register a model configuration.
    */
@@ -65,56 +64,54 @@ export class ModelRegistry {
    *
    * Exact registry names still work (`default`, `anthropic`, custom aliases).
    * Otherwise, the user-provided model is treated as the concrete model id:
-   * - `openai/gpt-5.5` => provider `openai`, model `gpt-5.5`
-   * - `anthropic/claude-...` => provider `anthropic`, model `claude-...`
-   * - `gpt-4o` => default provider credentials/base URL, model `gpt-4o`
+   * - `<registered-provider>/<model>` => that provider's settings, model `<model>`
+   * - `<anything-else>/<model>` => the active default provider, model passed through verbatim
+   * - `<model>` => default provider credentials/base URL, model `<model>`
    *
-   * A `provider/model` reference whose provider is not registered does NOT
-   * silently fall back to a public vendor endpoint. If the referenced provider
-   * belongs to the same protocol family as the active default (e.g. an agent
-   * says `openai/...` while the configured provider is `openai_compatible`
-   * pointing at a self-hosted gateway), the default provider's base URL and
-   * key are reused so traffic stays on the configured endpoint. A reference to
-   * an unrelated, unconfigured provider is rejected rather than leaked to that
-   * vendor's public API.
+   * The prefix rule is deliberately "only a registered provider is a prefix".
+   * Gateways that route by vendor namespace (OpenRouter and the many
+   * OpenAI-compatible routers shaped like it) address every model as
+   * `vendor/model`, so a token this workspace has not registered as a provider
+   * has to stay part of the model id. Reading it as a provider prefix is what
+   * previously truncated `deepseek/deepseek-v4-flash` into
+   * `deepseek-v4-flash`, an id no endpoint serves.
+   *
+   * A reference whose leading token is not a registered provider never reaches
+   * a vendor endpoint the operator did not configure: it is served by the
+   * active default provider's base URL and key. The one case still refused is a
+   * namespaced id a first-party vendor API cannot possibly serve (see
+   * `unserviceableNamespaceReason`), because forwarding it would replace a
+   * missing provider configuration with a confusing upstream 404.
    */
   resolveModelConfig(name: string): ModelConfig {
+    const available = Array.from(this.models.keys());
+
     const exact = this.models.get(name);
     if (exact?.model) return exact;
     if (exact && !exact.model) {
-      throw new ModelNotFoundError(name, Array.from(this.models.keys()), 'Provider configuration does not include a concrete model id. Set model on the Agent instead.');
+      throw new ModelNotFoundError(
+        name,
+        available,
+        'Provider configuration does not include a concrete model id. Set model on the Agent instead.',
+      );
     }
 
-    const parsed = parseModelReference(name);
+    const parsed = parseModelReference(name, (token) => this.findProviderConfig(token) !== undefined);
 
-    // No provider prefix → use the active default provider's config.
+    // Nothing registered as this token's provider: the reference is the model
+    // id itself, forwarded verbatim to the active default provider.
     if (!parsed.provider) {
       const defaultConfig = this.getDefaultConfig();
-      if (!defaultConfig) throw new ModelNotFoundError(name, Array.from(this.models.keys()));
+      if (!defaultConfig) throw new ModelNotFoundError(name, available);
+      const reason = unserviceableNamespaceReason(parsed.namespace, defaultConfig.provider);
+      if (reason) throw new ModelNotFoundError(name, available, reason);
       return { ...defaultConfig, name, model: parsed.model, is_default: false };
     }
 
-    // Explicit provider prefix that matches a registered provider → use it.
-    const exactProvider = this.findProviderConfig(parsed.provider);
-    if (exactProvider) {
-      return { ...exactProvider, name, provider: parsed.provider, model: parsed.model, is_default: false };
-    }
-
-    // Provider prefix with no exact match. Reuse the default provider's
-    // credentials/base URL when they share a protocol family (so a configured
-    // gateway is honored instead of hitting the vendor's public endpoint).
-    const defaultConfig = this.getDefaultConfig();
-    if (defaultConfig && providerFamily(parsed.provider) === providerFamily(defaultConfig.provider)) {
-      return { ...defaultConfig, name, model: parsed.model, is_default: false };
-    }
-
-    // Unrelated, unconfigured provider: fail loud instead of leaking the
-    // request to that vendor's public API with no base URL or key.
-    throw new ModelNotFoundError(
-      name,
-      Array.from(this.models.keys()),
-      `Provider "${parsed.provider}" is not configured. Configure it in Settings > Models, or reference the model without a provider prefix to use the active provider.`,
-    );
+    // A registered provider is named: use its own settings. `findProviderConfig`
+    // already succeeded inside `parseModelReference`, so the lookup cannot miss.
+    const providerConfig = this.findProviderConfig(parsed.provider)!;
+    return { ...providerConfig, name, model: parsed.model, is_default: false };
   }
 
   /**
@@ -122,9 +119,22 @@ export class ModelRegistry {
    * middleware (Property 14). Resolves ${ENV_VAR} in api_key and base_url.
    */
   createModel(name: string): LanguageModel {
-    const config = this.resolveModelConfig(name);
+    return this.createModelFromConfig(this.resolveModelConfig(name));
+  }
+
+  /**
+   * Build the client from an already-resolved configuration.
+   *
+   * Exists so a caller can resolve a reference once and build from exactly that
+   * configuration rather than resolving a second time.
+   */
+  createModelFromConfig(config: ModelConfig): LanguageModel {
     if (!config.model) {
-      throw new ModelNotFoundError(name, Array.from(this.models.keys()), 'Agent model id is required.');
+      throw new ModelNotFoundError(
+        config.name,
+        Array.from(this.models.keys()),
+        'Agent model id is required.',
+      );
     }
     const resolvedApiKey = config.api_key ? resolveEnvVars(config.api_key, false) : undefined;
     const resolvedBaseUrl = config.base_url ? resolveEnvVars(config.base_url, false) : undefined;
@@ -140,7 +150,14 @@ export class ModelRegistry {
     if (config.reasoning_effort && config.provider !== 'anthropic' && config.provider !== MINIMAX_PROVIDER) {
       middleware.push(createReasoningEffortMiddleware(config.reasoning_effort));
     }
-    return wrapLanguageModel({ model: base, middleware });
+    const wrapped = wrapLanguageModel({ model: base, middleware });
+    // Record the id the provider will actually be addressed with, so a turn can
+    // read it back without depending on how the AI SDK exposes `modelId` through
+    // a wrapper. Keyed per instance rather than stored on the registry: one
+    // registry serves concurrent sessions, and a single "last resolved" field
+    // would report whichever turn resolved most recently.
+    resolvedModelIds.set(wrapped as object, config.model);
+    return wrapped;
   }
 
   /**
@@ -189,8 +206,19 @@ export class ModelRegistry {
     return defaultName ? this.models.get(defaultName) : undefined;
   }
 
+  /**
+   * The registered configuration a reference's leading token names.
+   *
+   * Two spellings count, because both appear as the provider's own identifier:
+   * the provider type (`openai`, `anthropic`, `openai_compatible`) and the
+   * registry name, which is what an operator-chosen alias such as
+   * `openrouter` is stored under. Provider-type matches are checked first so an
+   * alias can never shadow a provider named by its type.
+   */
   private findProviderConfig(provider: string): ModelConfig | undefined {
-    return Array.from(this.models.values()).find((config) => config.provider === provider);
+    const configs = Array.from(this.models.values());
+    return configs.find((config) => config.provider === provider)
+      ?? configs.find((config) => config.name === provider);
   }
 }
 
@@ -198,22 +226,96 @@ const ENV_PLACEHOLDER = /\$\{[^}]+\}/;
 const QUALIFIED_MODEL = /^([a-zA-Z][a-zA-Z0-9_-]*)\/(.+)$/;
 
 /**
- * Group providers by wire protocol. Providers in the same family can share a
- * base URL and key: `anthropic` speaks the Anthropic Messages API, while
- * `openai`, `ollama`, `minimax`, `openai_compatible`, and any custom provider
- * are all handled through the OpenAI-compatible client (see
- * createModelInstance). Used to decide whether an agent's `provider/model`
- * reference may reuse the active default provider's endpoint.
+ * The upstream model id each constructed client was addressed with.
+ *
+ * `model_used` and the usage records built from it have to name the model the
+ * provider was actually asked for. The agent's raw reference is not that id
+ * once a gateway-style `vendor/model` reference is in play, and reading the SDK
+ * wrapper's own `modelId` couples the recorded value to a third party's
+ * internals. A WeakMap keeps the association with the client instance and lets
+ * both be collected together.
+ */
+const resolvedModelIds = new WeakMap<object, string>();
+
+/** The upstream model id a client built by this registry was addressed with. */
+export function resolvedModelIdOf(model: unknown): string | undefined {
+  return model && typeof model === 'object' ? resolvedModelIds.get(model as object) : undefined;
+}
+
+/**
+ * Provider types that are a first-party vendor's own API. These three are the
+ * hardcoded endpoints `createModelInstance` builds a client for, and each
+ * serves only its own model ids — so a namespaced id naming another vendor
+ * cannot be served by them.
+ *
+ * Every other committed provider type (`openai_compatible`, `ollama`, or a
+ * custom name) is an endpoint the operator pointed the runtime at, which makes
+ * that endpoint the routing authority for a vendor namespace.
+ */
+const FIRST_PARTY_VENDOR_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'anthropic',
+  MINIMAX_PROVIDER,
+]);
+
+/**
+ * Group providers by wire protocol. `anthropic` speaks the Anthropic Messages
+ * API; `openai`, `ollama`, `minimax`, `openai_compatible`, and any custom
+ * provider are all handled through the OpenAI-compatible client (see
+ * createModelInstance).
  */
 function providerFamily(provider: ModelProviderType): 'anthropic' | 'openai' {
   return provider === 'anthropic' ? 'anthropic' : 'openai';
 }
 
-function parseModelReference(name: string): { provider?: ModelProviderType; model: string } {
+/**
+ * Split an agent-facing reference into a provider selector and a model id.
+ *
+ * `provider` is set only when the leading token names a provider this registry
+ * actually has; `namespace` records that the reference looked qualified at all,
+ * whether or not the token resolved, so the caller can tell
+ * `deepseek/deepseek-v4-flash` (a gateway-style model id) from a bare
+ * `gpt-4o`.
+ */
+function parseModelReference(
+  name: string,
+  isProviderToken: (token: string) => boolean,
+): { provider?: ModelProviderType; model: string; namespace?: string } {
   const trimmed = name.trim();
   const match = QUALIFIED_MODEL.exec(trimmed);
   if (!match) return { model: trimmed };
-  return { provider: match[1], model: match[2] };
+  if (!isProviderToken(match[1])) return { model: trimmed, namespace: match[1] };
+  return { provider: match[1], model: match[2], namespace: match[1] };
+}
+
+/**
+ * The reason a qualified reference cannot be served, or undefined when it can
+ * be forwarded verbatim.
+ *
+ * An unregistered leading token is normally part of a gateway-style model id,
+ * and forwarding the whole thing to the configured endpoint is the only reading
+ * that works for an OpenAI-compatible router. It is refused in exactly one
+ * situation: the configured endpoint is one of the three first-party vendor
+ * APIs and the namespace names the other wire protocol. `api.anthropic.com`
+ * cannot serve `openai/gpt-5.5` and `api.openai.com` cannot serve
+ * `anthropic/claude-sonnet-4`; sending it anyway answers with an upstream 404
+ * that hides the real problem — a provider that was never configured.
+ *
+ * An `openai_compatible` endpoint (or any other operator-run one) is
+ * deliberately never refused here: a router is expected to serve
+ * `anthropic/...` alongside `deepseek/...`, and refusing would break exactly
+ * the gateway shapes this resolution exists to support.
+ */
+function unserviceableNamespaceReason(
+  namespace: string | undefined,
+  defaultProvider: ModelProviderType,
+): string | undefined {
+  if (!namespace) return undefined;
+  if (!FIRST_PARTY_VENDOR_PROVIDERS.has(defaultProvider)) return undefined;
+  if (providerFamily(namespace) === providerFamily(defaultProvider)) return undefined;
+  return providerFamily(namespace) === 'anthropic'
+    ? `Provider "${namespace}" is not configured, and the configured provider "${defaultProvider}" speaks the OpenAI-compatible API rather than the Anthropic Messages API. Configure an Anthropic provider in Settings > Models, set the workspace model vendor to "openai_compatible" when the endpoint is a router, or reference the model without a vendor namespace.`
+    : `Provider "${namespace}" is not configured, and the configured provider "${defaultProvider}" cannot serve an OpenAI-compatible model id. Configure that provider in Settings > Models, or reference the model without a vendor namespace.`;
 }
 
 function configState(value?: string): RuntimeConfigState {

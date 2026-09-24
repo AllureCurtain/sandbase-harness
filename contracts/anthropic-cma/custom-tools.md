@@ -5,6 +5,10 @@ Status: `supported`.
 Source: `src/types/agent.ts` (`CanonicalCustomTool`),
 `src/api/routes/session-normalizers.ts`.
 
+<!-- capability-status
+custom-tool-declaration: supported
+-->
+
 ---
 
 ## 1. Official definition
@@ -16,6 +20,9 @@ Source: `src/types/agent.ts` (`CanonicalCustomTool`),
   to surface the call and accept the result.
 
 ## 2. Current SandBase shape
+
+The declaration is `CanonicalCustomTool` in `src/types/agent.ts`; normalization
+is `src/api/routes/session-normalizers.ts`.
 
 `CanonicalCustomTool`:
 

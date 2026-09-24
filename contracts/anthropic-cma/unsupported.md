@@ -2,8 +2,15 @@
 
 Contract area: behaviour SandBase does not implement.
 Status: mixed by entry; see the table in §2.
-Source: `src/core/capabilities/matrix.ts`, `src/api/capabilities-errors.ts`,
+Source: `src/core/capabilities/matrix.ts`, `src/api/capability-errors.ts`,
 `src/core/capabilities/registry.ts`.
+
+<!-- capability-status
+dreams: unavailable
+web-search-execution: unavailable
+session-budget-alerts: not_applicable
+mcp-tunnel: not_applicable
+-->
 
 ---
 
@@ -19,16 +26,15 @@ Source: `src/core/capabilities/matrix.ts`, `src/api/capabilities-errors.ts`,
 
 | Capability | Status | Behaviour |
 | --- | --- | --- |
-| Dreams | `not_applicable` | Not implemented, not scheduled. No field is accepted or stored. |
+| Dreams | `unavailable` | A memory-consolidation pipeline (read memory stores and historical sessions, produce reorganized stores). Not implemented in this phase, and no route or field accepts one. |
 | MCP tunnel | `not_applicable` | Not implemented; a hosted connectivity feature outside local-first scope. |
-| Web tool execution | `unavailable` | Configuration is accepted and validated; execution has no safe local implementation. A request enabling one fails before the session is persisted. |
+| `web_search` execution | `unavailable` | Configuration is accepted and validated, but no search provider is bundled and engine HTML scraping is not an accepted substitute, so a request enabling `web_search` fails before the session is persisted. `web_fetch` is a separate capability and does execute; see [`tools.md`](./tools.md). |
 | OAuth refresh | `unavailable` | Not implemented and not scheduled: no refresh loop, refresh-failure event, or validate endpoint exists. A supplied refresh block is parsed, stored, and answered with an explicit warning that it will not be executed. |
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
-Session budget and threads / coordinator / advisor moved out of this file once
-they were implemented: see [`budget.md`](./budget.md) and
-[`threads.md`](./threads.md). Both are `partial`, and this file no longer speaks
-for them.
+Session budget is implemented and has its own file, [`budget.md`](./budget.md).
+Threads, the coordinator, and the advisor are **not** implemented either; they
+have their own file, [`threads.md`](./threads.md), which records the gap.
 
 Failure mechanism:
 
@@ -51,20 +57,26 @@ unsupported capability and its reason, and separating "not implemented" from
 
 | Difference | Detail |
 | --- | --- |
-| Scope decisions | Dreams, MCP tunnel, and session-budget alerts are `not_applicable`: SandBase is local-first and single-tenant, so a hosted scheduling, connectivity, or billing-notification feature has no local analogue. The published contract describes them as available capabilities. |
+| Scope decisions | MCP tunnel and session-budget alerts are `not_applicable`: SandBase is local-first and single-tenant, so a hosted connectivity or billing-notification feature has no local analogue. The published contract describes them as available capabilities. |
+| Dreams | `unavailable`, not `not_applicable`: a workspace-scoped pipeline over archived sessions and memory stores belongs in a local-first runtime. What is missing is a scheduled background worker and the archived-session corpora, and this phase does not build them. |
 | Failure envelope | `unsupported_capability` with `details.capabilities` is a SandBase error shape. The published contract requires the refusal, not this envelope. |
-| Planned vs. unavailable | Nothing in this file is `planned` any more. Web tool execution and OAuth refresh are both `unavailable`: neither has a safe local design, so marking either `planned` would imply an implementation is coming. |
-| Coverage moved out of this file | Session budget and threads / coordinator / advisor were implemented, so they now have their own contract files. Keeping them here would have left this file describing them as absent. |
+| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution and OAuth refresh are both `unavailable`: neither has a safe local design, so marking either `planned` would imply an implementation is coming. |
+| Coverage moved out of this file | Session budget was implemented, so it now has its own contract file. Threads, coordinator, and advisor were never implemented and also have their own file, so this file does not have to speak for a surface it cannot describe. |
 
 ## 5. Reason for the difference
 
 - `not_applicable` entries are decisions, not gaps. Recording them in the matrix
   prevents them from being counted as missing work in a coverage report, which
   is the failure mode a single "done / not done" flag produces.
-- Web tool execution is `unavailable` rather than `planned` because there is no
-  safe implementation: fetching arbitrary URLs from the host would expose the
-  runtime's own network position, which is what a sandbox exists to prevent.
-  Marking it `planned` would imply a local implementation is coming.
+- Dreams is `unavailable` rather than `not_applicable` because the earlier
+  "cloud scheduling" label was wrong: the feature is a local consolidation
+  pipeline, so the honest record is "we have not built it", not "it does not
+  apply here".
+- `web_search` execution is `unavailable` rather than `planned` because there is
+  no safe local design to plan: a search provider is a third-party service.
+  Marking it `planned` would imply a local implementation is coming. `web_fetch`
+  is not in this category — it executes, with the limits recorded in
+  `tools.md`.
 - Every rejection names the specific capability, so a caller removes one field
   rather than guessing which of several declarations was refused.
 
@@ -79,10 +91,11 @@ unsupported capability and its reason, and separating "not implemented" from
 
 ## 7. Status
 
-Mixed, per the table in §2. Three entries are `not_applicable` by design and two
-are `unavailable`. Every one is recorded in the capability matrix with its reason
-rather than being omitted. The two entries that used to be here and are no longer
-have their own contract files rather than being withdrawn: threads / coordinator /
-advisor is `partial`, and session budget is `partial` as well, now that it prices
-consumption and refuses the next model request at its ceiling. This file's subject
-is behaviour that is absent, and neither of them is.
+Mixed, per the table in §2. Two entries are `not_applicable` by design, two are
+`unavailable`, and one of those two — Dreams — moved here from
+`not_applicable` once its reason was corrected. Every one is recorded in the
+capability matrix with its reason rather than being omitted. The entry that used
+to be here and is no longer is session budget, which has its own contract file
+because it was implemented. Threads, the coordinator, and the advisor stayed
+out: they are `unavailable`, not `partial`, and they too have their own file
+rather than a paragraph in this one.

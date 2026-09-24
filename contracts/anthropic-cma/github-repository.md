@@ -3,10 +3,14 @@
 Contract area: the `github_repository` session resource — cloning a repository
 into the sandbox, checking out a ref, discovering the skills it ships, and
 keeping the access token out of everything the model can read. Status:
-`supported`, see §7. Source: `src/core/resources/github-materializer.ts`,
+`partial`, see §7. Source: `src/core/resources/github-materializer.ts`,
 `src/core/resources/github-runtime.ts`,
-`src/core/session/sandbox-lifecycle.ts`, `src/core/runtime/session-runtime.ts`,
-`src/core/session/executor.ts`, `src/core/session/context-builder.ts`.
+`src/core/session/sandbox-lifecycle.ts`, `src/api/routes/session-resources.ts`.
+
+<!-- capability-status
+github-repository-materialization: partial
+github-repository-identity-freeze: supported
+-->
 
 ---
 
@@ -66,26 +70,44 @@ Failure disposition is the part that is easy to get wrong:
   files the agent may already have read cannot be retroactively corrected
   mid-run.
 
-Runtime wiring is real rather than a helper that exists but is never called:
-`SessionRuntime` constructs the materializer via
-`createGithubMaterializer({ cacheRoot: artifactStore.path('cache'), dataDir:
-credentialDataDir })`; `SandboxLifecycle` calls it during provisioning;
-`ExecutorDeps.githubMaterializer` passes it through; and
-`ContextBuilderDeps.repositorySkills` reads
-`sandboxLifecycle.discoveredRepositorySkills(sessionId)` — the single source of
-truth for repository skills — so the prompt sees exactly the skills that were
-discovered.
+Identity freeze is enforced where a caller can reach it:
+`src/api/routes/session-resources.ts` accepts exactly one mutating field on a
+`github_repository` resource (`authorization_token`), names any other field in
+the 400, and tells the caller a new session is required. `mountIdentityChanged`
+in `github-materializer.ts` is the decision helper the unit tests drive; the
+route does not consult it, which is recorded in §4.
+
+**Runtime wiring is missing.** `SandboxLifecycle` materializes repositories only
+through an injected `githubMaterializer` dependency
+(`src/core/session/sandbox-lifecycle.ts`), and it throws
+`GitHub repository session resources require a repository materializer` when the
+dependency is absent. `createGithubMaterializer` exists in
+`src/core/resources/github-runtime.ts`, but nothing in `src/` calls it:
+`createRuntimeSessionServices` declares no such option, `ExecutorDeps` carries
+no such field, and the executor constructs `SandboxLifecycle` from its own deps.
+The only callers are tests. The same is true of
+`SandboxLifecycle.discoveredRepositorySkills`, which has no caller at all, so a
+repository's `.claude/skills` never reach the context builder.
+
+The consequence is the worst ordering for a caller: a session that attaches a
+`github_repository` resource is accepted with a 201, and then its first turn
+fails. This is why the entry is `partial` rather than `supported`, and why §4
+records the gap instead of the earlier claim that the wiring was complete.
 
 ## 3. Alignment
 
-Aligned for: the resource being declarable per session, the repository being
-present in the sandbox at a known path, shipped skills becoming agent-visible,
-and the token never being model-visible or persisted.
+Aligned for: the resource being declarable per session, the URL grammar and
+ref handling, the token never being model-visible or persisted, and the identity
+freeze being refused at the route. Not aligned for the mount itself: no started
+runtime can produce it.
 
 ## 4. Differences
 
 | Difference | Detail |
 | --- | --- |
+| Not reachable from a started runtime | The materializer is implemented and tested, but no composition injects it, so a session with a `github_repository` resource is accepted and then fails at its first provisioning pass. The published contract describes a repository available in the sandbox. |
+| Repository skills never reach the prompt | `discoveredRepositorySkills` records the names the materializer finds but has no caller, so the context builder is never given them. |
+| Dead identity helper | `mountIdentityChanged` implements the freeze decision and is unit-tested, while the route enforces the same rule through a field allowlist. The rule a caller observes is enforced; the helper is not the enforcement point. |
 | URL grammar | Only `https://github.com/<owner>/<repo>` is accepted. A self-hosted GitHub Enterprise host, an SSH remote, and a `.git` suffix are rejected rather than silently normalized. |
 | Cache scope | Only a `commit` checkout is cacheable. A branch or tag checkout always clones fresh, trading time for the guarantee that the tree matches the ref. |
 | Mount path | The canonical mount path is produced and validated locally; see [`files.md`](./files.md) for the path form itself. |
@@ -94,6 +116,12 @@ and the token never being model-visible or persisted.
 
 ## 5. Reason for the difference
 
+- **The wiring gap is a gap, not a design.** The materializer is fully written
+  and covered at both the decision and the host layer, and the dependency it
+  needs is declared on `SandboxLifecycle`. What is missing is one line in the
+  composition root. Recording it as `partial` is the only honest status while a
+  caller cannot reach the behaviour through a started runtime, however complete
+  the helper is.
 - Restricting the URL grammar is a security decision: accepting an arbitrary git
   remote would turn a resource declaration into an arbitrary-code-fetch
   primitive, and SSH remotes would require key material the runtime does not
@@ -114,27 +142,35 @@ and the token never being model-visible or persisted.
 - `tests/unit/github-materialization.test.ts` — decision logic: the URL grammar,
   cache-key scope (commit only), clone argument construction, token-bearing
   environment rather than argv, output sanitization, skill discovery, mount
-  identity comparison, and the failure paths that must clean up staging.
+  identity comparison, and the failure paths that must clean up staging. It also
+  drives the `SandboxLifecycle` mount path with an injected materializer, which
+  is what makes the missing composition wiring visible rather than silent.
 - `tests/integration/github-materialization-real.test.ts` — the host-side
   primitives against a real `git` binary: clone, checkout, cache reuse, timeout
   behaviour, and that the token never appears in the captured output.
-- `tests/unit/runtime-session-runtime.test.ts` — the wiring: a github
-  materializer is constructed and mounts a repository during provisioning, so the
-  capability is reachable from a started runtime rather than only from a direct
-  function call.
+- `tests/integration/api.test.ts` — the resource on the wire: a
+  `github_repository` resource is accepted, and the token is absent from the
+  response, the session detail, and the stored row.
 
-**What these tests do not cover:** the decision and host-layer suites use local
-fixtures for most cases. A live smoke verification was also run on 2026-09-18
-against `https://github.com/AllureCurtain/sandbase-harness` at `main`: the
-production materializer cloned the branch, mounted 343 files into the sandbox
-adapter, discovered no repository skills, and left no token in the mount or
-reported result. Provider-side edge cases such as rate limiting, credential
-rejection, LFS, submodules, and GitHub Enterprise remain unverified.
+**What these tests do not cover:** no test drives a `github_repository` session
+through a started runtime, because that path throws before it can clone — the
+gap recorded in §2. The decision and host-layer suites use local fixtures for
+most cases. A live smoke verification was also run on 2026-09-18 against
+`https://github.com/AllureCurtain/sandbase-harness` at `main`: the production
+materializer cloned the branch, mounted 343 files into the sandbox adapter,
+discovered no repository skills, and left no token in the mount or reported
+result. That run was made against the materializer directly, which is why it
+does not contradict the wiring gap. Provider-side edge cases such as rate
+limiting, credential rejection, LFS, submodules, and GitHub Enterprise remain
+unverified.
 
 ## 7. Status
 
-`supported` for the local behaviour: implemented end to end and exercised by
-tests at both the decision layer and the host layer, with runtime wiring covered
-by a composition test. A live smoke verification against one GitHub repository
-and branch passed on 2026-09-18; provider-side edge cases remain unverified.
-The cache-key scope and URL grammar are documented deviations, recorded in §4.
+`partial`. The materializer is implemented end to end and exercised by tests at
+the decision layer, the host layer, and through `SandboxLifecycle` with an
+injected dependency, and the identity freeze is enforced by the resource route.
+It is not `supported` because the composition root injects nothing: a session
+that attaches a `github_repository` resource is accepted and then fails on its
+first turn, and discovered repository skills have no path to the context
+builder. The cache-key scope, the URL grammar, and the mount identity rule are
+documented deviations, recorded in §4.

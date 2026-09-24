@@ -89,7 +89,6 @@ describe('capability matrix', () => {
     const notApplicable = capabilitiesWithStatus('not_applicable').map((entry) => entry.id);
     expect(notApplicable).toEqual(expect.arrayContaining([
       'session-budget-alerts',
-      'dreams',
       'mcp-tunnel',
     ]));
   });
@@ -113,8 +112,17 @@ describe('capability matrix', () => {
     // the canonical agent/session surface, so they are exactly the entries a
     // matrix drifts away from. Pinning them keeps "covered by a contract file"
     // and "present in the matrix" the same fact.
-    expect(capabilityEntry('github-repository-materialization').status).toBe('supported');
+    // The materializer and the file mount are implemented and tested, but no
+    // runtime composition injects either, so a session that declares one is
+    // accepted and then fails. `supported` here was the drift this work item
+    // exists to remove: the helper worked and the capability was unreachable.
+    expect(capabilityEntry('github-repository-materialization').status).toBe('partial');
+    expect(capabilityEntry('github-repository-materialization').reason.toLowerCase())
+      .toContain('no runtime composition');
     expect(capabilityEntry('github-repository-identity-freeze').status).toBe('supported');
+    expect(capabilityEntry('file-resources').status).toBe('partial');
+    expect(capabilityEntry('file-resources').reason.toLowerCase())
+      .toContain('no runtime composition');
     // Webhooks and scheduled deployments *are* covered by the published
     // contract (delivery behaviour, deployment lifecycle), so they are not
     // extensions and cannot be claimed as plain `supported` while the delivery
@@ -164,17 +172,20 @@ describe('capability matrix', () => {
     // would imply a refresh loop is coming.
     expect(capabilityEntry('oauth-refresh').status).toBe('unavailable');
     expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('warning');
-    // Threads are implemented with recorded deviations, so the entry must name
-    // them rather than fall back to a blanket `planned`.
-    expect(capabilityEntry('threads-and-coordinator').status).toBe('partial');
+    // Threads are a real gap, not a spelling difference: no thread resource, no
+    // coordinator or advisor role, and no thread route exist. The earlier
+    // `partial` reading described files that were never in the tree.
+    expect(capabilityEntry('threads-and-coordinator').status).toBe('unavailable');
     expect(capabilityEntry('threads-and-coordinator').contract).toBe('contracts/anthropic-cma/threads.md');
   });
 
-  it('names the deviation that keeps the thread entry from being supported', () => {
-    // `partial` without a readable deviation is indistinguishable from
-    // `supported`, so the specific limitation is pinned rather than trusted.
-    expect(capabilityEntry('threads-and-coordinator').reason.toLowerCase())
-      .toContain('delegations list');
+  it('names the surface that keeps the thread entry unavailable', () => {
+    // `unavailable` has to be readable as a real absence rather than as a
+    // placeholder, so the missing pieces are pinned rather than trusted.
+    const reason = capabilityEntry('threads-and-coordinator').reason.toLowerCase();
+    expect(reason).toContain('not implemented');
+    expect(reason).toContain('no coordinator or advisor role');
+    expect(reason).toContain('enable_general_subagent');
   });
 
   it('throws on an unknown capability id instead of returning undefined', () => {
@@ -201,7 +212,7 @@ describe('capability matrix', () => {
   it('returns copies so a consumer cannot mutate the matrix', () => {
     const first = capabilityEntry('dreams');
     first.status = 'supported';
-    expect(capabilityEntry('dreams').status).toBe('not_applicable');
+    expect(capabilityEntry('dreams').status).toBe('unavailable');
   });
 });
 
