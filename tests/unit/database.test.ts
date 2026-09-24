@@ -125,6 +125,38 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('adds the deployment paused_reason column to a fresh workspace and to an existing one', () => {
+    // Fresh: the column exists as soon as migrations run.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'scheduled_deployments')).toContain('paused_reason');
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 42').get()).toEqual({
+      name: '042_scheduled_paused_reason',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped before it, holding a deployment that was
+    // already paused. The upgrade must leave that row readable with **no** recorded
+    // reason rather than back-filling `{"type": "manual"}`, because the runtime did
+    // not observe who paused it and a reason it invented would be indistinguishable
+    // from one it saw.
+    const upgradedPath = join(tmpDir, 'upgraded-paused.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 41));
+    expect(columnsOf(upgraded, 'scheduled_deployments')).not.toContain('paused_reason');
+    upgraded.exec(`
+      INSERT INTO scheduled_deployments (id, name, agent_id, cron, status)
+      VALUES ('sched_u', 'u', 'agent_u', '0 3 * * *', 'paused')
+    `);
+
+    upgraded.runMigrations();
+    expect(columnsOf(upgraded, 'scheduled_deployments')).toContain('paused_reason');
+    expect(
+      upgraded.prepare('SELECT status, paused_reason FROM scheduled_deployments WHERE id = ?').get('sched_u'),
+    ).toEqual({ status: 'paused', paused_reason: null });
+    upgraded.close();
+  });
+
   it('transaction rolls back on error', () => {
     const db = new Database(dbPath);
     db.runMigrations();

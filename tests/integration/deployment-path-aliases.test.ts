@@ -138,17 +138,34 @@ describe('Deployment paths, published and local', () => {
     expect(published.body!.data).toEqual([]);
   });
 
-  it('refuses a run the same way at the published path', async () => {
+  it('runs a paused deployment identically at both spellings', async () => {
     const server = setUp();
     const created = await send(server, 'POST', PUBLISHED, { ...definition, status: 'paused' });
     const id = created.body!.id as string;
 
-    // `run` refuses a deployment that is not active. The alias must relocate that
-    // decision, not soften it, so both spellings answer identically.
-    const viaPublished = await send(server, 'POST', `${PUBLISHED}/${id}/run`);
-    const viaCanonical = await send(server, 'POST', `${CANONICAL}/${id}/run`);
-    expect(viaPublished.status).toBe(400);
-    expect(viaPublished.body).toEqual(viaCanonical.body);
+    // The alias must relocate the run decision, not change it, so both spellings
+    // answer identically.
+    //
+    // This case previously asserted a 400 refusal here, and it passed — but for
+    // the wrong reason: `readObjectBody` runs before the deployment lookup, so a
+    // request with no body is a 400 in its own right. It was measuring the missing
+    // JSON body, not a status refusal, and would have kept passing even if the
+    // refusal had been removed. The body is sent now, and the assertion is on the
+    // run record, which a refusal cannot produce.
+    const viaPublished = await send(server, 'POST', `${PUBLISHED}/${id}/run`, {});
+    const viaCanonical = await send(server, 'POST', `${CANONICAL}/${id}/run`, {});
+    expect(viaPublished.status).toBe(201);
+    expect(viaCanonical.status).toBe(201);
+    // The run ids differ because these are two runs, so the parity assertion is on
+    // the fields that describe the decision rather than on the whole body.
+    expect(viaPublished.body).toMatchObject({
+      schedule_id: id,
+      trigger_type: 'manual',
+      status: viaCanonical.body!.status,
+    });
+    expect(
+      db!.prepare('SELECT COUNT(*) AS n FROM scheduled_deployment_runs WHERE schedule_id = ?').get(id),
+    ).toEqual({ n: 2 });
   });
 
   it('reports a missing deployment at the published path in the same shape', async () => {

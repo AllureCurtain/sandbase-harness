@@ -113,11 +113,19 @@ Scheduled deployments live in `src/api/routes/deployments.ts` and are mounted at
 **both** `/v1/deployments` (the published spelling) and `/v1/scheduled-deployments`
 (the historical local one). One factory, two mounts: the routes are declared
 relative to the mount, so the pair cannot diverge route by route. The module
-exposes create, read, update, archive, `POST /:id/run`, `GET /:id/runs` and
-`POST /run-due`, and no pause or unpause route. It is a separate module rather
-than part of `operations.ts` because that file also serves `/webhooks` and
+exposes create, read, update, archive, `POST /:id/run`, `GET /:id/runs`,
+`POST /run-due`, `POST /:id/pause` and `POST /:id/unpause`. It is a separate module
+rather than part of `operations.ts` because that file also serves `/webhooks` and
 `/outcomes` from one router, and making its paths relative to alias the
 deployments would have placed those families under `/v1/deployments/` too.
+
+A deployment's lifecycle state is `active` / `paused` / `archived`, and `paused`
+carries a reason. `POST /:id/pause` writes `{"type": "manual"}` and
+`POST /:id/unpause` clears it; the create and update routes derive the same value
+from the status they write, so a deployment cannot read as paused with no reason
+merely because it was paused through a different route. Pausing suppresses
+scheduled triggers only — a manual `run` still works, and an archived deployment
+is a 404 on every route rather than a paused one.
 
 `scheduler.ts` is the run engine:
 
@@ -185,7 +193,9 @@ records.
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
 | Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`turn_complete`, `span.*`). The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
 | Deployment endpoint paths | Both spellings are served: the published `/v1/deployments` and the historical local `/v1/scheduled-deployments`. They are one router mounted twice (`src/api/routes/deployments.ts`), so they cannot diverge route by route, and the local spelling is neither deprecated nor redirected. The published contract also updates a deployment with `POST /v1/deployments/{id}` while this runtime uses `PUT`; the verb is not aliased, so a client written against the published verb still gets no route for that one call. |
-| Deployment control surface | Create, read, update, archive, manual run and run-due. No pause and no unpause. |
+| Deployment control surface | Create, read, update, archive, manual run, run-due, **pause and unpause**. `POST /{id}/pause` records `paused_reason: {"type": "manual"}`; `POST /{id}/unpause` clears it and resumes from the next scheduled instant. Pause suppresses the scheduler and leaves the `run` endpoint open, which the published contract requires. The automatic pause after a non-recoverable trigger failure is **not** implemented, so `paused_reason` only ever holds `manual`: a caller can tell "paused by a person" from "not paused", but not yet from "paused by the runtime". |
+| Paused semantics | A paused deployment still accepts a manual `run`. The route previously refused any status but `active`, which was reachable only through `paused` — the one status `定时部署.md:490` says must still run. The scheduler path was already correct (`runDueScheduledDeployments` selects `status = 'active'`), so pause already suppressed timed runs and only the manual path was wrongly closed. Unpausing does not catch up missed triggers: a stored `next_run_at` that has already passed is recomputed forward, and one still in the future is left alone. |
+| Pause reason | `paused_reason` is a column added by `M042`, derived from `status` on every write path (create and update included) so the two cannot disagree. It reads `null` on a row that was paused before the migration, rather than back-filling `manual`: the runtime did not observe who paused it, and an invented reason would be indistinguishable from an observed one. |
 | Trigger representation | `trigger_type` is a key in the session's and the run's metadata. There is no `trigger_context` field and no `schedule` / `manual` polymorphic payload. |
 | Session startup | `sessionManager.create` without `initial_events`; a schedule cannot seed startup events the way the canonical session path can. |
 | Failure behaviour | Symmetric: every thrown session-creation error records a `failed` run and advances the cadence. No split by error class, no failure class recorded beyond the message, no preflight, no auto-pause, no auto-archive. |
@@ -261,6 +271,16 @@ records.
   rows differing only in `timezone` advance in their own zones.
 - `tests/unit/outcome-evaluator.test.ts` — deterministic criteria evaluation and
   the honest unsupported result when no model provider exists.
+- `tests/integration/deployment-pause-resume.test.ts` — pause recording
+  `{"type": "manual"}` and unpause clearing it, the same on the create and update
+  paths, a paused deployment still producing a **run record** from a manual `run`,
+  the scheduler path producing none, missed trigger instants not being caught up
+  (asserted by the absent run, not only by `next_run_at`), a future `next_run_at`
+  left alone, idempotence, and an archived deployment 404ing on pause, unpause and
+  run.
+- `tests/unit/database.test.ts` — `M042` on a fresh workspace and on one that
+  stopped at `M041`, where an already-paused deployment upgrades with no recorded
+  reason rather than a back-filled one.
 - `tests/integration/deployment-path-aliases.test.ts` — both deployment spellings
   over HTTP: a deployment created at the published path read back at both,
   identical lists, update and archive at the published path with archive hiding it
