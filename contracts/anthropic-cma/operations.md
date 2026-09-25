@@ -81,12 +81,25 @@ is created `active` (the schema default) and stays `active` until archived.
   never fails the state change — the result is discarded and a rejection caught.
 - The event names the runtime can currently raise are therefore the session
   event types plus `deployment.created`, `deployment.paused`,
-  `deployment.unpaused`, and `deployment.updated`. **The rest of
+  `deployment.unpaused`, `deployment.updated`, and `deployment.archived`. **The
+  rest of
   the published table is not emitted**: `agent.*`, `environment.*`, `vault.*`,
-  `vault_credential.*`, `deployment.archived` / `.deleted`, and
+  `vault_credential.*`, `deployment.deleted`, and
   `deployment_run.*` are names a subscription may list and
   nothing produces. A subscription is accepted as written, so an unrecognized
   name is silent rather than refused. §4 records this.
+- `deployment.archived` carries the same `data: {type: 'deployment', id}`
+  reference, and is published by a successful archive **after** the row is
+  written, so a receiver that resolves the reference at delivery time sees
+  `archived_at` set rather than an unarchived deployment. It is published only
+  when the archive actually happened: `archiveById` filters `archived_at IS NULL`,
+  so a repeat archive is a **404** rather than a quiet success, and that 404 is
+  how this runtime expresses the no-op rule the published table states for the
+  sibling resource — archiving an already-archived environment emits nothing.
+  Archiving a webhook or an outcome still publishes nothing, because no published
+  archived event exists for those resources; the shared helper now reports
+  whether it archived anything and each caller decides, which is what keeps one
+  definition of "did the archive happen" instead of a second copy of the guard.
 - `deployment.created` carries the same `data: {type: 'deployment', id}`
   reference, and is published by a successful create **after** the row is
   inserted, so a receiver that resolves the reference when the event arrives finds
@@ -282,6 +295,8 @@ implemented differently, as §4 records.
 | Event coverage | The published table names events across agents, environments, vaults and credentials, deployments, deployment runs, and sessions. The runtime raises only the session event types plus `deployment.paused` and `deployment.unpaused`. A subscription listing a name nothing produces is accepted and simply silent, which is indistinguishable from "that event has not happened yet" — so a receiver cannot tell an unimplemented event from a quiet one. Recorded rather than papered over by refusing unknown names, which would break a subscription created against the published list. |
 | `deployment.paused` causes | The published description covers a requested pause **and** an automatic pause after a non-recoverable trigger failure, and states that recoverable failures including rate limits do not pause. Only the requested cause exists: the automatic one needs the failure taxonomy of the run path, which the `M042` migration comment records as arriving with that work. The event is raised only when the state changes, so a repeat pause is silent. |
 | `deployment.created` scope | Emitted by both mount prefixes of the create route. A create refused before the insert publishes nothing. A deployment created already `paused` is reported by `deployment.created` alone, not by `deployment.paused`: that pair reports a transition, and a resource coming into existence paused has not moved from anything. |
+| `deployment.archived` causes | Only the **direct** cause exists. The published row gives a second one — the deployment's agent being archived — and adds that an agent's deletion archives its scheduled deployments **at the next scheduled run**, while a deployment with no schedule is never auto-archived. Neither is implemented: `POST /v1/agents/{id}/archive` (`src/api/routes/agents.ts:164`) updates only the `agents` table and touches no `scheduled_deployments` row, and `src/core/operations/scheduler.ts` reads deployments and re-arms `next_run_at` / `last_run_at` without ever archiving one. The prerequisite the published rule assumes is also absent: a deployment here cannot have "no schedule" — `cron` is `NOT NULL` and every create arms `next_run_at` — so a deployment that is never auto-archived has no representation. That is a behaviour of the scheduler and the agent route, recorded here rather than half-built. |
+| `deployment.deleted` | Not applicable yet: there is no `DELETE` route for a deployment in any API route module, so no behaviour exists to carry the event. The published row states the event is the final result because there is no object to fetch; emitting it requires a delete route first, which is its own change. |
 | `deployment.updated` scope | Emitted by `PUT /{id}` for the eight field changes listed in §2. It does **not** cover the pause state or `updated_at`, for the reasons given in §2 — the pause transition has its own events and `updated_at` moves on every write. The published trigger ("部署属性已更改") is broader than that on its face, so this is a recorded narrowing rather than full coverage; the alternative would be one call reporting two events a receiver did not ask to be distinguished by. A change to the schedule's derived `next_run_at` counts, because it is a field `PUT` writes and a caller reads. |
 | No-op events | A repeat pause or resume raises nothing, because nothing changed. The published table states this rule explicitly for `environment.archived` ("对已归档的环境再次归档不会发出任何事件") and for `environment.updated` ("无操作的更新不会发出任何事件"); the same rule is applied to a `PUT` that changes no field, and to these two, rather than a second rule invented. |
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
@@ -401,6 +416,18 @@ implemented differently, as §4 records.
   because the refactor rewrote that code, a mixed sequence where the transition
   is derived from the stored state rather than from the route that acted, and
   both mount prefixes.
+- `tests/integration/deployment-archived-event.test.ts` — `deployment.archived`
+  published by a direct archive with a reference that resolves to an already
+  archived row, measured **inside the receiver** so the ordering claim means
+  something; a repeat archive asserted on **both** halves (the `404` and the
+  silence), because either alone passes for the wrong reason; a 404 for an
+  unknown id publishing nothing; both mount prefixes; the wildcard and `prefix.*`
+  matchers reaching it while another family stays untouched; an unreachable
+  subscriber leaving the archive committed; the agent-archived cascade recorded
+  as **absent** so implementing it later must update the expectation
+  deliberately; and the webhook archive route still publishing nothing, which is
+  what shows the shared helper's new outcome did not quietly change the two
+  callers that publish nothing.
 - `tests/integration/deployment-created-event.test.ts` — `deployment.created`
   published by a successful create with a reference that resolves, measured
   **inside the receiver** so the ordering claim means something (a read after the
@@ -449,10 +476,12 @@ implemented differently, as §4 records.
 signature arithmetic, the per-endpoint secret, the published headers on every
 attempt, the background tick that delivers without a caller, the
 `deployment.paused` / `deployment.unpaused` pair across all three doors onto the
-pause state, `deployment.updated` for the field changes a `PUT` makes, and
-`deployment.created` on both mount prefixes are the
+pause state, `deployment.updated` for the field changes a `PUT` makes,
+`deployment.created` on both mount prefixes, and `deployment.archived` for the
+direct cause are the
 aligned parts. The published delivery envelope, the entire
 auto-disable policy, the deployment endpoint alias, the automatic pause cause, the
+`deployment.archived` agent-cascade cause, `deployment.deleted`, the
 `trigger_context` representation, the rest of the published event table and the asymmetric
 failure split are absent, and are listed in §4 so that "covered by a contract" does
 not read as "implemented". Neither entry is `supported`; neither is `unavailable`, because
