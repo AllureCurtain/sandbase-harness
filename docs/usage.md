@@ -403,10 +403,24 @@ managed-agents start --host 127.0.0.1 --port 3000
 managed-agents list
 managed-agents reload
 managed-agents chat agent_assistant --message "hello"
+managed-agents session create --agent agent_assistant
+managed-agents session message <session-id> --message "hello"
+managed-agents session tail <session-id>
+managed-agents session inspect <session-id>
+managed-agents session logs <session-id>
 managed-agents template list
 managed-agents template install <template-name-or-path>
 managed-agents template create <name>
 ```
+
+`session create` prints the new session id, and `--agent` takes an **agent id**
+(default: the first loaded agent): a session's `agent` field is an id, not a name,
+and the API refuses a name with `400 invalid_agent_ref`. `session message` streams
+the reply unless `--no-stream` is passed, which returns as soon as the runtime
+accepts the message. `session tail` follows the live event stream and does not
+exit on its own; `session inspect` prints a summary (or the session and its events
+as JSON with `--json`) and `session logs` prints every recorded event, one JSON
+object per line. Every command accepts `--port` and `--api-key`.
 
 ## Operational Notes
 
