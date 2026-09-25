@@ -131,9 +131,19 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     if (!url || !isHttpUrl(url)) return invalid(c, 'url must be an http(s) URL');
     const events = body.value.events === undefined ? parseArray(existing.events) : stringArray(body.value.events);
     if (events.length === 0) return invalid(c, 'events must contain at least one event name');
+    // The published delivery behaviour sets an endpoint to `disabled` and states that the
+    // disable is reversible by re-enabling it; until this route wrote `status`, nothing
+    // could re-enable one — the dispatcher already selected `status = 'active'`, so a
+    // disabled endpoint stayed silent forever. The vocabulary is the published one, and an
+    // unrecognised value is refused rather than ignored, because a silently ignored status
+    // reads as a successful re-enable on an endpoint that never comes back.
+    const status = body.value.status === undefined ? existing.status : stringField(body.value.status);
+    if (status !== 'active' && status !== 'disabled') {
+      return invalid(c, 'status must be one of: active, disabled');
+    }
     deps.db.prepare(`
       UPDATE webhooks
-      SET name = ?, url = ?, events = ?, description = ?, metadata = ?, updated_at = ?
+      SET name = ?, url = ?, events = ?, description = ?, metadata = ?, status = ?, updated_at = ?
       WHERE id = ?
     `).run(
       stringField(body.value.name) ?? existing.name,
@@ -141,6 +151,7 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
       JSON.stringify(events),
       stringField(body.value.description) ?? existing.description,
       JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
+      status,
       now(),
       id,
     );
