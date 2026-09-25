@@ -6,6 +6,7 @@ import { nextCronRun, runDueScheduledDeployments, runSchedule } from '@/core/ope
 import { isValidTimeZone } from '@/core/operations/cron.js';
 import {
   archiveById,
+  equalJsonObject,
   invalid,
   notFound,
   now,
@@ -16,7 +17,7 @@ import {
   type JsonObject,
   type OperationMountOptions,
 } from './operation-helpers.js';
-import { publishPauseTransition } from './operation-events.js';
+import { publishOperationEvent, publishPauseTransition } from './operation-events.js';
 
 /**
  * Scheduled deployments, addressed at two prefixes.
@@ -130,26 +131,63 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       ? (cadenceChanged ? computedNextRunAt : existing.next_run_at)
       : stringField(body.value.next_run_at) ?? computedNextRunAt;
     const status = normalizeScheduleStatus(body.value.status ?? existing.status);
+    // Every value the write below uses is resolved first, so the same values can
+    // decide whether anything changed. Reading them twice is how a comparison
+    // comes to describe a different write than the one that happened.
+    const nextName = stringField(body.value.name) ?? existing.name;
+    const nextAgentId = stringField(body.value.agent_id) ?? stringField(body.value.agent) ?? existing.agent_id;
+    const nextEnvironmentId = body.value.environment_id === undefined ? existing.environment_id : stringField(body.value.environment_id) ?? null;
+    const nextPayload = body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload);
+    const nextMetadata = body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata);
     deps.db.prepare(`
       UPDATE scheduled_deployments
       SET name = ?, agent_id = ?, environment_id = ?, cron = ?, timezone = ?, payload = ?, status = ?,
           paused_reason = ?, next_run_at = ?, metadata = ?, updated_at = ?
       WHERE id = ?
     `).run(
-      stringField(body.value.name) ?? existing.name,
-      stringField(body.value.agent_id) ?? stringField(body.value.agent) ?? existing.agent_id,
-      body.value.environment_id === undefined ? existing.environment_id : stringField(body.value.environment_id) ?? null,
+      nextName,
+      nextAgentId,
+      nextEnvironmentId,
       schedule.expression,
       schedule.timezone,
-      JSON.stringify(body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload)),
+      JSON.stringify(nextPayload),
       status,
       pauseReasonFor(status),
       nextRunAt,
-      JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
+      JSON.stringify(nextMetadata),
       now(),
       id,
     );
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    // This route can change two different things, and each is reported by its own
+    // event. The fields below are compared against the row that was read before
+    // the write, and the comparison is structural because the stored `payload` and
+    // `metadata` are serializations: a text comparison would report a change for
+    // the same object re-sent with its keys in another order.
+    //
+    // `status` and `paused_reason` are deliberately absent. They belong to the
+    // pause transition, which has dedicated events, and which the two pause routes
+    // also perform — if this event covered them, a `POST /{id}/pause` would have to
+    // publish `deployment.updated` too, contradicting the published design of a
+    // dedicated event for that transition. `updated_at` is absent because it moves
+    // on every write by construction, so counting it would make the published
+    // no-op rule unreachable.
+    const fieldsChanged = (
+      nextName !== existing.name
+      || nextAgentId !== existing.agent_id
+      || nextEnvironmentId !== (existing.environment_id ?? null)
+      || schedule.expression !== existing.cron
+      || schedule.timezone !== storedTimeZone
+      || nextRunAt !== (existing.next_run_at ?? null)
+      || !equalJsonObject(existing.payload, nextPayload)
+      || !equalJsonObject(existing.metadata, nextMetadata)
+    );
+    if (fieldsChanged) {
+      await publishOperationEvent(deps, {
+        event: 'deployment.updated',
+        data: { type: 'deployment', id },
+      });
+    }
     // A `PUT` can change the pause state through its `status` field, which is a
     // third door onto the same state. Publishing from here is what keeps the
     // event tied to the transition rather than to the route that caused it.

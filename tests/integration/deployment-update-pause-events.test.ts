@@ -202,10 +202,10 @@ describe('Deployment pause events at every door', () => {
     const res = await put(`/v1/deployments/${id}`, { name: 'renamed' });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('renamed');
-    // The status was untouched, so neither pause event is a transition. That a
-    // rename publishes no `deployment.updated` either is a recorded gap, not
-    // something this case asserts: the name has its own trigger rule and its own
-    // no-op comparison.
+    // The status was untouched, so neither pause event is a transition. This case
+    // asserts only that: a rename now publishes `deployment.updated`, which is a
+    // different event with its own trigger rule and its own no-op comparison, and
+    // the subscription here does not list it.
     expect(receivedFor(webhookId, 'deployment.paused')).toHaveLength(0);
     expect(receivedFor(webhookId, 'deployment.unpaused')).toHaveLength(0);
   });

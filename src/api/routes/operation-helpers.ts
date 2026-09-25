@@ -92,3 +92,51 @@ export function parseObject(value: string | null): JsonObject {
 export function now() {
   return new Date().toISOString();
 }
+
+/**
+ * Every field the write routes in this family store as a JSON object string.
+ *
+ * They are named together because they share one property: the stored value is a
+ * serialization, so two objects that are equal to a caller are not necessarily
+ * equal as text. A comparison written against the string reports a change when a
+ * caller re-sends the same content with its keys in a different order — and a
+ * caller has no way to know which order the server wrote. Anything comparing
+ * these fields has to compare the parsed values; naming them here is what makes
+ * that a decision rather than a coincidence of which helper a call site reached
+ * for.
+ */
+export function equalJsonObject(
+  stored: string | null | undefined,
+  incoming: JsonObject | undefined,
+): boolean {
+  // Absent means "leave it alone", which the update routes express by
+  // re-serializing the stored value — so an absent field is not a change.
+  if (incoming === undefined) return true;
+  return equalJsonValue(parseObject(stored ?? null), incoming);
+}
+
+/**
+ * Structural equality that does not depend on key order.
+ *
+ * `JSON.stringify` is not usable here: it preserves insertion order, so
+ * `{"a":1,"b":2}` and `{"b":2,"a":1}` stringify differently while being the same
+ * object to every caller. Sorting keys at each level makes the comparison
+ * independent of the order either side happened to use.
+ */
+export function equalJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((item, index) => equalJsonValue(item, right[index]));
+  }
+  const leftKeys = Object.keys(left as JsonObject).sort();
+  const rightKeys = Object.keys(right as JsonObject).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => (
+    key === rightKeys[index]
+    && equalJsonValue((left as JsonObject)[key], (right as JsonObject)[key])
+  ));
+}

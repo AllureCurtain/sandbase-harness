@@ -1713,11 +1713,18 @@ evaluation. A background worker delivers webhook events and runs cron
 schedules, so an unwatched runtime still delivers.
 
 The event names the runtime raises are the session event types plus
-`deployment.paused` and `deployment.unpaused`. The rest of the published event
-table — `agent.*`, `environment.*`, `vault.*`, `vault_credential.*`, the other
-`deployment.*` names, and `deployment_run.*` — is accepted in a subscription and
-never produced, so a receiver cannot distinguish an unimplemented event from a
-quiet one.
+`deployment.paused`, `deployment.unpaused`, and `deployment.updated`. The rest of
+the published event table — `agent.*`, `environment.*`, `vault.*`,
+`vault_credential.*`, the other `deployment.*` names, and `deployment_run.*` — is
+accepted in a subscription and never produced, so a receiver cannot distinguish
+an unimplemented event from a quiet one.
+
+Updating a deployment publishes `deployment.updated` when the call changes at
+least one field, and nothing when it changes none — the stored `payload` and
+`metadata` are compared structurally, so re-sending the same content with its keys
+in a different order is not a change. The pause state is excluded from that event
+and reported by `deployment.paused` / `deployment.unpaused` instead, so a call
+that changes both publishes one event per change.
 
 Pausing a deployment publishes `deployment.paused` and resuming publishes
 `deployment.unpaused`, each carrying `data: {type: 'deployment', id}`: a
