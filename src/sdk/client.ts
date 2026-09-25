@@ -656,7 +656,7 @@ class SessionsResource {
     return this.client.request('GET', `/v1/sessions/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`);
   }
 
-  artifacts(id: string): Promise<{ data: SessionArtifactSummary[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  artifacts(id: string): Promise<{ data: SessionArtifactSummary[]; prev_page: string | null; next_page: string | null }> {
     return this.client.request('GET', `/v1/sessions/${encodeURIComponent(id)}/artifacts`);
   }
 

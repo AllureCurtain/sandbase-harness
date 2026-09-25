@@ -18,7 +18,7 @@ import type { SessionEvent, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
-import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, pageOf, toApiEvent, toApiSession } from '../standard.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, toApiEvent, toApiSession } from '../standard.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { isTerminal } from '@/core/session/state-machine.js';
 import { loadAgentDefinitionById } from '@/core/agent/store.js';
@@ -226,6 +226,12 @@ export function sessionsRoutes(deps: ServerDeps) {
     return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)));
   });
 
+  // The published envelope, like the rest of the canonical `/v1` surface. This listing
+  // returns its whole set, so the cursors are null rather than absent: a caller reading
+  // `next_page` finds an honest "no more pages" instead of no field at all. Windowing it
+  // would be a separate behaviour, and the row order is only defined to second
+  // granularity until it is windowed — a tie reorders an unwindowed page but cannot drop
+  // a row from it.
   app.get('/:id/artifacts', (c) => {
     const sessionId = c.req.param('id');
     if (!sessionManager.get(sessionId)) return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
@@ -235,7 +241,7 @@ export function sessionsRoutes(deps: ServerDeps) {
        WHERE role = 'artifact' AND session_id = ? AND archived_at IS NULL
        ORDER BY created_at DESC`,
     ).all(sessionId) as unknown as FileRow[];
-    return c.json(pageOf(rows.map((row) => toFileResource(row, deps))));
+    return c.json(cursorPageOf(rows.map((row) => toFileResource(row, deps)), {}));
   });
 
   app.post('/:id/artifacts', async (c) => {

@@ -46,9 +46,10 @@ cursor-query-binding: supported
   `/v1/memory_stores` with its memories); the windowed listings that carry a
   followable cursor (`/v1/sessions`, `/v1/sessions/{id}/events`, `/v1/skills`, both
   credential audit listings, and the `/v1/credential-vaults` and `/v1/memory_stores`
-  listings); and the two listing routes that already used `cursorPageOf`
-  (`/v1/memory_stores/{id}/memory_versions` and `/v1/sessions/{id}/resources`). The
-  single exception is `/v1/sessions/{id}/artifacts`, recorded in §4.
+  listings, and `/v1/sessions/{id}/artifacts`); and the two listing routes that already
+  used `cursorPageOf` (`/v1/memory_stores/{id}/memory_versions` and
+  `/v1/sessions/{id}/resources`). There are no exceptions left: every canonical `/v1`
+  collection serves the canonical envelope.
 - `cursorPageOf` takes `prev` from the caller rather than inferring it: a
   forward-only scan cannot know its predecessor, and inventing one would
   produce a cursor that does not resolve.
@@ -58,9 +59,10 @@ cursor-query-binding: supported
   handler runs before honouring a cursor. Both live beside `encodeCursor` so a
   collection cannot invent its own comparison.
 - No canonical collection handler builds its own pagination: a converted handler
-  goes through `collectionPager`, and the two listing routes above go through
-  `cursorPageOf` directly. The collections still on the local envelope are the gap
-  recorded in §4 rather than an exception to the rule.
+  goes through `collectionPager`, and the listing routes above go through
+  `cursorPageOf` directly. No canonical collection is left on the local envelope;
+  the only remaining local shapes are the `/v1/x` extension collections and the
+  work-item listing, both recorded in §4.
 
 ## 3. Alignment
 
@@ -75,15 +77,14 @@ or filter.
 | --- | --- |
 | Extension envelope | `/v1/x` collections return `{data, has_more, first_id, last_id}`. The published contract has no such envelope. |
 | The work-item listing is an extension shape | `/v1/environments/{id}/work-items` spreads the local envelope and adds a `counts` object, and it windows by `limit` with no continuation, so it is neither the canonical envelope nor a plain local one. It is a runtime extension (see `docs/api-matrix.md`) and stays as it is. |
-| The artifacts listing is still on the local envelope | `/v1/sessions/{id}/artifacts` returns `{data, has_more, first_id, last_id}` on a canonical mount. It is the last unconverted canonical collection, it returns its whole set unwindowed, and its conversion is a separate change. |
 | Null cursors on complete result sets | Most canonical collections return `next_page: null` and `prev_page: null` because the full set is returned unwindowed. A real cursor is produced when a collection is windowed — `/v1/sessions`, `/v1/sessions/:id/events`, `/v1/skills`, the credential audit listings, the `/v1/credential-vaults` and `/v1/memory_stores` listings and `/v1/memory_stores/{id}/memory_versions`. |
 | Cursor payload visibility | SandBase cursors are readable base64url JSON, not opaque binary. They carry no secret, so the opacity is present to discourage construction rather than to conceal data. The published contract does not specify an encoding. |
 | Cursor position is a page, not a sort key | `/v1/sessions` stores a 1-based page number, so the scan is redone from that page. A concurrent insert or delete shifts what a later page contains. A keyset cursor naming the last delivered row's sort key would not. The offset cursors (`/v1/skills`, the audit listings, the memory versions) have the same property for the same reason: the backing store pages by offset. |
 | Cursor semantics are not uniform | Four shapes exist across the surface: `/v1/sessions` carries `{order, filter, page}`, `/v1/sessions/:id/events` carries `{session_id, after_id}`, `/v1/skills` and the audit listings carry `{offset, filter}`, and the remaining resource listings carry `{offset}` alone because they return everything in one page. All are canonical envelopes, but a cursor is only meaningful in the collection that issued it, which `cursorQueryMismatch` enforces where a filter is bound. |
 
-Every canonical `/v1` collection except the artifacts listing serves the canonical
-envelope (that exception is the first row of the table above); the only listing shape
-that is neither canonical nor a plain `/v1/x` extension is the work-item row
+Every canonical `/v1` collection serves the canonical envelope, with no exceptions; the
+only listing shape that is neither canonical nor a plain `/v1/x` extension is the
+work-item row
 above. `order` **is** bound, and the filter binding covers the query's own filters:
 `/v1/sessions` records `created_at DESC` and the normalized `agent_id` / `status` in
 every cursor it issues and rejects a replay that does not match
