@@ -235,7 +235,23 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     return c.json(toScheduledDeployment(row));
   });
 
-  app.post('/:id/archive', (c) => archiveById(c, deps, 'scheduled_deployments', toScheduledDeployment, 'Scheduled deployment not found'));
+  app.post('/:id/archive', async (c) => {
+    const outcome = archiveById(c, deps, 'scheduled_deployments', toScheduledDeployment, 'Scheduled deployment not found');
+    // Published only when the archive actually happened. A repeat archive is a
+    // 404 from the shared guard, not a second archive, so it publishes nothing —
+    // which is the rule the published table states for the sibling resource
+    // ("对已归档的环境再次归档不会发出任何事件", `订阅Webhook.md:79`).
+    //
+    // Published after the write, so a receiver that resolves the reference at
+    // delivery time sees `archived_at` set rather than an unarchived deployment.
+    if (outcome.archived) {
+      await publishOperationEvent(deps, {
+        event: 'deployment.archived',
+        data: { type: 'deployment', id: outcome.row.id },
+      });
+    }
+    return outcome.response;
+  });
 
   app.get('/:id/runs', (c) => {
     const schedule = deps.db.prepare('SELECT id FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));

@@ -33,19 +33,41 @@ export interface OperationMountOptions {
   pageShape?: 'canonical' | 'legacy';
 }
 
+/**
+ * What an archive attempt did, so the caller can decide what to publish.
+ *
+ * This helper is shared by deployments, webhooks and outcomes, and each answers
+ * a different way: today only a deployment publishes. Reporting the outcome
+ * alongside the response is what lets each caller decide without the helper
+ * knowing anything about deployment events — and without a second copy of the
+ * `archived_at IS NULL` guard, which is how two routes come to disagree about
+ * when an archive happened.
+ *
+ * The response is built here, exactly as before, so a caller that publishes
+ * nothing is indistinguishable from the previous version.
+ */
+export type ArchiveOutcome<T> =
+  | { archived: true; row: T; response: Response }
+  | { archived: false; response: Response };
+
 export function archiveById<T>(
   c: any,
   deps: ServerDeps,
   table: string,
   map: (row: any) => T,
   missingMessage: string,
-) {
+): ArchiveOutcome<T> {
   const id = c.req.param('id');
+  // The guard is also the no-op rule: an already-archived row is not found here,
+  // so a repeat archive is answered 404 rather than succeeding in silence. The
+  // published table states that rule for the sibling resource — archiving an
+  // already-archived environment emits nothing — so a caller that publishes must
+  // publish only when `archived` is true.
   const existing = deps.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND archived_at IS NULL`).get(id);
-  if (!existing) return notFound(c, missingMessage);
+  if (!existing) return { archived: false, response: notFound(c, missingMessage) };
   deps.db.prepare(`UPDATE ${table} SET status = ?, archived_at = ?, updated_at = ? WHERE id = ?`).run('archived', now(), now(), id);
   const row = deps.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
-  return c.json(map(row));
+  return { archived: true, row: map(row), response: c.json(map(row)) };
 }
 
 export async function readObjectBody(c: any): Promise<{ ok: true; value: JsonObject } | { ok: false; response: Response }> {

@@ -1713,12 +1713,18 @@ evaluation. A background worker delivers webhook events and runs cron
 schedules, so an unwatched runtime still delivers.
 
 The event names the runtime raises are the session event types plus
-`deployment.created`, `deployment.paused`, `deployment.unpaused`, and
-`deployment.updated`. The rest of
+`deployment.created`, `deployment.paused`, `deployment.unpaused`,
+`deployment.updated`, and `deployment.archived`. The rest of
 the published event table — `agent.*`, `environment.*`, `vault.*`,
 `vault_credential.*`, the other `deployment.*` names, and `deployment_run.*` — is
 accepted in a subscription and never produced, so a receiver cannot distinguish
 an unimplemented event from a quiet one.
+
+Archiving a deployment publishes `deployment.archived` once the row is archived,
+so a receiver that resolves the reference sees `archived_at` set. A repeat archive
+publishes nothing and answers `404` rather than succeeding quietly, which is how
+this runtime expresses the published no-op rule; archiving a webhook or an outcome
+publishes nothing, because no archived event exists for those resources.
 
 Creating a deployment publishes `deployment.created` once the row exists, so a
 receiver that resolves the reference finds it; a create refused for a missing

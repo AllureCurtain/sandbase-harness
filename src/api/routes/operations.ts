@@ -148,7 +148,10 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     return c.json(toWebhook(row));
   });
 
-  app.post('/webhooks/:id/archive', (c) => archiveById(c, deps, 'webhooks', toWebhook, 'Webhook not found'));
+  // Archiving a webhook publishes nothing: only deployments have a published
+  // archived event. The response is built by the helper, so this caller is
+  // unchanged in behaviour, not merely in intent.
+  app.post('/webhooks/:id/archive', (c) => archiveById(c, deps, 'webhooks', toWebhook, 'Webhook not found').response);
 
   // --- Signing-secret rotation window -------------------------------------
   //
@@ -294,7 +297,9 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     return c.json(toOutcome(row));
   });
 
-  app.post('/outcomes/:id/archive', (c) => archiveById(c, deps, 'outcomes', toOutcome, 'Outcome not found'));
+  // Same as the webhook archive above: no published archived event exists for an
+  // outcome, so nothing is published and the helper's response is returned as-is.
+  app.post('/outcomes/:id/archive', (c) => archiveById(c, deps, 'outcomes', toOutcome, 'Outcome not found').response);
 
   app.get('/sessions/:id/outcomes', (c) => {
     const session = deps.db.prepare('SELECT id FROM sessions WHERE id = ?').get(c.req.param('id'));
