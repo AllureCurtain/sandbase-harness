@@ -41,6 +41,21 @@ Constants (`semantics.ts`):
 
 Scoping:
 
+- The listing implements the published `include_archived` parameter
+  (`管理智能体上下文/记忆存储.md:1206`): archived stores are excluded by default and
+  returned when the parameter is `true`, each with `status: "archived"` and a
+  non-null `archived_at`. `false` is accepted and means the default.
+- A value that is neither is a `400` rather than a fall-back to the default, and
+  so is sending the parameter twice with different values. The reading lives in
+  `src/api/routes/query-params.ts` and is shared with the vault listing, which
+  takes the same published parameter, so the two collections cannot come to
+  accept different values for it.
+- Including an archived store in a listing is not an un-archive: the
+  single-resource read still answers `404` for an archived store and archiving
+  remains terminal.
+- The listing still implements **no pagination** — it answers a single page and
+  ignores the published `limit`/`page`. That is a separate gap and is not
+  addressed here.
 - `path_prefix` must start **and** end with `/`. This is enforced rather than
   normalized, because `/notes` and `/notes/` match different sets and silently
   fixing one to the other would change which memories a caller sees.
@@ -144,6 +159,12 @@ per-write version auditing.
   writable ones.
 - `tests/integration/memory-wiring.test.ts` — the legacy `context_id` memory path
   still injects its own section, so the resource-scoped path did not replace it.
+- `tests/integration/memory-store-list-include-archived.test.ts` — the published
+  listing parameter: archived excluded by default and included on request with
+  the archived label intact, `false` equal to omitting it, a malformed value and
+  a repeated parameter each refused, the archived store still `404` on its own
+  read, and the refusal worded identically to the vault listing's so the shared
+  implementation cannot drift.
 
 ## 7. Status
 
