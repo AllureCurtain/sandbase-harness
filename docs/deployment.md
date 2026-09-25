@@ -240,6 +240,22 @@ managed-agents worker poll \
 Generate and revoke environment worker keys from the Console or the
 `/v1/environments/{id}/worker-keys` API.
 
+The worker executes `exec`, `read`, `write`, and `list` items inside `--workdir`
+and reports each result back to the runtime under the same worker identity it
+claimed with, so an item whose command fails is recorded as `failed` rather than
+being left claimed. Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--once` | Claim and run at most one item, then exit. |
+| `--interval-ms <ms>` | Delay between polls when the queue is empty (default `1000`, minimum `250`). |
+| `--worker-id <id>` | Identity reported on the claim and the completion (default `worker_<pid>`). |
+
+An unusable `--port` or `--interval-ms` stops the worker at startup with a message
+naming the option, which matters for a long-running process on someone else's
+machine: a `--interval-ms` that does not parse would otherwise poll with no delay
+at all instead of failing.
+
 ## Operational Checks
 
 Use these checks in release scripts and health monitors:

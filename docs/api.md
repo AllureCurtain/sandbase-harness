@@ -1501,6 +1501,14 @@ managed-agents worker poll \
 Worker polling is scoped by the environment key when supplied. The worker can
 execute `exec`, `read`, `write`, and `list` work items inside `--workdir`.
 
+Pass `--once` to claim and run at most one item and exit, which is also what makes
+the command usable from a test or a cron job; without it the worker polls until it
+is stopped. `--interval-ms` sets the delay between polls when the queue is empty
+and `--worker-id` sets the identity reported on both the claim and the completion
+(default `worker_<pid>`). An unusable `--port` or `--interval-ms` stops the worker
+at startup with a message naming the option: an unparseable interval would
+otherwise become a poll loop with no delay at all.
+
 ### Self-hosted worker keys
 
 A self-hosted environment's worker keys are issued, listed, and revoked over the

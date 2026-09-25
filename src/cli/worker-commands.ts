@@ -1,6 +1,29 @@
+/**
+ * Self-hosted environment worker: the machine-side half of the work queue.
+ *
+ * A worker claims work items from `POST /v1/x/worker/claim`, executes them inside
+ * `--workdir`, and reports each result to `POST /v1/x/worker/complete`. The server
+ * never runs them — this process does.
+ *
+ * Two invariants this file has to hold, neither of which it held before:
+ *
+ * 1. `complete` carries the same `worker_id` that `claim` sent. The route requires
+ *    it (`src/api/routes/worker.ts:44`) and matches the row on it
+ *    (`AND claimed_by = ?`), so a completion without it is a `400`: the work item's
+ *    side effect has already happened and the row stays `claimed` forever.
+ * 2. Options are validated before the loop starts. `setTimeout(fn, NaN)` fires
+ *    immediately, so a malformed `--interval-ms` used to become a busy loop against
+ *    the server instead of an error.
+ */
+
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+
+/** Below this, polling a queue is indistinguishable from hammering the server. */
+const MIN_POLL_INTERVAL_MS = 250;
+
+const DEFAULT_POLL_INTERVAL_MS = 1000;
 
 export type WorkerPollOptions = {
   port: string;
@@ -13,6 +36,52 @@ export type WorkerPollOptions = {
   intervalMs?: string;
 };
 
+/** `WorkerPollOptions` with every default applied and every value checked. */
+export type ResolvedWorkerPollOptions = {
+  port: string;
+  apiKey?: string;
+  environmentId?: string;
+  environmentKey?: string;
+  workerId: string;
+  root: string;
+  once: boolean;
+  intervalMs: number;
+};
+
+/**
+ * Validate the worker's options and resolve the defaults.
+ *
+ * Throws rather than coercing. A worker is a long-running process that executes
+ * commands on someone's machine, so an option it cannot honour has to stop it at
+ * startup, where the operator is still reading, instead of degrading into a loop
+ * that runs wrong — and an unparseable interval degrades into the worst of them, a
+ * loop with no delay at all.
+ */
+export function resolveWorkerPollOptions(opts: WorkerPollOptions): ResolvedWorkerPollOptions {
+  const port = Number(opts.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid --port value "${opts.port}". Expected an integer between 1 and 65535.`);
+  }
+
+  const intervalMs = Number(opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS);
+  if (!Number.isFinite(intervalMs) || intervalMs < MIN_POLL_INTERVAL_MS) {
+    throw new Error(
+      `Invalid --interval-ms value "${opts.intervalMs}". Expected a number of at least ${MIN_POLL_INTERVAL_MS}.`,
+    );
+  }
+
+  return {
+    port: String(port),
+    apiKey: opts.apiKey,
+    environmentId: opts.environmentId,
+    environmentKey: opts.environmentKey,
+    workerId: opts.workerId ?? `worker_${process.pid}`,
+    root: resolve(opts.workdir),
+    once: opts.once === true,
+    intervalMs,
+  };
+}
+
 type WorkerItem = {
   id: string;
   sessionId?: string;
@@ -22,25 +91,23 @@ type WorkerItem = {
 };
 
 export async function workerPollCommand(opts: WorkerPollOptions) {
-  const workerId = opts.workerId ?? `worker_${process.pid}`;
-  const intervalMs = Math.max(250, Number(opts.intervalMs ?? 1000));
-  const root = resolve(opts.workdir);
-  console.log(`Polling self-hosted work as ${workerId} in ${root}`);
+  const config = resolveWorkerPollOptions(opts);
+  console.log(`Polling self-hosted work as ${config.workerId} in ${config.root}`);
   for (;;) {
-    const item = await claimWorkItem(opts, workerId);
+    const item = await claimWorkItem(config);
     if (item) {
       try {
-        await completeWorkItem(opts, item, { status: 'fulfilled', value: await executeWorkItem(item, root) });
+        await completeWorkItem(config, item, { status: 'fulfilled', value: await executeWorkItem(item, config.root) });
       } catch (error) {
-        await completeWorkItem(opts, item, { status: 'rejected', reason: error });
+        await completeWorkItem(config, item, { status: 'rejected', reason: error });
       }
       console.log(`completed ${item.id}`);
-    } else if (opts.once) {
+    } else if (config.once) {
       console.log('no work');
       return;
     }
-    if (opts.once) return;
-    await sleep(intervalMs);
+    if (config.once) return;
+    await sleep(config.intervalMs);
   }
 }
 
@@ -67,12 +134,12 @@ export async function executeWorkItem(item: WorkerItem, root: string): Promise<u
   throw new Error(`Unsupported work item kind: ${item.kind}`);
 }
 
-async function claimWorkItem(opts: WorkerPollOptions, workerId: string): Promise<WorkerItem | null> {
+async function claimWorkItem(opts: ResolvedWorkerPollOptions): Promise<WorkerItem | null> {
   const res = await fetch(`http://localhost:${opts.port}/v1/x/worker/claim`, {
     method: 'POST',
     headers: jsonHeaders(opts),
     body: JSON.stringify({
-      worker_id: workerId,
+      worker_id: opts.workerId,
       environment_id: opts.environmentId,
       environment_key: opts.environmentKey ?? process.env.MANAGED_AGENTS_ENVIRONMENT_KEY,
     }),
@@ -82,10 +149,18 @@ async function claimWorkItem(opts: WorkerPollOptions, workerId: string): Promise
   return res.json() as Promise<WorkerItem>;
 }
 
-async function completeWorkItem(opts: WorkerPollOptions, item: WorkerItem, resultOrError: PromiseSettledResult<unknown>) {
+async function completeWorkItem(
+  opts: ResolvedWorkerPollOptions,
+  item: WorkerItem,
+  resultOrError: PromiseSettledResult<unknown>,
+) {
+  // `worker_id` is required by the route and is what the row is matched on, so it
+  // has to be the same identity `claim` sent. Omitting it answered
+  // `400 id and worker_id are required` after the work had already been executed,
+  // leaving the row `claimed` with its side effect applied.
   const body = resultOrError.status === 'fulfilled'
-    ? { id: item.id, result: resultOrError.value }
-    : { id: item.id, result: { message: resultOrError.reason instanceof Error ? resultOrError.reason.message : String(resultOrError.reason) }, failed: true };
+    ? { id: item.id, worker_id: opts.workerId, result: resultOrError.value }
+    : { id: item.id, worker_id: opts.workerId, result: { message: resultOrError.reason instanceof Error ? resultOrError.reason.message : String(resultOrError.reason) }, failed: true };
   const res = await fetch(`http://localhost:${opts.port}/v1/x/worker/complete`, {
     method: 'POST',
     headers: jsonHeaders(opts),
@@ -129,7 +204,7 @@ function objectOfStrings(value: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, String(val)]));
 }
 
-function jsonHeaders(opts: WorkerPollOptions): Record<string, string> {
+function jsonHeaders(opts: ResolvedWorkerPollOptions): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     ...(opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {}),
