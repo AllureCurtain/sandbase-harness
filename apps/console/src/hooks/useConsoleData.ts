@@ -48,8 +48,13 @@ async function loadBuildDomain(): Promise<Pick<ConsoleData, 'agents' | 'sessions
 async function loadResourceDomain(): Promise<Pick<ConsoleData, 'environments' | 'vaults' | 'memoryStores'>> {
   const [environments, vaults, memoryStores] = await Promise.all([
     getCursorPage<Environment>('/v1/environments'),
-    getCursorPage<Vault>('/v1/credential-vaults'),
-    getCursorPage<MemoryStore>('/v1/memory_stores'),
+    // The listing pages under the published default of 20, so the Console asks for the
+    // published maximum explicitly — the same way the session list above does. The
+    // Console reads one page and does not follow `next_page`, so a workspace with more
+    // than 100 vaults or stores is still shown its first 100; that limit is the
+    // Console's, not the endpoint's, and it applies to the session list already.
+    getCursorPage<Vault>('/v1/credential-vaults?limit=100'),
+    getCursorPage<MemoryStore>('/v1/memory_stores?limit=100'),
   ]);
   return {
     environments: environments.data,

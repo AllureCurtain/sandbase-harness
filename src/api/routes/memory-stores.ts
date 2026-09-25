@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf } from '../standard.js';
-import { parseIncludeArchived } from './query-params.js';
+import { parseCollectionWindow, parseIncludeArchived, INCLUDE_ARCHIVED_PARAM } from './query-params.js';
 import {
   applyMemoryListScope,
   checkMemorySize,
@@ -28,6 +28,14 @@ import { rejectUnexpectedQueryParams } from './query-params.js';
 
 type ResourceKind = 'memory_store';
 
+/**
+ * The memory-store listing's ordering, as the token a page cursor carries.
+ *
+ * It names the collection as well as the sort, so a cursor issued by the vault
+ * listing is refused here rather than counted against a different collection.
+ */
+const MEMORY_STORE_LIST_ORDER = 'memory_stores.created_at DESC, rowid DESC';
+
 export function memoryStoreRoutes(deps: ServerDeps) {
   const app = new Hono();
 
@@ -44,9 +52,22 @@ export function memoryStoreRoutes(deps: ServerDeps) {
     const includeArchived = parseIncludeArchived(c);
     if (!includeArchived.ok) return includeArchived.response;
 
+    // The published pagination rule applies here too, read by the same helper as the
+    // vault listing so the two collections cannot come to accept different values for
+    // `limit`/`page` either. The cursor carries this collection's ordering and the
+    // archived filter that produced the page.
+    const window = parseCollectionWindow(c, {
+      order: MEMORY_STORE_LIST_ORDER,
+      filter: includeArchived.value ? { [INCLUDE_ARCHIVED_PARAM]: 'true' } : {},
+    });
+    if (!window.ok) return window.response;
+
     const where = includeArchived.value ? '' : 'WHERE m.archived_at IS NULL';
-    const rows = deps.db.prepare(`${memoryStoreSelect(where)} ORDER BY m.created_at DESC`).all() as unknown as MemoryStoreRow[];
-    return c.json(cursorPageOf(rows.map((row) => toMemoryStore(row, deps)), {}));
+    // The same tie-break as the vault listing, for the same reason: `created_at` is
+    // `datetime('now')`, so stores created in one second share a timestamp and the
+    // order within that group has to be decided by something.
+    const rows = deps.db.prepare(`${memoryStoreSelect(where)} ORDER BY m.created_at DESC, m.rowid DESC`).all() as unknown as MemoryStoreRow[];
+    return c.json(window.value.slice(rows.map((row) => toMemoryStore(row, deps))));
   });
 
   app.post('/memory_stores', async (c) => {

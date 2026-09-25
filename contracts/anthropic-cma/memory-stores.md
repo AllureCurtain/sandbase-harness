@@ -53,9 +53,23 @@ Scoping:
 - Including an archived store in a listing is not an un-archive: the
   single-resource read still answers `404` for an archived store and archiving
   remains terminal.
-- The listing still implements **no pagination** — it answers a single page and
-  ignores the published `limit`/`page`. That is a separate gap and is not
-  addressed here.
+- The listing implements the published pagination rule — `limit` (default 20,
+  maximum 100) with a `page` cursor (`管理智能体上下文/Dreams.md:575`; the same rule
+  governs the vault listing) — through the shared reading in
+  `src/api/routes/query-params.ts`. The response carries `prev_page`/`next_page`,
+  which are the cursors a caller passes back as `page`.
+- The cursor is opaque and carries the ordering **and** the `include_archived`
+  view that produced the page. Replaying one under the other view, or against the
+  other collection, is a `400` rather than an answer to a page that never existed
+  for that query.
+- A `limit` outside `1..100`, a non-integer, or a repeated value is a `400` naming
+  the accepted range: a caller who asked for 500 rows and received 100 — or asked
+  for `abc` and received the default — has been answered as though they asked for
+  something else.
+- The listing orders by `created_at DESC` with `rowid DESC` as a tie-break.
+  `created_at` is `datetime('now')`, so stores created in the same second share a
+  timestamp; a windowed listing needs a total order to slice, or a page boundary
+  can repeat or drop a row.
 - `path_prefix` must start **and** end with `/`. This is enforced rather than
   normalized, because `/notes` and `/notes/` match different sets and silently
   fixing one to the other would change which memories a caller sees.
@@ -165,6 +179,12 @@ per-write version auditing.
   a repeated parameter each refused, the archived store still `404` on its own
   read, and the refusal worded identically to the vault listing's so the shared
   implementation cannot drift.
+- `tests/integration/collection-pagination.test.ts` — the published `limit`/`page`
+  window on this listing and the vault listing together: the default page of 20,
+  a walk that partitions the collection exactly once, `prev_page` returning the
+  page it came from, the last full page ending the walk, a malformed or replayed
+  cursor refused, the newest-first ordering measured against distinct timestamps,
+  and both collections answering the same refusal for the same `limit`.
 
 ## 7. Status
 
