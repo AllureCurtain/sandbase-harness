@@ -128,11 +128,18 @@ async function attemptDelivery(
   // its published reason and this attempt is terminal. `nextRetry` is therefore null rather
   // than the attempt ceiling being reached — the rule says a response that triggers
   // auto-disable is never retried, while three attempts still apply to every other failure.
-  const autoDisableReason = blocked
+  let autoDisableReason = blocked
     ? ADDRESS_DISABLED_REASON
     : isRedirectStatus(attempt.statusCode)
       ? REDIRECT_DISABLED_REASON
       : null;
+  // The third rule is about elapsed time rather than this response, so it is consulted only
+  // when the attempt was an ordinary failure. The streak advances on both outcomes: a `2xx`
+  // clears it, which is the published reset and the reason a single flaky event cannot
+  // accumulate into a disable.
+  if (!autoDisableReason && recordFailureStreak(db, webhook.id, attempt.ok, createdAt) === 'overdue') {
+    autoDisableReason = SUSTAINED_DISABLED_REASON;
+  }
   if (autoDisableReason) disableEndpoint(db, webhook.id, autoDisableReason, createdAt);
   const nextRetry = autoDisableReason ? null : nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
@@ -182,11 +189,16 @@ async function retryDelivery(
   // takes the same terminal path when it observes either condition. This is reachable: a
   // retry is queued before the endpoint is disabled, and an operator can re-enable an
   // endpoint while that retry is still due.
-  const autoDisableReason = blocked
+  let autoDisableReason = blocked
     ? ADDRESS_DISABLED_REASON
     : isRedirectStatus(attempt.statusCode)
       ? REDIRECT_DISABLED_REASON
       : null;
+  // A retry is where this rule is most likely to fire: the first attempt starts the streak and
+  // the retries that follow are what carry it across the window.
+  if (!autoDisableReason && recordFailureStreak(db, row.webhook_id, attempt.ok, attemptTime.toISOString()) === 'overdue') {
+    autoDisableReason = SUSTAINED_DISABLED_REASON;
+  }
   if (autoDisableReason) disableEndpoint(db, row.webhook_id, autoDisableReason, attemptTime.toISOString());
   const nextRetry = autoDisableReason ? null : nextRetryAt(attempt.ok, attemptCount, opts);
   db.prepare(
@@ -272,6 +284,10 @@ function isRedirectStatus(statusCode: number | null): boolean {
  */
 const REDIRECT_DISABLED_REASON = 'auto-disabled: endpoint URL returned a redirect (3xx)';
 const ADDRESS_DISABLED_REASON = 'auto-disabled: endpoint URL resolved to an invalid address';
+// The third published reason has a different form from the other two — no `: ` and no
+// parenthetical. It is still machine-readable, so it is written verbatim rather than
+// normalised to match its neighbours.
+const SUSTAINED_DISABLED_REASON = 'auto-disabled after sustained delivery failures';
 
 /**
  * The resolver and the guard for the address screening, named as the WebFetch seam names
@@ -370,6 +386,54 @@ function disableEndpoint(db: Database, webhookId: string, reason: string, nowIso
      SET status = 'disabled', disabled_reason = ?, updated_at = ?
      WHERE id = ?`,
   ).run(reason, nowIso, webhookId);
+}
+
+/**
+ * How long an endpoint must fail without interruption before the third published auto-disable
+ * case fires.
+ *
+ * **This number is not published.** The contract states that the trigger is the *duration* of
+ * uninterrupted failure rather than a delivery count, and that a `2xx` resets the window; it
+ * never says how long that duration is. So this is a local parameter, not a conformed value,
+ * and it is chosen long enough that an ordinary outage — the thing the published sentence
+ * exists to tolerate — cannot reach it. Recording it as a local choice is the point: a
+ * sentence claiming "the published window" here would claim something the contract does not say.
+ */
+const SUSTAINED_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Advance the per-endpoint failure streak and report where it stands.
+ *
+ * The streak is stored rather than kept in process memory because the published condition is
+ * elapsed time: a counter that resets on every restart would never reach the window in the
+ * deployment the rule exists for. `started` opens a streak, `continuing` leaves one running,
+ * `overdue` means the window elapsed, and `cleared` is the `2xx` reset — which is a write on
+ * the success path, not a no-op, because only a `2xx` resets the window and an endpoint whose
+ * failures are interrupted never accumulates toward a disable.
+ */
+function recordFailureStreak(
+  db: Database,
+  webhookId: string,
+  ok: boolean,
+  nowIso: string,
+): 'cleared' | 'started' | 'continuing' | 'overdue' {
+  const row = db.prepare('SELECT failing_since FROM webhooks WHERE id = ?').get(webhookId) as
+    | { failing_since: string | null }
+    | undefined;
+  if (!row) return 'cleared';
+  if (ok) {
+    if (row.failing_since !== null) {
+      db.prepare('UPDATE webhooks SET failing_since = NULL WHERE id = ?').run(webhookId);
+    }
+    return 'cleared';
+  }
+  if (row.failing_since === null) {
+    db.prepare('UPDATE webhooks SET failing_since = ? WHERE id = ?').run(nowIso, webhookId);
+    return 'started';
+  }
+  return Date.parse(nowIso) - Date.parse(row.failing_since) >= SUSTAINED_FAILURE_WINDOW_MS
+    ? 'overdue'
+    : 'continuing';
 }
 
 function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDispatchOptions): string | null {

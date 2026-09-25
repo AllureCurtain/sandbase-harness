@@ -966,6 +966,17 @@ const M043_WEBHOOK_DISABLED_REASON = `
 ALTER TABLE webhooks ADD COLUMN disabled_reason TEXT;
 `;
 
+/**
+ * The third published auto-disable case is triggered by the *duration* of uninterrupted
+ * failure rather than by a delivery count, so the duration has to survive a restart: an
+ * in-process counter would reset on every deploy and the rule would never fire in the
+ * deployment it exists for. `NULL` means "not currently failing", which is also the state a
+ * `2xx` restores.
+ */
+const M044_WEBHOOK_FAILING_SINCE = `
+ALTER TABLE webhooks ADD COLUMN failing_since TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1010,4 +1021,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 41, name: '041_pi_session_policy_binding', sql: M041_PI_SESSION_POLICY_BINDING },
   { version: 42, name: '042_scheduled_paused_reason', sql: M042_SCHEDULED_PAUSED_REASON },
   { version: 43, name: '043_webhook_disabled_reason', sql: M043_WEBHOOK_DISABLED_REASON },
+  { version: 44, name: '044_webhook_failing_since', sql: M044_WEBHOOK_FAILING_SINCE },
 ];
