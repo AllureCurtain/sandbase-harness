@@ -1709,8 +1709,24 @@ Operations APIs persist local control-plane definitions for callbacks,
 scheduled runs, and run-quality checks. The current runtime stores these
 resources, exposes them through the API, and includes manual validation actions
 for webhook test delivery, scheduled run-now, and deterministic outcome
-evaluation. Automatic webhook dispatch and cron scheduling remain planned
-background workers.
+evaluation. A background worker delivers webhook events and runs cron
+schedules, so an unwatched runtime still delivers.
+
+The event names the runtime raises are the session event types plus
+`deployment.paused` and `deployment.unpaused`. The rest of the published event
+table — `agent.*`, `environment.*`, `vault.*`, `vault_credential.*`, the other
+`deployment.*` names, and `deployment_run.*` — is accepted in a subscription and
+never produced, so a receiver cannot distinguish an unimplemented event from a
+quiet one.
+
+Pausing a deployment publishes `deployment.paused` and resuming publishes
+`deployment.unpaused`, each carrying `data: {type: 'deployment', id}`: a
+reference rather than the object, so a receiver fetches the current state
+itself. Nothing is published when the call changes nothing, which matters
+because the pause route is idempotent and a repeat pause is the ordinary retry
+path. A subscriber that cannot be reached does not fail the call — the state
+change is already committed and the failed attempt is recorded for the retry
+sweep.
 
 ### Webhooks
 Every delivery attempt carries the Standard Webhooks v1 headers:

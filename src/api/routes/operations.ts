@@ -26,6 +26,7 @@ import {
   type OperationMountOptions,
 } from './operation-helpers.js';
 import { deploymentRoutes } from './deployments.js';
+import { webhookSigningSecret } from './operation-events.js';
 import { deploymentRunsRoutes } from './deployment-runs.js';
 
 /**
@@ -103,13 +104,13 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
       event,
       data: objectField(body.value.data),
       id: stringField(body.value.id),
-    }, { secret: webhookSecret(deps), dataDir: deps.workspace?.dataDir });
+    }, { secret: webhookSigningSecret(deps), dataDir: deps.workspace?.dataDir });
     return collections.json(c, deliveries, 202);
   });
 
   app.post('/webhooks/retry-due', async (c) => {
     const deliveries = await retryDueWebhookDeliveries(deps.db, {
-      secret: webhookSecret(deps),
+      secret: webhookSigningSecret(deps),
       dataDir: deps.workspace?.dataDir,
     });
     return collections.json(c, deliveries, 202);
@@ -199,7 +200,7 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     // the receiver cannot verify.
     const signature = signPayload(
       payloadJson,
-      resolveWebhookSigningSecret(webhook, webhookSecret(deps), deps.workspace?.dataDir),
+      resolveWebhookSigningSecret(webhook, webhookSigningSecret(deps), deps.workspace?.dataDir),
     );
     const id = `whd_${nanoid(18)}`;
     deps.db.prepare(`
@@ -540,10 +541,6 @@ function textBlocks(blocks: unknown[]): string[] {
     if (Array.isArray(record.content)) output.push(...textBlocks(record.content));
   }
   return output;
-}
-
-function webhookSecret(deps: ServerDeps) {
-  return deps.workspace?.dataDir ?? 'managed-agents';
 }
 
 type WebhookRow = StoredWebhookSecret & {
