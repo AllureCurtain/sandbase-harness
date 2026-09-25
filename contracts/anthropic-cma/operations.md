@@ -80,13 +80,24 @@ is created `active` (the schema default) and stays `active` until archived.
   identically; only the place the event is raised differs. A failing delivery
   never fails the state change — the result is discarded and a rejection caught.
 - The event names the runtime can currently raise are therefore the session
-  event types plus `deployment.paused`, `deployment.unpaused`, and
-  `deployment.updated`. **The rest of
+  event types plus `deployment.created`, `deployment.paused`,
+  `deployment.unpaused`, and `deployment.updated`. **The rest of
   the published table is not emitted**: `agent.*`, `environment.*`, `vault.*`,
-  `vault_credential.*`, `deployment.created` / `.archived` / `.deleted`, and
+  `vault_credential.*`, `deployment.archived` / `.deleted`, and
   `deployment_run.*` are names a subscription may list and
   nothing produces. A subscription is accepted as written, so an unrecognized
   name is silent rather than refused. §4 records this.
+- `deployment.created` carries the same `data: {type: 'deployment', id}`
+  reference, and is published by a successful create **after** the row is
+  inserted, so a receiver that resolves the reference when the event arrives finds
+  the deployment rather than a 404. A create refused for a missing `name`, a
+  missing `agent_id`, a schedule with the wrong field count, or an invalid time
+  zone returns before the row exists and publishes nothing — there is no id to
+  name. A deployment **created already `paused`** publishes only this event: the
+  pause events report a transition, and nothing moved here, so
+  `deployment.paused` would assert a transition that did not happen. The receiver
+  learns the status by resolving the reference, which is the mechanism the
+  published contract supplies for exactly this.
 - `deployment.updated` carries the same `data: {type: 'deployment', id}`
   reference, and is published by `PUT /{id}` when it changes at least one
   caller-visible field: `name`, `agent_id`, `environment_id`, `cron`, `timezone`,
@@ -270,6 +281,7 @@ implemented differently, as §4 records.
 | Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. The new deployment events carry the published `data: {type, id}` reference inside that envelope; the envelope itself is unchanged, so this narrows the divergence without closing it. |
 | Event coverage | The published table names events across agents, environments, vaults and credentials, deployments, deployment runs, and sessions. The runtime raises only the session event types plus `deployment.paused` and `deployment.unpaused`. A subscription listing a name nothing produces is accepted and simply silent, which is indistinguishable from "that event has not happened yet" — so a receiver cannot tell an unimplemented event from a quiet one. Recorded rather than papered over by refusing unknown names, which would break a subscription created against the published list. |
 | `deployment.paused` causes | The published description covers a requested pause **and** an automatic pause after a non-recoverable trigger failure, and states that recoverable failures including rate limits do not pause. Only the requested cause exists: the automatic one needs the failure taxonomy of the run path, which the `M042` migration comment records as arriving with that work. The event is raised only when the state changes, so a repeat pause is silent. |
+| `deployment.created` scope | Emitted by both mount prefixes of the create route. A create refused before the insert publishes nothing. A deployment created already `paused` is reported by `deployment.created` alone, not by `deployment.paused`: that pair reports a transition, and a resource coming into existence paused has not moved from anything. |
 | `deployment.updated` scope | Emitted by `PUT /{id}` for the eight field changes listed in §2. It does **not** cover the pause state or `updated_at`, for the reasons given in §2 — the pause transition has its own events and `updated_at` moves on every write. The published trigger ("部署属性已更改") is broader than that on its face, so this is a recorded narrowing rather than full coverage; the alternative would be one call reporting two events a receiver did not ask to be distinguished by. A change to the schedule's derived `next_run_at` counts, because it is a field `PUT` writes and a caller reads. |
 | No-op events | A repeat pause or resume raises nothing, because nothing changed. The published table states this rule explicitly for `environment.archived` ("对已归档的环境再次归档不会发出任何事件") and for `environment.updated` ("无操作的更新不会发出任何事件"); the same rule is applied to a `PUT` that changes no field, and to these two, rather than a second rule invented. |
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
@@ -389,6 +401,14 @@ implemented differently, as §4 records.
   because the refactor rewrote that code, a mixed sequence where the transition
   is derived from the stored state rather than from the route that acted, and
   both mount prefixes.
+- `tests/integration/deployment-created-event.test.ts` — `deployment.created`
+  published by a successful create with a reference that resolves, measured
+  **inside the receiver** so the ordering claim means something (a read after the
+  create returns would find the row either way); each of the four refusals
+  publishing nothing; a deployment created already `paused` publishing the create
+  and no pause event; both mount prefixes; the wildcard and `prefix.*` matchers
+  reaching it while another family stays untouched; and an unreachable subscriber
+  leaving the create committed.
 - `tests/integration/deployment-updated-event.test.ts` — `deployment.updated`
   published for each of the eight fields `PUT` writes, each one asserted twice:
   once changed, once re-sent unchanged, so an emitter that fires on every write
@@ -429,7 +449,8 @@ implemented differently, as §4 records.
 signature arithmetic, the per-endpoint secret, the published headers on every
 attempt, the background tick that delivers without a caller, the
 `deployment.paused` / `deployment.unpaused` pair across all three doors onto the
-pause state, and `deployment.updated` for the field changes a `PUT` makes are the
+pause state, `deployment.updated` for the field changes a `PUT` makes, and
+`deployment.created` on both mount prefixes are the
 aligned parts. The published delivery envelope, the entire
 auto-disable policy, the deployment endpoint alias, the automatic pause cause, the
 `trigger_context` representation, the rest of the published event table and the asymmetric

@@ -1713,11 +1713,19 @@ evaluation. A background worker delivers webhook events and runs cron
 schedules, so an unwatched runtime still delivers.
 
 The event names the runtime raises are the session event types plus
-`deployment.paused`, `deployment.unpaused`, and `deployment.updated`. The rest of
+`deployment.created`, `deployment.paused`, `deployment.unpaused`, and
+`deployment.updated`. The rest of
 the published event table — `agent.*`, `environment.*`, `vault.*`,
 `vault_credential.*`, the other `deployment.*` names, and `deployment_run.*` — is
 accepted in a subscription and never produced, so a receiver cannot distinguish
 an unimplemented event from a quiet one.
+
+Creating a deployment publishes `deployment.created` once the row exists, so a
+receiver that resolves the reference finds it; a create refused for a missing
+name, a missing agent, a bad schedule, or an unknown time zone publishes nothing,
+because there is no id to name. A deployment created already paused publishes that
+event alone — a resource coming into existence paused has not moved from anything,
+so there is no transition for `deployment.paused` to report.
 
 Updating a deployment publishes `deployment.updated` when the call changes at
 least one field, and nothing when it changes none — the stored `payload` and
