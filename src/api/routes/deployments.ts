@@ -96,6 +96,20 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       now(),
     );
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    // Published after the row exists, so a receiver that follows the reference
+    // immediately finds the deployment rather than a 404. A create that failed
+    // validation returned above this point and publishes nothing, for the same
+    // reason: there is no id to name.
+    //
+    // A deployment created already `paused` publishes only this event. The pause
+    // events report a transition, and nothing moved here — there was no unpaused
+    // state before it — so publishing `deployment.paused` would assert a
+    // transition that did not happen. The receiver learns the status by resolving
+    // this reference, which is the mechanism the published contract supplies.
+    await publishOperationEvent(deps, {
+      event: 'deployment.created',
+      data: { type: 'deployment', id },
+    });
     return c.json(toScheduledDeployment(row), 201);
   });
 
