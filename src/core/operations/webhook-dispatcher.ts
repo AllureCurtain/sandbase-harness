@@ -177,6 +177,13 @@ async function postWebhook(
   try {
     const res = await fetchImpl(url, {
       method: 'POST',
+      // A redirect must be observed, never followed. The address being delivered
+      // to is chosen by the subscriber, so following a `3xx` hands that subscriber
+      // the ability to have the payload replayed wherever it likes — including an
+      // address only reachable from inside this runtime — with the `webhook-*`
+      // signature headers still attached and still valid for the body. Observed,
+      // a `3xx` is simply not a 2xx: the attempt is recorded with its real status.
+      redirect: 'manual',
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'managed-agents-webhook/0.1',
