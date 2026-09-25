@@ -38,6 +38,11 @@ definitions you intentionally maintain. Keep `.managed-agents/data.db`,
 `.managed-agents/logs/`, `.managed-agents/files/`, and sandbox state out of
 source control unless you intentionally want to snapshot local runtime data.
 
+Workspaces are listed in a registry at `$MANAGED_AGENTS_HOME/workspaces.json`,
+which defaults to `~/.managed-agents/workspaces.json`. Set `MANAGED_AGENTS_HOME`
+to keep several registries apart — for example one per project, or a throwaway
+one in tests — and `managed-agents workspace list` will read that one instead.
+
 ## Agent Definitions
 
 Agents can be imported from YAML files in `agents/` or created through the
@@ -414,6 +419,11 @@ managed-agents environments inspect <environment-id>
 managed-agents environments update <environment-id> --sandbox-provider docker
 managed-agents environments archive <environment-id>
 managed-agents environments worker-keys <environment-id>
+managed-agents workspace create ./my-agents --name "My agents"
+managed-agents workspace open ./existing-project
+managed-agents workspace list
+managed-agents workspace resolve <workspace-id-or-name-or-root>
+managed-agents workspace remove <workspace-id-or-name-or-root>
 managed-agents template list
 managed-agents template install <template-name-or-path>
 managed-agents template create <name>
@@ -436,6 +446,18 @@ sends only the fields you pass, so an update that renames an environment keeps i
 description and config. `archive` is terminal: the environment disappears from
 `list`, a later `inspect` answers `404`, and archiving it again is refused. Every
 command accepts `--port`, `--api-key`, and `--json`.
+
+The `workspace` commands are the exception: they do not talk to a running runtime,
+so they take no `--port` or `--api-key`. `workspace create` builds the folder
+layout, a starter `config.yaml`, and a registry entry; `workspace open` only
+registers a folder that already exists and writes nothing into it. Both accept
+`--name` and `--data-dir`, and re-registering the same folder updates its single
+entry rather than adding a second. `workspace list` prints the most recently
+opened first, `workspace resolve` accepts an id, a name, or a root and marks the
+entry as just opened, and `workspace remove` deletes the registry entry **only**
+— the folder and its runtime data are left in place. `resolve` and `remove` exit
+non-zero when nothing matches. `list`, `create`, `open`, and `resolve` accept
+`--json`.
 
 ## Operational Notes
 

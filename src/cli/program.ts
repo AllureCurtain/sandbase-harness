@@ -19,6 +19,13 @@ import {
   sessionTailCommand,
 } from './session-commands.js';
 import { workerPollCommand } from './worker-commands.js';
+import {
+  workspaceCreateCommand,
+  workspaceListCommand,
+  workspaceOpenCommand,
+  workspaceRemoveCommand,
+  workspaceResolveCommand,
+} from './workspace-commands.js';
 
 export interface StartServerOptions {
   port: string;
@@ -244,6 +251,57 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
     .option('-k, --api-key <key>', 'API key if the server has auth enabled')
     .action(async (sessionId, opts) => {
       await sessionLogsCommand(sessionId, opts);
+    });
+
+  // The workspace CLI group. `docs/api-matrix.md:88` documents it as covered and
+  // `src/cli/workspace-commands.ts` implements it, but the module was imported by
+  // nothing, so every command answered `unknown command 'workspace'`. Unlike the other
+  // groups these commands talk to a local on-disk registry (`~/.managed-agents/
+  // workspaces.json`, or `$MANAGED_AGENTS_HOME/workspaces.json`), not to a running
+  // runtime, so they take no `--port` or `--api-key`.
+  const workspace = program.command('workspace').description('Manage the local workspace registry');
+
+  workspace
+    .command('create <root>')
+    .description('Create a workspace (directories plus config) and register it')
+    .option('--name <name>', 'Display name (default: the directory basename)')
+    .option('--data-dir <dir>', 'Runtime data directory for this workspace')
+    .option('--json', 'Print the registry entry as JSON', false)
+    .action((root, opts) => {
+      workspaceCreateCommand(root, opts);
+    });
+
+  workspace
+    .command('open <root>')
+    .description('Register an existing workspace root without creating anything')
+    .option('--name <name>', 'Display name (default: the directory basename)')
+    .option('--data-dir <dir>', 'Runtime data directory for this workspace')
+    .option('--json', 'Print the registry entry as JSON', false)
+    .action((root, opts) => {
+      workspaceOpenCommand(root, opts);
+    });
+
+  workspace
+    .command('list')
+    .description('List registered workspaces, most recently opened first')
+    .option('--json', 'Print the registry entries as JSON', false)
+    .action((opts) => {
+      workspaceListCommand(opts);
+    });
+
+  workspace
+    .command('resolve <id-or-name-or-root>')
+    .description('Print one workspace and mark it as just opened')
+    .option('--json', 'Print the registry entry as JSON', false)
+    .action((value, opts) => {
+      workspaceResolveCommand(value, opts);
+    });
+
+  workspace
+    .command('remove <id-or-name-or-root>')
+    .description('Remove a workspace from the registry (its files are left alone)')
+    .action((value) => {
+      workspaceRemoveCommand(value);
     });
 
   // The self-hosted worker CLI. Documented in `docs/deployment.md`, `docs/api.md`,

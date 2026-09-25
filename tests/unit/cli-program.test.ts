@@ -46,6 +46,24 @@ vi.mock('@/cli/runtime-management-commands.js', () => ({
   }),
 }));
 
+vi.mock('@/cli/workspace-commands.js', () => ({
+  workspaceListCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['ws-list', ...args]);
+  }),
+  workspaceCreateCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['ws-create', ...args]);
+  }),
+  workspaceOpenCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['ws-open', ...args]);
+  }),
+  workspaceResolveCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['ws-resolve', ...args]);
+  }),
+  workspaceRemoveCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['ws-remove', ...args]);
+  }),
+}));
+
 describe('CLI program', () => {
   it('registers the public command surface', () => {
     const program = createCliProgram({
@@ -63,6 +81,7 @@ describe('CLI program', () => {
       'deploy',
       'environments',
       'session',
+      'workspace',
       'worker',
       'template',
     ]);
@@ -93,6 +112,17 @@ describe('CLI program', () => {
       'tail',
       'inspect',
       'logs',
+    ]);
+    // The workspace registry group is documented as covered in `docs/api-matrix.md:88` —
+    // "Create, open/register, list, resolve, and remove local workspace registry entries" —
+    // and ticked in `docs/spec/tasks.md:192`, but `src/cli/workspace-commands.ts` was
+    // imported by nothing, so all five answered `unknown command`.
+    expect(program.commands.find((command) => command.name() === 'workspace')?.commands.map((command) => command.name())).toEqual([
+      'create',
+      'open',
+      'list',
+      'resolve',
+      'remove',
     ]);
     // The self-hosted worker CLI is documented in `docs/deployment.md:234` and the
     // Console's environment setup step; it was never registered, so the documented
@@ -202,6 +232,38 @@ describe('CLI program', () => {
       'env_1',
       { port: '3000' },
     ]);
+  });
+
+  it('maps the documented workspace flags onto the command arguments', async () => {
+    // `workspace` is the one group that is not an HTTP client: it reads and writes a local
+    // registry file. The mapping is pinned here and the on-disk behavior in
+    // `tests/integration/workspace-cli-commands.test.ts`.
+    recorded.calls.length = 0;
+    const run = async (...argv: string[]) => {
+      const program = createCliProgram({
+        version: '0.1.0',
+        startServer: async () => undefined,
+      });
+      await program.parseAsync(['node', 'managed-agents', 'workspace', ...argv], { from: 'node' });
+      return recorded.calls.at(-1);
+    };
+
+    expect(await run('list', '--json')).toMatchObject(['ws-list', { json: true }]);
+    // `--data-dir` must land as `dataDir`: a hyphenated key would arrive `undefined` and the
+    // runtime data directory would silently fall back to the default.
+    expect(await run('create', 'C:\\box', '--name', 'Box', '--data-dir', 'C:\\data')).toMatchObject([
+      'ws-create',
+      'C:\\box',
+      { name: 'Box', dataDir: 'C:\\data' },
+    ]);
+    expect(await run('open', 'C:\\box')).toMatchObject(['ws-open', 'C:\\box', { json: false }]);
+    expect(await run('resolve', 'box-1234abcd', '--json')).toMatchObject([
+      'ws-resolve',
+      'box-1234abcd',
+      { json: true },
+    ]);
+    // `remove` is the only one with no options at all, so it is passed no options object.
+    expect(await run('remove', 'C:\\box')).toEqual(['ws-remove', 'C:\\box']);
   });
 
   it('exposes the documented session options', () => {
