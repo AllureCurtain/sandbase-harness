@@ -5,6 +5,29 @@ export interface OrphanedToolUse {
   resultType: 'agent.tool_result' | 'agent.mcp_tool_result';
 }
 
+/**
+ * What the log records for a tool call that was dispatched but never returned.
+ *
+ * The runtime knows exactly one thing here: no `tool_result` was written. It does
+ * **not** know whether the call took effect, and for a call that already wrote a
+ * file, sent an HTTP request or ran a shell command, the effect may well have
+ * happened. So the message states the uncertainty and stops.
+ *
+ * It carried `retry if needed` before, which is an instruction to do the one thing
+ * that must not be done: repeat an external side effect on the strength of a
+ * guess. A message that is *wrong about the world* is worse than a vague one — it
+ * converts an unknown into a false negative, and the caller acts on it.
+ *
+ * This is deliberately not a failure either. The call is completed with
+ * `is_error: true` so the message sequence stays paired and the turn can continue;
+ * what must not be claimed is the outcome. A later change that retries a crashed
+ * tool call, or that distinguishes pure from impure ones, is a decision this
+ * message makes possible rather than one it makes.
+ */
+export const INTERRUPTED_TOOL_OUTCOME_MESSAGE =
+  'Tool call was interrupted before its result was recorded; its external outcome is unknown. '
+  + 'It may or may not have taken effect.';
+
 export function findOrphanedToolUses(events: SessionEvent[]): OrphanedToolUse[] {
   const toolUses = new Map<string, OrphanedToolUse>();
   const resolved = new Set<string>();
