@@ -66,11 +66,54 @@ type RearmRow = {
   timezone: string | null;
   next_run_at: string | null;
 };
-export function runDueScheduledDeployments(
+/**
+ * The run event a timed run raises, as the published contract shapes it.
+ *
+ * `data.type` names the resource the id belongs to, which is the local envelope's
+ * convention for every operations event; the published envelope instead puts the
+ * event name there, and that divergence is recorded in the contract rather than
+ * half-adopted per event.
+ */
+export type ScheduledDeploymentEvent = {
+  event: string;
+  data: { type: 'deployment_run'; id: string };
+};
+
+/**
+ * Where a run event goes. Injected rather than imported because this module is
+ * core and must not reach for the API layer's `ServerDeps`; the callers that hold
+ * a workspace know how to deliver, sign, and record one.
+ */
+export type ScheduledDeploymentEventSink = (event: ScheduledDeploymentEvent) => Promise<void>;
+
+/**
+ * Run every deployment whose time has come, reporting each run to `onEvent`.
+ *
+ * **Only this path publishes `deployment_run` events.** The published table says
+ * timed runs raise them and manual runs do not, and the manual route
+ * (`POST /{id}/run`) shares `runSchedule` with this one — so the rule has to live
+ * on the path, not on the trigger type. It cannot key off `triggerType ===
+ * 'scheduled'` either: that value is caller-supplied on the manual route, so a
+ * manual run could declare itself timed and emit its way into a rule it is
+ * excluded from.
+ *
+ * `started` is published once the run is recorded and before its outcome, not at
+ * the instant the run begins. `runSchedule` is synchronous and writes its row in
+ * a single terminal statement — there is no intermediate persisted state to point
+ * at — and the published handler contract tells a receiver to fetch the resource
+ * by `data.id` (`订阅Webhook.md:337`). Publishing earlier would send that fetch to
+ * a 404 for a run that had genuinely started. The event is late rather than false;
+ * the run's `started_at` records the instant it reports.
+ *
+ * Delivery is best-effort throughout: a subscriber that cannot be reached is
+ * recorded and retried by the dispatcher, and must never stop a due deployment
+ * from running or abandon the rest of the pass.
+ */
+export async function runDueScheduledDeployments(
   db: Database,
   sessionManager: SessionManager,
-  opts: { now?: Date } = {},
-): SchedulerRunResult[] {
+  opts: { now?: Date; onEvent?: ScheduledDeploymentEventSink } = {},
+): Promise<SchedulerRunResult[]> {
   const now = opts.now ?? new Date();
   const nowIso = now.toISOString();
   const rows = db.prepare(
@@ -83,7 +126,27 @@ export function runDueScheduledDeployments(
      ORDER BY next_run_at ASC, created_at ASC
      LIMIT 50`,
   ).all(nowIso) as ScheduleRow[];
-  return rows.map((schedule) => runSchedule(db, sessionManager, schedule, 'scheduled', now));
+  const emit = async (event: ScheduledDeploymentEvent): Promise<void> => {
+    try {
+      await opts.onEvent?.(event);
+    } catch {
+      // A failed delivery cannot be improved on in-band, and the run it describes
+      // has already been recorded; the next tick picks up anything still due.
+    }
+  };
+  const results: SchedulerRunResult[] = [];
+  for (const schedule of rows) {
+    const result = runSchedule(db, sessionManager, schedule, 'scheduled', now);
+    // Both events carry the run's own id, which is what the published table uses
+    // to tie an outcome to the run that started.
+    await emit({ event: 'deployment_run.started', data: { type: 'deployment_run', id: result.id } });
+    await emit({
+      event: result.status === 'created_session' ? 'deployment_run.succeeded' : 'deployment_run.failed',
+      data: { type: 'deployment_run', id: result.id },
+    });
+    results.push(result);
+  }
+  return results;
 }
 
 export function runSchedule(

@@ -81,13 +81,38 @@ is created `active` (the schema default) and stays `active` until archived.
   never fails the state change — the result is discarded and a rejection caught.
 - The event names the runtime can currently raise are therefore the session
   event types plus `deployment.created`, `deployment.paused`,
-  `deployment.unpaused`, `deployment.updated`, and `deployment.archived`. **The
+  `deployment.unpaused`, `deployment.updated`, `deployment.archived`,
+  `deployment_run.started`, `deployment_run.succeeded`, and
+  `deployment_run.failed`. **The
   rest of
   the published table is not emitted**: `agent.*`, `environment.*`, `vault.*`,
-  `vault_credential.*`, `deployment.deleted`, and
-  `deployment_run.*` are names a subscription may list and
+  `vault_credential.*`, and `deployment.deleted` are names a subscription may list
+  and
   nothing produces. A subscription is accepted as written, so an unrecognized
   name is silent rather than refused. §4 records this.
+- A **timed** run publishes `deployment_run.started` and then exactly one of
+  `deployment_run.succeeded` / `deployment_run.failed`, and all three name the same
+  run: `data: {type: 'deployment_run', id: <run id>}`, the id of the
+  `scheduled_deployment_runs` row. The published table states that the outcome's
+  `data.id` is the same as the run's `deployment_run.started` id, which is why the
+  three names are one behaviour rather than three. `succeeded` is raised for a run
+  whose row is `created_session` and `failed` for `failed`; the two never both
+  fire. **A manual run publishes nothing** — including
+  `POST /v1/deployments/{id}/run` with `trigger_type: "scheduled"`, because that
+  field is caller-supplied and the published rule is about the kind of run, not
+  about what the caller calls it. The rule therefore lives on the timed path
+  (`runDueScheduledDeployments`, reached by the background tick and by
+  `POST /v1/deployments/run-due`) rather than on the shared `runSchedule`, so a
+  manual run cannot declare its way into a timed-only rule.
+- `deployment_run.started` is published once the run is **recorded**, before its
+  outcome and not at the instant it begins. `runSchedule` is synchronous and writes
+  its row in a single terminal statement, and the published handler contract tells
+  a receiver to branch on `data.type` and fetch the resource by `data.id`, so
+  publishing earlier would send that fetch to a 404 for a run that had genuinely
+  started. The event is late, which a receiver can act on, rather than early and
+  false. Delivery is best-effort: a subscriber that cannot be reached is recorded
+  and retried by the dispatcher and never stops a due deployment from running or
+  abandons the rest of the pass.
 - `deployment.archived` carries the same `data: {type: 'deployment', id}`
   reference, and is published by a successful archive **after** the row is
   written, so a receiver that resolves the reference at delivery time sees
@@ -305,7 +330,7 @@ implemented differently, as §4 records.
 | Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
 | Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The published jittered 5–120 s backoff is not implemented: the local schedule is a fixed 60 s then 120 s. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror; no disable or enable route. |
-| Webhook event vocabulary | Subscriptions name SandBase event types. No `deployment.*` or `deployment_run.*` event has a producer, and the runtime publishes its own names (`turn_complete`, `span.*`). The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
+| Webhook event vocabulary | Subscriptions name SandBase event types, and are accepted as written — an unrecognized name is silent rather than refused. Producers exist for the deployment lifecycle (`deployment.created`, `.paused`, `.unpaused`, `.updated`, `.archived`) and for timed runs (`deployment_run.started`, `.succeeded`, `.failed`); `agent.*`, `environment.*`, `vault.*`, `vault_credential.*` and `deployment.deleted` have none. The runtime also publishes its own names (`turn_complete`, `span.*`), which are not in the published table. The local envelope carries the event name on the top-level `event` field while the published one carries it in `data.type` — see the delivery payload envelope row. The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
 | Deployment endpoint paths | Both spellings are served: the published `/v1/deployments` and the historical local `/v1/scheduled-deployments`. They are one router mounted twice (`src/api/routes/deployments.ts`), so they cannot diverge route by route, and the local spelling is neither deprecated nor redirected. The published contract also updates a deployment with `POST /v1/deployments/{id}` while this runtime uses `PUT`; the verb is not aliased, so a client written against the published verb still gets no route for that one call. |
 | Deployment control surface | Create, read, update, archive, manual run, run-due, **pause and unpause**. `POST /{id}/pause` records `paused_reason: {"type": "manual"}`; `POST /{id}/unpause` clears it and resumes from the next scheduled instant. Pause suppresses the scheduler and leaves the `run` endpoint open, which the published contract requires. The automatic pause after a non-recoverable trigger failure is **not** implemented, so `paused_reason` only ever holds `manual`: a caller can tell "paused by a person" from "not paused", but not yet from "paused by the runtime". |
 | Paused semantics | A paused deployment still accepts a manual `run`. The route previously refused any status but `active`, which was reachable only through `paused` — the one status `定时部署.md:490` says must still run. The scheduler path was already correct (`runDueScheduledDeployments` selects `status = 'active'`), so pause already suppressed timed runs and only the manual path was wrongly closed. Unpausing does not catch up missed triggers: a stored `next_run_at` that has already passed is recomputed forward, and one still in the future is left alone. |
@@ -315,6 +340,7 @@ implemented differently, as §4 records.
 | Deployment run trigger context | `trigger_context.type` is `schedule` for a timed run (the runtime stores `scheduled`) and `manual` for a hand-triggered one, passed through unchanged because the published docs show only the timed case. `trigger_context.scheduled_at` is **absent**: the runtime records when a run started, not the instant its trigger was due, and does not persist the due instant on the run row. Reporting `started_at` there would answer a question about the schedule with a fact about execution. |
 | Deployment run agent | `agent` is `{type, id, version}` taken from the session the run created, so both are the ones that ran. On a failed run there is no session and no recorded version, so `version` is `null` and `id` is the deployment's **current** agent — which may have changed since the attempt. Persisting the resolved agent on the run row at attempt time is a separate change. |
 | Deployment run ids | Stored run ids keep their local `srun_` prefix. The published sample uses `drun_`, but an id is opaque to the client and the value is already returned by the nested route and recorded in session metadata, so it is not renamed. |
+| Deployment run event cause | Only a **timed** run raises `deployment_run` events. `runSchedule` is shared by the timed path and the manual route, and the manual route's `trigger_type` is caller-supplied, so the rule is enforced by publishing from the timed path (`runDueScheduledDeployments`, reached by the background tick and by `POST /v1/deployments/run-due`) rather than by testing the trigger type; keying off `trigger_type === 'scheduled'` would let `POST /v1/deployments/{id}/run {"trigger_type":"scheduled"}` emit. `deployment_run.started` is published once the run is **recorded**, before its outcome, not at the instant it begins: `runSchedule` is synchronous and writes its row in a single terminal statement, and the published handler contract has a receiver fetch the resource by `data.id`, so publishing earlier would send that fetch to a 404 for a run that had genuinely started. There is no persisted in-progress run state for `started` to point at, and adding one is a change to the run status vocabulary rather than to this event. |
 | Trigger representation | `trigger_type` is a key in the session's and the run's metadata. There is no `trigger_context` field and no `schedule` / `manual` polymorphic payload. |
 | Session startup | `sessionManager.create` without `initial_events`; a schedule cannot seed startup events the way the canonical session path can. |
 | Failure behaviour | Symmetric: every thrown session-creation error records a `failed` run and advances the cadence. No split by error class, no failure class recorded beyond the message, no preflight, no auto-pause, no auto-archive. |
@@ -416,6 +442,20 @@ implemented differently, as §4 records.
   because the refactor rewrote that code, a mixed sequence where the transition
   is derived from the stored state rather than from the route that acted, and
   both mount prefixes.
+- `tests/integration/deployment-run-events.test.ts` — the timed-run lifecycle:
+  `started` then `succeeded` in delivered order, both naming the *same* run id and
+  that id being the row's own; resolvability of the run measured **inside the
+  receiver** at delivery time, for the outcome and for `started`; the
+  success/failure split asserted as exclusive (a failed run must not also report
+  success) using an unknown agent so session creation genuinely throws; a manual
+  run publishing nothing while still recording its run; **a manual run passing
+  `trigger_type: "scheduled"`** publishing nothing, which is the case that
+  distinguishes the path-based rule from the obvious one, since that field is
+  caller-supplied; no due deployment publishing nothing; the wildcard matcher
+  reaching both events while another family stays untouched; a subscriber on an
+  unreachable port leaving **both** due runs executed *and* its failed attempts
+  recorded for retry; and the background tick — the other door onto the timed path
+  — reporting its runs too.
 - `tests/integration/deployment-archived-event.test.ts` — `deployment.archived`
   published by a direct archive with a reference that resolves to an already
   archived row, measured **inside the receiver** so the ordering claim means
@@ -477,13 +517,15 @@ signature arithmetic, the per-endpoint secret, the published headers on every
 attempt, the background tick that delivers without a caller, the
 `deployment.paused` / `deployment.unpaused` pair across all three doors onto the
 pause state, `deployment.updated` for the field changes a `PUT` makes,
-`deployment.created` on both mount prefixes, and `deployment.archived` for the
-direct cause are the
+`deployment.created` on both mount prefixes, `deployment.archived` for the
+direct cause, and the three `deployment_run.*` events for a timed run are the
 aligned parts. The published delivery envelope, the entire
 auto-disable policy, the deployment endpoint alias, the automatic pause cause, the
 `deployment.archived` agent-cascade cause, `deployment.deleted`, the
-`trigger_context` representation, the rest of the published event table and the asymmetric
-failure split are absent, and are listed in §4 so that "covered by a contract" does
+`trigger_context` representation, the rest of the published event table, the
+asymmetric
+failure split and a persisted in-progress run state are absent, and are listed in
+§4 so that "covered by a contract" does
 not read as "implemented". Neither entry is `supported`; neither is `unavailable`, because
 the resource, the delivery engine, the scheduler and the run records are real
 and exercised by the tests in §6. No claim is made that a client written against
