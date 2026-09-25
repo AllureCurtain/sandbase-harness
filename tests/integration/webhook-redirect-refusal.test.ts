@@ -107,24 +107,28 @@ describe('webhook delivery does not follow redirects', () => {
     // exposure. The 307 case below is the one that replays the signed body.
     expect(target.hits).toEqual([]);
 
-    // The 302 is observed rather than followed, so it is not a success. A retryable
-    // failure is `pending_retry`; only the last attempt becomes terminal `failed`.
+    // The 302 is observed rather than followed, so it is not a success. It is also
+    // not a retryable failure: observing a redirect is the published auto-disable
+    // condition, so this attempt is terminal and the endpoint is disabled. The
+    // retry policy was left alone when the follow behaviour was fixed ("a redirect
+    // is retried under the existing bounded policy, which this change deliberately
+    // does not alter"); that deferral is what this now completes. The disable itself
+    // is asserted in `webhook-redirect-disable.test.ts`.
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
       webhook_id: 'wh_redir',
-      status: 'pending_retry',
+      status: 'failed',
       status_code: 302,
       attempt_count: 1,
     });
-    // A redirect is retried under the existing bounded policy, which this change
-    // deliberately does not alter.
-    expect(results[0].next_retry_at).not.toBeNull();
+    expect(results[0].next_retry_at).toBeNull();
 
     expect(deliveryRow('wh_redir')).toMatchObject({
-      status: 'pending_retry',
+      status: 'failed',
       status_code: 302,
       attempt_count: 1,
       error: 'HTTP 302',
+      next_retry_at: null,
     });
   });
 
@@ -149,7 +153,10 @@ describe('webhook delivery does not follow redirects', () => {
     }, { secret: 'whsec_redir_test', now: () => fixedNow });
 
     expect(target.hits).toEqual([]);
-    expect(results[0]).toMatchObject({ status: 'pending_retry', status_code: 307 });
+    // A 307 is a redirect like any other, so it takes the same terminal path: the
+    // published rule is about the response class, not about which code it is.
+    expect(results[0]).toMatchObject({ status: 'failed', status_code: 307 });
+    expect(results[0].next_retry_at).toBeNull();
   });
 
   it('reads a successful delivery exactly as before', async () => {
