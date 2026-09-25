@@ -143,13 +143,17 @@ describe('capability matrix', () => {
     // `partial` without a readable deviation is indistinguishable from
     // `supported`. Only the two operations entries are pinned here rather than
     // imposing a wording rule on every partial entry in the matrix. Each pin is
-    // an *absence* — the published auto-disable policy has no implementation at
-    // all, and the published deployment control surface is missing rather than
-    // merely spelled differently. An absence is pinned rather than a topic word
-    // because the earlier wording named both topics while claiming the
-    // behaviour worked, so a topic word would pass on either text.
+    // an *absence* — the published deployment control surface is missing rather
+    // than merely spelled differently, and of the published auto-disable rules the
+    // private-address case and the sustained-failure window have no implementation.
+    // An absence is pinned rather than a topic word because the earlier wording
+    // named both topics while claiming the behaviour worked, so a topic word would
+    // pass on either text. When the `3xx` case landed, this pin moved from the
+    // whole policy to the two rules that are still missing rather than being
+    // dropped: the same absent thing is still named, and the text that replaced it
+    // says the opposite about the case that now works.
     expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
-      .toContain('no auto-disable');
+      .toContain('the private-address rule and the sustained-failure window are absent');
     expect(capabilityEntry('scheduled-deployment-timers').reason.toLowerCase())
       .toContain('no pause/unpause');
   });

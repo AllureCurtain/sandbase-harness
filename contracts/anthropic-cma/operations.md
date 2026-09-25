@@ -213,10 +213,16 @@ listener that projects every durable session event to the matching subscriptions
 re-arms the forward schedule of active deployments, and starts one 60-second tick
 that retries due deliveries and runs due deployments. `POST /v1/webhooks/dispatch`
 and `POST /v1/webhooks/retry-due` remain for a caller that wants a pass on demand.
-No disable policy exists: the published disable rules — the `3xx` rule, the
-private-address rule, the sustained-failure window, `disabled_reason`, and the
-reset-on-success rule — have no implementation here, and neither does the
-published 5–120 s jitter.
+One disable rule is implemented, the first published one: an attempt that observes a
+`3xx` sets the endpoint to `disabled` with `disabled_reason` exactly
+`auto-disabled: endpoint URL returned a redirect (3xx)`, and that attempt is terminal
+rather than retried. The redirect is never followed — `postWebhook` sends with
+`redirect: 'manual'` — because the address is chosen by the subscriber, so following one
+would have the payload replayed wherever that subscriber likes with the `webhook-*`
+signature headers still attached and still valid for the body. The remaining published
+disable rules — the private-address rule, the sustained-failure window, and the
+reset-on-success rule — have no implementation here, and neither does the published
+5–120 s jitter.
 
 Scheduled deployments live in `src/api/routes/deployments.ts` and are mounted at
 **both** `/v1/deployments` (the published spelling) and `/v1/scheduled-deployments`
@@ -324,9 +330,9 @@ implemented differently, as §4 records.
 | `deployment.deleted` | Not applicable yet: there is no `DELETE` route for a deployment in any API route module, so no behaviour exists to carry the event. The published row states the event is the final result because there is no object to fetch; emitting it requires a delete route first, which is its own change. |
 | `deployment.updated` scope | Emitted by `PUT /{id}` for the eight field changes listed in §2. It does **not** cover the pause state or `updated_at`, for the reasons given in §2 — the pause transition has its own events and `updated_at` moves on every write. The published trigger ("部署属性已更改") is broader than that on its face, so this is a recorded narrowing rather than full coverage; the alternative would be one call reporting two events a receiver did not ask to be distinguished by. A change to the schedule's derived `next_run_at` counts, because it is a field `PUT` writes and a caller reads. |
 | No-op events | A repeat pause or resume raises nothing, because nothing changed. The published table states this rule explicitly for `environment.archived` ("对已归档的环境再次归档不会发出任何事件") and for `environment.updated` ("无操作的更新不会发出任何事件"); the same rule is applied to a `PUT` that changes no field, and to these two, rather than a second rule invented. |
-| Automatic disable | Not implemented: there is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, and no reset-on-success. The **re-enable half is now done** — `PUT /v1/webhooks/{id}` accepts the published `status` (`active` / `disabled`) and an unrecognised value is refused by name, so an endpoint disabled by any cause can be brought back through the API. That order was deliberate: the dispatcher already selected `status = 'active'`, so implementing the automatic rules first would have taken an endpoint that retries forever today and made it permanently dead, while the published contract states all three cases are reversible. |
+| Automatic disable | The `3xx` case is implemented; the other two are not. An attempt that observes a `3xx` sets the endpoint to `disabled` with `disabled_reason` **exactly** `auto-disabled: endpoint URL returned a redirect (3xx)`, on the first attempt or on a retry that observes one, and that delivery is terminal — no retry is scheduled, and the retry-due pass returns nothing for it even a day later, because the published contract states a response that triggers auto-disable is never retried while the three-attempt ceiling still applies to every other failure. `disabled_reason` is reported only while the endpoint is disabled, and `PUT /v1/webhooks/{id}` clears it when an operator re-enables the endpoint, so an active endpoint never advertises a resolved reason. The disable is reachable and reversible, which is the order these landed in: the dispatcher already selected `status = 'active'`, so disabling before a re-enable path existed would have taken an endpoint that retried forever and made it permanently dead. Still missing: the private-address rule and the sustained-failure window (the published trigger for the latter is a sustained **duration** with a `2xx` resetting the window, not an attempt count), and reset-on-success. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
-| Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
+| Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one, and the published rule that a response triggering auto-disable is never retried is implemented for the one auto-disable case that exists: a `3xx` is terminal on the attempt that observes it, first attempt or retry alike. |
 | Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
 | Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The published jittered 5–120 s backoff is not implemented: the local schedule is a fixed 60 s then 120 s. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror. `PUT /{id}` is the enable/disable surface: it writes the published `status` field, and omitting it leaves the stored value unchanged like every other field in that partial update, so a rename cannot silently re-enable an endpoint an operator switched off. |
