@@ -5,7 +5,14 @@
     "title": "List memory stores",
     "method": "GET",
     "path": "/v1/memory_stores",
-    "summary": "List persistent memory stores available for sessions and resources.",
+    "summary": "List persistent memory stores available for sessions and resources. Archived stores are excluded unless include_archived=true is passed.",
+    "parameters": [
+      {
+        "name": "include_archived",
+        "type": "boolean",
+        "description": "Optional. Pass true to include archived stores, which are returned with status \"archived\" and a non-null archived_at. Omitting it, or passing false, excludes them. Any other value is a 400."
+      }
+    ],
     "response": [
       {
         "name": "data",

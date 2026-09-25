@@ -25,7 +25,7 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
-import { rejectUnexpectedQueryParams } from './query-params.js';
+import { rejectUnexpectedQueryParams, parseIncludeArchived } from './query-params.js';
 
 /**
  * The audit listing's own parameters, named once because two routes expose it.
@@ -38,71 +38,7 @@ import { rejectUnexpectedQueryParams } from './query-params.js';
  */
 const AUDIT_QUERY_PARAMS: readonly string[] = ['limit', 'page'];
 
-/**
- * The published listing parameter that admits archived records into a collection
- * page (`将工作委派给智能体/使用保管库进行身份验证.md:1119`).
- */
-const INCLUDE_ARCHIVED_PARAM = 'include_archived';
-
 type ResourceKind = 'credential_vault';
-
-/**
- * Read the published `include_archived` listing parameter.
- *
- * Only the two documented spellings are accepted. Anything else — `1`, `yes`, an
- * empty string, a repeated parameter — is a `400` rather than a fall-back to the
- * default, because a caller who wrote something meant it and must not have it
- * silently reinterpreted. That is the same rule the agent update path applies to a
- * malformed concurrency precondition, and the reason is the same: a request that
- * looks filtered must not be answered as if it were not.
- *
- * `include_archived=false` is accepted and means the default. The parameter is
- * boolean, so the explicit negative is the same request as omitting it, and refusing
- * it would make a caller-generated `false` fail while `true` succeeds.
- *
- * A repeated parameter is refused instead of taking the first or last value: the
- * caller sent two contradictory requests and there is no reading of them that is not
- * a guess. This needs `queries()` rather than `query()` — measured, because the two
- * look interchangeable and are not: `query()` returns the **first** value for a
- * repeated parameter, so a first-wins read of
- * `?include_archived=true&include_archived=false` answers `200` and silently picks
- * one of the two values the caller sent.
- */
-function parseIncludeArchived(
-  c: Context,
-): { ok: true; value: boolean } | { ok: false; response: Response } {
-  const all = c.req.queries(INCLUDE_ARCHIVED_PARAM) ?? [];
-  if (all.length === 0) return { ok: true, value: false };
-
-  if (all.length > 1) {
-    return {
-      ok: false,
-      response: c.json({
-        error: {
-          type: 'invalid_request_error',
-          message: `${INCLUDE_ARCHIVED_PARAM} was sent ${all.length} times `
-            + `(${all.map((value) => `"${value}"`).join(', ')}). Send it once, as `
-            + `${INCLUDE_ARCHIVED_PARAM}=true or ${INCLUDE_ARCHIVED_PARAM}=false.`,
-        },
-      }, 400),
-    };
-  }
-
-  const raw = all[0];
-  if (raw === 'true') return { ok: true, value: true };
-  if (raw === 'false') return { ok: true, value: false };
-
-  return {
-    ok: false,
-    response: c.json({
-      error: {
-        type: 'invalid_request_error',
-        message: `Invalid ${INCLUDE_ARCHIVED_PARAM} value "${raw}". `
-          + `This route accepts ${INCLUDE_ARCHIVED_PARAM}=true or ${INCLUDE_ARCHIVED_PARAM}=false.`,
-      },
-    }, 400),
-  };
-}
 
 export function credentialVaultRoutes(deps: ServerDeps) {
   const app = new Hono();
@@ -127,7 +63,8 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     // was handed a page that omitted exactly the rows they asked for, and nothing in the
     // response said the filter had been ignored. `toVault` already labels an archived row
     // (`status: row.archived_at ? 'archived' : row.status`, `archived_at`), so the only
-    // thing missing was reading the parameter.
+    // thing missing was reading the parameter. The reading itself lives in
+    // `query-params.ts` because the memory-store listing takes the same parameter.
     const includeArchived = parseIncludeArchived(c);
     if (!includeArchived.ok) return includeArchived.response;
 

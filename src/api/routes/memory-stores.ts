@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf } from '../standard.js';
+import { parseIncludeArchived } from './query-params.js';
 import {
   applyMemoryListScope,
   checkMemorySize,
@@ -31,7 +32,20 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/memory_stores', (c) => {
-    const rows = deps.db.prepare(`${memoryStoreSelect('WHERE m.archived_at IS NULL')} ORDER BY m.created_at DESC`).all() as unknown as MemoryStoreRow[];
+    // The published contract makes the archived half of the collection opt-in:
+    // "默认排除已归档的存储；传递 `include_archived: true` 可将其包含在内"
+    // (`管理智能体上下文/记忆存储.md:1206`), and its worked example is
+    // `?include_archived=true` (`:1210`). The exclusion used to be hardcoded here, so a
+    // caller who passed the documented parameter was handed a page that omitted exactly
+    // the rows they asked for, with nothing saying the filter had been ignored.
+    // `toMemoryStore` already labels an archived store, so only the `WHERE` was missing.
+    // The parameter is read by the same helper the vault listing uses, so the two
+    // collections cannot come to accept different values for it.
+    const includeArchived = parseIncludeArchived(c);
+    if (!includeArchived.ok) return includeArchived.response;
+
+    const where = includeArchived.value ? '' : 'WHERE m.archived_at IS NULL';
+    const rows = deps.db.prepare(`${memoryStoreSelect(where)} ORDER BY m.created_at DESC`).all() as unknown as MemoryStoreRow[];
     return c.json(cursorPageOf(rows.map((row) => toMemoryStore(row, deps)), {}));
   });
 

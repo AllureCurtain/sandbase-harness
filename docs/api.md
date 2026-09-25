@@ -1700,9 +1700,20 @@ code `invalid_precondition` rather than treated as a no-op.
 Memory stores persist named memory entries that can be mounted into sessions.
 Memory store names are human-readable labels and do not need to be unique.
 
+Listing stores excludes archived ones by default and takes the published
+`include_archived` parameter: `?include_archived=true` returns archived stores
+too, each with `status: "archived"` and a non-null `archived_at`, while
+`include_archived=false` means the same as omitting it. Any other value — `1`,
+`yes`, an empty string — is a `400`, and so is sending the parameter twice with
+contradictory values, rather than a silent fall-back to the default. This is the
+same parameter, and the same reading of it, as the vault listing. Including an
+archived store in a listing does not make it retrievable on its own:
+`GET /v1/memory_stores/{store_id}` still answers `404` for an archived store and
+archiving remains terminal.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/memory_stores` | List memory stores. |
+| `GET` | `/v1/memory_stores` | List memory stores. Archived stores are excluded unless `?include_archived=true`. |
 | `POST` | `/v1/memory_stores` | Create a memory store. |
 | `GET` | `/v1/memory_stores/{store_id}` | Retrieve a memory store. |
 | `POST` | `/v1/memory_stores/{store_id}/archive` | Archive a memory store. |
