@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import net from 'node:net';
 import {
   WEBHOOK_HEADERS,
   signWebhookDelivery,
@@ -6,6 +8,7 @@ import {
 } from './webhook-signature.js';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
+import { isBlockedInternalHostname, isPrivateAddress } from '@/core/web/address-policy.js';
 import { resolveWebhookSigningSecrets, type StoredWebhookSecret } from './webhook-secrets.js';
 
 export type WebhookDispatchEvent = {
@@ -23,6 +26,12 @@ export type WebhookDispatchOptions = {
   fetchImpl?: typeof fetch;
   maxAttempts?: number;
   now?: () => Date;
+  /**
+   * Address screening for the connection a delivery opens. Unset means "deliver
+   * anywhere", which is the local-first default; see `webhookAddressPolicyFromEnv`
+   * for why the published rule is opt-in here, and for the switch that turns it on.
+   */
+  addressPolicy?: WebhookAddressPolicy;
 };
 
 export type WebhookDeliveryResult = {
@@ -100,21 +109,32 @@ async function attemptDelivery(
     id,
     timestamp: String(Math.floor(new Date(createdAt).getTime() / 1000)),
   };
-  const attempt = await postWebhook(
+  // The address is screened before the connection rather than after, because the point of
+  // the rule is that no packet reaches a network the operator has not exposed.
+  const blocked = await screenEndpointAddress(
     webhook.url,
-    payloadJson,
-    signature,
-    opts.fetchImpl,
-    { ...deliveryIdentity, secrets: signingSecrets },
+    opts.addressPolicy ?? webhookAddressPolicyFromEnv(),
   );
-  // The published auto-disable rule for a redirect is a consequence of having observed
-  // one: the endpoint is disabled, and this attempt is terminal. `nextRetry` is
-  // therefore null rather than the attempt ceiling being reached — the rule says a
-  // response that triggers auto-disable is never retried, while three attempts still
-  // apply to every other failure.
-  const redirect = isRedirectStatus(attempt.statusCode);
-  if (redirect) disableEndpointForRedirect(db, webhook.id, createdAt);
-  const nextRetry = redirect ? null : nextRetryAt(attempt.ok, 1, opts);
+  const attempt = blocked
+    ? { ok: false, statusCode: null, error: blocked }
+    : await postWebhook(
+      webhook.url,
+      payloadJson,
+      signature,
+      opts.fetchImpl,
+      { ...deliveryIdentity, secrets: signingSecrets },
+    );
+  // Both auto-disable conditions have the same consequence: the endpoint is disabled with
+  // its published reason and this attempt is terminal. `nextRetry` is therefore null rather
+  // than the attempt ceiling being reached — the rule says a response that triggers
+  // auto-disable is never retried, while three attempts still apply to every other failure.
+  const autoDisableReason = blocked
+    ? ADDRESS_DISABLED_REASON
+    : isRedirectStatus(attempt.statusCode)
+      ? REDIRECT_DISABLED_REASON
+      : null;
+  if (autoDisableReason) disableEndpoint(db, webhook.id, autoDisableReason, createdAt);
+  const nextRetry = autoDisableReason ? null : nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
     `INSERT INTO webhook_deliveries (
       id, webhook_id, event, payload, status, status_code, error, signature,
@@ -150,18 +170,25 @@ async function retryDelivery(
   // published header set as the first attempt: `webhook-id` stays the delivery
   // id so a receiver can deduplicate, and the timestamp is this attempt's, which
   // is what keeps the receiver's freshness window satisfied.
-  const attempt = await postWebhook(row.url, row.payload, signature, opts.fetchImpl, {
-    id: row.id,
-    timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
-    secrets: signingSecrets,
-  });
-  // The rule is about the response, not the attempt number, so a retry that observes a
-  // redirect disables the endpoint too. This is reachable: a retry is queued before the
-  // endpoint is disabled, and an operator can re-enable the endpoint while that retry is
-  // still due — the next due attempt then finds the redirect still in place.
-  const redirect = isRedirectStatus(attempt.statusCode);
-  if (redirect) disableEndpointForRedirect(db, row.webhook_id, attemptTime.toISOString());
-  const nextRetry = redirect ? null : nextRetryAt(attempt.ok, attemptCount, opts);
+  const blocked = await screenEndpointAddress(row.url, opts.addressPolicy ?? webhookAddressPolicyFromEnv());
+  const attempt = blocked
+    ? { ok: false, statusCode: null, error: blocked }
+    : await postWebhook(row.url, row.payload, signature, opts.fetchImpl, {
+      id: row.id,
+      timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
+      secrets: signingSecrets,
+    });
+  // The rules are about the response and the address, not the attempt number, so a retry
+  // takes the same terminal path when it observes either condition. This is reachable: a
+  // retry is queued before the endpoint is disabled, and an operator can re-enable an
+  // endpoint while that retry is still due.
+  const autoDisableReason = blocked
+    ? ADDRESS_DISABLED_REASON
+    : isRedirectStatus(attempt.statusCode)
+      ? REDIRECT_DISABLED_REASON
+      : null;
+  if (autoDisableReason) disableEndpoint(db, row.webhook_id, autoDisableReason, attemptTime.toISOString());
+  const nextRetry = autoDisableReason ? null : nextRetryAt(attempt.ok, attemptCount, opts);
   db.prepare(
     `UPDATE webhook_deliveries
      SET status = ?, status_code = ?, error = ?, signature = ?, attempt_count = ?,
@@ -240,22 +267,109 @@ function isRedirectStatus(statusCode: number | null): boolean {
 }
 
 /**
- * The published reason string, verbatim: it is machine-readable, so it is written from
- * one place rather than spelled out at each call site.
+ * The published reason strings, verbatim. They are machine-readable, so each is written
+ * from one place rather than spelled out at every call site.
  */
 const REDIRECT_DISABLED_REASON = 'auto-disabled: endpoint URL returned a redirect (3xx)';
+const ADDRESS_DISABLED_REASON = 'auto-disabled: endpoint URL resolved to an invalid address';
 
 /**
- * Disabling is the whole consequence of observing a redirect, so the endpoint's state
- * and the reason for it are written together — a stored `disabled` with no reason would
- * be indistinguishable from an operator having switched the endpoint off by hand.
+ * The resolver and the guard for the address screening, named as the WebFetch seam names
+ * them (`src/core/web/web-fetch.ts`): the guard answers "may this attempt open a
+ * connection to this address", and the resolver exists so a test can decide what a host
+ * name answers without needing a network.
  */
-function disableEndpointForRedirect(db: Database, webhookId: string, nowIso: string): void {
+export type WebhookAddressPolicy = {
+  lookupAddresses: (hostname: string) => Promise<string[]>;
+  isAddressAllowed: (address: string) => boolean;
+};
+
+/**
+ * Screening is opt-in per deployment, and the default is deliberately "deliver".
+ *
+ * The published rule is unconditional, but it is written for a hosted control plane whose
+ * subscribers are necessarily remote. This runtime is local-first and its receiver is
+ * normally on the same host — every webhook test in this repository delivers to a loopback
+ * listener — and loopback is a private address, so enforcing the rule by default would
+ * switch off the receiver a self-hosted deployment exists to talk to. A deployment exposed
+ * to untrusted callers turns it on; everyone else keeps the local behaviour.
+ *
+ * That is also what makes the security property testable: the only address a hermetic test
+ * can make reachable is loopback, so "no packet was sent" is observable only when the
+ * screening covers loopback — the very case that would break the product if it ran
+ * unguarded. `MANAGED_AGENTS_` is the prefix `paths.ts` and `secrets.ts` already read.
+ */
+export function webhookAddressPolicyFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): WebhookAddressPolicy | undefined {
+  const configured = (env.MANAGED_AGENTS_WEBHOOK_SCREEN_PRIVATE_ADDRESSES ?? '').trim().toLowerCase();
+  // Off unless explicitly switched on: a typo in a variable nobody set must not change
+  // delivery behaviour, and neither must a value like `0` or `off` read as truthy.
+  if (!['1', 'true', 'on', 'yes', 'enabled'].includes(configured)) return undefined;
+  return {
+    lookupAddresses: async (hostname) => {
+      const answers = await lookup(hostname, { all: true, verbatim: true });
+      return answers.map((answer) => answer.address);
+    },
+    isAddressAllowed: (address) => !isPrivateAddress(address),
+  };
+}
+
+/**
+ * Decide whether an attempt may open a connection, returning the refusal reason when it
+ * may not.
+ *
+ * Every answer the resolver gives must be allowed. A host answering with one public and
+ * one private address is refused rather than raced, because which answer the connection
+ * would use is not something this code decides.
+ *
+ * Only a resolved, disallowed address is the published condition. A resolver that fails,
+ * or answers with nothing, returns null so the attempt proceeds and fails as an ordinary
+ * retryable delivery failure — a name that does not resolve is not an invalid address, and
+ * disabling an endpoint for it would turn a transient DNS problem into an operator task.
+ */
+async function screenEndpointAddress(
+  url: string,
+  policy: WebhookAddressPolicy | undefined,
+): Promise<string | null> {
+  if (!policy) return null;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // A URL this malformed has no destination to screen; `fetch` refuses it as before.
+    return null;
+  }
+  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  // An internal name is refused before the resolver is consulted, so the answer does not
+  // depend on resolver state — the rule `address-policy.ts` documents for the same family.
+  if (isBlockedInternalHostname(bare)) return `blocked host name ${bare}`;
+  let addresses: string[];
+  if (net.isIP(bare)) {
+    addresses = [bare];
+  } else {
+    try {
+      addresses = await policy.lookupAddresses(bare);
+    } catch {
+      return null;
+    }
+  }
+  if (addresses.length === 0) return null;
+  const disallowed = addresses.find((address) => !policy.isAddressAllowed(address));
+  return disallowed ? `disallowed address ${disallowed}` : null;
+}
+
+/**
+ * The endpoint's state and the reason for it are written together: a stored `disabled`
+ * with no reason would be indistinguishable from an operator having switched the endpoint
+ * off by hand, and the published contract reports the reason as machine-readable.
+ */
+function disableEndpoint(db: Database, webhookId: string, reason: string, nowIso: string): void {
   db.prepare(
     `UPDATE webhooks
      SET status = 'disabled', disabled_reason = ?, updated_at = ?
      WHERE id = ?`,
-  ).run(REDIRECT_DISABLED_REASON, nowIso, webhookId);
+  ).run(reason, nowIso, webhookId);
 }
 
 function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDispatchOptions): string | null {
