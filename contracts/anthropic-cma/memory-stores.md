@@ -70,6 +70,12 @@ Scoping:
   `created_at` is `datetime('now')`, so stores created in the same second share a
   timestamp; a windowed listing needs a total order to slice, or a page boundary
   can repeat or drop a row.
+- A query parameter the listing does not implement is a `400` naming the parameter
+  and the parameters the route accepts (`include_archived`, `limit`, `page`), rather
+  than a page answered as though the request had been understood. The admission list
+  (`COLLECTION_LISTING_QUERY_PARAMS`) is shared with the vault listing, which reads
+  the same three parameters, so the two collections cannot come to admit different
+  ones. `beta` is accepted but deliberately not advertised.
 - `path_prefix` must start **and** end with `/`. This is enforced rather than
   normalized, because `/notes` and `/notes/` match different sets and silently
   fixing one to the other would change which memories a caller sees.

@@ -163,6 +163,26 @@ export const COLLECTION_DEFAULT_LIMIT = 20;
 export const COLLECTION_MAX_LIMIT = 100;
 
 /**
+ * The admission list for the two collection listings, built from the parameter names
+ * the readings above use so it cannot disagree with them.
+ *
+ * This is not the central route-to-parameter table this module's header argues
+ * against. That table would describe routes whose parameters differ, and would be a
+ * second description of each of them. This describes **one** set of parameters read by
+ * **one** pair of handlers through the same two helpers — vaults and memory stores take
+ * the same three, which is why the readings themselves were extracted here. Deriving
+ * the list from the exported names rather than repeating the strings is what keeps
+ * admission and validation from drifting: a fourth parameter read by both would have to
+ * be added here to be accepted, and the test asserts the two collections advertise the
+ * identical list.
+ */
+export const COLLECTION_LISTING_QUERY_PARAMS: readonly string[] = [
+  INCLUDE_ARCHIVED_PARAM,
+  LIMIT_PARAM,
+  PAGE_PARAM,
+];
+
+/**
  * A validated window over one collection.
  *
  * `slice` takes the whole ordered collection and returns the requested page with

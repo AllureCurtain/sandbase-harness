@@ -1565,7 +1565,11 @@ Newest first, with the ordering and the `include_archived` view recorded in the
 cursor — replaying one under the other view, or against the memory-store listing,
 is a `400` rather than an answer to a page that never existed for that query. A
 `limit` that is not an integer in `1..100`, or that is sent more than once, is a
-`400` naming the accepted range instead of falling back to the default.
+`400` naming the accepted range instead of falling back to the default. A query
+parameter the listing does not implement is also a `400`, naming it and naming the
+parameters the route does accept: `include_archived`, `limit`, `page`. The same three
+are accepted on `GET /v1/memory_stores`, and `beta` is accepted everywhere without
+being advertised.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -1733,7 +1737,8 @@ archiving remains terminal.
 Listing stores is paginated under the same rule as the vault listing: `limit`
 defaults to 20 and may not exceed 100, `prev_page`/`next_page` are the cursors to
 pass back as `page`, and a cursor issued for another view or another collection is
-refused rather than followed.
+refused rather than followed. An unimplemented query parameter is a `400` naming it
+and naming the accepted three, exactly as on the vault listing.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

@@ -92,6 +92,14 @@ Listing:
   can repeat or drop a row.
 - Both the published `/v1/vaults` and the local `/v1/credential-vaults` mount the
   same router, so the window behaves identically at both spellings.
+- A query parameter the listing does not implement is a `400` naming the parameter
+  and the parameters the route accepts (`include_archived`, `limit`, `page`), rather
+  than a page answered as though the request had been understood. The admission list
+  is derived from the parameter-name constants the readings use
+  (`COLLECTION_LISTING_QUERY_PARAMS`) and is shared with the memory-store listing, so
+  the two collections cannot come to admit different parameters. `beta` is accepted
+  but is deliberately not advertised, because its compatibility semantics are not
+  modelled and listing it would read as honouring it.
 
 Wire profile:
 
