@@ -773,6 +773,30 @@ describe('PUT /v1/agents/:id partial update', () => {
       expect(stored).not.toHaveProperty('expected_version');
       expect(stored.system).toBe('x');
     });
+
+    it('reads the published spelling on the local PUT verb identically', async () => {
+      // `POST` is the published verb and `PUT` is the local spelling of the same
+      // operation, so the precondition cannot be a property of one verb. Asserted
+      // directly rather than inferred from the POST cases, because a resolver wired
+      // into only one route would leave the local verb refusing a body it accepts.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+
+      const applied = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+        system: 'via PUT version',
+        version: agent.version,
+      });
+      expect(applied.res.status).toBe(200);
+      expect(applied.body.system).toBe('via PUT version');
+      expect(applied.body.version).toBe(agent.version + 1);
+
+      const stale = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+        system: 'stale',
+        version: agent.version,
+      });
+      expect(stale.res.status).toBe(409);
+      expect((await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body.system).toBe('via PUT version');
+    });
   });
 
   it('rejects unknown fields instead of silently discarding them', async () => {
