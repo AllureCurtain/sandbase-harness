@@ -491,6 +491,14 @@ Sessions run an agent in an environment and persist a resumable event log.
 | `POST` | `/v1/sessions/{session_id}/stop` | Stop a session. |
 | `DELETE` | `/v1/sessions/{session_id}` | Delete a session from active listings. |
 
+Listing persisted events returns the canonical envelope `{data, prev_page, next_page}` with a
+followable `next_page` cursor to pass back as `page`; the local `after_id` names the same
+position and is also accepted. `limit` still caps the page. `prev_page` is always `null`,
+because the scan is forward-only and a cursor that does not resolve would be worse than an
+honest null. A `page` this route did not issue — malformed, issued for another session or
+another ordering, or naming an event not in the log — is a `400` rather than a silent
+restart from the first event.
+
 Create a session:
 
 ```bash
