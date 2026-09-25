@@ -145,10 +145,14 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     // state rather than outliving it. A caller who leaves the endpoint `disabled` keeps
     // the existing reason: setting the same state is not resolving anything.
     const disabledReason = status === 'active' ? null : existing.disabled_reason;
+    // Re-enabling also restarts the sustained-failure window. Without this the endpoint
+    // would come back already overdue and be disabled again by its next failure, which is
+    // the opposite of what the published "re-enable to recover" remedy promises.
+    const failingSince = status === 'active' ? null : existing.failing_since;
     deps.db.prepare(`
       UPDATE webhooks
       SET name = ?, url = ?, events = ?, description = ?, metadata = ?, status = ?,
-          disabled_reason = ?, updated_at = ?
+          disabled_reason = ?, failing_since = ?, updated_at = ?
       WHERE id = ?
     `).run(
       stringField(body.value.name) ?? existing.name,
@@ -158,6 +162,7 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
       JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
       status,
       disabledReason,
+      failingSince,
       now(),
       id,
     );
@@ -580,6 +585,12 @@ type WebhookRow = StoredWebhookSecret & {
   status: string;
   /** Why the endpoint is disabled, when a rule rather than an operator disabled it. */
   disabled_reason: string | null;
+  /**
+   * When the endpoint's current run of uninterrupted failures began, or `null` when it is
+   * not failing. Read on the update path only so that re-enabling can restart the window;
+   * it is not part of the wire projection, because no published field carries it.
+   */
+  failing_since: string | null;
   metadata: string;
   created_at: string;
   updated_at: string;
