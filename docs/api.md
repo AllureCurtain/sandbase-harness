@@ -1559,6 +1559,14 @@ archived vault in a listing does not make it retrievable on its own:
 `GET /v1/vaults/{vault_id}` still answers `404` for an archived vault and
 archiving remains terminal.
 
+Listing vaults is paginated: `limit` defaults to 20 and may not exceed 100, and
+the response's `prev_page`/`next_page` are the cursors to pass back as `page`.
+Newest first, with the ordering and the `include_archived` view recorded in the
+cursor — replaying one under the other view, or against the memory-store listing,
+is a `400` rather than an answer to a page that never existed for that query. A
+`limit` that is not an integer in `1..100`, or that is sent more than once, is a
+`400` naming the accepted range instead of falling back to the default.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/vaults`, `/v1/credential-vaults` | List vaults. Archived vaults are excluded unless `?include_archived=true`. |
@@ -1721,6 +1729,11 @@ same parameter, and the same reading of it, as the vault listing. Including an
 archived store in a listing does not make it retrievable on its own:
 `GET /v1/memory_stores/{store_id}` still answers `404` for an archived store and
 archiving remains terminal.
+
+Listing stores is paginated under the same rule as the vault listing: `limit`
+defaults to 20 and may not exceed 100, `prev_page`/`next_page` are the cursors to
+pass back as `page`, and a cursor issued for another view or another collection is
+refused rather than followed.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

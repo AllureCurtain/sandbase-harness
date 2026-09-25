@@ -25,7 +25,16 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
-import { rejectUnexpectedQueryParams, parseIncludeArchived } from './query-params.js';
+import { rejectUnexpectedQueryParams, parseCollectionWindow, parseIncludeArchived, INCLUDE_ARCHIVED_PARAM } from './query-params.js';
+
+/**
+ * The vault listing's ordering, as the token a page cursor carries.
+ *
+ * It names the collection as well as the sort: two collections ordered the same
+ * way would otherwise accept each other's cursors, and a page number means
+ * nothing outside the collection it was counted in.
+ */
+const VAULT_LIST_ORDER = 'vaults.created_at DESC, rowid DESC';
 
 /**
  * The audit listing's own parameters, named once because two routes expose it.
@@ -68,9 +77,23 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     const includeArchived = parseIncludeArchived(c);
     if (!includeArchived.ok) return includeArchived.response;
 
+    // The published pagination rule applies here too, and the cursor carries this
+    // collection's ordering and the archived filter that produced it, so a cursor
+    // issued for one view of the collection cannot be replayed against another.
+    const window = parseCollectionWindow(c, {
+      order: VAULT_LIST_ORDER,
+      filter: includeArchived.value ? { [INCLUDE_ARCHIVED_PARAM]: 'true' } : {},
+    });
+    if (!window.ok) return window.response;
+
     const where = includeArchived.value ? '' : 'WHERE v.archived_at IS NULL';
-    const rows = deps.db.prepare(`${vaultSelect(where)} ORDER BY v.created_at DESC`).all() as unknown as VaultRow[];
-    return c.json(cursorPageOf(rows.map((row) => toVault(row, deps)), {}));
+    // `rowid` breaks the tie between rows created in the same second: `created_at` is
+    // `datetime('now')`, so a burst of vaults shares one timestamp and the ordering
+    // within that group was whatever the scan produced. A windowed listing has to slice
+    // a total order — without it a page boundary can repeat or drop a row — and
+    // descending `rowid` is insertion-recency, which is what the tie group means.
+    const rows = deps.db.prepare(`${vaultSelect(where)} ORDER BY v.created_at DESC, v.rowid DESC`).all() as unknown as VaultRow[];
+    return c.json(window.value.slice(rows.map((row) => toVault(row, deps))));
   });
 
   app.post('/', async (c) => {

@@ -73,9 +73,25 @@ Listing:
 - Including an archived vault in a listing is not an un-archive: the
   single-resource read still answers `404` for an archived vault and archiving
   remains terminal.
-- The listing still implements **no pagination** — it answers a single page with
-  `prev_page`/`next_page` both `null` and ignores the published `limit`/`page`.
-  That is a separate gap and is not addressed here.
+- The listing implements the published pagination rule — `limit` (default 20,
+  maximum 100) with a `page` cursor (`管理智能体上下文/Dreams.md:575`; the same rule
+  governs the memory-store listing) — through the shared reading in
+  `src/api/routes/query-params.ts`. `prev_page`/`next_page` are the cursors a
+  caller passes back as `page`; they are `null` only at the ends of the walk.
+- The cursor is opaque and carries the ordering **and** the `include_archived`
+  view that produced the page. Replaying one under the other view, or against the
+  memory-store listing, is a `400` rather than an answer to a page that never
+  existed for that query.
+- A `limit` outside `1..100`, a non-integer, or a repeated value is a `400` naming
+  the accepted range: a caller who asked for 500 rows and received 100 — or asked
+  for `abc` and received the default — has been answered as though they asked for
+  something else.
+- The listing orders by `created_at DESC` with `rowid DESC` as a tie-break.
+  `created_at` is `datetime('now')`, so vaults created in the same second share a
+  timestamp; a windowed listing needs a total order to slice, or a page boundary
+  can repeat or drop a row.
+- Both the published `/v1/vaults` and the local `/v1/credential-vaults` mount the
+  same router, so the window behaves identically at both spellings.
 
 Wire profile:
 
@@ -265,6 +281,12 @@ means archive and recreate.
   archived label intact, `false` equal to omitting it, a malformed value and a
   repeated parameter each refused, both prefixes agreeing, and the archived vault
   still `404` on its own read.
+- `tests/integration/collection-pagination.test.ts` — the published `limit`/`page`
+  window on this listing and the memory-store listing together: the default page
+  of 20, a walk that partitions the collection exactly once, `prev_page` returning
+  the page it came from, the last full page ending the walk, a malformed or
+  replayed cursor refused, the newest-first ordering measured against distinct
+  timestamps, and the two mounts windowing identically.
 
 ## 7. Status
 
