@@ -119,8 +119,23 @@ export function agentsRoutes(deps: ServerDeps) {
     const current = parseObject(existing.definition) as Record<string, unknown>;
     const merged = applyAgentUpdatePatch(current as never, patch.fields);
     if (agentDefinitionsEqual(current, merged)) {
-      // No field actually changed, so no new immutable version is written.
-      return c.json(toApiAgent(existing.definition as never, agentRowMeta(deps, id)));
+      // No field actually changed, so no new immutable version is written. The
+      // response is still the agent, and it has to be built the way `GET /:id`
+      // builds it: from the **parsed** definition. This branch used to pass
+      // `existing.definition` — the raw JSON string from the column — into
+      // `toApiAgent`, which reads properties off its argument, so every read was
+      // `undefined` and the caller got an object with `name`, `system` and `model`
+      // absent and `description`, `tools`, `skills` and `metadata` zeroed, while
+      // `id` and `version` stayed correct. That is the branch an idempotent re-`PUT`
+      // takes, so the fabricated body arrived on the ordinary retry path.
+      const unchanged = parseAgentDefinitionFromRow(existing);
+      if (!unchanged) {
+        // A stored definition `GET /:id` also refuses to serve. Answering the same
+        // 404 keeps this branch from being the one place that projects an
+        // unreadable definition into a well-formed-looking resource.
+        return c.json({ error: { type: 'not_found', message: `Agent not found: ${id}` } }, 404);
+      }
+      return c.json(toApiAgent(unchanged, agentRowMeta(deps, id)));
     }
 
     const result = validateAgentDefinition(merged);

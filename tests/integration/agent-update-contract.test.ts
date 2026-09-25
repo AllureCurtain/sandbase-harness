@@ -443,6 +443,69 @@ describe('PUT /v1/agents/:id partial update', () => {
     expect(storedRow(ctx, agent.id).definition).toBe(rowBefore.definition);
   });
 
+  it('returns the complete agent, identical to GET, when the update changes nothing', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+    const truth = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+    // Every shape of "this changes nothing": the stored value re-sent, an empty body,
+    // and a metadata deletion of a key that was never there. All three take the
+    // no-new-version branch, and all three used to answer with a fabricated object —
+    // `toApiAgent` was handed the raw JSON **string** from the `definition` column, so
+    // `name`, `system` and `model` were absent and `description`, `tools`, `skills`
+    // and `metadata` fell back to empty defaults. The body is compared whole because a
+    // dropped field and a zeroed field are the same defect here, and the reference is
+    // `GET` rather than a literal fixture so the two projection paths cannot silently
+    // diverge again.
+    for (const body of [
+      { system: 'Original system.' },
+      {},
+      { metadata: { never_existed: null } },
+    ]) {
+      const updated = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, body);
+      expect(updated.res.status).toBe(200);
+      expect(updated.body).toEqual(truth);
+    }
+
+    // Named as well, so a failure points at the field instead of printing two large
+    // objects: these are exactly the fields that were dropped or zeroed.
+    const again = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'Original system.' });
+    expect(again.body.name).toBe('Contract agent');
+    expect(again.body.system).toBe('Original system.');
+    expect(again.body.model).toBe('gpt-4o');
+    expect(again.body.description).toBe('Original description.');
+    expect(again.body.tools).toHaveLength(2);
+    expect(again.body.skills).toEqual([{ type: 'custom', skill_id: 'research' }]);
+    expect(again.body.metadata).toEqual({ team: 'platform', tier: 'gold', owner: 'qa' });
+
+    // The fix is a projection fix only: the no-change path still writes nothing.
+    expect(versionRows(ctx, agent.id)).toEqual([1]);
+  });
+
+  it('answers the same 404 as GET when the stored definition is unreadable', async () => {
+    const ctx = context();
+    const agent = await seedAgent(ctx);
+
+    // A definition `GET` already refuses to serve. `activeAgentRow` filters on status
+    // and archived_at, not on the definition, so this row still reaches the update
+    // handler — which must not be the one place that projects an unreadable definition
+    // into a well-formed-looking resource.
+    ctx.db
+      .prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify({ model: 'gpt-4o', system: 'no name field' }), agent.id);
+
+    const got = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
+    const unchanged = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {});
+    const changed = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { system: 'a real change' });
+
+    expect(got.res.status).toBe(404);
+    expect(unchanged.res.status).toBe(got.res.status);
+    // A request that *would* change something is judged on the merged definition, so
+    // it is an invalid definition rather than a missing one. Both are 4xx refusals;
+    // neither may invent an agent.
+    expect(changed.res.status).toBe(400);
+  });
+
   it('applies the same partial semantics through PUT', async () => {
     const ctx = context();
     const agent = await seedAgent(ctx);
