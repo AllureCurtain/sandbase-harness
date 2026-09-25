@@ -16,7 +16,7 @@ import {
   type JsonObject,
   type OperationMountOptions,
 } from './operation-helpers.js';
-import { publishOperationEvent } from './operation-events.js';
+import { publishPauseTransition } from './operation-events.js';
 
 /**
  * Scheduled deployments, addressed at two prefixes.
@@ -150,6 +150,10 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       id,
     );
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    // A `PUT` can change the pause state through its `status` field, which is a
+    // third door onto the same state. Publishing from here is what keeps the
+    // event tied to the transition rather than to the route that caused it.
+    await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), status);
     return c.json(toScheduledDeployment(row));
   });
 
@@ -157,24 +161,13 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     const id = c.req.param('id');
     const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
     if (!existing) return notFound(c, 'Scheduled deployment not found');
-    // A no-op publishes nothing. The published table states that rule for the
-    // nearest comparable event — archiving an already-archived environment emits
-    // nothing — and the reasoning carries: an event that reports a change which
-    // did not happen teaches a receiver to distrust the stream. This route is
-    // deliberately idempotent, so a repeat pause is the ordinary case.
-    const alreadyPaused = normalizeScheduleStatus(existing.status) === 'paused';
     // Idempotent: pausing a paused deployment re-records the same reason rather
     // than erroring, because the caller's intent is already satisfied and a 409
     // would make a retried request fail for no reason.
     deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, updated_at = ? WHERE id = ?')
       .run('paused', pauseReasonFor('paused'), now(), id);
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
-    if (!alreadyPaused) {
-      await publishOperationEvent(deps, {
-        event: 'deployment.paused',
-        data: { type: 'deployment', id },
-      });
-    }
+    await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), 'paused');
     return c.json(toScheduledDeployment(row));
   });
 
@@ -182,17 +175,11 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     const id = c.req.param('id');
     const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
     if (!existing) return notFound(c, 'Scheduled deployment not found');
-    const alreadyActive = normalizeScheduleStatus(existing.status) === 'active';
     const resumeAt = nextRunAfterResume(existing);
     deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
       .run('active', null, resumeAt, now(), id);
     const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
-    if (!alreadyActive) {
-      await publishOperationEvent(deps, {
-        event: 'deployment.unpaused',
-        data: { type: 'deployment', id },
-      });
-    }
+    await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), 'active');
     return c.json(toScheduledDeployment(row));
   });
 
