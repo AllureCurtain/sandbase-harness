@@ -25,7 +25,13 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
-import { rejectUnexpectedQueryParams, parseCollectionWindow, parseIncludeArchived, INCLUDE_ARCHIVED_PARAM } from './query-params.js';
+import {
+  COLLECTION_LISTING_QUERY_PARAMS,
+  INCLUDE_ARCHIVED_PARAM,
+  parseCollectionWindow,
+  parseIncludeArchived,
+  rejectUnexpectedQueryParams,
+} from './query-params.js';
 
 /**
  * The vault listing's ordering, as the token a page cursor carries.
@@ -65,6 +71,13 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   // these routes invisible to a guard whose whole purpose is to notice exactly
   // that kind of drift.
   app.get('/', (c) => {
+    // Admission first, like every other listing route: a parameter this listing does
+    // not implement used to be ignored, so `?include_archived=true&status=archived`
+    // answered a page as if the second half of the request had been understood. The
+    // list is the same one the memory-store listing passes, because both read the
+    // same three parameters through the same two helpers.
+    const rejected = rejectUnexpectedQueryParams(c, COLLECTION_LISTING_QUERY_PARAMS);
+    if (rejected) return rejected;
     // The published contract makes the archived half of the collection opt-in:
     // "默认排除已归档的记录（传递 `include_archived=true` 可将其包含在内）"
     // (`将工作委派给智能体/使用保管库进行身份验证.md:1119`). The exclusion used to be

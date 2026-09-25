@@ -3,7 +3,13 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf } from '../standard.js';
-import { parseCollectionWindow, parseIncludeArchived, INCLUDE_ARCHIVED_PARAM } from './query-params.js';
+import {
+  COLLECTION_LISTING_QUERY_PARAMS,
+  INCLUDE_ARCHIVED_PARAM,
+  parseCollectionWindow,
+  parseIncludeArchived,
+  rejectUnexpectedQueryParams,
+} from './query-params.js';
 import {
   applyMemoryListScope,
   checkMemorySize,
@@ -24,7 +30,6 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
-import { rejectUnexpectedQueryParams } from './query-params.js';
 
 type ResourceKind = 'memory_store';
 
@@ -40,6 +45,11 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/memory_stores', (c) => {
+    // Admission first, through the same list the vault listing passes: both read the
+    // same three parameters, so a parameter one of them refused and the other ignored
+    // would be the drift the shared readings exist to prevent.
+    const rejected = rejectUnexpectedQueryParams(c, COLLECTION_LISTING_QUERY_PARAMS);
+    if (rejected) return rejected;
     // The published contract makes the archived half of the collection opt-in:
     // "默认排除已归档的存储；传递 `include_archived: true` 可将其包含在内"
     // (`管理智能体上下文/记忆存储.md:1206`), and its worked example is

@@ -36,6 +36,8 @@ const ROUTES: Array<{ name: string; method: string; path: string; accepts: strin
   { name: 'session events', method: 'GET', path: '/v1/sessions/ses_missing/events', accepts: ['limit', 'after_id'] },
   { name: 'event stream', method: 'GET', path: '/v1/sessions/ses_missing/events/stream', accepts: ['event_deltas', 'event_deltas[]', 'last_event_id'] },
   { name: 'skill list', method: 'GET', path: '/v1/skills', accepts: ['source', 'limit', 'page'] },
+  { name: 'vault list', method: 'GET', path: '/v1/vaults', accepts: ['include_archived', 'limit', 'page'] },
+  { name: 'memory store list', method: 'GET', path: '/v1/memory_stores', accepts: ['include_archived', 'limit', 'page'] },
   { name: 'deployment runs', method: 'GET', path: '/v1/deployment_runs', accepts: ['deployment_id', 'has_error'] },
   { name: 'vault audit', method: 'GET', path: '/v1/vaults/vlt_missing/audit', accepts: ['limit', 'page'] },
   { name: 'credential audit', method: 'GET', path: '/v1/vaults/vlt_missing/credentials/cred_missing/audit', accepts: ['limit', 'page'] },
@@ -196,5 +198,66 @@ describe('Query-parameter admission', () => {
     const res = await app.request('/v1/deployment_runs?has_error=maybe');
     expect(res.status).toBe(400);
     expect((await res.json()).error.message).toContain('has_error must be "true" or "false"');
+  });
+
+  /**
+   * The two collection listings take the same three parameters through the same two
+   * helpers, so their admission is asserted against **each other** rather than each
+   * against a literal: a literal in both places is two places to update, and the copy
+   * that gets forgotten is the one that turns a refusal into a silent ignore.
+   */
+  it('advertises the identical parameter list on both collection listings', async () => {
+    const vaults = await app.request('/v1/vaults?not_a_real_parameter=1');
+    const stores = await app.request('/v1/memory_stores?not_a_real_parameter=1');
+    expect(vaults.status).toBe(400);
+    expect(stores.status).toBe(400);
+
+    const advertised = (body: any) => body.error.message.match(/This route accepts: (.*)\.$/)?.[1];
+    const fromVaults = advertised(await vaults.json());
+    const fromStores = advertised(await stores.json());
+    expect(fromVaults).toBe('include_archived, limit, page');
+    expect(fromStores).toBe(fromVaults);
+  });
+
+  it('refuses identically on both vault mounts, because one router serves them', async () => {
+    const canonical = await app.request('/v1/credential-vaults?not_a_real_parameter=1');
+    const published = await app.request('/v1/vaults?not_a_real_parameter=1');
+    expect(published.status).toBe(canonical.status);
+    expect((await published.json()).error.message).toBe((await canonical.json()).error.message);
+
+    // The control: the refusal is about the parameter and not about the route being
+    // unreachable, so the same path without it still answers the ordinary page.
+    const accepted = await app.request('/v1/credential-vaults?include_archived=true&limit=5');
+    expect(accepted.status).toBe(200);
+  });
+
+  it('does not refuse the parameters the two collection listings do implement', async () => {
+    // Not evidence for the refusal itself — these requests were answered `200` before
+    // the check existed, and would be again if it were removed. They are the guard
+    // that adding admission did not turn a working request into a `400`.
+    for (const query of [
+      'include_archived=true',
+      'include_archived=false',
+      'limit=100',
+      'page=',
+      'include_archived=true&limit=5',
+      'beta=true',
+    ]) {
+      for (const path of ['/v1/vaults', '/v1/credential-vaults', '/v1/memory_stores']) {
+        const res = await app.request(`${path}?${query}`);
+        // `page=` is a malformed cursor and is its own `400`; what must never appear is
+        // the unknown-parameter refusal, which would mean a documented parameter was
+        // not admitted.
+        const message = res.status === 400 ? (await res.json()).error.message as string : '';
+        expect(message, `${path}?${query}`).not.toContain('Unknown query parameter');
+      }
+    }
+  });
+
+  it('does not advertise beta on the collection listings either', async () => {
+    const res = await app.request('/v1/memory_stores?not_a_real_parameter=1');
+    const message = (await res.json()).error.message as string;
+    expect(message).toContain('This route accepts: include_archived, limit, page.');
+    expect(message).not.toContain('beta');
   });
 });
