@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultConfigPath, defaultTemplateCacheDir, WORKSPACE_STATE_DIR } from '../core/config/paths.js';
 import { createTemplate, installTemplate, listTemplates, resolveTemplateSource } from '../core/templates/templates.js';
+import { workerPollCommand } from './worker-commands.js';
 
 export interface StartServerOptions {
   port: string;
@@ -96,6 +97,29 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
       console.log(`     workspace from ${WORKSPACE_STATE_DIR}/config.yaml.`);
       console.log('  5. Or containerize with any Node 22+ base image.\n');
       console.log(`Runtime metadata, secrets, and logs are stored under ${WORKSPACE_STATE_DIR}/.`);
+    });
+
+  // The self-hosted worker CLI. Documented in `docs/deployment.md`, `docs/api.md`,
+  // `docs/api-matrix.md` and the Console's environment setup step, but never wired
+  // up here — so the documented command answered `unknown command 'worker'`.
+  const worker = program.command('worker').description('Run a self-hosted environment worker');
+
+  worker
+    .command('poll')
+    .description('Claim work items from the runtime and execute them inside --workdir')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--environment-id <id>', 'Environment to claim work for')
+    .option(
+      '--environment-key <key>',
+      'Environment worker key (default: $MANAGED_AGENTS_ENVIRONMENT_KEY)',
+    )
+    .option('--worker-id <id>', 'Worker identity reported to the runtime (default: worker_<pid>)')
+    .option('-w, --workdir <dir>', 'Directory work items are executed inside', '.')
+    .option('--once', 'Claim and run at most one item, then exit', false)
+    .option('--interval-ms <ms>', 'Delay between polls when the queue is empty', '1000')
+    .action(async (opts) => {
+      await workerPollCommand(opts);
     });
 
   const template = program.command('template').description('Manage solution templates');
