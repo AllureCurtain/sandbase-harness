@@ -4,6 +4,14 @@ import { join, resolve } from 'node:path';
 import { defaultConfigPath, defaultTemplateCacheDir, WORKSPACE_STATE_DIR } from '../core/config/paths.js';
 import { createTemplate, installTemplate, listTemplates, resolveTemplateSource } from '../core/templates/templates.js';
 import {
+  environmentArchiveCommand,
+  environmentCreateCommand,
+  environmentInspectCommand,
+  environmentUpdateCommand,
+  environmentWorkerKeysCommand,
+  environmentsListCommand,
+} from './runtime-management-commands.js';
+import {
   sessionCreateCommand,
   sessionInspectCommand,
   sessionLogsCommand,
@@ -104,6 +112,81 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
       console.log(`     workspace from ${WORKSPACE_STATE_DIR}/config.yaml.`);
       console.log('  5. Or containerize with any Node 22+ base image.\n');
       console.log(`Runtime metadata, secrets, and logs are stored under ${WORKSPACE_STATE_DIR}/.`);
+    });
+
+  // The environments CLI group. `docs/api-matrix.md:87` documents it as covered and
+  // `src/cli/runtime-management-commands.ts` implements it, but the module was imported
+  // by nothing, so every command answered `unknown command 'environments'`.
+  const environments = program.command('environments').description('Manage runtime environments');
+
+  environments
+    .command('list')
+    .description('List environments')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (opts) => {
+      await environmentsListCommand(opts);
+    });
+
+  environments
+    .command('inspect <id>')
+    .description('Print one environment and its config')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (id, opts) => {
+      await environmentInspectCommand(id, opts);
+    });
+
+  environments
+    .command('create')
+    .description('Create an environment')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .requiredOption('--name <name>', 'Environment name')
+    .option('--description <text>', 'Environment description')
+    .option('--hosting-type <type>', 'One of cloud, local, or self_hosted')
+    .option('--sandbox-provider <provider>', 'Sandbox backend to run sessions on')
+    .option('--config-json <json>', 'Backend config as a JSON object')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (opts) => {
+      await environmentCreateCommand(opts);
+    });
+
+  environments
+    .command('update <id>')
+    .description('Update an environment')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--name <name>', 'Environment name')
+    .option('--description <text>', 'Environment description')
+    .option('--hosting-type <type>', 'One of cloud, local, or self_hosted')
+    .option('--sandbox-provider <provider>', 'Sandbox backend to run sessions on')
+    .option('--config-json <json>', 'Backend config as a JSON object')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (id, opts) => {
+      await environmentUpdateCommand(id, opts);
+    });
+
+  environments
+    .command('archive <id>')
+    .description('Archive an environment')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (id, opts) => {
+      await environmentArchiveCommand(id, opts);
+    });
+
+  environments
+    .command('worker-keys <id>')
+    .description("List an environment's worker keys")
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--json', 'Print the raw response as JSON', false)
+    .action(async (id, opts) => {
+      await environmentWorkerKeysCommand(id, opts);
     });
 
   // The session CLI group. `docs/api-matrix.md:84` documents it as covered and

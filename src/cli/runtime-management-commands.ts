@@ -161,7 +161,14 @@ function createClient(opts: CliConnectionOptions) {
 
 function parseConfigJson(value?: string): Record<string, unknown> | undefined {
   if (!value) return undefined;
-  const parsed = JSON.parse(value) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch (error) {
+    // Name the option. The parser's own message is kept because it says where the typo is,
+    // but on its own it reads like a server fault rather than a mistake in one flag.
+    throw new Error(`--config-json must be valid JSON: ${(error as Error).message}`);
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('--config-json must be a JSON object');
   }

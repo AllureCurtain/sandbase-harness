@@ -408,6 +408,12 @@ managed-agents session message <session-id> --message "hello"
 managed-agents session tail <session-id>
 managed-agents session inspect <session-id>
 managed-agents session logs <session-id>
+managed-agents environments list
+managed-agents environments create --name staging --hosting-type local
+managed-agents environments inspect <environment-id>
+managed-agents environments update <environment-id> --sandbox-provider docker
+managed-agents environments archive <environment-id>
+managed-agents environments worker-keys <environment-id>
 managed-agents template list
 managed-agents template install <template-name-or-path>
 managed-agents template create <name>
@@ -421,6 +427,15 @@ accepts the message. `session tail` follows the live event stream and does not
 exit on its own; `session inspect` prints a summary (or the session and its events
 as JSON with `--json`) and `session logs` prints every recorded event, one JSON
 object per line. Every command accepts `--port` and `--api-key`.
+
+`environments create` requires `--name`; `--hosting-type` is one of `cloud`,
+`local`, or `self_hosted`, and `--config-json` supplies the backend config as a
+JSON object. A `--config-json` value that is not valid JSON, or that parses to
+something other than an object, is refused locally with the option named. `update`
+sends only the fields you pass, so an update that renames an environment keeps its
+description and config. `archive` is terminal: the environment disappears from
+`list`, a later `inspect` answers `404`, and archiving it again is refused. Every
+command accepts `--port`, `--api-key`, and `--json`.
 
 ## Operational Notes
 
