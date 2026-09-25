@@ -117,6 +117,15 @@ export interface CreateSessionParams {
   /** Internal memory scope used by the current runtime; not exposed as a public API field. */
   contextId?: string;
   resources?: Array<Record<string, unknown>>;
+  /**
+   * Overrides how a session's `resources` are recorded as durable instances.
+   *
+   * The default attaches one instance per entry, which is what makes
+   * `GET /v1/sessions/{id}/resources` report the resources the session was created with. The
+   * seam exists so a test can inject a failure and prove the caller's transaction discards the
+   * session: a session that claims a resource it does not hold is worse than none at all.
+   */
+  attachResources?: (sessionId: string) => void;
   vaultIds?: string[];
   title?: string;
   metadata?: Record<string, unknown>;

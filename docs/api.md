@@ -1360,6 +1360,9 @@ from one session leaves it attached to every other session that holds it.
 | `PATCH` | `/v1/sessions/{session_id}/resources/{resource_id}` | Rotate a github_repository authorization token. |
 | `DELETE` | `/v1/sessions/{session_id}/resources/{resource_id}` | Detach a resource from the session. |
 
+A resource passed in a session's `resources` at creation is recorded as an
+instance in the same call, so it appears in the list above immediately and can
+be addressed by id; attaching one to an existing session uses the `POST` route.
 A `memory_store` resource can only be attached when the session is created,
 because memories are part of the context the session was built with; attaching
 one later is refused with `400 invalid_request_error`, and a `memory_store`

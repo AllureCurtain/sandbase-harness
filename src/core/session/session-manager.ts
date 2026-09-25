@@ -19,6 +19,7 @@ import { findOrphanedToolUses, INTERRUPTED_TOOL_OUTCOME_MESSAGE } from './sessio
 import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
+import { attachSessionResources } from './session-resources.js';
 import { buildSessionUsageSnapshot } from './session-usage.js';
 import {
   BUDGET_ERROR_CODES,
@@ -542,6 +543,17 @@ export class SessionManager {
       params.budget ? serializeBudget(params.budget) : null,
     );
 
+    // A session created with resources records them as durable instances in the same call, so
+    // `GET /v1/sessions/{id}/resources` reports them and a token rotation or detach has an ID
+    // to address. The `resources` column alone is not enough: it is the declaration the sandbox
+    // mounts, while the resource API addresses instances, and a session that reported none
+    // would be claiming a resource it does not hold. Attaching here rather than in each route
+    // is what keeps every creation path — including the ones that cannot use
+    // `createWithInitialEvents` because they stream the reply — from being able to forget, and
+    // it puts the instances inside the caller's transaction when there is one.
+    if (params.attachResources) params.attachResources(id);
+    else attachSessionResources(this.db, id, params.resources ?? []);
+
     return {
       id,
       agentId: agentSnapshot.id,
@@ -900,18 +912,13 @@ export class SessionManager {
    * the client's first turn is the one it asked for instead of an idle session
    * it has to poke. Creation and the events commit together: a throw inside the
    * transaction discards the row and every event appended before it, so a
-   * rejected batch never leaves a session or a partial history behind.
+   * rejected batch never leaves a session or a partial history behind — and the
+   * same transaction covers the resource instances `create` attaches, so a
+   * refused batch does not leave a session holding resources either.
    */
-  createWithInitialEvents(params: CreateSessionParams & {
-    /** Resource instances to attach inside the same transaction. */
-    attachResources?: (sessionId: string) => void;
-  }, events: UserEvent[]): Session {
+  createWithInitialEvents(params: CreateSessionParams, events: UserEvent[]): Session {
     const session = this.db.transaction(() => {
       const created = this.create(params);
-      // Attachment runs inside the transaction so a failure discards the session
-      // row and every event appended before it: a session that claims a resource
-      // it does not hold is worse than no session.
-      params.attachResources?.(created.id);
 
       // Validate against the real row, not a synthetic id: admission checks
       // read the durable session and its log, so they only mean anything once
