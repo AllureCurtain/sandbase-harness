@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCliProgram, type StartServerOptions } from '@/cli/program.js';
 
-// The session command functions are replaced so the flag -> argument mapping can be
-// asserted without a server. Their real behavior is covered against the real routes in
-// `tests/integration/session-cli-commands.test.ts`.
+// The session and environment command functions are replaced so the flag -> argument
+// mappings can be asserted without a server. Their real behavior is covered against the
+// real routes in `tests/integration/session-cli-commands.test.ts` and
+// `tests/integration/environments-cli-commands.test.ts`.
 const recorded = vi.hoisted(() => ({ calls: [] as unknown[][] }));
 
 vi.mock('@/cli/session-commands.js', () => ({
@@ -24,6 +25,27 @@ vi.mock('@/cli/session-commands.js', () => ({
   }),
 }));
 
+vi.mock('@/cli/runtime-management-commands.js', () => ({
+  environmentsListCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-list', ...args]);
+  }),
+  environmentInspectCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-inspect', ...args]);
+  }),
+  environmentCreateCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-create', ...args]);
+  }),
+  environmentUpdateCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-update', ...args]);
+  }),
+  environmentArchiveCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-archive', ...args]);
+  }),
+  environmentWorkerKeysCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['env-worker-keys', ...args]);
+  }),
+}));
+
 describe('CLI program', () => {
   it('registers the public command surface', () => {
     const program = createCliProgram({
@@ -39,6 +61,7 @@ describe('CLI program', () => {
       'reload',
       'chat',
       'deploy',
+      'environments',
       'session',
       'worker',
       'template',
@@ -47,6 +70,19 @@ describe('CLI program', () => {
       'list',
       'install',
       'create',
+    ]);
+    // The environments group is documented as covered in `docs/api-matrix.md:87` — "List,
+    // inspect, create, update, archive, and list worker keys" — and implemented in
+    // `src/cli/runtime-management-commands.ts`; the module was imported by nothing, so
+    // each answered `unknown command`. Only the environments half of that module is
+    // registered: its `settings` half is broken against the real API (#466).
+    expect(program.commands.find((command) => command.name() === 'environments')?.commands.map((command) => command.name())).toEqual([
+      'list',
+      'inspect',
+      'create',
+      'update',
+      'archive',
+      'worker-keys',
     ]);
     // The session group is documented as covered in `docs/api-matrix.md:84` — "Create,
     // message, tail, inspect, and logs" — and `src/cli/session-commands.ts` implements all
@@ -113,6 +149,59 @@ describe('CLI program', () => {
     ]);
     expect(await run('inspect', 'sess_1')).toMatchObject(['inspect', 'sess_1', { port: '3000', json: false }]);
     expect(await run('logs', 'sess_1')).toMatchObject(['logs', 'sess_1', { port: '3000' }]);
+  });
+
+  it('maps the documented environments flags onto the command arguments', async () => {
+    // Same split as the session group: this pins flag -> argument, and
+    // `tests/integration/environments-cli-commands.test.ts` pins argument -> wire. The
+    // camelCase spellings matter because the command functions read `hostingType`,
+    // `sandboxProvider` and `configJson`, and a hyphenated key would arrive as `undefined`
+    // — a silent omission the server would accept by leaving the field unset.
+    recorded.calls.length = 0;
+    const run = async (...argv: string[]) => {
+      const program = createCliProgram({
+        version: '0.1.0',
+        startServer: async () => undefined,
+      });
+      await program.parseAsync(['node', 'managed-agents', 'environments', ...argv], { from: 'node' });
+      return recorded.calls.at(-1);
+    };
+
+    expect(await run('list', '--json', '-p', '4000')).toMatchObject([
+      'env-list',
+      { port: '4000', json: true },
+    ]);
+    expect(await run('inspect', 'env_1')).toMatchObject(['env-inspect', 'env_1', { port: '3000' }]);
+    expect(await run(
+      'create',
+      '--name', 'staging',
+      '--description', 'Build box',
+      '--hosting-type', 'local',
+      '--sandbox-provider', 'local',
+      '--config-json', '{"a":1}',
+    )).toMatchObject([
+      'env-create',
+      {
+        port: '3000',
+        name: 'staging',
+        description: 'Build box',
+        hostingType: 'local',
+        sandboxProvider: 'local',
+        configJson: '{"a":1}',
+      },
+    ]);
+    // `create` requires a name; `update` does not, because it patches an existing row.
+    expect(await run('update', 'env_1', '--name', 'renamed')).toMatchObject([
+      'env-update',
+      'env_1',
+      { port: '3000', name: 'renamed' },
+    ]);
+    expect(await run('archive', 'env_1')).toMatchObject(['env-archive', 'env_1', { port: '3000' }]);
+    expect(await run('worker-keys', 'env_1')).toMatchObject([
+      'env-worker-keys',
+      'env_1',
+      { port: '3000' },
+    ]);
   });
 
   it('exposes the documented session options', () => {
