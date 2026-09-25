@@ -321,7 +321,8 @@ Names are display fields and do not need to be unique.
 | `GET` | `/v1/agents` | List loaded agents. |
 | `POST` | `/v1/agents` | Create an agent resource. |
 | `GET` | `/v1/agents/{agent_id}` | Retrieve an agent. |
-| `PUT` | `/v1/agents/{agent_id}` | Save a new agent version. |
+| `POST` | `/v1/agents/{agent_id}` | Save a new agent version. The published update verb. |
+| `PUT` | `/v1/agents/{agent_id}` | Save a new agent version. Local spelling of the same operation. |
 | `GET` | `/v1/agents/{agent_id}/versions` | List versions known to the local store. |
 | `POST` | `/v1/agents/{agent_id}/archive` | Archive an agent. |
 
@@ -381,9 +382,11 @@ immutable snapshot returned by `/v1/agents/{agent_id}/versions`.
 
 ### Updating an agent
 
-`PUT` and `PATCH` on `/v1/agents/{agent_id}` both accept a partial definition and
+`POST` and `PUT` on `/v1/agents/{agent_id}` both accept a partial definition and
 apply the same update semantics, so a client that only shows a subset of the
-definition can save without resending every field:
+definition can save without resending every field. `POST` is the published verb;
+`PUT` is the local spelling of the same operation. There is no `PATCH` on this
+path — an earlier revision of this page claimed one:
 
 | Rule | Behaviour |
 | --- | --- |

@@ -36,8 +36,12 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
 
 - Agent definitions are created, listed, read, and version-archived. Updating an
   agent produces a new archived version; the prior definition remains readable
-  rather than being overwritten. `PUT` and `PATCH` share one partial-update
-  implementation.
+  rather than being overwritten. `POST` and `PUT` on `/v1/agents/{id}` share one
+  partial-update implementation: `POST` is the published verb — both published
+  update examples send a body with `curl -d` and no `-X`, while the same file
+  spells `-X POST` out for archive — and `PUT` is the local spelling of the same
+  operation. No `PATCH` is mounted; an earlier version of this sentence claimed
+  one and there is none.
 - `model` normalizes to a string for execution. The object form is parsed field
   by field by `normalizeModelField`, and each field is either honoured or
   refused by name (see §4).

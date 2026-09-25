@@ -518,6 +518,89 @@ describe('PUT /v1/agents/:id partial update', () => {
     expect(updated.body.metadata).toEqual({ team: 'platform', tier: 'gold', owner: 'qa' });
   });
 
+  /**
+   * `POST /v1/agents/{id}` is the published update verb: both published update
+   * examples send a body with `curl -d` and no `-X`, which curl issues as `POST`,
+   * while the same documentation file writes `-X POST` out explicitly for archive —
+   * so the omission is meaningful, and no `PUT` or `PATCH` spelling appears anywhere
+   * in the published set. The runtime mounted only `PUT`, so a caller who followed the
+   * contract built a request the documentation said would work and got a 404.
+   */
+  describe('POST /v1/agents/:id is the published update verb', () => {
+    it('answers the same way as PUT for a changed field, a no-change body and no body', async () => {
+      const bodies: Array<{ label: string; body: unknown; changesSomething: boolean }> = [
+        { label: 'a field change', body: { system: 'POST partial.' }, changesSomething: true },
+        // Genuinely nothing: the value sent is the value already stored.
+        { label: 'a no-change body', body: { system: 'Original system.' }, changesSomething: false },
+        { label: 'an empty body', body: {}, changesSomething: false },
+      ];
+
+      for (const { label, body, changesSomething } of bodies) {
+        // A fresh agent and a fresh context per case, so every case starts from the
+        // same state. Sharing one agent would make the "no-change" body change
+        // something — the previous case would have moved the value it re-sends — and
+        // the case would pass or fail for a reason unrelated to the verb.
+        const ctx = context();
+        const agent = await seedAgent(ctx);
+        const before = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+        const posted = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, body);
+        const afterPost = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+        const put = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, body);
+
+        expect(posted.res.status, `${label}: status`).toBe(put.res.status);
+        expect(posted.body, `${label}: body`).toEqual(put.body);
+        expect(afterPost.version, `${label}: version after POST`).toBe(
+          changesSomething ? agent.version + 1 : agent.version,
+        );
+        // A POST that changes nothing must not move the resource, exactly as PUT does
+        // not: the two verbs are one implementation.
+        if (!changesSomething) {
+          expect(afterPost, `${label}: stored state`).toEqual(before);
+        }
+      }
+    });
+
+    it('keeps partial-update semantics and the expected_version precondition', async () => {
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+
+      const changed = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, { description: 'POST description.' });
+      expect(changed.res.status).toBe(200);
+      expect(changed.body.description).toBe('POST description.');
+      // Omitted fields are kept, not cleared: the verb is a spelling of the same
+      // partial update, not a full replace.
+      expect(changed.body.system).toBe('Original system.');
+      expect(changed.body.tools).toHaveLength(2);
+      expect(changed.body.version).toBe(agent.version + 1);
+
+      const stale = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'ignored',
+        expected_version: agent.version,
+      });
+      expect(stale.res.status).toBe(409);
+      expect(stale.body.error.type).toBe('conflict');
+    });
+
+    it('does not capture POST /v1/agents/:id/archive', async () => {
+      // `POST /:id` and `POST /:id/archive` share a prefix. Adding the shorter pattern
+      // must not shadow the archive handler, so this drives the real route rather than
+      // reading the mount table.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+
+      const archived = await request(ctx.app, 'POST', `/v1/agents/${agent.id}/archive`);
+      expect(archived.res.status).toBe(200);
+      expect(archived.body.status).toBe('archived');
+      // The update handler would have answered 404 for an archived agent, so reaching
+      // the archive body at all is what proves the right handler ran.
+      expect(archived.body.system).toBe('Original system.');
+
+      const updateAfterArchive = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, { system: 'too late' });
+      expect(updateAfterArchive.res.status).toBe(404);
+    });
+  });
+
   it('rejects unknown fields instead of silently discarding them', async () => {
     const ctx = context();
     const agent = await seedAgent(ctx);
