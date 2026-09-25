@@ -141,9 +141,14 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     if (status !== 'active' && status !== 'disabled') {
       return invalid(c, 'status must be one of: active, disabled');
     }
+    // Re-enabling resolves whatever disabled the endpoint, so the reason goes with the
+    // state rather than outliving it. A caller who leaves the endpoint `disabled` keeps
+    // the existing reason: setting the same state is not resolving anything.
+    const disabledReason = status === 'active' ? null : existing.disabled_reason;
     deps.db.prepare(`
       UPDATE webhooks
-      SET name = ?, url = ?, events = ?, description = ?, metadata = ?, status = ?, updated_at = ?
+      SET name = ?, url = ?, events = ?, description = ?, metadata = ?, status = ?,
+          disabled_reason = ?, updated_at = ?
       WHERE id = ?
     `).run(
       stringField(body.value.name) ?? existing.name,
@@ -152,6 +157,7 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
       stringField(body.value.description) ?? existing.description,
       JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata)),
       status,
+      disabledReason,
       now(),
       id,
     );
@@ -398,6 +404,12 @@ function toWebhook(row: WebhookRow) {
     events: parseArray(row.events),
     description: row.description,
     status: row.archived_at ? 'archived' : row.status,
+    // The reason describes why the endpoint is *currently* disabled, so it is reported
+    // only while it is: an endpoint an operator has re-enabled must not still advertise
+    // the redirect that once switched it off, or a caller would act on a state that has
+    // already been resolved. This is the wire rule regardless of what a stored row holds,
+    // which is what makes it safe against a row edited outside the API.
+    disabled_reason: row.status === 'disabled' ? row.disabled_reason ?? null : null,
     metadata: parseObject(row.metadata),
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -566,6 +578,8 @@ type WebhookRow = StoredWebhookSecret & {
   events: string;
   description: string;
   status: string;
+  /** Why the endpoint is disabled, when a rule rather than an operator disabled it. */
+  disabled_reason: string | null;
   metadata: string;
   created_at: string;
   updated_at: string;

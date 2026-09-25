@@ -954,6 +954,18 @@ const M042_SCHEDULED_PAUSED_REASON = `
 ALTER TABLE scheduled_deployments ADD COLUMN paused_reason TEXT;
 `;
 
+/**
+ * The published auto-disable rule reports *why* an endpoint was disabled, and the
+ * reason is machine-readable, so it is stored rather than reconstructed from the
+ * delivery history — the history only shows that attempts failed, not which rule
+ * fired. Nullable because an endpoint that was never auto-disabled has no reason,
+ * and the update route clears it when an operator re-enables the endpoint, so a
+ * stored row never carries a reason for a state the endpoint is no longer in.
+ */
+const M043_WEBHOOK_DISABLED_REASON = `
+ALTER TABLE webhooks ADD COLUMN disabled_reason TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -997,4 +1009,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 40, name: '040_pi_tool_interactions', sql: M040_PI_TOOL_INTERACTIONS },
   { version: 41, name: '041_pi_session_policy_binding', sql: M041_PI_SESSION_POLICY_BINDING },
   { version: 42, name: '042_scheduled_paused_reason', sql: M042_SCHEDULED_PAUSED_REASON },
+  { version: 43, name: '043_webhook_disabled_reason', sql: M043_WEBHOOK_DISABLED_REASON },
 ];

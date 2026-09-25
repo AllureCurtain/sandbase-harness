@@ -107,7 +107,14 @@ async function attemptDelivery(
     opts.fetchImpl,
     { ...deliveryIdentity, secrets: signingSecrets },
   );
-  const nextRetry = nextRetryAt(attempt.ok, 1, opts);
+  // The published auto-disable rule for a redirect is a consequence of having observed
+  // one: the endpoint is disabled, and this attempt is terminal. `nextRetry` is
+  // therefore null rather than the attempt ceiling being reached — the rule says a
+  // response that triggers auto-disable is never retried, while three attempts still
+  // apply to every other failure.
+  const redirect = isRedirectStatus(attempt.statusCode);
+  if (redirect) disableEndpointForRedirect(db, webhook.id, createdAt);
+  const nextRetry = redirect ? null : nextRetryAt(attempt.ok, 1, opts);
   db.prepare(
     `INSERT INTO webhook_deliveries (
       id, webhook_id, event, payload, status, status_code, error, signature,
@@ -148,7 +155,13 @@ async function retryDelivery(
     timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
     secrets: signingSecrets,
   });
-  const nextRetry = nextRetryAt(attempt.ok, attemptCount, opts);
+  // The rule is about the response, not the attempt number, so a retry that observes a
+  // redirect disables the endpoint too. This is reachable: a retry is queued before the
+  // endpoint is disabled, and an operator can re-enable the endpoint while that retry is
+  // still due — the next due attempt then finds the redirect still in place.
+  const redirect = isRedirectStatus(attempt.statusCode);
+  if (redirect) disableEndpointForRedirect(db, row.webhook_id, attemptTime.toISOString());
+  const nextRetry = redirect ? null : nextRetryAt(attempt.ok, attemptCount, opts);
   db.prepare(
     `UPDATE webhook_deliveries
      SET status = ?, status_code = ?, error = ?, signature = ?, attempt_count = ?,
@@ -215,6 +228,34 @@ async function postWebhook(
   } catch (err) {
     return { ok: false, statusCode: null, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * A `3xx` is the published condition for the first auto-disable case. `postWebhook`
+ * refuses to follow the redirect, so this is the status of the response that was
+ * observed, not of wherever it pointed.
+ */
+function isRedirectStatus(statusCode: number | null): boolean {
+  return statusCode !== null && statusCode >= 300 && statusCode < 400;
+}
+
+/**
+ * The published reason string, verbatim: it is machine-readable, so it is written from
+ * one place rather than spelled out at each call site.
+ */
+const REDIRECT_DISABLED_REASON = 'auto-disabled: endpoint URL returned a redirect (3xx)';
+
+/**
+ * Disabling is the whole consequence of observing a redirect, so the endpoint's state
+ * and the reason for it are written together — a stored `disabled` with no reason would
+ * be indistinguishable from an operator having switched the endpoint off by hand.
+ */
+function disableEndpointForRedirect(db: Database, webhookId: string, nowIso: string): void {
+  db.prepare(
+    `UPDATE webhooks
+     SET status = 'disabled', disabled_reason = ?, updated_at = ?
+     WHERE id = ?`,
+  ).run(REDIRECT_DISABLED_REASON, nowIso, webhookId);
 }
 
 function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDispatchOptions): string | null {
