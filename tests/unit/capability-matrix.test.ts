@@ -144,17 +144,21 @@ describe('capability matrix', () => {
     // `supported`. Only the two operations entries are pinned here rather than
     // imposing a wording rule on every partial entry in the matrix. Each pin is
     // an *absence* — the published deployment control surface is missing rather
-    // than merely spelled differently, and the sustained-failure window and
-    // reset-on-success have no implementation.
+    // than merely spelled differently, and reset-on-success has no implementation.
     // An absence is pinned rather than a topic word because the earlier wording
     // named both topics while claiming the behaviour worked, so a topic word would
-    // pass on either text. This pin has now moved twice for the same rule: the `3xx`
-    // case landing narrowed it from the whole disable policy to the rules still
-    // missing, and the private-address rule landing narrowed it again to the two
-    // that remain. Each time the same absent thing is still named, and the text that
-    // replaced it says what is true of the case that now works.
+    // pass on either text. This pin has now moved three times for the same rule: the
+    // `3xx` case landing narrowed it from the whole disable policy to the rules still
+    // missing, the private-address rule narrowed it again, and the sustained-failure
+    // rule narrowed it to the last absence. Each time the same absent thing is still
+    // named, and the text that replaced it says what is true of the case that now
+    // works — which for the sustained rule includes that its window is a local
+    // parameter, since the published contract states the trigger's shape and not its
+    // value, and a pin on the *published* number would pin a number nobody published.
     expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
-      .toContain('the sustained-failure window and reset-on-success are absent');
+      .toContain('reset-on-success is absent');
+    expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
+      .toContain('only when the deployment sets managed_agents_webhook_screen_private_addresses');
     expect(capabilityEntry('scheduled-deployment-timers').reason.toLowerCase())
       .toContain('no pause/unpause');
   });
