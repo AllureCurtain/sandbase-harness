@@ -45,6 +45,7 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/agents` | `src/api/routes/agents.ts` |
 | GET | `/v1/agents/{id}` | `src/api/routes/agents.ts` |
 | PUT | `/v1/agents/{id}` | `src/api/routes/agents.ts` |
+| POST | `/v1/agents/{id}` | `src/api/routes/agents.ts` |
 | POST | `/v1/agents/{id}/archive` | `src/api/routes/agents.ts` |
 | GET | `/v1/agents/{id}/versions` | `src/api/routes/agents.ts` |
 | GET | `/v1/api-keys` | `src/api/routes/api-keys.ts` |

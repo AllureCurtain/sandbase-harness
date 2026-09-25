@@ -167,6 +167,63 @@
     ]
   },
   {
+    "id": "agents-update-post",
+    "group": "Agents",
+    "title": "Update agent",
+    "method": "POST",
+    "path": "/v1/agents/{agent_id}",
+    "summary": "Update an agent definition. This is the published verb; PUT on the same path is a local spelling of the same operation. Database-backed agents receive a new version.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable agent name."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "description": "Short agent purpose."
+      },
+      {
+        "name": "model",
+        "type": "string | object",
+        "description": "Model configuration."
+      },
+      {
+        "name": "system",
+        "type": "string",
+        "description": "System prompt."
+      },
+      {
+        "name": "tools",
+        "type": "array",
+        "description": "Toolset configuration."
+      },
+      {
+        "name": "skills",
+        "type": "array",
+        "description": "Skill references."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Opaque metadata."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Agent identifier."
+      },
+      {
+        "name": "agent",
+        "type": "object",
+        "description": "Created or updated agent resource."
+      }
+    ]
+  },
+  {
     "id": "agents-versions",
     "group": "Agents",
     "title": "List agent versions",

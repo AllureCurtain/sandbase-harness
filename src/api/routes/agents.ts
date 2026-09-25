@@ -176,6 +176,17 @@ export function agentsRoutes(deps: ServerDeps) {
   // Console editor only ever shows a subset of the definition.
   app.put('/:id', updateAgent);
 
+  // The published update verb is `POST` on this path: both published examples send a
+  // body with `curl -d` and no `-X` (which curl issues as `POST`), while the same file
+  // writes `-X POST` out explicitly for archive — so the omission is meaningful, and
+  // no `PUT` or `PATCH` spelling appears anywhere in the published documentation. The
+  // runtime mounted only `PUT`, so a caller following the contract built a request the
+  // documentation said would work and got a 404. Both verbs take one handler reference
+  // rather than a second copy, because the published operation and the local spelling
+  // are the same operation; this contract's §1 already treats the verb as part of an
+  // endpoint's identity (`contracts/anthropic-cma/routes.md:24`).
+  app.post('/:id', updateAgent);
+
   app.post('/:id/archive', (c) => {
     const id = c.req.param('id');
     const existing = activeAgentRow(deps, id);
