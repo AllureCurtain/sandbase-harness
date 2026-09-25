@@ -59,6 +59,24 @@ Paths:
 - The local spelling is not deprecated, redirected, or removed: the Console, the
   TypeScript SDK and existing stored references all use it.
 
+Listing:
+
+- The vault listing implements the published `include_archived` parameter
+  (`将工作委派给智能体/使用保管库进行身份验证.md:1119`): archived vaults are excluded
+  by default and returned when the parameter is `true`, each with
+  `status: "archived"` and a non-null `archived_at`. `false` is accepted and means
+  the default.
+- A value that is neither is a `400` rather than a fall-back to the default, and so
+  is sending the parameter twice with different values: a request that looks
+  filtered must not be answered as though it were not, and two contradictory
+  values have no reading that is not a guess.
+- Including an archived vault in a listing is not an un-archive: the
+  single-resource read still answers `404` for an archived vault and archiving
+  remains terminal.
+- The listing still implements **no pagination** — it answers a single page with
+  `prev_page`/`next_page` both `null` and ignores the published `limit`/`page`.
+  That is a separate gap and is not addressed here.
+
 Wire profile:
 
 - `display_name` is read from the **top level** of the payload, a sibling of
@@ -242,6 +260,11 @@ means archive and recreate.
 - `tests/unit/vault-path-parity.test.ts` — the mounted route table gives every
   canonical vault route a published twin and every published route a canonical
   one, with anchors so the comparison cannot pass by finding nothing.
+- `tests/integration/vault-list-include-archived.test.ts` — the published listing
+  parameter: archived excluded by default and included on request with the
+  archived label intact, `false` equal to omitting it, a malformed value and a
+  repeated parameter each refused, both prefixes agreeing, and the archived vault
+  still `404` on its own read.
 
 ## 7. Status
 
