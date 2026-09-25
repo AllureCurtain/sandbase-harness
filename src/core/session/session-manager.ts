@@ -15,7 +15,7 @@ import type { Database } from '@/core/db/database.js';
 import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
 import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
-import { findOrphanedToolUses } from './session-recovery.js';
+import { findOrphanedToolUses, INTERRUPTED_TOOL_OUTCOME_MESSAGE } from './session-recovery.js';
 import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
@@ -754,7 +754,7 @@ export class SessionManager {
     // (mirrors reconcileOrphans). Legit user.tool_confirmation events are
     // exempt — the executor pairs their referenced call itself.
     if (session.status === 'failed' || event.type === 'user.message') {
-      this.resolveOrphanedToolUses(sessionId, '(previous turn failed before this tool returned)');
+      this.resolveOrphanedToolUses(sessionId);
     }
 
     // Append the user event to the log
@@ -1130,7 +1130,7 @@ export class SessionManager {
 
     for (const { id: sessionId } of running) {
       // Inject placeholder results for orphaned tool_use calls
-      this.resolveOrphanedToolUses(sessionId, '(interrupted by server restart — retry if needed)');
+      this.resolveOrphanedToolUses(sessionId);
 
       // Reset to idle so the session can continue on the next user event
       this.updateStatus(sessionId, 'paused');
@@ -1544,13 +1544,25 @@ export class SessionManager {
    * that has no paired result. Called on crash recovery and on failed-session
    * resume so the next eventsToMessages projection yields a valid, paired
    * message sequence instead of an unpaired tool-call the model rejects.
+   *
+   * The message is fixed rather than a parameter: both callers describe the same
+   * epistemic situation — a call was dispatched and its result was never recorded —
+   * and they used to pass two different sentences, one of which told the model to
+   * retry. See {@link INTERRUPTED_TOOL_OUTCOME_MESSAGE}. Taking it from a caller
+   * would let the two paths drift apart again, and the drift is what produced the
+   * misleading sentence in the first place.
    */
-  private resolveOrphanedToolUses(sessionId: string, placeholder: string): void {
+  private resolveOrphanedToolUses(sessionId: string): void {
     const events = this.eventLogger.getEvents(sessionId);
     for (const toolUse of findOrphanedToolUses(events)) {
       this.eventLogger.append(sessionId, {
         type: toolUse.resultType,
-        content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: placeholder, is_error: true }],
+        content: [{
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: INTERRUPTED_TOOL_OUTCOME_MESSAGE,
+          is_error: true,
+        }],
       });
     }
   }
