@@ -62,3 +62,41 @@ export async function publishOperationEvent(
     // handler can improve on, and the state change has already been committed.
   }
 }
+
+/** The two states a deployment's pause flag can hold. */
+export type PauseState = 'active' | 'paused';
+
+/**
+ * Publish the event a pause-state transition means, if it is one.
+ *
+ * The pause state has three doors — `POST /{id}/pause`, `POST /{id}/unpause`,
+ * and the `status` field of `PUT /{id}` — and what a transition means has to be
+ * the same at all three. The rule lives here rather than at each call site
+ * because three copies of a rule that must agree is how they stop agreeing,
+ * which is the same reason the signing key is derived in one place. It is what
+ * the update route was missing: it wrote `status` directly, so a pause through
+ * it produced the durable state and told nobody.
+ *
+ * Each caller passes the state it read before writing and the state it wrote, so
+ * this cannot be omitted and leave a silent door — only called with the wrong
+ * pair of values.
+ *
+ * **Nothing is published when the state does not change.** `PUT` re-sending the
+ * status a deployment already has is an ordinary idempotent retry, and an event
+ * there would report a transition that did not happen. The published table
+ * states the same rule for the nearest comparable event — re-archiving an
+ * archived environment emits nothing (`订阅Webhook.md:79`) — so this reuses a
+ * published rule rather than inventing a second one.
+ */
+export async function publishPauseTransition(
+  deps: ServerDeps,
+  deploymentId: string,
+  previous: PauseState,
+  next: PauseState,
+): Promise<void> {
+  if (previous === next) return;
+  await publishOperationEvent(deps, {
+    event: next === 'paused' ? 'deployment.paused' : 'deployment.unpaused',
+    data: { type: 'deployment', id: deploymentId },
+  });
+}

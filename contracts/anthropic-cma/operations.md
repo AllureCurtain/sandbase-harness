@@ -96,6 +96,19 @@ is created `active` (the schema default) and stays `active` until archived.
   (a requested pause); it must also be raised by the automatic pause that §4
   records as unimplemented, which is why the publishing path was built before
   that cause exists.
+- **The pause state has three doors, and the decision to publish lives in one
+  place.** `POST /{id}/pause`, `POST /{id}/unpause`, and the `status` field of
+  `PUT /{id}` all write it. `publishPauseTransition(deps, id, previous, next)`
+  in `operation-events.ts` owns the rule — publish `deployment.paused` when the
+  state becomes `paused`, `deployment.unpaused` when it becomes `active`, and
+  nothing when it does not change — and every one of the three routes calls it
+  with the state it read before writing and the state it wrote. The update route
+  previously wrote `status` directly and published nothing, so a pause through it
+  produced the durable state and told no subscriber. Keeping the rule in one
+  function is also what stops the three doors from disagreeing: a route cannot
+  omit the decision, only pass the wrong pair of values. The events are derived
+  from the stored state, so the sequence holds whichever route performs each
+  transition.
 - Every attempt sends the legacy `X-Managed-Agents-Signature`
   (`sha256=<hex>` over the body) *and* the published `webhook-id`,
   `webhook-timestamp` and `webhook-signature` headers, the last computed by
@@ -237,6 +250,7 @@ implemented differently, as §4 records.
 | Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. The new deployment events carry the published `data: {type, id}` reference inside that envelope; the envelope itself is unchanged, so this narrows the divergence without closing it. |
 | Event coverage | The published table names events across agents, environments, vaults and credentials, deployments, deployment runs, and sessions. The runtime raises only the session event types plus `deployment.paused` and `deployment.unpaused`. A subscription listing a name nothing produces is accepted and simply silent, which is indistinguishable from "that event has not happened yet" — so a receiver cannot tell an unimplemented event from a quiet one. Recorded rather than papered over by refusing unknown names, which would break a subscription created against the published list. |
 | `deployment.paused` causes | The published description covers a requested pause **and** an automatic pause after a non-recoverable trigger failure, and states that recoverable failures including rate limits do not pause. Only the requested cause exists: the automatic one needs the failure taxonomy of the run path, which the `M042` migration comment records as arriving with that work. The event is raised only when the state changes, so a repeat pause is silent. |
+| `deployment.updated` | Not emitted. The published table gives it its own trigger ("部署属性已更改"), and the nearest published rule for an update event is the no-op rule stated for `environment.updated` — "无操作的更新不会发出任何事件" — which requires comparing every written field against its stored value to decide whether anything changed. A `PUT` that renames a deployment therefore publishes nothing at all: the pause events are correct because the pause state did not move, and `deployment.updated` is simply absent. Until it lands, a write to a deployment is reported only when it moves the pause state. |
 | No-op events | A repeat pause or resume raises nothing, because nothing changed. The published table states this rule explicitly for `environment.archived` ("对已归档的环境再次归档不会发出任何事件") and leaves it unstated for these two; the same reasoning is applied rather than a second rule invented. |
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
@@ -347,6 +361,14 @@ implemented differently, as §4 records.
   sweep. Every assertion is scoped to the subscription its case created, because
   the fixture is shared and one pause is delivered to every matching
   subscription.
+- `tests/integration/deployment-update-pause-events.test.ts` — the same two
+  events reached through all three doors onto the pause state: `PUT` setting and
+  clearing `status`, a `PUT` that re-sends the status already stored, a `PUT`
+  that changes an unrelated field, and a `PUT` on a paused deployment that leaves
+  it paused — none of which publish — plus the two pause routes asserted again
+  because the refactor rewrote that code, a mixed sequence where the transition
+  is derived from the stored state rather than from the route that acted, and
+  both mount prefixes.
 - `tests/integration/deployment-runs-collection.test.ts` — the top-level run
   collection and item routes: the published shape on a run that really created a
   session, the `error` object and the agent fallback on one that really failed,
@@ -374,8 +396,8 @@ implemented differently, as §4 records.
 `partial` for both, and the reason is no longer narrow. Cron-in-zone, the
 signature arithmetic, the per-endpoint secret, the published headers on every
 attempt, the background tick that delivers without a caller, and the
-`deployment.paused` / `deployment.unpaused` pair are the aligned parts. The
-published delivery envelope, the entire
+`deployment.paused` / `deployment.unpaused` pair across all three doors onto the
+pause state are the aligned parts. The published delivery envelope, the entire
 auto-disable policy, the deployment endpoint alias, the automatic pause cause, the
 `trigger_context` representation, the rest of the published event table and the asymmetric
 failure split are absent, and are listed in §4 so that "covered by a contract" does

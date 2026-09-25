@@ -1722,11 +1722,14 @@ quiet one.
 Pausing a deployment publishes `deployment.paused` and resuming publishes
 `deployment.unpaused`, each carrying `data: {type: 'deployment', id}`: a
 reference rather than the object, so a receiver fetches the current state
-itself. Nothing is published when the call changes nothing, which matters
-because the pause route is idempotent and a repeat pause is the ordinary retry
-path. A subscriber that cannot be reached does not fail the call — the state
-change is already committed and the failed attempt is recorded for the retry
-sweep.
+itself. The pause state has three doors — `POST /{id}/pause`,
+`POST /{id}/unpause`, and the `status` field of `PUT /{id}` — and the event
+follows the state change rather than the route, so a pause performed by updating
+a deployment is published exactly like one performed by pausing it. Nothing is
+published when the call changes nothing, which matters because all three doors
+are idempotent and a repeat is the ordinary retry path. A subscription that
+cannot be reached does not fail the call — the state change is already committed
+and the failed attempt is recorded for the retry sweep.
 
 ### Webhooks
 Every delivery attempt carries the Standard Webhooks v1 headers:
