@@ -69,6 +69,33 @@ is created `active` (the schema default) and stays `active` until archived.
   `event` field, so the body is not the published reference envelope. The
   resource is not inlined, which is the one property it shares with the
   published shape.
+- Two sources raise events. Session events reach the dispatcher through a
+  broadcast listener the runtime installs (`operations-bridge.ts`), which fires
+  and forgets because it runs on the hot path of every session event. Operations
+  events have no such channel, so the route that causes one publishes it through
+  `src/api/routes/operation-events.ts`, which awaits the attempt: these are rare
+  control-plane calls, and waiting means the delivery row exists before the
+  caller is told the state change succeeded. Both sources end in
+  `dispatchWebhookEvent`, so matching, signing, retries and delivery rows behave
+  identically; only the place the event is raised differs. A failing delivery
+  never fails the state change — the result is discarded and a rejection caught.
+- The event names the runtime can currently raise are therefore the session
+  event types plus `deployment.paused` and `deployment.unpaused`. **The rest of
+  the published table is not emitted**: `agent.*`, `environment.*`, `vault.*`,
+  `vault_credential.*`, `deployment.created` / `.updated` / `.archived` /
+  `.deleted`, and `deployment_run.*` are names a subscription may list and
+  nothing produces. A subscription is accepted as written, so an unrecognized
+  name is silent rather than refused. §4 records this.
+- `deployment.paused` and `deployment.unpaused` carry
+  `data: {type: 'deployment', id}`, which is the reference shape the published
+  contract describes by `data.type` / `data.id`. They are published only when
+  the pause state actually changes: the pause route is deliberately idempotent,
+  so a repeat pause is the ordinary retry path, and the published table states
+  the same rule for the nearest comparable event — archiving an already-archived
+  environment emits nothing. `deployment.paused` currently has one cause
+  (a requested pause); it must also be raised by the automatic pause that §4
+  records as unimplemented, which is why the publishing path was built before
+  that cause exists.
 - Every attempt sends the legacy `X-Managed-Agents-Signature`
   (`sha256=<hex>` over the body) *and* the published `webhook-id`,
   `webhook-timestamp` and `webhook-signature` headers, the last computed by
@@ -207,7 +234,10 @@ implemented differently, as §4 records.
 
 | Difference | Detail |
 | --- | --- |
-| Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. |
+| Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. The new deployment events carry the published `data: {type, id}` reference inside that envelope; the envelope itself is unchanged, so this narrows the divergence without closing it. |
+| Event coverage | The published table names events across agents, environments, vaults and credentials, deployments, deployment runs, and sessions. The runtime raises only the session event types plus `deployment.paused` and `deployment.unpaused`. A subscription listing a name nothing produces is accepted and simply silent, which is indistinguishable from "that event has not happened yet" — so a receiver cannot tell an unimplemented event from a quiet one. Recorded rather than papered over by refusing unknown names, which would break a subscription created against the published list. |
+| `deployment.paused` causes | The published description covers a requested pause **and** an automatic pause after a non-recoverable trigger failure, and states that recoverable failures including rate limits do not pause. Only the requested cause exists: the automatic one needs the failure taxonomy of the run path, which the `M042` migration comment records as arriving with that work. The event is raised only when the state changes, so a repeat pause is silent. |
+| No-op events | A repeat pause or resume raises nothing, because nothing changed. The published table states this rule explicitly for `environment.archived` ("对已归档的环境再次归档不会发出任何事件") and leaves it unstated for these two; the same reasoning is applied rather than a second rule invented. |
 | Automatic disable | Not implemented. There is no `3xx` rule, no private-address check, no sustained-failure window, no `disabled_reason`, no reset-on-success, and no route that could re-enable an endpoint. |
 | Private-address rule | Absent rather than opt-in. No code inspects the resolved address of a subscription URL, so no reason string exists to fire. |
 | Retry backoff | Fixed 60 s and 120 s, with no jitter. The three-attempt ceiling matches the published one. |
@@ -306,6 +336,17 @@ implemented differently, as §4 records.
   (asserted by the absent run, not only by `next_run_at`), a future `next_run_at`
   left alone, idempotence, and an archived deployment 404ing on pause, unpause and
   run.
+- `tests/integration/deployment-pause-events.test.ts` — the pause and resume
+  events delivered to a real HTTP receiver on an ephemeral loopback port, with
+  the recorded delivery asserted alongside the received request; the
+  `{type: 'deployment', id}` reference; delivery to every matching subscription
+  rather than the first; a `deployment.*` wildcard matching and an unrelated
+  subscriber receiving nothing at all; both mount prefixes publishing; a repeat
+  pause and a repeat resume raising nothing; and an unreachable subscriber
+  leaving the pause committed with the failed attempt recorded for the retry
+  sweep. Every assertion is scoped to the subscription its case created, because
+  the fixture is shared and one pause is delivered to every matching
+  subscription.
 - `tests/integration/deployment-runs-collection.test.ts` — the top-level run
   collection and item routes: the published shape on a run that really created a
   session, the `error` object and the agent fallback on one that really failed,
@@ -332,10 +373,11 @@ implemented differently, as §4 records.
 
 `partial` for both, and the reason is no longer narrow. Cron-in-zone, the
 signature arithmetic, the per-endpoint secret, the published headers on every
-attempt and the background tick that delivers without a caller are the aligned
-parts. The published delivery envelope, the entire
-auto-disable policy, the deployment endpoint alias, the pause/unpause surface, the
-`trigger_context` representation, the lifecycle event names and the asymmetric
+attempt, the background tick that delivers without a caller, and the
+`deployment.paused` / `deployment.unpaused` pair are the aligned parts. The
+published delivery envelope, the entire
+auto-disable policy, the deployment endpoint alias, the automatic pause cause, the
+`trigger_context` representation, the rest of the published event table and the asymmetric
 failure split are absent, and are listed in §4 so that "covered by a contract" does
 not read as "implemented". Neither entry is `supported`; neither is `unavailable`, because
 the resource, the delivery engine, the scheduler and the run records are real
