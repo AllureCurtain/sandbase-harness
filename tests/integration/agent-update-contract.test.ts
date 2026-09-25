@@ -601,6 +601,204 @@ describe('PUT /v1/agents/:id partial update', () => {
     });
   });
 
+  describe('the published `version` spelling of the concurrency precondition', () => {
+    /**
+     * The published contract names this field `version`: "`version` 字段是可选的：提供它
+     * 可实现乐观并发控制（不匹配时返回 409），省略它则无条件应用更新（最后写入者获胜）"
+     * (`定义您的智能体/智能体设置.md:350`), and the published update example sends
+     * `"version": $AGENT_VERSION` (`:361`). The runtime reads `expected_version`, and
+     * `version` fell through to the unknown-field guard, so the published example was
+     * answered `400 Unknown agent update field "version"` — which is why mounting the
+     * published verb (#452) was necessary but not sufficient.
+     */
+    it('applies the precondition through `version`, identically to `expected_version`', async () => {
+      // Two agents in the same state, one per spelling, so the only difference between
+      // the two runs is the field name in the body.
+      const perSpelling = [
+        { field: 'expected_version', value: 'local' },
+        { field: 'version', value: 'published' },
+      ] as const;
+
+      const results = [];
+      for (const { field } of perSpelling) {
+        const ctx = context();
+        const agent = await seedAgent(ctx);
+
+        const applied = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+          system: 'guarded write',
+          [field]: agent.version,
+        });
+        const afterApply = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+        // A stale value must be a 409 that does not land the write. Reading the agent
+        // back is the assertion that matters: a 409 whose update still applied would be
+        // the lost write this field exists to prevent.
+        const stale = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+          system: 'stale write',
+          [field]: agent.version,
+        });
+        const afterStale = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+        results.push({ field, applied: applied.res.status, afterApplySystem: afterApply.system, afterApplyVersion: afterApply.version,
+          stale: stale.res.status, staleType: stale.body.error?.type, afterStaleSystem: afterStale.system, afterStaleVersion: afterStale.version });
+      }
+
+      expect(results[0].applied).toBe(200);
+      expect(results[1]).toEqual({ ...results[0], field: 'version' });
+      // Stated as literals too, so the equality above cannot be satisfied by two
+      // identically wrong answers.
+      expect(results[1].afterApplySystem).toBe('guarded write');
+      expect(results[1].afterApplyVersion).toBe(2);
+      expect(results[1].stale).toBe(409);
+      expect(results[1].staleType).toBe('conflict');
+      expect(results[1].afterStaleSystem).toBe('guarded write');
+      expect(results[1].afterStaleVersion).toBe(2);
+    });
+
+    it('drives the exact published example body over the published verb', async () => {
+      // The shape from `智能体设置.md:357-362`: a POST with `name`, `model`, `system`
+      // and `version`. `name` and `model` are read back from the stored agent rather
+      // than taken from the fixture, so the body re-sends the real current values —
+      // which is what the published example does with its shell variables.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+      const truth = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+      const published = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        name: truth.name,
+        model: truth.model,
+        system: 'Updated from the published example.',
+        version: agent.version,
+      });
+
+      expect(published.res.status).toBe(200);
+      expect(published.body.system).toBe('Updated from the published example.');
+      expect(published.body.name).toBe(truth.name);
+      expect(published.body.model).toBe(truth.model);
+      expect(published.body.version).toBe(agent.version + 1);
+    });
+
+    it('refuses two spellings that disagree instead of picking one', async () => {
+      // They name one precondition, so a precedence rule would silently apply an update
+      // the other value said not to.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+      const before = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+      const disagreed = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'ambiguous write',
+        version: agent.version,
+        expected_version: agent.version + 1,
+      });
+      expect(disagreed.res.status).toBe(400);
+      expect(disagreed.body.error.details).toContainEqual(expect.objectContaining({
+        message: expect.stringContaining('disagree'),
+      }));
+
+      const after = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+      expect(after).toEqual(before);
+
+      // The order of the two keys must not change the answer.
+      const reversed = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'ambiguous write',
+        expected_version: agent.version + 1,
+        version: agent.version,
+      });
+      expect(reversed.res.status).toBe(400);
+
+      // Agreeing values carry nothing to resolve, so they are accepted.
+      const agreed = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'agreed write',
+        version: agent.version,
+        expected_version: agent.version,
+      });
+      expect(agreed.res.status).toBe(200);
+      expect(agreed.body.system).toBe('agreed write');
+      expect(agreed.body.version).toBe(agent.version + 1);
+    });
+
+    it('rejects a malformed `version` rather than applying an unguarded update', async () => {
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+      const before = (await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body;
+
+      for (const bad of ['abc', '', 0, -1, 1.5, null, {}] as unknown[]) {
+        const rejected = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+          system: 'unguarded',
+          version: bad,
+        });
+        expect(rejected.res.status, `version=${JSON.stringify(bad)}`).toBe(400);
+        expect(rejected.body.error.details, `version=${JSON.stringify(bad)}`).toContainEqual({
+          path: 'version',
+          message: 'version must be a positive integer',
+        });
+      }
+
+      // None of the rejected attempts may have moved the agent. A 400 whose write
+      // landed would be the unguarded update the strictness exists to prevent.
+      expect((await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body).toEqual(before);
+
+      // A numeric string is accepted, because the published example interpolates a
+      // shell variable and the value can arrive as either type.
+      const asString = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'string version',
+        version: String(agent.version),
+      });
+      expect(asString.res.status).toBe(200);
+      expect(asString.body.version).toBe(agent.version + 1);
+    });
+
+    it('never writes the precondition into the stored definition', async () => {
+      // `version` is a precondition, not a definition field: it must not become part of
+      // what the agent is, and it must not let a caller force the stored version number.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+
+      const forced = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'x',
+        version: 99,
+      });
+      // 99 does not match version 1, so it is a 409 and nothing is written.
+      expect(forced.res.status).toBe(409);
+
+      const applied = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+        system: 'x',
+        version: agent.version,
+      });
+      expect(applied.res.status).toBe(200);
+      expect(applied.body.version).toBe(agent.version + 1);
+
+      const stored = JSON.parse(storedRow(ctx, agent.id).definition) as Record<string, unknown>;
+      expect(stored).not.toHaveProperty('version');
+      expect(stored).not.toHaveProperty('expected_version');
+      expect(stored.system).toBe('x');
+    });
+
+    it('reads the published spelling on the local PUT verb identically', async () => {
+      // `POST` is the published verb and `PUT` is the local spelling of the same
+      // operation, so the precondition cannot be a property of one verb. Asserted
+      // directly rather than inferred from the POST cases, because a resolver wired
+      // into only one route would leave the local verb refusing a body it accepts.
+      const ctx = context();
+      const agent = await seedAgent(ctx);
+
+      const applied = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+        system: 'via PUT version',
+        version: agent.version,
+      });
+      expect(applied.res.status).toBe(200);
+      expect(applied.body.system).toBe('via PUT version');
+      expect(applied.body.version).toBe(agent.version + 1);
+
+      const stale = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+        system: 'stale',
+        version: agent.version,
+      });
+      expect(stale.res.status).toBe(409);
+      expect((await request(ctx.app, 'GET', `/v1/agents/${agent.id}`)).body.system).toBe('via PUT version');
+    });
+  });
+
   it('rejects unknown fields instead of silently discarding them', async () => {
     const ctx = context();
     const agent = await seedAgent(ctx);

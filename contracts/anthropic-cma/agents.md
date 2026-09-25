@@ -50,6 +50,13 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
   rejected instead of being stored partially.
 - `web_tool.configuration` is fully validated (domain grammar, allowed/blocked
   exclusivity, empty-list rejection). See [`tools.md`](./tools.md).
+- The update precondition is accepted under both names: `version` is the
+  published spelling and `expected_version` is the local one. The published
+  contract says the field is optional, that supplying it gives optimistic
+  concurrency control with a `409` on a mismatch, and that omitting it applies
+  the update unconditionally; that is exactly the local behaviour, so only the
+  name differs. Both are read, and sending both with different values is refused
+  rather than resolved by precedence.
 - A canonical `multiagent` roster is **refused by name** on both write paths. An
   agent's create path checks the caller's own payload in
   `validateAgentDefinition`, because the Zod schema strips keys it does not
@@ -108,8 +115,9 @@ field the runtime cannot honour instead of dropping it.
   field's acceptance or refusal, including `effort` carried through validation
   and `inference_geo` refused by name.
 - `tests/integration/agent-update-contract.test.ts` — the unified partial-update
-  semantics, the unknown-field refusal, and the roster refusal on the update
-  path.
+  semantics, the unknown-field refusal, the roster refusal on the update path,
+  and both spellings of the concurrency precondition including the published
+  update example's body over the published verb.
 - `tests/integration/agent-roster-refusal.test.ts` — the create path's roster
   refusal before anything is persisted, the same refusal on update, and the
   acceptance of the local `enable_general_subagent` extension on both paths.

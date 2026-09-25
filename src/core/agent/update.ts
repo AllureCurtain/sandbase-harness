@@ -1,5 +1,5 @@
 /**
- * Agent update (PUT/PATCH) request contract.
+ * Agent update (POST/PUT) request contract.
  *
  * Both verbs carry the same partial-update semantics, deliberately: a `PUT`
  * that silently clears every field the body omitted is a data-loss path, and
@@ -12,7 +12,9 @@
  * - `null` clears a clearable field — the same as `[]` for list fields;
  * - `system` clears to the empty string and `description` clears by removal;
  * - `name` and `model` can never be cleared;
- * - unknown fields are rejected, not silently discarded.
+ * - unknown fields are rejected, not silently discarded;
+ * - the optimistic-concurrency precondition is accepted as either `version`
+ *   (the published spelling) or `expected_version` (the local one).
  */
 
 import { z } from 'zod';
@@ -28,7 +30,9 @@ import {
 } from './schema.js';
 import type { AgentDefinition } from '@/types/agent.js';
 
-/** Field names an update body may carry, besides `expected_version`. */
+/**
+ * Field names an update body may carry, besides the concurrency precondition.
+ */
 const UPDATE_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   name: agentNameSchema,
   model: agentModelInputSchema,
@@ -70,13 +74,87 @@ export interface AgentUpdateRequest {
    * a key absent from this record was absent from (or unset in) the body.
    */
   fields: Record<string, unknown>;
-  /** `undefined` only when the body omitted `expected_version`; a malformed value is a validation error. */
+  /**
+   * `undefined` only when the body omitted the precondition entirely; a
+   * malformed value, or two spellings that disagree, is a validation error.
+   */
   expectedVersion?: number;
 }
 
 export type AgentUpdateRequestResult =
   | ({ valid: true } & AgentUpdateRequest)
   | { valid: false; errors: ValidationError[] };
+
+/**
+ * The two spellings of one precondition, in the order an error message names
+ * them. `version` is the published name: the contract calls the field optional,
+ * says supplying it gives optimistic concurrency control with a `409` on a
+ * mismatch, and says omitting it applies the update unconditionally
+ * (`定义您的智能体/智能体设置.md:350`), and the published update example sends it
+ * (`:361`). `expected_version` is the local name for that same precondition.
+ */
+const PRECONDITION_FIELDS = ['expected_version', 'version'] as const;
+
+/**
+ * Parse one precondition value.
+ *
+ * A numeric string is accepted because the published example interpolates a
+ * shell variable into the body, so the value can arrive as either type. Anything
+ * else — including an empty string, a non-numeric string, a float, zero and a
+ * negative — is `undefined`, which the caller turns into a validation error
+ * rather than a silent downgrade to an unconditional update.
+ */
+function parsePrecondition(raw: unknown): number | undefined {
+  const numeric = typeof raw === 'number'
+    ? raw
+    : typeof raw === 'string' && raw.trim() !== ''
+      ? Number(raw)
+      : Number.NaN;
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+/**
+ * Read the concurrency precondition from either spelling.
+ *
+ * Both spellings name one thing, so sending both with **different** values is
+ * refused rather than resolved by precedence: silently preferring one would apply
+ * an update the other value said not to, which is exactly the lost write the
+ * field exists to prevent. Sending both with the same value is accepted, because
+ * there is then nothing to resolve.
+ *
+ * A present-but-malformed value is a validation error for the spelling that
+ * carried it, for the same reason the local spelling has always been strict: a
+ * client that meant to guard against lost writes must not get an unguarded one
+ * from a typo.
+ */
+function resolvePrecondition(
+  body: Record<string, unknown>,
+  errors: ValidationError[],
+): number | undefined {
+  const present = PRECONDITION_FIELDS.filter((field) => field in body);
+  if (present.length === 0) return undefined;
+
+  const parsed = present.map((field) => ({ field, value: parsePrecondition(body[field]) }));
+  let malformed = false;
+  for (const { field, value } of parsed) {
+    if (value === undefined) {
+      errors.push({ path: field, message: `${field} must be a positive integer` });
+      malformed = true;
+    }
+  }
+  if (malformed) return undefined;
+
+  if (new Set(parsed.map((entry) => entry.value)).size > 1) {
+    errors.push({
+      path: present[present.length - 1],
+      message: '`version` and `expected_version` are the same precondition and disagree; '
+        + 'send one of them, or send both with the same value',
+    });
+    return undefined;
+  }
+
+  return parsed[0].value;
+}
 
 /**
  * Validate an update request body against the partial-update contract.
@@ -96,7 +174,8 @@ export function validateAgentUpdateRequest(input: unknown): AgentUpdateRequestRe
   const fields: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(body)) {
-    if (key === 'expected_version') continue;
+    // The precondition is not a definition field and is read separately below.
+    if ((PRECONDITION_FIELDS as readonly string[]).includes(key)) continue;
     // The canonical roster gets its own refusal rather than the generic
     // unknown-field message, so this path and the create path answer a roster
     // with the same capability id and the same reason.
@@ -127,17 +206,8 @@ export function validateAgentUpdateRequest(input: unknown): AgentUpdateRequestRe
   // Absent means "no precondition". Present-but-malformed is a 400 rather
   // than a silent downgrade to an unconditional update: a client that meant
   // to guard against lost writes must not get an unguarded one from a typo.
-  let expectedVersion: number | undefined;
-  if ('expected_version' in body) {
-    const raw = body.expected_version;
-    const numeric = typeof raw === 'number'
-      ? raw
-      : typeof raw === 'string' && raw.trim() !== ''
-        ? Number(raw)
-        : Number.NaN;
-    if (Number.isInteger(numeric) && numeric > 0) expectedVersion = numeric;
-    else errors.push({ path: 'expected_version', message: 'expected_version must be a positive integer' });
-  }
+  // Both accepted spellings are read here, including the published one.
+  const expectedVersion = resolvePrecondition(body, errors);
 
   if (errors.length > 0) return { valid: false, errors };
   return { valid: true, fields, expectedVersion };
