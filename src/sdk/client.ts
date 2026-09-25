@@ -647,10 +647,11 @@ class SessionsResource {
     return this.client.request('POST', `/v1/sessions/${encodeURIComponent(id)}/events`, { events: [event] });
   }
 
-  events(id: string, opts?: { limit?: number; afterId?: string }): Promise<{ data: StreamedEvent[]; has_more: boolean; first_id: string | null; last_id: string | null }> {
+  events(id: string, opts?: { limit?: number; afterId?: string; page?: string }): Promise<{ data: StreamedEvent[]; prev_page: string | null; next_page: string | null }> {
     const q = new URLSearchParams();
     if (opts?.limit) q.set('limit', String(opts.limit));
     if (opts?.afterId) q.set('after_id', opts.afterId);
+    if (opts?.page) q.set('page', opts.page);
     const qs = q.toString();
     return this.client.request('GET', `/v1/sessions/${encodeURIComponent(id)}/events${qs ? `?${qs}` : ''}`);
   }

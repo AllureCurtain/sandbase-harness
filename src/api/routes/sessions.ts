@@ -605,9 +605,22 @@ export function sessionsRoutes(deps: ServerDeps) {
     });
   });
 
+  // The events collection is the append-only log for one session, read in the order it
+  // was written. The token names the collection so a cursor issued here cannot be
+  // replayed against a session listing, and the filter binds the session so one
+  // session's cursor cannot be replayed against another.
+  const EVENTS_LIST_ORDER = 'events.appended ASC';
+
   // GET /:id/events - List events (paginated)
+  //
+  // The published envelope is `{data, prev_page, next_page}`: `has_more` / `first_id` /
+  // `last_id` appear **nowhere** in the published contract (measured: zero occurrences,
+  // against 34 for `next_page`), so this listing used to answer three field names a
+  // published client cannot read and no cursor it could follow. `contracts/anthropic-cma/
+  // pagination.md` already described this route as carrying `{session_id, after_id}` in
+  // its cursor; the route never did, and now it does.
   app.get('/:id/events', (c) => {
-    const rejected = rejectUnexpectedQueryParams(c, ['limit', 'after_id']);
+    const rejected = rejectUnexpectedQueryParams(c, ['limit', 'after_id', 'page']);
     if (rejected) return rejected;
     const sessionId = c.req.param('id');
 
@@ -618,15 +631,59 @@ export function sessionsRoutes(deps: ServerDeps) {
 
     const rawLimit = parseInt(c.req.query('limit') ?? '1000', 10) || 1000;
     const limit = Math.min(1000, Math.max(1, rawLimit));
-    const afterId = c.req.query('after_id');
+
+    // `after_id` is the local spelling of the position and stays supported; `page` is
+    // the published one. Both name the last event the caller already has, and the
+    // cursor carries that id together with the session it came from, so a cursor
+    // issued by another session is refused by the shared filter check rather than
+    // silently applied to this session's log.
+    const cursorState = { order: EVENTS_LIST_ORDER, filter: { session_id: sessionId } };
+    let afterId = c.req.query('after_id');
+    let fromCursor = false;
+    const rawPage = c.req.query('page');
+    if (rawPage !== undefined) {
+      const decoded = decodeCursor(rawPage);
+      if (!decoded.ok || typeof decoded.state?.after_id !== 'string') {
+        return c.json({
+          error: { type: 'invalid_request_error', message: 'page must be a cursor returned by this endpoint' },
+        }, 400);
+      }
+      const mismatch = cursorQueryMismatch(decoded.state, cursorState);
+      if (mismatch) {
+        return c.json({ error: { type: 'invalid_request_error', message: mismatch } }, 400);
+      }
+      afterId = decoded.state.after_id as string;
+      fromCursor = true;
+    }
 
     const eventLogger = sessionManager.getEventLogger();
     const allEvents = eventLogger.getEvents(sessionId);
     const start = afterId ? allEvents.findIndex((event) => event.id === afterId) + 1 : 0;
+
+    // A cursor this route issued always names an event it returned, so one naming an
+    // event that is not in the log was not issued here. Falling through to `start = 0`
+    // would answer the whole log as though it were the page after the caller's position
+    // — a wrong answer the caller cannot detect, unlike a refusal. `after_id` keeps its
+    // old behaviour: it is a raw id the caller builds, and "everything after this id" is
+    // a legitimate request even when the id is unknown to this log.
+    if (fromCursor && start === 0) {
+      return c.json({
+        error: { type: 'invalid_request_error', message: 'page must be a cursor returned by this endpoint' },
+      }, 400);
+    }
+
     const events = start > 0 ? allEvents.slice(start) : allEvents;
     const limited = events.slice(0, limit);
 
-    return c.json(pageOf(limited.map(toApiEvent), events.length > limited.length));
+    const last = limited[limited.length - 1];
+    return c.json(cursorPageOf(limited.map(toApiEvent), {
+      // A forward-only scan cannot name its predecessor, and a cursor that does not
+      // resolve is worse than an honest `null` (`standard.ts`).
+      prev: null,
+      next: events.length > limited.length && last
+        ? encodeCursor({ ...cursorState, after_id: last.id })
+        : null,
+    }));
   });
 
   // POST /:id/stop - Stop session

@@ -1200,10 +1200,11 @@ describe('Managed Agents API', () => {
       const res = await app.request(`/v1/sessions/${id}/events`);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(Array.isArray(body.data)).toBe(true);
-      expect(body.has_more).toBe(false);
-      expect(body.first_id).toBeDefined();
-      expect(body.last_id).toBeDefined();
+      // The published envelope: `has_more` / `first_id` / `last_id` appear nowhere in
+      // the published contract, so asserting them here asserted the defect.
+      expectCursorPage(body);
+      expect(body.next_page).toBeNull();
+      expect(body.prev_page).toBeNull();
     });
   });
 

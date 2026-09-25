@@ -33,7 +33,7 @@ import { createServer } from '@/api/server.js';
 /** Every handler that reads a query parameter, with one parameter it implements. */
 const ROUTES: Array<{ name: string; method: string; path: string; accepts: string[] }> = [
   { name: 'session list', method: 'GET', path: '/v1/sessions', accepts: ['limit', 'status', 'agent_id', 'page'] },
-  { name: 'session events', method: 'GET', path: '/v1/sessions/ses_missing/events', accepts: ['limit', 'after_id'] },
+  { name: 'session events', method: 'GET', path: '/v1/sessions/ses_missing/events', accepts: ['limit', 'after_id', 'page'] },
   { name: 'event stream', method: 'GET', path: '/v1/sessions/ses_missing/events/stream', accepts: ['event_deltas', 'event_deltas[]', 'last_event_id'] },
   { name: 'skill list', method: 'GET', path: '/v1/skills', accepts: ['source', 'limit', 'page'] },
   { name: 'vault list', method: 'GET', path: '/v1/vaults', accepts: ['include_archived', 'limit', 'page'] },
