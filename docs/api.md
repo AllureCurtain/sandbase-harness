@@ -380,6 +380,14 @@ When `expected_version` is present and does not match the current agent
 version, the API returns `409 conflict`. Each successful create/update writes an
 immutable snapshot returned by `/v1/agents/{agent_id}/versions`.
 
+The precondition is also accepted under its published name, `version` — the
+field the CMA contract documents ("`version` 字段是可选的：提供它可实现乐观并发控制
+（不匹配时返回 409），省略它则无条件应用更新（最后写入者获胜）"). `version` and
+`expected_version` are one precondition, so sending both with different values is
+a `400` rather than a precedence rule; sending both with the same value is
+accepted. A present-but-malformed value is a `400` for the field that carried
+it, never a silent downgrade to an unconditional update.
+
 ### Updating an agent
 
 `POST` and `PUT` on `/v1/agents/{agent_id}` both accept a partial definition and
@@ -405,10 +413,10 @@ stale config rather than leaving a previous id and speed pointing at the old mod
 Clearing `system` is refused, because the runtime requires a non-empty system
 prompt.
 
-`expected_version` remains the optimistic-lock precondition: absent means no
-precondition, and a malformed value is a `400` rather than a silent downgrade to an
-unguarded update. A successful update writes a new immutable version, and an update
-that changes nothing writes no version at all.
+The optimistic-lock precondition is accepted as either `expected_version` or the
+published `version`: absent means no precondition, and a malformed value is a `400`
+rather than a silent downgrade to an unguarded update. A successful update writes a new
+immutable version, and an update that changes nothing writes no version at all.
 
 ### MCP servers and toolsets
 

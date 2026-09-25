@@ -151,6 +151,11 @@
         "name": "metadata",
         "type": "object",
         "description": "Opaque metadata."
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "description": "Optional optimistic-concurrency precondition, the published spelling. A mismatch returns 409; omitting it applies the update unconditionally. `expected_version` is the local spelling of the same precondition."
       }
     ],
     "response": [
@@ -208,6 +213,11 @@
         "name": "metadata",
         "type": "object",
         "description": "Opaque metadata."
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "description": "Optional optimistic-concurrency precondition, the published spelling. A mismatch returns 409; omitting it applies the update unconditionally. `expected_version` is the local spelling of the same precondition."
       }
     ],
     "response": [
