@@ -1538,9 +1538,19 @@ so the two cannot drift apart — and the local spelling is neither deprecated n
 redirected. The published prefix requires the same `anthropic-beta` as the local
 one.
 
+Listing vaults excludes archived ones by default and takes the published
+`include_archived` parameter: `?include_archived=true` returns archived vaults
+too, each with `status: "archived"` and a non-null `archived_at`, while
+`include_archived=false` means the same as omitting it. Any other value — `1`,
+`yes`, an empty string — is a `400`, and so is sending the parameter twice with
+contradictory values, rather than a silent fall-back to the default. Including an
+archived vault in a listing does not make it retrievable on its own:
+`GET /v1/vaults/{vault_id}` still answers `404` for an archived vault and
+archiving remains terminal.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/vaults`, `/v1/credential-vaults` | List vaults. |
+| `GET` | `/v1/vaults`, `/v1/credential-vaults` | List vaults. Archived vaults are excluded unless `?include_archived=true`. |
 | `POST` | `/v1/vaults`, `/v1/credential-vaults` | Create a vault. |
 | `GET` | `/v1/vaults/{vault_id}`, `/v1/credential-vaults/{vault_id}` | Retrieve a vault. |
 | `POST` | `/v1/vaults/{vault_id}/archive`, `/v1/credential-vaults/{vault_id}/archive` | Archive a vault. |
