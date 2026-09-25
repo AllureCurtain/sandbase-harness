@@ -62,40 +62,48 @@ describe('ManagedAgentsClient runtime management resources', () => {
       if (url.endsWith('/v1/x/settings') && init?.method === 'GET') {
         return jsonResponse(settings());
       }
-      if (url.endsWith('/v1/x/settings') && init?.method === 'PATCH') {
-        return jsonResponse(settings({ vendor: 'anthropic' }));
+      // The route mounts PUT; a PATCH is a 404, which is what this client used to send.
+      if (url.endsWith('/v1/x/settings') && init?.method === 'PUT') {
+        return jsonResponse(settings({ vendor: 'anthropic', revision: 5 }));
       }
       if (url.endsWith('/v1/x/settings/validate') && init?.method === 'POST') {
-        return jsonResponse({ status: 'ok', checks: [] });
+        return jsonResponse({ valid: true, errors: [], warnings: [] });
       }
       throw new Error(`Unexpected request: ${url} ${init?.method}`);
     }) as unknown as typeof fetch;
     const client = new ManagedAgentsClient({ baseUrl: 'http://localhost:3000', fetch: fetchImpl });
 
     await client.settings.get();
-    await client.settings.patch({
-      model_provider: {
-        vendor: 'anthropic',
-        base_url: 'https://api.anthropic.com',
-        api_key_env: 'ANTHROPIC_API_KEY',
-      },
-    });
-    await client.settings.validate();
+    // One patch: GET the current revision, validate the merge, then PUT it.
+    await client.settings.patch({ model: { vendor: 'anthropic', api_key: '${ANTHROPIC_API_KEY}' } });
+    await client.settings.validate(settings().saved_config);
 
     expect(fetchImpl).toHaveBeenNthCalledWith(1, 'http://localhost:3000/v1/x/settings', expect.objectContaining({ method: 'GET' }));
-    expect(fetchImpl).toHaveBeenNthCalledWith(2, 'http://localhost:3000/v1/x/settings', expect.objectContaining({
-      method: 'PATCH',
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, 'http://localhost:3000/v1/x/settings', expect.objectContaining({ method: 'GET' }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, 'http://localhost:3000/v1/x/settings/validate', expect.objectContaining({
+      method: 'POST',
+      // The document being validated is the whole merged config, not the patch: the route
+      // validates a complete document, and every area the patch omitted is carried over.
       body: JSON.stringify({
-        model_provider: {
-          vendor: 'anthropic',
-          base_url: 'https://api.anthropic.com',
-          api_key_env: 'ANTHROPIC_API_KEY',
+        ...settingsConfig({ vendor: 'anthropic' }),
+        model: { vendor: 'anthropic', api_key: '${ANTHROPIC_API_KEY}', options: {} },
+      }),
+    }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(4, 'http://localhost:3000/v1/x/settings', expect.objectContaining({
+      method: 'PUT',
+      // The revision that was read travels with the write, so a concurrent change is refused
+      // with 409 instead of being silently overwritten.
+      body: JSON.stringify({
+        revision: 4,
+        config: {
+          ...settingsConfig({ vendor: 'anthropic' }),
+          model: { vendor: 'anthropic', api_key: '${ANTHROPIC_API_KEY}', options: {} },
         },
       }),
     }));
-    expect(fetchImpl).toHaveBeenNthCalledWith(3, 'http://localhost:3000/v1/x/settings/validate', expect.objectContaining({
+    expect(fetchImpl).toHaveBeenNthCalledWith(5, 'http://localhost:3000/v1/x/settings/validate', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(settings().saved_config),
     }));
   });
 
@@ -149,53 +157,41 @@ function cursorPage(data: unknown[]) {
   return { data, prev_page: null, next_page: null };
 }
 
-function settings(overrides: { vendor?: string } = {}) {
+/**
+ * The settings document as `GET`/`PUT /v1/x/settings` actually return it.
+ *
+ * The previous fixture described `type: 'settings'` with `model_provider`,
+ * `loop_engine.implemented`, `storage.metadata.type` and `validation.checks` — the runtime's
+ * internal registry report, which no route returns. A fixture that agrees with a wrong type
+ * cannot fail, so this one is transcribed from a live response instead.
+ */
+function settingsConfig(overrides: { vendor?: string } = {}) {
   return {
-    type: 'settings',
-    model_provider: {
-      vendor: overrides.vendor ?? 'openai-compatible',
-      base_url: 'https://api.example.com/v1',
-      api_key_env: 'MODEL_API_KEY',
-      api_key_state: 'configured',
-      configured: true,
-    },
-    loop_engine: {
-      type: 'managed-agents',
-      implemented: true,
-      config: {},
-    },
+    schema_version: 1,
+    model: { vendor: overrides.vendor ?? 'openai', api_key: '********', options: {} },
+    loop_engine: { provider: 'builtin', options: { default_max_steps: 25, approval_mode: 'interactive' } },
     storage: {
-      metadata: {
-        type: 'sqlite',
-        path: '/tmp/managed-agents/data.db',
-        state: 'configured',
-        implemented: true,
-      },
-      artifacts: {
-        type: 'local_filesystem',
-        path: '/tmp/managed-agents/files',
-        state: 'configured',
-        implemented: true,
-      },
+      metadata: { provider: 'sqlite', options: {} },
+      artifacts: { provider: 'local', options: { base_path: 'files' } },
     },
-    memory: {
-      backend: {
-        type: 'sqlite',
-        api_key_state: 'not_set',
-        implemented: true,
-      },
-    },
-    sandbox: {
-      type: 'local',
-      implemented: true,
-      available: true,
-      providers: ['local'],
-      config: {},
-    },
-    validation: {
-      status: 'ok',
-      checks: [],
-    },
+    memory: { enabled: false, provider: 'sqlite', options: {} },
+    sandbox: { provider: 'local', options: { timeout_seconds: 300 } },
+  };
+}
+
+function settings(overrides: { vendor?: string; revision?: number } = {}) {
+  return {
+    schema_version: 1,
+    revision: overrides.revision ?? 4,
+    effective_revision: 3,
+    saved_config: settingsConfig(overrides),
+    effective_config: settingsConfig(),
+    restart_required: true,
+    activation_status: 'restart_required',
+    activation_errors: [],
+    diagnostics: { metadata: { path: '/tmp/managed-agents/data.db', health: 'ok' } },
+    secret_states: { model: { api_key: 'configured' } },
+    adapters: { model: [{ id: 'openai', label: 'OpenAI', version: '1', status: 'available', restart_policy: 'runtime', options_schema: {} }] },
   };
 }
 

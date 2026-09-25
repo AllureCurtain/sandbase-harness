@@ -44,6 +44,15 @@ vi.mock('@/cli/runtime-management-commands.js', () => ({
   environmentWorkerKeysCommand: vi.fn((...args: unknown[]) => {
     recorded.calls.push(['env-worker-keys', ...args]);
   }),
+  settingsGetCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['settings-get', ...args]);
+  }),
+  settingsSetModelCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['settings-set-model', ...args]);
+  }),
+  settingsValidateCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['settings-validate', ...args]);
+  }),
 }));
 
 vi.mock('@/cli/workspace-commands.js', () => ({
@@ -79,6 +88,7 @@ describe('CLI program', () => {
       'reload',
       'chat',
       'deploy',
+      'settings',
       'environments',
       'session',
       'workspace',
@@ -89,6 +99,15 @@ describe('CLI program', () => {
       'list',
       'install',
       'create',
+    ]);
+    // The canonical settings group is documented as covered in `docs/api-matrix.md:86` — "Get,
+    // set model boundary, and validate canonical runtime settings" — and ticked in
+    // `docs/spec/tasks.md:144`; `src/cli/runtime-management-commands.ts` implements all three
+    // and the module was imported by nothing.
+    expect(program.commands.find((command) => command.name() === 'settings')?.commands.map((command) => command.name())).toEqual([
+      'get',
+      'validate',
+      'set-model',
     ]);
     // The environments group is documented as covered in `docs/api-matrix.md:87` — "List,
     // inspect, create, update, archive, and list worker keys" — and implemented in
@@ -264,6 +283,76 @@ describe('CLI program', () => {
     ]);
     // `remove` is the only one with no options at all, so it is passed no options object.
     expect(await run('remove', 'C:\\box')).toEqual(['ws-remove', 'C:\\box']);
+  });
+
+  it('maps the documented settings flags onto the command arguments', async () => {
+    // The flag -> argument half; the argument -> wire half is pinned against the real routes in
+    // `tests/integration/settings-cli-commands.test.ts`. Both were needed here, because
+    // registering these commands was not enough on its own — they were pointed at a document
+    // no route produces, and at a verb no route mounts.
+    recorded.calls.length = 0;
+    const run = async (...argv: string[]) => {
+      const program = createCliProgram({
+        version: '0.1.0',
+        startServer: async () => undefined,
+      });
+      await program.parseAsync(['node', 'managed-agents', 'settings', ...argv], { from: 'node' });
+      return recorded.calls.at(-1);
+    };
+
+    expect(await run('get', '-p', '4000')).toMatchObject(['settings-get', { port: '4000', json: false }]);
+    expect(await run('validate', '--json')).toMatchObject(['settings-validate', { port: '3000', json: true }]);
+    // `--api-key-env` must land as `apiKeyEnv`; a hyphenated key would arrive `undefined`, the
+    // command would write no credential at all, and the runtime would refuse the write.
+    expect(await run('set-model', '--vendor', 'anthropic', '--base-url', 'https://x', '--api-key-env', 'ANTHROPIC_API_KEY'))
+      .toMatchObject(['settings-set-model', {
+        port: '3000',
+        vendor: 'anthropic',
+        baseUrl: 'https://x',
+        apiKeyEnv: 'ANTHROPIC_API_KEY',
+      }]);
+    // `--vendor` is required: without it there is no model boundary to set. Commander refuses
+    // before the command function is reached, and it does so by naming the option on stderr and
+    // calling `process.exit(1)` rather than by throwing, so both are observed rather than
+    // inferred. Stubbing the exit necessarily lets commander continue past the refusal, so what
+    // is asserted is the refusal itself — not that the command was skipped, which only the real
+    // exit guarantees.
+    const exitCalls: unknown[][] = [];
+    const stderrWrites: string[] = [];
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((...args: unknown[]) => {
+      exitCalls.push(args);
+      return undefined as never;
+    }) as never);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    }) as never);
+    try {
+      await run('set-model');
+    } finally {
+      exit.mockRestore();
+      stderr.mockRestore();
+    }
+    expect(exitCalls).toEqual([[1]]);
+    expect(stderrWrites.join('')).toMatch(/required option '--vendor <vendor>' not specified/);
+  });
+
+  it('exposes the documented settings options', () => {
+    const program = createCliProgram({
+      version: '0.1.0',
+      startServer: async () => undefined,
+    });
+
+    const settings = program.commands.find((command) => command.name() === 'settings');
+    const sub = (name: string) => settings?.commands.find((command) => command.name() === name);
+    const longs = (name: string) => sub(name)!.options.map((option) => option.long).sort();
+
+    expect(longs('get')).toEqual(['--api-key', '--json', '--port']);
+    expect(longs('validate')).toEqual(['--api-key', '--json', '--port']);
+    // `--api-key` here is the **runtime's** key, and `--api-key-env` names the variable holding
+    // the **model's**. There is deliberately no way to pass a model key as a literal argument:
+    // it would land in shell history and in this process's argv.
+    expect(longs('set-model')).toEqual(['--api-key', '--api-key-env', '--base-url', '--json', '--port', '--vendor']);
   });
 
   it('exposes the documented session options', () => {

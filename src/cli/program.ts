@@ -10,6 +10,9 @@ import {
   environmentUpdateCommand,
   environmentWorkerKeysCommand,
   environmentsListCommand,
+  settingsGetCommand,
+  settingsSetModelCommand,
+  settingsValidateCommand,
 } from './runtime-management-commands.js';
 import {
   sessionCreateCommand,
@@ -120,6 +123,41 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
       console.log('  5. Or containerize with any Node 22+ base image.\n');
       console.log(`Runtime metadata, secrets, and logs are stored under ${WORKSPACE_STATE_DIR}/.`);
     });
+
+  // The canonical runtime settings group. `docs/api-matrix.md:86` documents it as covered —
+  // "Get, set model boundary, and validate canonical runtime settings" — and
+  // `src/cli/runtime-management-commands.ts` implements it, but the module was imported by
+  // nothing, so all three answered `unknown command 'settings'`. Registering them was not
+  // enough on its own: they also had to be moved onto the routes' own document, which is why
+  // this arrives with the `SettingsResource` change rather than before it.
+  const settings = program.command('settings').description('Inspect and update canonical runtime settings');
+
+  settings
+    .command('get')
+    .description('Print the saved and effective runtime settings')
+    .option('-p, --port <port>', 'Runtime port', '3000')
+    .option('-k, --api-key <key>', 'API key')
+    .option('--json', 'Print the runtime response as JSON', false)
+    .action((opts) => settingsGetCommand(opts));
+
+  settings
+    .command('validate')
+    .description('Validate the stored settings and print every issue')
+    .option('-p, --port <port>', 'Runtime port', '3000')
+    .option('-k, --api-key <key>', 'API key')
+    .option('--json', 'Print the runtime response as JSON', false)
+    .action((opts) => settingsValidateCommand(opts));
+
+  settings
+    .command('set-model')
+    .description('Point the model boundary at a vendor')
+    .requiredOption('--vendor <vendor>', 'Model vendor, e.g. openai or anthropic')
+    .option('--base-url <url>', 'Base URL for an openai_compatible vendor')
+    .option('--api-key-env <name>', 'Environment variable holding the key, written as a ${NAME} reference')
+    .option('-p, --port <port>', 'Runtime port', '3000')
+    .option('-k, --api-key <key>', 'API key')
+    .option('--json', 'Print the runtime response as JSON', false)
+    .action((opts) => settingsSetModelCommand(opts));
 
   // The environments CLI group. `docs/api-matrix.md:87` documents it as covered and
   // `src/cli/runtime-management-commands.ts` implements it, but the module was imported

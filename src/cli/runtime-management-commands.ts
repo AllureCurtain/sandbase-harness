@@ -1,5 +1,6 @@
 import {
   ManagedAgentsClient,
+  RuntimeSettingsValidationError,
   type EnvironmentSummary,
   type RuntimeSettingsSummary,
 } from '@/sdk/client.js';
@@ -44,31 +45,64 @@ export async function settingsGetCommand(opts: CliConnectionOptions & JsonOutput
   console.log(formatSettings(result));
 }
 
+/**
+ * Point the model boundary at a vendor.
+ *
+ * `--api-key-env` writes a `${VAR}` *reference*, never a literal key, so the secret never
+ * appears in shell history or in this process's arguments. The runtime resolves the
+ * reference in its own environment, which is why `patch` reports `missing_env` with the
+ * variable's name when it is not set there — a reference the CLI cannot check itself.
+ */
 export async function settingsSetModelCommand(opts: SettingsSetModelOptions) {
-  const result = await createClient(opts).settings.patch({
-    model_provider: {
-      vendor: requiredString(opts.vendor, 'vendor'),
-      base_url: opts.baseUrl,
-      api_key_env: opts.apiKeyEnv,
-    },
-  });
-  if (opts.json) {
-    printJson(result);
-    return;
+  const vendor = requiredString(opts.vendor, 'vendor');
+  const apiKeyEnv = opts.apiKeyEnv?.trim();
+  try {
+    const result = await createClient(opts).settings.patch({
+      model: {
+        vendor,
+        ...(apiKeyEnv ? { api_key: envReference(apiKeyEnv) } : {}),
+        ...(opts.baseUrl ? { base_url: opts.baseUrl } : {}),
+      },
+    });
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
+    console.log(formatSettings(result));
+  } catch (error) {
+    // A rejected write carries the issues that name the fix; printing only
+    // `API error 422: Settings configuration is invalid` would hide them.
+    if (error instanceof RuntimeSettingsValidationError) {
+      console.error(`Settings were not saved: ${error.message}`);
+      for (const issue of error.errors) console.error(`  ${issue.path}: ${issue.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
   }
-  console.log(formatSettings(result));
 }
 
 export async function settingsValidateCommand(opts: CliConnectionOptions & JsonOutputOption) {
-  const result = await createClient(opts).settings.validate();
+  const client = createClient(opts);
+  // The route validates whatever it is given as a complete document, so the stored document
+  // is what answers "are the current settings valid?".
+  const current = await client.settings.get();
+  const result = await client.settings.validate(current.saved_config);
   if (opts.json) {
     printJson(result);
+    if (!result.valid) process.exitCode = 1;
     return;
   }
-  console.log(`settings: ${result.status}`);
-  for (const check of result.checks) {
-    console.log(`${check.status}  ${check.label}: ${check.message}`);
-  }
+  console.log(`settings: ${result.valid ? 'valid' : 'invalid'}`);
+  for (const issue of result.errors) console.log(`error  ${issue.path}: ${issue.message}`);
+  for (const issue of result.warnings) console.log(`warning  ${issue.path}: ${issue.message}`);
+  // The command succeeded either way, but an invalid document is what a caller script is
+  // testing for, so it exits non-zero rather than making the caller parse the output.
+  if (!result.valid) process.exitCode = 1;
+}
+
+function envReference(name: string): string {
+  return `\${${name}}`;
 }
 
 export async function environmentsListCommand(opts: CliConnectionOptions & JsonOutputOption) {
@@ -180,19 +214,28 @@ function requiredString(value: string | undefined, name: string): string {
   throw new Error(`${name} is required`);
 }
 
+/**
+ * Render the settings document the routes actually return.
+ *
+ * This previously printed `model_provider`, `loop_engine.implemented`, `storage.metadata.type`,
+ * `sandbox.available` and `validation.status` — fields read from a type no route produces, so
+ * the command threw `Cannot read properties of undefined (reading 'metadata')` before printing
+ * anything. The lines below are the routes' own fields, and `saved` is shown alongside
+ * `effective` because a saved change is not in use until the runtime restarts.
+ */
 function formatSettings(settings: RuntimeSettingsSummary): string {
-  const model = settings.model_provider;
-  const metadata = settings.storage.metadata;
-  const artifacts = settings.storage.artifacts;
-  const memory = settings.memory.backend;
+  const saved = settings.saved_config;
+  const effective = settings.effective_config;
+  const modelKey = settings.secret_states.model?.api_key ?? 'not_set';
   return [
-    `model: ${model.vendor}  api_key=${model.api_key_state}  base_url=${model.base_url ?? '-'}`,
-    `loop: ${settings.loop_engine.type}  implemented=${settings.loop_engine.implemented}`,
-    `metadata: ${metadata.type}  path=${metadata.path ?? metadata.connection_url ?? '-'}`,
-    `artifacts: ${artifacts.type}  path=${artifacts.path ?? artifacts.bucket ?? '-'}`,
-    `memory: ${memory.type}  implemented=${memory.implemented}`,
-    `sandbox: ${settings.sandbox.type}  available=${settings.sandbox.available}`,
-    `validation: ${settings.validation.status}`,
+    `revision: ${settings.revision}  effective_revision: ${settings.effective_revision}  restart_required=${settings.restart_required}`,
+    `activation: ${settings.activation_status}${settings.activation_errors.length > 0 ? `  errors=${settings.activation_errors.length}` : ''}`,
+    `model: ${saved.model.vendor}  api_key=${modelKey}  base_url=${saved.model.base_url ?? '-'}  (effective: ${effective.model.vendor})`,
+    `loop_engine: ${saved.loop_engine.provider}  (effective: ${effective.loop_engine.provider})`,
+    `metadata: ${saved.storage.metadata.provider}  (effective: ${effective.storage.metadata.provider})`,
+    `artifacts: ${saved.storage.artifacts.provider}  (effective: ${effective.storage.artifacts.provider})`,
+    `memory: ${saved.memory.provider}  enabled=${saved.memory.enabled}  (effective: ${effective.memory.provider})`,
+    `sandbox: ${saved.sandbox.provider}  (effective: ${effective.sandbox.provider})`,
   ].join('\n');
 }
 

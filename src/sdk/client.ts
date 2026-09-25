@@ -132,91 +132,183 @@ export interface RuntimeSettingsValidationCheck {
   message: string;
 }
 
-export interface RuntimeSettingsSummary {
-  type: 'settings';
-  model_provider: {
-    vendor: string;
-    base_url?: string;
-    api_key_env?: string;
-    api_key_state: RuntimeSettingsState;
-    configured: boolean;
-  };
-  loop_engine: {
-    type: 'managed-agents' | 'harness' | 'codex' | 'claude';
-    implemented: boolean;
-    config: Record<string, unknown>;
-  };
-  storage: {
-    metadata: {
-      type: string;
-      path?: string;
-      connection_url?: string;
-      state: RuntimeSettingsState;
-      implemented: boolean;
-    };
-    artifacts: {
-      type: string;
-      path?: string;
-      bucket?: string;
-      region?: string;
-      state: RuntimeSettingsState;
-      implemented: boolean;
-    };
-  };
-  memory: {
-    backend: {
-      type: string;
-      connection_url?: string;
-      api_key_state: RuntimeSettingsState;
-      implemented: boolean;
-    };
-  };
-  sandbox: {
-    type: string;
-    implemented: boolean;
-    available: boolean;
-    providers: string[];
-    config: Record<string, unknown>;
-  };
-  validation: {
-    status: RuntimeSettingsValidationStatus;
-    checks: RuntimeSettingsValidationCheck[];
-  };
+/**
+ * One settings area: the selected provider plus its free-form options.
+ *
+ * These are the wire field names the settings routes actually use (`provider`, not `type`);
+ * see `RuntimeSettingsConfig`.
+ */
+export interface RuntimeSettingsArea {
+  provider: string;
+  options: Record<string, unknown>;
 }
 
+export interface RuntimeSettingsModel {
+  vendor: string;
+  /**
+   * Masked to `********` by every read. Sending the mask back means "keep the stored key",
+   * and sending it when nothing is stored is refused rather than written literally.
+   *
+   * A `${VAR}` reference is stored as a reference and must resolve in the **runtime's**
+   * environment, not the client's.
+   */
+  api_key?: string;
+  base_url?: string;
+  options: Record<string, unknown>;
+}
+
+/** The settings document as stored and returned by `GET`/`PUT /v1/x/settings`. */
+export interface RuntimeSettingsConfig {
+  schema_version: number;
+  model: RuntimeSettingsModel;
+  loop_engine: RuntimeSettingsArea;
+  storage: {
+    metadata: RuntimeSettingsArea;
+    artifacts: RuntimeSettingsArea;
+  };
+  memory: {
+    enabled: boolean;
+    provider: string;
+    options: Record<string, unknown>;
+  };
+  sandbox: RuntimeSettingsArea;
+}
+
+/** Per-area credential state, derived from the vault rather than from the config. */
+export type RuntimeSettingsSecretStates = Record<string, Record<string, RuntimeSettingsState>>;
+
+/** The adapter catalogue the runtime reports for each settings area. */
+export type RuntimeSettingsAdapters = Record<string, Array<{
+  id: string;
+  label: string;
+  version: string;
+  status: string;
+  restart_policy: string;
+  options_schema: Record<string, unknown>;
+}>>;
+
+/**
+ * The response of `GET` and `PUT /v1/x/settings`.
+ *
+ * This previously described `model_provider` / `loop_engine.type` / `storage.metadata.type`
+ * / `validation.checks` — a shape no route produces, matching the runtime's internal
+ * registry report instead. Every documented field read as `undefined` at runtime while
+ * type-checking, which is why the fields below are the routes' own.
+ */
+export interface RuntimeSettingsSummary {
+  schema_version: number;
+  revision: number;
+  effective_revision: number;
+  /** What was last saved. Masks secrets; changes take effect after a restart. */
+  saved_config: RuntimeSettingsConfig;
+  /** What the running process is actually using, so it can lag `saved_config`. */
+  effective_config: RuntimeSettingsConfig;
+  restart_required: boolean;
+  activation_status: string;
+  activation_errors: unknown[];
+  diagnostics: {
+    metadata: { path: string | null; health: 'ok' | 'failed' };
+  };
+  secret_states: RuntimeSettingsSecretStates;
+  /**
+   * Present on `get()`, which describes the installed adapters, and absent on `patch()`,
+   * which returns the same document minus the catalogue.
+   */
+  adapters?: RuntimeSettingsAdapters;
+}
+
+export interface RuntimeSettingsValidationIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
+/** The response of `POST /v1/x/settings/validate`. */
+export interface RuntimeSettingsValidationResult {
+  valid: boolean;
+  errors: RuntimeSettingsValidationIssue[];
+  warnings: RuntimeSettingsValidationIssue[];
+  normalized_config?: RuntimeSettingsConfig;
+}
+
+/**
+ * A partial settings document, merged over the stored one by `SettingsResource.patch`.
+ *
+ * `options` is merged one level deep, so patching a single option keeps its siblings.
+ */
 export interface RuntimeSettingsPatch {
-  model_provider?: {
-    vendor?: string;
-    base_url?: string;
-    api_key_env?: string;
-  };
-  loop_engine?: {
-    type?: string;
-    config?: Record<string, unknown>;
-  };
+  schema_version?: number;
+  model?: Partial<RuntimeSettingsModel>;
+  loop_engine?: Partial<RuntimeSettingsArea>;
   storage?: {
-    metadata?: {
-      type?: string;
-      path?: string;
-      connection_url?: string;
-    };
-    artifacts?: {
-      type?: string;
-      path?: string;
-      bucket?: string;
-      region?: string;
-    };
+    metadata?: Partial<RuntimeSettingsArea>;
+    artifacts?: Partial<RuntimeSettingsArea>;
   };
-  memory?: {
-    backend?: {
-      type?: string;
-      connection_url?: string;
-      api_key_env?: string;
-    };
-  };
-  sandbox?: {
-    type?: string;
-    config?: Record<string, unknown>;
+  memory?: Partial<RuntimeSettingsConfig['memory']>;
+  sandbox?: Partial<RuntimeSettingsArea>;
+}
+
+/**
+ * Thrown by `SettingsResource.patch` when the merged configuration is not valid as a whole.
+ *
+ * Carries the individual issues because they name the fix: a fresh workspace reports
+ * `model.api_key`, and an unresolvable environment reference reports `missing_env` with the
+ * variable's name — neither of which survives as prose.
+ */
+export class RuntimeSettingsValidationError extends Error {
+  readonly errors: RuntimeSettingsValidationIssue[];
+  readonly warnings: RuntimeSettingsValidationIssue[];
+  readonly config: RuntimeSettingsConfig;
+
+  constructor(config: RuntimeSettingsConfig, validation: RuntimeSettingsValidationResult) {
+    super(
+      validation.errors.length > 0
+        ? `Runtime settings are invalid: ${validation.errors.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`
+        : 'Runtime settings are invalid',
+    );
+    this.name = 'RuntimeSettingsValidationError';
+    this.errors = validation.errors;
+    this.warnings = validation.warnings;
+    this.config = config;
+  }
+}
+
+/**
+ * Merge a partial document over a stored one, one level deep per area and one level deep
+ * inside each `options` bag.
+ *
+ * The stored document is never mutated, and every area the patch omits is carried over —
+ * which is what keeps a masked secret from being dropped: a write that sent only the area
+ * being changed would fail validation, because the routes require the whole document to be
+ * valid.
+ */
+function mergeRuntimeSettings(
+  current: RuntimeSettingsConfig,
+  patch: RuntimeSettingsPatch,
+): RuntimeSettingsConfig {
+  const mergeArea = (area: RuntimeSettingsArea, next?: Partial<RuntimeSettingsArea>): RuntimeSettingsArea => ({
+    ...area,
+    ...next,
+    options: { ...area.options, ...(next?.options ?? {}) },
+  });
+  return {
+    schema_version: patch.schema_version ?? current.schema_version,
+    model: {
+      ...current.model,
+      ...patch.model,
+      options: { ...current.model.options, ...(patch.model?.options ?? {}) },
+    },
+    loop_engine: mergeArea(current.loop_engine, patch.loop_engine),
+    storage: {
+      metadata: mergeArea(current.storage.metadata, patch.storage?.metadata),
+      artifacts: mergeArea(current.storage.artifacts, patch.storage?.artifacts),
+    },
+    memory: {
+      ...current.memory,
+      ...patch.memory,
+      options: { ...current.memory.options, ...(patch.memory?.options ?? {}) },
+    },
+    sandbox: mergeArea(current.sandbox, patch.sandbox),
   };
 }
 
@@ -723,12 +815,47 @@ class SettingsResource {
     return this.client.request('GET', '/v1/x/settings');
   }
 
-  patch(input: RuntimeSettingsPatch): Promise<RuntimeSettingsSummary> {
-    return this.client.request('PATCH', '/v1/x/settings', input);
+  /**
+   * Update runtime settings from a partial document.
+   *
+   * The runtime mounts `PUT /v1/x/settings`, which replaces the whole document under an
+   * optimistic-concurrency `revision` guard — **there is no `PATCH` route**, which is what
+   * this method used to send, so it answered `404 No route matches this request` every time.
+   * A partial update is therefore composed as read-merge-write: read the current revision
+   * and `saved_config`, merge `input` over it, and write the result back with the revision
+   * that was read. `revision` is not a parameter because a caller has no way to obtain a
+   * fresher one than this method can.
+   *
+   * Two requests are made when the merge is invalid and two when it is valid: `validate()`
+   * runs first so a refusal carries its issues. The route answers a bad write with a bare
+   * `validation_error` whose detail the shared error path drops (#464), and the detail is
+   * the whole value — it names the missing `model.api_key` or the unresolvable environment
+   * variable. The extra round trip is the price of not silently losing it; `PUT` re-validates
+   * server-side, so this is a diagnostic, not a guarantee.
+   *
+   * Secrets survive the round trip: reads mask them as `********` and the store treats that
+   * sentinel as "keep the stored value", so a patch of an unrelated area does not overwrite a
+   * stored key. A concurrent writer makes the write fail with `409` rather than losing one of
+   * the two updates, and that surfaces as a `ManagedAgentsApiError` — the SDK cannot know
+   * whether re-applying the same patch is still meaningful.
+   */
+  async patch(input: RuntimeSettingsPatch = {}): Promise<RuntimeSettingsSummary> {
+    const current = await this.get();
+    const config = mergeRuntimeSettings(current.saved_config, input);
+    const validation = await this.validate(config);
+    if (!validation.valid) throw new RuntimeSettingsValidationError(config, validation);
+    return this.client.request('PUT', '/v1/x/settings', { revision: current.revision, config });
   }
 
-  validate(input?: RuntimeSettingsPatch): Promise<RuntimeSettingsSummary['validation']> {
-    return this.client.request('POST', '/v1/x/settings/validate', input ?? {});
+  /**
+   * Validate a candidate settings document without saving it.
+   *
+   * The route validates whatever it is given as a **complete** document, so a partial one
+   * reports every area it does not mention. Pass the stored document (from `get()`) to ask
+   * whether the current settings are valid, or a merged document to ask about a change.
+   */
+  validate(config: RuntimeSettingsPatch): Promise<RuntimeSettingsValidationResult> {
+    return this.client.request('POST', '/v1/x/settings/validate', config);
   }
 }
 

@@ -122,6 +122,20 @@ All first-release Settings V2 fields require a runtime restart before they
 become effective. Until restart, API responses expose both `saved_config` and
 `effective_config`; sessions continue using the effective revision.
 
+The same document is available to code. `client.settings.get()` returns the
+`GET /v1/x/settings` response — `revision`, `saved_config`, `effective_config`,
+`restart_required`, `secret_states`, and the `adapters` catalogue.
+`client.settings.patch({ model: { vendor: 'anthropic' } })` merges that partial
+document over the stored one and writes the result with the revision it read, so
+a concurrent writer is refused with `409` instead of being overwritten; there is
+no automatic retry. A document the runtime would reject is refused before the
+write and throws `RuntimeSettingsValidationError`, whose `errors` name each
+failing field, including the environment variable behind an unresolvable
+`${NAME}` reference. `client.settings.validate(config)` asks about a candidate
+document without saving it and returns `{ valid, errors, warnings }`. Secrets
+survive the round trip: a stored literal key reads back as `********`, and that
+sentinel means "keep the stored value" when it is written again.
+
 The workspace has one active model vendor, one built-in loop engine, SQLite
 metadata storage, local artifact storage, one context-memory backend, and one
 default sandbox provider. Named Environments can still override the default
@@ -413,6 +427,9 @@ managed-agents session message <session-id> --message "hello"
 managed-agents session tail <session-id>
 managed-agents session inspect <session-id>
 managed-agents session logs <session-id>
+managed-agents settings get
+managed-agents settings validate
+managed-agents settings set-model --vendor anthropic --api-key-env ANTHROPIC_API_KEY
 managed-agents environments list
 managed-agents environments create --name staging --hosting-type local
 managed-agents environments inspect <environment-id>
@@ -446,6 +463,16 @@ sends only the fields you pass, so an update that renames an environment keeps i
 description and config. `archive` is terminal: the environment disappears from
 `list`, a later `inspect` answers `404`, and archiving it again is refused. Every
 command accepts `--port`, `--api-key`, and `--json`.
+
+The `settings` commands read and write the same document as the Console. `settings get` prints
+the saved values next to the effective ones, because a saved change is not in use until the
+runtime restarts. `settings set-model` writes `model.vendor` and, with `--api-key-env`, a
+`${NAME}` **reference** rather than a key: the runtime resolves that variable in its own
+environment, so a name that is not set there is refused with the variable named, and no key
+reaches the config file or this process's arguments. It sends only the fields you pass, so
+changing the vendor keeps the stored credential and every other section. `settings validate`
+checks the stored document, prints each issue, and exits non-zero while it is invalid. All
+three accept `--port`, `--api-key`, and `--json`.
 
 The `workspace` commands are the exception: they do not talk to a running runtime,
 so they take no `--port` or `--api-key`. `workspace create` builds the folder
