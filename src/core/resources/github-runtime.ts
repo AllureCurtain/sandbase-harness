@@ -16,7 +16,6 @@
 
 import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
-import type { Dirent } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { SandboxInstance } from '@/types/sandbox.js';
 import {
@@ -104,14 +103,20 @@ function runGit(
   });
 }
 
-/** Recursively list files under a directory, relative to it, dirs excluded. */
+/**
+ * Recursively list files under a directory, relative to it, dirs excluded.
+ *
+ * A directory that cannot be read is an error, not an empty listing. The
+ * difference is load-bearing: the materializer probes the cache with
+ * `listFiles(cachePath).then(() => true).catch(() => false)`, so a listing that
+ * resolves for a path which does not exist makes **every** commit-pinned
+ * resource look cached — the clone is skipped and the session mounts nothing,
+ * silently. Returning `[]` here also made a listing that failed indistinguishable
+ * from a checkout that genuinely contains no files, which is the same mistake one
+ * layer down. The caller's `.catch` already states the contract this implements.
+ */
 function listFilesRecursive(root: string, current = root): string[] {
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(current, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  const entries = readdirSync(current, { withFileTypes: true });
 
   const files: string[] = [];
   for (const entry of entries) {

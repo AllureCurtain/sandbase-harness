@@ -37,7 +37,9 @@ sequence, and every phase has a defined failure disposition:
    returns a key only for a `commit` checkout: `sha256(url\nsha)` truncated to 32
    characters. A branch or tag cannot be cached, because the same name resolves
    to a different commit over time and a cached checkout would silently serve a
-   stale tree.
+   stale tree. A cache entry is reused only when its directory can actually be
+   listed: a path that does not exist is a miss, not an empty checkout, so a
+   pinned commit always clones at least once.
 3. **Clone and check out.** `cloneArgs(url, checkout)` builds the argument list;
    the token is passed through the environment (`gitAuthEnv`) as a GitHub
    `Authorization: Basic` header using the `x-access-token` user, never as an
