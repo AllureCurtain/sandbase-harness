@@ -1714,11 +1714,21 @@ schedules, so an unwatched runtime still delivers.
 
 The event names the runtime raises are the session event types plus
 `deployment.created`, `deployment.paused`, `deployment.unpaused`,
-`deployment.updated`, and `deployment.archived`. The rest of
+`deployment.updated`, `deployment.archived`, `deployment_run.started`,
+`deployment_run.succeeded`, and `deployment_run.failed`. The rest of
 the published event table — `agent.*`, `environment.*`, `vault.*`,
-`vault_credential.*`, the other `deployment.*` names, and `deployment_run.*` — is
+`vault_credential.*`, and `deployment.deleted` — is
 accepted in a subscription and never produced, so a receiver cannot distinguish
 an unimplemented event from a quiet one.
+
+A **timed** run publishes `deployment_run.started` and then exactly one of
+`deployment_run.succeeded` / `deployment_run.failed`; all three name the same run,
+by `data.id`, which is what `GET /v1/deployment_runs/{id}` accepts. A manual run
+publishes none of them, and that is a rule about the kind of run rather than about
+the `trigger_type` a caller sends: a manual run that passes
+`trigger_type: "scheduled"` still reports nothing. `started` arrives once the run
+has been recorded rather than at the instant it begins, so a receiver that fetches
+the run it names finds it.
 
 Archiving a deployment publishes `deployment.archived` once the row is archived,
 so a receiver that resolves the reference sees `archived_at` set. A repeat archive

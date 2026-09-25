@@ -133,7 +133,15 @@ export function startOperationsTimers(opts: OperationsBridgeOptions): () => void
       fetchImpl: opts.fetchImpl,
     }).catch(() => undefined);
     try {
-      runDueScheduledDeployments(opts.db, opts.sessionManager);
+      void runDueScheduledDeployments(opts.db, opts.sessionManager, {
+        onEvent: async (event) => {
+          await dispatchWebhookEvent(opts.db, event, {
+            secret: opts.webhookSecret,
+            dataDir: opts.dataDir,
+            fetchImpl: opts.fetchImpl,
+          });
+        },
+      }).catch(() => undefined);
     } catch {
       // A failed deployment run is recorded by the scheduler itself; the next
       // tick picks up anything still due.

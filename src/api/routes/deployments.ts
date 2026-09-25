@@ -113,8 +113,13 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     return c.json(toScheduledDeployment(row), 201);
   });
 
-  app.post('/run-due', (c) => {
-    const runs = runDueScheduledDeployments(deps.db, deps.sessionManager);
+  app.post('/run-due', async (c) => {
+    const runs = await runDueScheduledDeployments(deps.db, deps.sessionManager, {
+      // This route is one of the two doors onto the timed path, so a run it
+      // triggers is a timed run and reports like one. The manual route below is
+      // the other door onto `runSchedule` and deliberately reports nothing.
+      onEvent: (event) => publishOperationEvent(deps, event),
+    });
     return collections.json(c, runs.map(toScheduledDeploymentRun), 202);
   });
 

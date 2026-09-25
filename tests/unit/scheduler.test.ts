@@ -28,7 +28,7 @@ describe('scheduled deployment runner', () => {
     expect(nextCronRun('0 9 * * 1', new Date('2026-07-20T09:00:00Z'))?.toISOString()).toBe('2026-07-27T09:00:00.000Z');
   });
 
-  it('runs due schedules and advances next_run_at', () => {
+  it('runs due schedules and advances next_run_at', async () => {
     db.prepare(
       `INSERT INTO scheduled_deployments (
         id, name, agent_id, environment_id, cron, payload, status, next_run_at, created_at, updated_at
@@ -46,7 +46,7 @@ describe('scheduled deployment runner', () => {
       '2026-07-23T09:00:00.000Z',
     );
 
-    const runs = runDueScheduledDeployments(db, new SessionManager(db), { now: new Date('2026-07-23T10:01:00.000Z') });
+    const runs = await runDueScheduledDeployments(db, new SessionManager(db), { now: new Date('2026-07-23T10:01:00.000Z') });
 
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ schedule_id: 'sched_due', status: 'created_session', trigger_type: 'scheduled' });
