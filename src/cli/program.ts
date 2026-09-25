@@ -3,6 +3,13 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defaultConfigPath, defaultTemplateCacheDir, WORKSPACE_STATE_DIR } from '../core/config/paths.js';
 import { createTemplate, installTemplate, listTemplates, resolveTemplateSource } from '../core/templates/templates.js';
+import {
+  sessionCreateCommand,
+  sessionInspectCommand,
+  sessionLogsCommand,
+  sessionMessageCommand,
+  sessionTailCommand,
+} from './session-commands.js';
 import { workerPollCommand } from './worker-commands.js';
 
 export interface StartServerOptions {
@@ -97,6 +104,63 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
       console.log(`     workspace from ${WORKSPACE_STATE_DIR}/config.yaml.`);
       console.log('  5. Or containerize with any Node 22+ base image.\n');
       console.log(`Runtime metadata, secrets, and logs are stored under ${WORKSPACE_STATE_DIR}/.`);
+    });
+
+  // The session CLI group. `docs/api-matrix.md:84` documents it as covered and
+  // `src/cli/session-commands.ts` implements all five commands, but the module was
+  // imported by nothing, so every one of them answered `unknown command 'session'`.
+  const session = program.command('session').description('Create, message, tail, inspect and log sessions');
+
+  session
+    .command('create')
+    .description('Create a session and print its id')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('-a, --agent <id>', 'Agent id (default: the first loaded agent). A session\'s agent is an id, not a name.')
+    .option('-e, --environment <id>', 'Environment to run the session in')
+    .option('-t, --title <title>', 'Session title')
+    .action(async (opts) => {
+      await sessionCreateCommand(opts);
+    });
+
+  session
+    .command('message <sessionId>')
+    .description('Send a user message to a session')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .requiredOption('-m, --message <text>', 'Message text to send')
+    .option('--no-stream', 'Return as soon as the message is accepted instead of streaming the reply')
+    .action(async (sessionId, opts) => {
+      await sessionMessageCommand(sessionId, opts);
+    });
+
+  session
+    .command('tail <sessionId>')
+    .description('Stream a session event log (does not exit on its own)')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--last-event-id <id>', 'Resume after this event id instead of replaying from the start')
+    .action(async (sessionId, opts) => {
+      await sessionTailCommand(sessionId, opts);
+    });
+
+  session
+    .command('inspect <sessionId>')
+    .description('Print a session summary and its event count')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('--json', 'Print the session and its events as JSON', false)
+    .action(async (sessionId, opts) => {
+      await sessionInspectCommand(sessionId, opts);
+    });
+
+  session
+    .command('logs <sessionId>')
+    .description('Print every recorded event in a session')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .action(async (sessionId, opts) => {
+      await sessionLogsCommand(sessionId, opts);
     });
 
   // The self-hosted worker CLI. Documented in `docs/deployment.md`, `docs/api.md`,
