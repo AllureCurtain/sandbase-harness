@@ -414,6 +414,30 @@ for await (const event of client.sessions.chat(session.id, 'Hello')) {
 }
 ```
 
+A refused request throws `ManagedAgentsApiError`, which carries the published
+error envelope's identity as well as its prose: `status`, `type` (for example
+`invalid_request_error`, `not_found`, or `conflict`), and `code` when the
+runtime names a specific cause (`invalid_agent_ref`, `budget_reached`,
+`unsupported_model_field`, and others). Branch on those instead of on the
+message, which is prose and may be reworded:
+
+```typescript
+import { ManagedAgentsApiError } from 'managed-agents/sdk';
+
+try {
+  await client.sessions.create({ agent: 'assistant' });
+} catch (error) {
+  if (error instanceof ManagedAgentsApiError && error.code === 'invalid_agent_ref') {
+    // `agent` takes an agent id, not a name.
+  }
+  throw error;
+}
+```
+
+`type` and `code` are `undefined` when the response carried no envelope or the
+runtime named no specific cause. The message is unchanged, so existing code that
+matches on it keeps working.
+
 ## CLI Commands
 
 ```bash

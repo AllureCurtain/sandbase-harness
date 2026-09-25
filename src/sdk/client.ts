@@ -414,14 +414,8 @@ export class ManagedAgentsClient {
     });
 
     if (!res.ok) {
-      let detail = '';
-      try {
-        const j = (await res.json()) as { error?: { message?: string } };
-        detail = j.error?.message ?? '';
-      } catch {
-        detail = await res.text().catch(() => '');
-      }
-      throw new ManagedAgentsApiError(res.status, detail || res.statusText);
+      const envelope = await readErrorEnvelope(res);
+      throw new ManagedAgentsApiError(res.status, envelope.message || res.statusText, envelope);
     }
 
     if (res.status === 204) return undefined as T;
@@ -435,7 +429,8 @@ export class ManagedAgentsClient {
 
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, { method, headers });
     if (!res.ok) {
-      throw new ManagedAgentsApiError(res.status, await res.text().catch(() => res.statusText));
+      const envelope = await readErrorEnvelope(res);
+      throw new ManagedAgentsApiError(res.status, envelope.message || res.statusText, envelope);
     }
     return res.text();
   }
@@ -917,13 +912,67 @@ class EnvironmentsResource {
 // Errors + SSE parsing
 // ============================================================
 
+/**
+ * The published error envelope: `{"error":{"type":..., "code":..., "message":...}}`.
+ *
+ * `type` is the canonical error class (D11: `invalid_request_error`, with `not_found` and
+ * `conflict` deliberately kept as their own), and `code` names a specific cause within it.
+ * A caller branches on these; the message is prose and is not a stable interface.
+ */
+export interface ApiErrorEnvelope {
+  type?: string;
+  code?: string;
+}
+
 export class ManagedAgentsApiError extends Error {
+  /**
+   * The envelope's `type`, e.g. `invalid_request_error`.
+   *
+   * `undefined` when the response carried no envelope — a non-JSON body, or a transport that
+   * failed before the runtime answered.
+   */
+  readonly type?: string;
+  /** The envelope's `code`, e.g. `invalid_agent_ref`, when the cause is specific enough to name. */
+  readonly code?: string;
+
   constructor(
     public readonly status: number,
     message: string,
+    envelope: ApiErrorEnvelope = {},
   ) {
     super(`API error ${status}: ${message}`);
     this.name = 'ManagedAgentsApiError';
+    this.type = envelope.type;
+    this.code = envelope.code;
+  }
+}
+
+/**
+ * Read a failed response's published envelope, consuming the body exactly once.
+ *
+ * The previous version called `res.json()` and then `res.text()` on the same response. A
+ * `Response` body is single-use, so the fallback could never succeed — and `error.type` and
+ * `error.code` were never read at all, which is what made the runtime's whole error taxonomy
+ * unreachable from the SDK.
+ *
+ * A body that is not JSON is returned as the message, which is what the dead fallback was for;
+ * a JSON body that is not an envelope keeps the previous `statusText` fallback, so only the
+ * envelope's fields are newly reachable.
+ */
+async function readErrorEnvelope(res: Response): Promise<{ message: string } & ApiErrorEnvelope> {
+  const raw = await res.text().catch(() => '');
+  if (!raw) return { message: '' };
+  try {
+    const parsed = JSON.parse(raw) as { error?: { type?: unknown; code?: unknown; message?: unknown } } | null;
+    const error = parsed?.error;
+    if (!error || typeof error !== 'object') return { message: '' };
+    return {
+      message: typeof error.message === 'string' ? error.message : '',
+      ...(typeof error.type === 'string' ? { type: error.type } : {}),
+      ...(typeof error.code === 'string' ? { code: error.code } : {}),
+    };
+  } catch {
+    return { message: raw };
   }
 }
 

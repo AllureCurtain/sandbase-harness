@@ -1,5 +1,77 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ManagedAgentsClient } from '@/sdk/client.js';
+import { ManagedAgentsApiError, ManagedAgentsClient } from '@/sdk/client.js';
+
+describe('ManagedAgentsClient error envelope', () => {
+  const clientReturning = (response: Response) =>
+    new ManagedAgentsClient({
+      baseUrl: 'http://localhost:3000',
+      fetch: (async () => response) as unknown as typeof fetch,
+    });
+
+  it('reports a non-JSON error body as the message', async () => {
+    // A stubbed fetch, because no route in the suite answers a failure with a non-JSON body:
+    // this covers the fallback branch, which is also the branch that was dead. The previous
+    // implementation read `res.json()` and then `res.text()` on the same response, so the
+    // single-use body was already consumed and the fallback always produced `statusText`.
+    const client = clientReturning(new Response('upstream is unavailable', { status: 503 }));
+
+    const error = await client.sessions.get('sess_1').then(() => undefined, (e: unknown) => e) as ManagedAgentsApiError;
+
+    expect(error).toBeInstanceOf(ManagedAgentsApiError);
+    expect(error.status).toBe(503);
+    // The body that was actually sent, not `Service Unavailable`.
+    expect(error.message).toBe('API error 503: upstream is unavailable');
+    expect(error.type).toBeUndefined();
+    expect(error.code).toBeUndefined();
+  });
+
+  it('falls back to the status text for an empty error body', async () => {
+    const client = clientReturning(new Response('', { status: 502, statusText: 'Bad Gateway' }));
+
+    const error = await client.sessions.get('sess_1').then(() => undefined, (e: unknown) => e) as ManagedAgentsApiError;
+
+    expect(error.message).toBe('API error 502: Bad Gateway');
+  });
+
+  it('falls back to the status text for JSON that is not an envelope', async () => {
+    // A JSON body without an `error` object is not the published envelope, so it must not be
+    // reported as the message — otherwise an unrelated JSON payload would leak into logs.
+    const client = clientReturning(jsonResponse({ valid: false }, 500, 'Internal Server Error'));
+
+    const error = await client.sessions.get('sess_1').then(() => undefined, (e: unknown) => e) as ManagedAgentsApiError;
+
+    expect(error.message).toBe('API error 500: Internal Server Error');
+  });
+
+  it('reads type and code from a well-formed envelope', async () => {
+    const response = jsonResponse(
+      { error: { type: 'invalid_request_error', code: 'invalid_agent_ref', message: 'agent must be a standard agent id' } },
+      400,
+    );
+    const client = clientReturning(response);
+
+    const error = await client.sessions.get('sess_1').then(() => undefined, (e: unknown) => e) as ManagedAgentsApiError;
+
+    expect(error.type).toBe('invalid_request_error');
+    expect(error.code).toBe('invalid_agent_ref');
+    expect(error.message).toBe('API error 400: agent must be a standard agent id');
+  });
+
+  it('ignores non-string envelope fields instead of reporting them', async () => {
+    // A malformed envelope must not put `[object Object]` or a number into a typed field.
+    const response = jsonResponse(
+      { error: { type: 7, code: { nested: true }, message: 'bad request' } },
+      400,
+    );
+    const client = clientReturning(response);
+
+    const error = await client.sessions.get('sess_1').then(() => undefined, (e: unknown) => e) as ManagedAgentsApiError;
+
+    expect(error.type).toBeUndefined();
+    expect(error.code).toBeUndefined();
+    expect(error.message).toBe('API error 400: bad request');
+  });
+});
 
 describe('ManagedAgentsClient runtime management resources', () => {
   it('sends tool confirmation and custom tool result events', async () => {
@@ -139,9 +211,10 @@ describe('ManagedAgentsClient runtime management resources', () => {
   });
 });
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: unknown, status = 200, statusText?: string): Response {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
+    ...(statusText === undefined ? {} : { statusText }),
     headers: { 'Content-Type': 'application/json' },
   });
 }
