@@ -186,9 +186,26 @@ documentation. It is not listed among a route's accepted parameters, because
 those are the ones that do something.
 
 Routes that read no query parameters are not covered by this yet, so they still
-ignore everything. `GET /v1/files` is the case to know about: the published call
-is `GET /v1/files?scope_id=<session_id>`, and the route currently reads no
-parameters, so it answers with the unscoped list.
+ignore everything. No published example gives any of them a parameter.
+
+The file listing is scoped by the published `scope_id`:
+
+```
+GET /v1/files?scope_id=<session_id>
+```
+
+That returns the files recorded for that session — the deliverables an agent
+wrote under `/mnt/session/outputs/` — and omitting `scope_id` keeps the full
+listing, so no existing caller changes. A `scope_id` naming no session returns an
+**empty page** rather than falling back to the global list: an ignored scope
+answered with the unscoped list is indistinguishable from a session that happens
+to contain files the caller does not recognise, which is the failure the
+parameter exists to prevent. A file uploaded directly through `POST /v1/files`
+records no session, so it appears in the full listing and in no scoped one.
+
+The scoped listing sits behind the same compatibility gate as the rest of the
+resource surface, so a caller presenting itself as a CMA client without the beta
+is refused rather than answered.
 
 A rejected compatibility request also carries a stable `error.code`, so a
 client can branch on the cause instead of matching the message text. The

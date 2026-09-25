@@ -13,6 +13,7 @@ import {
   stringField,
   stringRecordField,
 } from './resource-utils.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 
 export type FileCreateInput = {
   name: string;
@@ -31,7 +32,9 @@ export function fileRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/files', (c) => {
-    return c.json(cursorPageOf(listFileResources(deps), {}));
+    const rejected = rejectUnexpectedQueryParams(c, ['scope_id']);
+    if (rejected) return rejected;
+    return c.json(cursorPageOf(listFileResources(deps, c.req.query('scope_id')), {}));
   });
 
   app.post('/files', async (c) => {
@@ -78,13 +81,40 @@ export function fileRoutes(deps: ServerDeps) {
   return app;
 }
 
-export function listFileResources(deps: ServerDeps) {
-  const rows = deps.db.prepare(
-    `SELECT *
-     FROM files
-     WHERE role = 'file' AND archived_at IS NULL
-     ORDER BY created_at DESC`,
-  ).all() as unknown as FileRow[];
+/**
+ * List the files a caller may see, optionally scoped to one session.
+ *
+ * `scope_id` is the published parameter name and `session_id` is the column's
+ * local spelling — the projection happens here, on the way in, which is what
+ * keeps the two spellings from being confused for each other.
+ *
+ * Without a scope the listing is every file, which is what this route has always
+ * returned and what a caller who did not ask a scoped question should keep
+ * getting. **With** a scope the answer is only that session's files, including
+ * when the id names no session: an empty page is a true answer to "which files
+ * does this session have", and falling back to the global list would answer a
+ * scoped question with an unscoped list, which is the failure this parameter
+ * exists to prevent. That fallback is the shape the published contract warns
+ * about — a silently ignored `scope_id` looks exactly like a session-scoped
+ * listing that happens to contain files the caller does not recognise.
+ *
+ * Files created directly through `POST /v1/files` carry no session, so they are
+ * absent from every scoped listing rather than attributed to one.
+ */
+export function listFileResources(deps: ServerDeps, scopeId?: string) {
+  const rows = (scopeId === undefined
+    ? deps.db.prepare(
+      `SELECT *
+       FROM files
+       WHERE role = 'file' AND archived_at IS NULL
+       ORDER BY created_at DESC`,
+    ).all()
+    : deps.db.prepare(
+      `SELECT *
+       FROM files
+       WHERE role = 'file' AND archived_at IS NULL AND session_id = ?
+       ORDER BY created_at DESC`,
+    ).all(scopeId)) as unknown as FileRow[];
   return rows.map((row) => toFileResource(row, deps));
 }
 
