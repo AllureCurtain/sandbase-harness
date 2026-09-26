@@ -36,7 +36,7 @@
     "pi_message_content_not_supported": ["tests/integration/session-error-paths.test.ts"],
     "pi_policy_mismatch": [],
     "pi_rpc_approval_not_pending": ["tests/unit/pi-strategy.test.ts"],
-    "pi_rpc_closed": [],
+    "pi_rpc_closed": ["tests/unit/pi-rpc-closed.test.ts"],
     "pi_rpc_command_rejected": ["tests/unit/pi-rpc-transport.test.ts"],
     "pi_rpc_dialog_unsupported": [],
     "pi_rpc_gate_lost": [],

@@ -76,7 +76,6 @@ describe('error-code test coverage', () => {
       'invalid_json',
       'outcome_rubric_file_not_found',
       'pi_policy_mismatch',
-      'pi_rpc_closed',
       'pi_rpc_dialog_unsupported',
       'pi_rpc_gate_lost',
       'pi_rpc_outcome_unknown',
