@@ -233,6 +233,15 @@ export function sessionsRoutes(deps: ServerDeps) {
   // granularity until it is windowed — a tie reorders an unwindowed page but cannot drop
   // a row from it.
   app.get('/:id/artifacts', (c) => {
+    // This listing reads no query parameter, so every parameter is refused by name
+    // rather than ignored: `?limit=5` would otherwise answer with the whole unwindowed
+    // collection, which is the silently-unscoped answer the convention exists to
+    // remove. The published documentation never names this listing (no occurrence of
+    // `artifacts` in the docs tree) and no caller in this repository sends it a
+    // parameter, so the refusal cannot reject a documented or shipping request.
+    // `beta` remains accepted and ignored through `COMPATIBILITY_QUERY_PARAMS`.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const sessionId = c.req.param('id');
     if (!sessionManager.get(sessionId)) return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
     const rows = deps.db.prepare(
