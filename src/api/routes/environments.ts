@@ -34,6 +34,19 @@ export function environmentRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/environments', (c) => {
+    // Admission first, like every other listing route: a parameter this listing does not
+    // implement used to be ignored, so `?limit=5` answered a page as though the request had
+    // been understood. The accept list is empty because the listing implements no parameter,
+    // and four measurements agree. The published contract documents the endpoint but no
+    // parameter for its listing — every published `/v1/environments` line was read and not one
+    // carries a query string, the "管理环境" section documents list/retrieve/archive/delete with
+    // bare `curl`s (`云环境设置.md:582-605`) — and its `include_archived` opt-in is documented
+    // for the memory-store and vault listings only. This repository's contract names the route,
+    // with its worker keys, in the group that "return their whole set rather than a window"
+    // (`pagination.md`), so no window parameter is implemented or claimed. And no local caller
+    // passes a query string: the Console, the SDK, the CLI and the tests all call it bare.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const rows = deps.db.prepare('SELECT * FROM environments WHERE archived_at IS NULL ORDER BY created_at DESC').all() as unknown as EnvironmentRow[];
     return c.json(cursorPageOf(rows.map(toEnvironment), {}));
   });
