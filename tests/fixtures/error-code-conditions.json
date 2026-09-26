@@ -30,11 +30,6 @@
       "module": "src/strategy/pi/rpc-wire.ts",
       "line": 90,
       "condition": "The Pi RPC confirmation gate was lost. The runtime classifies this code in the session manager."
-    },
-    "pi_rpc_outcome_unknown": {
-      "module": "src/strategy/pi/rpc-wire.ts",
-      "line": 59,
-      "condition": "An RPC interaction ended without a decidable outcome, so the caller cannot tell whether the action took effect."
     }
   }
 }
