@@ -132,6 +132,45 @@ export interface CollectionPager<T> {
  * parameter is kept so the canonical shape is produced by the same function
  * that will carry real cursors once a collection is actually windowed.
  */
+/**
+ * One canonical page of an offset-windowed listing.
+ *
+ * This is the semantic the skills listing, the agent version history and the memory version history
+ * all need, and it used to be written three times. The window is an offset carried by the cursor, the
+ * cursor also carries the filter that produced it so it cannot be replayed against a different one, a
+ * malformed cursor is refused rather than read as page one, and the limit is clamped into 1..100 with a
+ * default of 20. An **absent** cursor means the first page — offset 0 — and only a present cursor must
+ * carry a usable offset; getting that backwards makes every first page a 400.
+ */
+export function offsetCursorPage<T>(
+  rows: T[],
+  options: { limit?: string; page?: string; filter?: Record<string, string | null | undefined> },
+): { ok: true; page: ApiCursorPage<T> } | { ok: false; message: string } {
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
+  const filter = normalizeCollectionFilter(options.filter ?? {});
+  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
+  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+  const mismatch = cursorQueryMismatch(decoded.state, { filter });
+  if (mismatch) return { ok: false, message: mismatch };
+  const state = decoded.state as { offset?: unknown } | undefined;
+  const offset = state === undefined
+    ? 0
+    : typeof state.offset === 'number' && Number.isInteger(state.offset) && state.offset >= 0
+      ? state.offset
+      : undefined;
+  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+
+  const data = rows.slice(offset, offset + limit);
+  const nextOffset = offset + limit;
+  const prevOffset = offset - limit;
+  return {
+    ok: true,
+    page: cursorPageOf(data, {
+      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
+      next: nextOffset < rows.length ? encodeCursor({ offset: nextOffset, filter }) : null,
+    }),
+  };
+}
 export function collectionPager<T extends { id: string }>(
   shape: 'canonical' | 'legacy',
 ): CollectionPager<T> {
