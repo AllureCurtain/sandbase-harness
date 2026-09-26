@@ -11,11 +11,6 @@
       "line": 56,
       "condition": "A settings request body is not valid JSON. Reported as a field error with an empty path."
     },
-    "invalid_path": {
-      "module": "src/core/memory/mount-adapter.ts",
-      "line": 192,
-      "condition": "A memory mount path fails validation. The message carries the specific path complaint."
-    },
     "model_auth_failed": {
       "module": "src/model/errors.ts",
       "line": 26,

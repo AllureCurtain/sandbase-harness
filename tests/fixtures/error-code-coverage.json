@@ -14,7 +14,7 @@
     "invalid_initial_event_type": ["tests/integration/api.test.ts", "tests/integration/initial-events-transaction.test.ts", "tests/unit/cma-event-contract.test.ts"],
     "invalid_initial_events": ["tests/integration/api.test.ts", "tests/integration/define-outcome-event.test.ts", "tests/unit/cma-event-contract.test.ts"],
     "invalid_json": [],
-    "invalid_path": [],
+    "invalid_path": ["tests/unit/memory-mount-path.test.ts"],
     "invalid_precondition": ["tests/unit/memory-semantics-wiring.test.ts", "tests/unit/memory-semantics.test.ts"],
     "invalid_protocol": ["tests/unit/settings.test.ts"],
     "invalid_request": ["tests/integration/invalid-request-spelling.test.ts", "tests/unit/session-resource-instances.test.ts"],

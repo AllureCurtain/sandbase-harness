@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Added a unit test for the memory record path validator that pins the `invalid_path` code and the reason in the message for each refusal rule, including traversal segments, the bare root, a trailing slash, and a NUL byte. No runtime behaviour changes.
 - The memory store capacity cap now asserts the `store_full` wire code, the limit in its message, and its promise that existing memories stay readable and editable. No runtime behaviour changes.
 - The memory instructions cap now asserts the `instructions_too_long` wire code and the limit in its message, so exceeding the cap is identifiable by callers rather than only detectable. No runtime behaviour changes.
 - The session memory-store cap now asserts the `too_many_stores` wire code and the limit in its message, so a refusal is identifiable by callers rather than only detectable. No runtime behaviour changes.
