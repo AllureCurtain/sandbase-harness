@@ -42,7 +42,7 @@ const ROUTES: Array<{ name: string; method: string; path: string; accepts: strin
   { name: 'vault audit', method: 'GET', path: '/v1/vaults/vlt_missing/audit', accepts: ['limit', 'page'] },
   { name: 'credential audit', method: 'GET', path: '/v1/vaults/vlt_missing/credentials/cred_missing/audit', accepts: ['limit', 'page'] },
   { name: 'memory list', method: 'GET', path: '/v1/memory_stores/memstore_missing/memories', accepts: ['path_prefix', 'depth'] },
-  { name: 'memory versions', method: 'GET', path: '/v1/memory_stores/memstore_missing/memory_versions', accepts: ['memory_id'] },
+  { name: 'memory versions', method: 'GET', path: '/v1/memory_stores/memstore_missing/memory_versions', accepts: ['memory_id', 'limit', 'page'] },
   { name: 'runtime logs', method: 'GET', path: '/v1/x/logs', accepts: ['level', 'limit', 'q'] },
   { name: 'mcp status', method: 'GET', path: '/v1/x/mcp/status', accepts: ['session_id'] },
   { name: 'handoff bundles', method: 'GET', path: '/v1/x/handoff-bundles', accepts: ['session_id', 'limit'] },
