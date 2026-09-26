@@ -79,7 +79,6 @@ describe('error-code test coverage', () => {
       'pi_rpc_dialog_unsupported',
       'pi_rpc_gate_lost',
       'pi_rpc_outcome_unknown',
-      'pi_rpc_protocol_error',
     ]);
   });
 });
