@@ -11,6 +11,10 @@ import type { Database } from '@/core/db/database.js';
 import { isBlockedInternalHostname, isPrivateAddress } from '@/core/web/address-policy.js';
 import { resolveWebhookSigningSecrets, type StoredWebhookSecret } from './webhook-secrets.js';
 
+/** The published retry window: jitter starts at 5 s and never exceeds 120 s. */
+const MIN_RETRY_SECONDS = 5;
+const MAX_RETRY_SECONDS = 120;
+
 export type WebhookDispatchEvent = {
   event: string;
   data: Record<string, unknown>;
@@ -32,6 +36,8 @@ export type WebhookDispatchOptions = {
    * for why the published rule is opt-in here, and for the switch that turns it on.
    */
   addressPolicy?: WebhookAddressPolicy;
+  /** Jitter source for retry backoff; injectable so the published window can be asserted. */
+  random?: () => number;
 };
 
 export type WebhookDeliveryResult = {
@@ -436,11 +442,21 @@ function recordFailureStreak(
     : 'continuing';
 }
 
-function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDispatchOptions): string | null {
+/**
+ * The published retry schedule: "retries up to three times per endpoint and event with 5-120 s jittered
+ * exponential backoff" (`operations.md`). The ceiling doubles per attempt (60 s, then 120 s) and the
+ * actual delay is uniform inside [5 s, ceiling], so two endpoints failing at the same moment do not
+ * retry together and no delay leaves the published window. Jitter is what makes retries load-spreading
+ * rather than a synchronised re-attack on a receiver that is already struggling.
+ */
+export function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDispatchOptions): string | null {
   if (ok) return null;
   const maxAttempts = opts.maxAttempts ?? 3;
   if (attemptCount >= maxAttempts) return null;
-  const delaySeconds = 2 ** Math.max(0, attemptCount - 1) * 60;
+  const ceilingSeconds = Math.min(MAX_RETRY_SECONDS, 2 ** Math.max(0, attemptCount - 1) * 60);
+  const random = opts.random ?? Math.random;
+  const span = ceilingSeconds - MIN_RETRY_SECONDS;
+  const delaySeconds = MIN_RETRY_SECONDS + span * Math.min(Math.max(random(), 0), 1);
   return new Date((opts.now?.() ?? new Date()).getTime() + delaySeconds * 1000).toISOString();
 }
 
