@@ -100,6 +100,22 @@ Listing:
   the two collections cannot come to admit different parameters. `beta` is accepted
   but is deliberately not advertised, because its compatibility semantics are not
   modelled and listing it would read as honouring it.
+- The published archived-half opt-in applies to a vault's **credentials** too, not only
+  to the vault collection: "**列出 vault 或凭证：** … 默认排除已归档的记录（传递
+  `include_archived=true` 可将其包含在内）" (`将工作委派给智能体/使用保管库进行身份验证.md:1119`)
+  names both in one sentence. `GET /v1/credential-vaults/{id}/credentials` reads it now.
+  It did not before: `listCredentials` hardcoded `AND archived_at IS NULL`, so an archived
+  credential was unreachable through the only listing that serves credentials, and nothing
+  in the response said the filter had been ignored — the same defect this file's vault
+  listing carried before it was fixed, in the same route module. `toCredential` already
+  labelled an archived row (`status: 'archived'`, `archived_at`), so reading the parameter
+  was the only missing piece, and the label is asserted as well as the membership: a row
+  admitted by the filter but indistinguishable from an active one would not answer the
+  question the parameter asks. Rows with `status = 'deleted'` stay excluded either way,
+  because deletion keeps no audit record and is not what "archived" means. Two gaps remain
+  on that listing and are **not** closed here: it is unwindowed (`next_page` is always
+  `null`, so the published pagination rule is only met in the sense of an honest empty
+  cursor), and a parameter it does not implement is still ignored rather than refused.
 
 Wire profile:
 

@@ -140,7 +140,16 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   app.get('/:id/credentials', (c) => {
     const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
     if (!vault) return notFound(c, 'Credential vault not found');
-    return c.json(cursorPageOf(listCredentials(deps, c.req.param('id')), {}));
+    // The archived-half opt-in is published for credentials as well as vaults ("列出 vault
+    // 或凭证"), and the same helper validates it so an invalid value is refused identically on
+    // both listings rather than by two rules that can drift. Unknown parameters are still
+    // ignored on this listing; that gap is recorded separately rather than closed here.
+    const includeArchived = parseIncludeArchived(c);
+    if (!includeArchived.ok) return includeArchived.response;
+    return c.json(cursorPageOf(
+      listCredentials(deps, c.req.param('id'), { includeArchived: includeArchived.value }),
+      {},
+    ));
   });
 
   app.post('/:id/credentials', async (c) => {
@@ -402,11 +411,22 @@ function toVault(row: VaultRow, deps?: ServerDeps) {
   };
 }
 
-function listCredentials(deps: ServerDeps, vaultId: string) {
+function listCredentials(deps: ServerDeps, vaultId: string, options: { includeArchived?: boolean } = {}) {
+  // The published contract makes the archived half of a credential listing opt-in:
+  // "列出 vault 或凭证：… 默认排除已归档的记录（传递 `include_archived=true` 可将其包含在内）"
+  // (`将工作委派给智能体/使用保管库进行身份验证.md:1119`). The exclusion used to be hardcoded
+  // here, so a caller who passed the documented parameter was handed a page that omitted
+  // exactly the rows they asked for, with nothing in the response saying the filter had been
+  // ignored — the same defect this file's vaults listing carried before it was fixed.
+  // `toCredential` already labels an archived row (`status: 'archived'` and `archived_at`), so
+  // reading the parameter was the only missing piece. Rows with `status = 'deleted'` are
+  // excluded either way: deletion is a hard delete that keeps no audit record, which is not
+  // what "archived" means.
+  const archivedClause = options.includeArchived ? '' : ' AND archived_at IS NULL';
   const rows = deps.db.prepare(
     `SELECT *
      FROM credential_records
-     WHERE vault_id = ? AND archived_at IS NULL AND status != 'deleted'
+     WHERE vault_id = ?${archivedClause} AND status != 'deleted'
      ORDER BY created_at DESC`,
   ).all(vaultId) as unknown as CredentialRow[];
   return rows.map(toCredential);
