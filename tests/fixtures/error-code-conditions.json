@@ -25,11 +25,6 @@
       "module": "src/strategy/pi/rpc-wire.ts",
       "line": 80,
       "condition": "A Pi RPC dialog is not supported by this session."
-    },
-    "pi_rpc_gate_lost": {
-      "module": "src/strategy/pi/rpc-wire.ts",
-      "line": 90,
-      "condition": "The Pi RPC confirmation gate was lost. The runtime classifies this code in the session manager."
     }
   }
 }
