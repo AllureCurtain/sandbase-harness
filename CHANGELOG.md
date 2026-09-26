@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Documented why `pi_rpc_closed` and `pi_rpc_command_rejected` report `retry_status: unknown` rather than a stated disposition, and pinned that with a test. Each code covers sub-cases whose correct dispositions are opposite, so any stated value would be wrong for one of them. No runtime behaviour changes.
 - Added a unit test pinning the `pi_rpc_dialog_unsupported` wire code, the dialog it names, and its distinctness from the frame-trust code. The behaviour was already covered through the error class; the published code was not. No runtime behaviour changes.
 - Reported `pi_rpc_timeout` and `pi_rpc_outcome_unknown` as `not_retryable` instead of `unknown`. The transport states that both carry `outcomeUnknown` and that the command must not be retried blindly, and `unknown` invited exactly that retry.
 - Reported `pi_rpc_protocol_error` as `not_retryable` instead of `unknown`. The code is raised while reading, so the command may already have reached the engine, and the transport's own rule for that situation is that the caller must not retry; `unknown` invited the opposite.

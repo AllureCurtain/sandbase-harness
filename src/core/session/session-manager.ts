@@ -1782,6 +1782,29 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     case MODEL_CONFIG_INVALID_CODE:
     case MODEL_AUTH_FAILED_CODE:
       return 'not_retryable';
+    // Two transport codes are deliberately absent, and their absence is the
+    // decision rather than an omission: `pi_rpc_closed` and
+    // `pi_rpc_command_rejected` each cover sub-cases with opposite dispositions,
+    // so any value stated here would be wrong for one of them.
+    //
+    // `pi_rpc_closed` covers both a command refused because the session was
+    // already shutting down — which `isBenignCloseError` documents as meaning the
+    // session was closing, "not that a command failed" — and a transport that
+    // died mid-command, where the outcome may be unknown. The first is resumable
+    // in another session, so `not_retryable` would tell a client to abandon work
+    // that can still be done; the second may already have run, so `retryable`
+    // would invite a duplicate. `pi_rpc_command_rejected` likewise covers a
+    // transient refusal and a permanent one: the engine answered and nothing ran,
+    // so a resend is always safe, but a refusal the engine will repeat forever
+    // makes `retryable` an over-promise.
+    //
+    // This is the documented meaning of `unknown`, not a fall-through that was
+    // never examined: the field exists so a client is not told to give up on work
+    // that might succeed (see the doc above), and for a code whose sub-cases
+    // disagree the honest answer is that the runtime cannot say. Making these two
+    // precise would mean splitting each code so a client can tell a transient
+    // refusal from a permanent one, which changes the published error taxonomy
+    // and is a product decision rather than a classification one.
     default:
       return 'unknown';
   }
