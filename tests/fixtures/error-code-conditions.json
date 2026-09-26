@@ -61,11 +61,6 @@
       "line": 57,
       "condition": "The Pi RPC peer violated the wire protocol."
     },
-    "store_full": {
-      "module": "src/core/memory/mount-adapter.ts",
-      "line": 149,
-      "condition": "The memory store is at capacity. Returned together with the capacity check's own message."
-    },
     "store_unavailable": {
       "module": "src/core/memory/mount-adapter.ts",
       "line": 167,

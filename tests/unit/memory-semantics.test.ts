@@ -43,7 +43,16 @@ describe('memory content caps', () => {
   });
 
   it('refuses a write at the store cap', () => {
-    expect(checkStoreCapacity(MAX_MEMORIES_PER_STORE).ok).toBe(false);
+    // As with the two caps below, ok alone makes the refusal detectable but not identifiable: callers
+    // switch on the documented code, and the message is where the limit is stated and where the promise
+    // that existing memories stay readable and editable lives.
+    const refused = checkStoreCapacity(MAX_MEMORIES_PER_STORE);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe('store_full');
+      expect(refused.message).toContain(String(MAX_MEMORIES_PER_STORE));
+      expect(refused.message).toContain('remain readable');
+    }
     expect(checkStoreCapacity(MAX_MEMORIES_PER_STORE - 1).ok).toBe(true);
   });
 
