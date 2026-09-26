@@ -1,5 +1,5 @@
 {
-  "note": "The condition each public error code names, for the 16 codes that no test asserts. Recorded because for the other 42 codes the tests are the documentation, and for these them there is nothing else. The module and line are machine-checked by tests/unit/error-code-conditions.test.ts; the condition text is a name-and-site reading, not a behavioural test, so treat a wrong sentence as a documentation bug rather than a broken invariant.",
+  "note": "The condition each public error code names, for the codes that no test asserts. Recorded because for the other 42 codes the tests are the documentation, and for these them there is nothing else. The module and line are machine-checked by tests/unit/error-code-conditions.test.ts; the condition text is a name-and-site reading, not a behavioural test, so treat a wrong sentence as a documentation bug rather than a broken invariant.",
   "conditions": {
     "already_exists": {
       "module": "src/core/memory/mount-adapter.ts",
@@ -75,11 +75,6 @@
       "module": "src/core/memory/mount-adapter.ts",
       "line": 167,
       "condition": "The memory store is unavailable or archived."
-    },
-    "too_many_stores": {
-      "module": "src/core/memory/semantics.ts",
-      "line": 99,
-      "condition": "A session would attach more stores than the per-session maximum. Raised by checkSessionStoreCount, and the message names the limit."
     }
   }
 }
