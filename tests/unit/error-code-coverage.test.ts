@@ -74,7 +74,6 @@ describe('error-code test coverage', () => {
     expect(uncovered.sort()).toEqual([
       'already_exists',
       'invalid_json',
-      'invalid_path',
       'model_auth_failed',
       'model_config_invalid',
       'outcome_rubric_file_not_found',
