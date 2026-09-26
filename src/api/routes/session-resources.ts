@@ -22,6 +22,7 @@
 import { Hono } from 'hono';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf } from '../standard.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import {
   addSessionResource,
@@ -67,6 +68,19 @@ export function sessionResourceRoutes(deps: ServerDeps) {
   const requireSession = (sessionId: string) => deps.sessionManager.get(sessionId);
 
   app.get('/:id/resources', (c) => {
+    // Admission first, so a malformed request cannot be answered as a missing session —
+    // the same order the artifacts listing uses. The accept list is empty because this
+    // listing implements no parameter: the published CMA docs document none for it (the
+    // resource API is documented for adding and removing resources, not for filtering a
+    // listing), and this repository's own contract names the route in the group that
+    // "return their whole set rather than a window"
+    // (`contracts/anthropic-cma/pagination.md`), so no window parameter is implemented or
+    // claimed. A parameter used to be ignored, so `?limit=5` answered a page as though the
+    // request had been understood. No caller passes one: the SDK and the Console both call
+    // the route bare, and a repository-wide search for a `resources?<param>=` request finds
+    // nothing.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const sessionId = c.req.param('id')!;
     if (!requireSession(sessionId)) {
       return c.json({ error: { type: 'not_found', message: `Session not found: ${sessionId}` } }, 404);
