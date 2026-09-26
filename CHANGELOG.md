@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Webhook retry backoff is now jittered inside the published 5-120 s window instead of a fixed 60 s and 120 s, so endpoints that fail together no longer retry together. The three-attempt limit and the retry schedule's ceiling are unchanged.
 - The offset-window semantics shared by the skills listing, the agent version history and the memory version history now live in one exported helper (offsetCursorPage) instead of three near-identical copies. No wire behaviour changes: the cursors, limits, defaults and admission lists each listing emits are unchanged.
 - `GET /v1/memory_stores/{id}/memory_versions` now honours `limit` and `page` instead of refusing them, as the published pagination convention documents: `limit` sets the page size (default 20, capped at 100), the response carries followable `next_page` and `prev_page` cursors, the cursor carries the `memory_id` filter that produced it, and a cursor issued for a different query is refused rather than reinterpreted.
 - `GET /v1/agents/{id}/versions` now honours `limit` and `page`, as the published pagination convention documents: `limit` sets the page size (default 20, capped at 100), the response carries followable `next_page` and `prev_page` cursors, and a cursor this endpoint did not issue is refused rather than read as page one. Previously both parameters were ignored and the listing answered its whole set with null cursors.

@@ -98,7 +98,11 @@ describe('webhook dispatcher', () => {
       status_code: 503,
       attempt_count: 1,
     });
-    expect(first[0].next_retry_at).toBe('2026-07-23T00:01:00.000Z');
+    // The retry delay is jittered into the published 5-120 s window, so attempt 1 is asserted as a
+    // window rather than an exact instant: it backs off somewhere inside [5, 60] s.
+    const retryAt = Date.parse(first[0].next_retry_at as string);
+    expect(retryAt).toBeGreaterThanOrEqual(Date.parse('2026-07-23T00:00:05.000Z'));
+    expect(retryAt).toBeLessThanOrEqual(Date.parse('2026-07-23T00:01:00.000Z'));
 
     const successfulFetch = vi.fn(async () => ({ status: 200 })) as unknown as typeof fetch;
     const retried = await retryDueWebhookDeliveries(db, {
