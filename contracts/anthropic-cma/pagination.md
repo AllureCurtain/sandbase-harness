@@ -44,12 +44,11 @@ cursor-query-binding: supported
   collections that return their whole set (`/v1/agents`,
   `/v1/api-keys`, `/v1/environments` with its worker keys, `/v1/files`, and
   `/v1/memory_stores` with its memories); the windowed listings that carry a
-  followable cursor (`/v1/sessions`, `/v1/sessions/{id}/events`, `/v1/skills`, `/v1/agents/{id}/versions`, both
+  followable cursor (`/v1/sessions`, `/v1/sessions/{id}/events`, `/v1/skills`, `/v1/agents/{id}/versions`, `/v1/memory_stores/{id}/memory_versions`, both
   credential audit listings, and the `/v1/credential-vaults` and `/v1/memory_stores`
   listings); and the listings that serve the canonical envelope through
   `cursorPageOf` with **both cursors null**, because they return their whole set
-  rather than a window (`/v1/memory_stores/{id}/memory_versions`,
-  `/v1/sessions/{id}/resources`, and `/v1/sessions/{id}/artifacts`). An earlier
+  rather than a window (`/v1/sessions/{id}/resources`, and `/v1/sessions/{id}/artifacts`). An earlier
   version of this sentence listed the artifacts listing in the followable-cursor
   group instead, which it never was: the route passes `{}` to `cursorPageOf`
   (`src/api/routes/sessions.ts`), so `next_page` is always `null`, and its own test
@@ -87,7 +86,6 @@ or filter.
 | Cursor payload visibility | SandBase cursors are readable base64url JSON, not opaque binary. They carry no secret, so the opacity is present to discourage construction rather than to conceal data. The published contract does not specify an encoding. |
 | Cursor position is a page, not a sort key | `/v1/sessions` stores a 1-based page number, so the scan is redone from that page. A concurrent insert or delete shifts what a later page contains. A keyset cursor naming the last delivered row's sort key would not. The offset cursors (`/v1/skills`, the audit listings, the memory versions) have the same property for the same reason: the backing store pages by offset. |
 | Cursor semantics are not uniform | Four shapes exist across the surface: `/v1/sessions` carries `{order, filter, page}`, `/v1/sessions/:id/events` carries `{session_id, after_id}`, `/v1/skills` and the audit listings carry `{offset, filter}`, and the remaining resource listings carry `{offset}` alone because they return everything in one page. All are canonical envelopes, but a cursor is only meaningful in the collection that issued it, which `cursorQueryMismatch` enforces where a filter is bound. |
-| One version listing is unwindowed although the published contract paginates it | `/v1/memory_stores/{id}/memory_versions` returns its whole set with `next_page: null` and `prev_page: null` and implements no window. The published contract paginates both — the documented clients walk them with the SDK's `autoPager()` (`智能体设置.md`, `记忆存储.md`) — and documents `limit` plus a `page` cursor carrying the `next_page` value as the convention (`会话操作.md`). Locally `memory_versions` **refuses** them, accepting `memory_id` only, so a client that tries to paginate is told rather than misled. The agent version history was covered by this row until it gained the documented window; it now honours `limit` and `page` and carries the followable cursor. |
 
 Every canonical `/v1` collection serves the canonical envelope, with no exceptions; the
 only listing shape that is neither canonical nor a plain `/v1/x` extension is the

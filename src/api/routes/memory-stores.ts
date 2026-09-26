@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf } from '../standard.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, ApiCursorPage } from '../standard.js';
 import {
   COLLECTION_LISTING_QUERY_PARAMS,
   INCLUDE_ARCHIVED_PARAM,
@@ -236,7 +236,11 @@ export function memoryStoreRoutes(deps: ServerDeps) {
   // Every write records a version, so the history of a memory is reconstructable
   // without diffing snapshots of the store.
   app.get('/memory_stores/:id/memory_versions', (c) => {
-    const rejected = rejectUnexpectedQueryParams(c, ['memory_id']);
+    // This listing is paginated in the published contract: the documented clients walk it with the
+    // SDK's `autoPager()` (`记忆存储.md`), and `会话操作.md` documents the convention — `limit` sets
+    // the page size and the `next_page` cursor is handed back as `page`. It previously refused both
+    // and answered its whole set.
+    const rejected = rejectUnexpectedQueryParams(c, ['memory_id', 'limit', 'page']);
     if (rejected) return rejected;
     const storeId = c.req.param('id');
     const store = deps.db.prepare('SELECT id FROM memory_stores WHERE id = ? AND archived_at IS NULL').get(storeId);
@@ -249,7 +253,15 @@ export function memoryStoreRoutes(deps: ServerDeps) {
       : deps.db.prepare(
         'SELECT * FROM memory_versions WHERE store_id = ? ORDER BY created_at DESC',
       ).all(storeId)) as unknown as MemoryVersionRow[];
-    return c.json(cursorPageOf(rows.map(toMemoryVersion), {}));
+    const page = memoryVersionsPage(rows.map(toMemoryVersion), {
+      limit: c.req.query('limit'),
+      page: c.req.query('page'),
+      memoryId,
+    });
+    if (!page.ok) {
+      return c.json({ error: { type: 'invalid_request_error', message: page.message } }, 400);
+    }
+    return c.json(page.page);
   });
 
   app.get('/memory_stores/:id/memory_versions/:versionId', (c) => {
@@ -425,4 +437,42 @@ interface MemoryRecordRow {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+}
+
+/**
+ * One canonical page of a memory store's version history.
+ *
+ * Mirrors the skills and agent-history pagers: the window is an offset carried by the cursor, the
+ * cursor also carries the `memory_id` filter that produced it, a malformed cursor is refused rather
+ * than read as page one, and the limit is clamped into 1..100 with a default of 20. An absent cursor
+ * means the first page — offset 0 — and only a *present* cursor must carry a usable offset.
+ */
+function memoryVersionsPage<T>(
+  rows: T[],
+  options: { limit?: string; page?: string; memoryId?: string },
+): { ok: true; page: ApiCursorPage<T> } | { ok: false; message: string } {
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
+  const filter = normalizeCollectionFilter({ memory_id: options.memoryId });
+  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
+  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+  const mismatch = cursorQueryMismatch(decoded.state, { filter });
+  if (mismatch) return { ok: false, message: mismatch };
+  const state = decoded.state as { offset?: unknown } | undefined;
+  const offset = state === undefined
+    ? 0
+    : typeof state.offset === 'number' && Number.isInteger(state.offset) && state.offset >= 0
+      ? state.offset
+      : undefined;
+  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+
+  const data = rows.slice(offset, offset + limit);
+  const nextOffset = offset + limit;
+  const prevOffset = offset - limit;
+  return {
+    ok: true,
+    page: cursorPageOf(data, {
+      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
+      next: nextOffset < rows.length ? encodeCursor({ offset: nextOffset, filter }) : null,
+    }),
+  };
 }
