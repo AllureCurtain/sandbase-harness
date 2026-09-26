@@ -6,11 +6,6 @@
       "line": 68,
       "condition": "A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount."
     },
-    "instructions_too_long": {
-      "module": "src/core/memory/semantics.ts",
-      "line": 111,
-      "condition": "Memory instructions exceed the per-session character cap. Raised by checkMemoryInstructions, and the message names both the actual and the permitted length."
-    },
     "invalid_json": {
       "module": "src/api/routes/settings.ts",
       "line": 56,

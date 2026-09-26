@@ -61,7 +61,14 @@ describe('memory content caps', () => {
 
   it('caps instructions at 4,096 characters', () => {
     expect(checkMemoryInstructions('a'.repeat(MAX_MEMORY_INSTRUCTIONS_CHARS)).ok).toBe(true);
-    expect(checkMemoryInstructions('a'.repeat(MAX_MEMORY_INSTRUCTIONS_CHARS + 1)).ok).toBe(false);
+    // As with the store-count cap below, `ok` alone makes the refusal detectable but not identifiable: the
+    // documented wire code is what a caller switches on, and the message is where the limit is stated.
+    const refused = checkMemoryInstructions('a'.repeat(MAX_MEMORY_INSTRUCTIONS_CHARS + 1));
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe('instructions_too_long');
+      expect(refused.message).toContain(String(MAX_MEMORY_INSTRUCTIONS_CHARS));
+    }
   });
 
   it('does not cap absent instructions', () => {
