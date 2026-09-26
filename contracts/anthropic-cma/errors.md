@@ -136,6 +136,27 @@ names the query parameter it refused rather than ignoring it.
 | HTTP status mapping | SandBase maps a memory content-hash mismatch to 409 `precondition_failed`. The published contract states the precondition concept but not this exact status pairing. |
 | Extensions | `unsupported_capability` and `precondition_failed` are SandBase codes covering local runtime facts. |
 
+### When the unwitnessed codes happen
+
+Forty-two of the codes are asserted by tests, so the tests are their documentation. These sixteen are asserted by none, and their condition is recorded here instead. **The module and line are checked by `tests/unit/error-code-conditions.test.ts`; the sentences are not machine-checked** — they are readings of the emitter, so treat a wrong sentence as a documentation bug rather than a broken invariant.
+
+- `already_exists` — A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount.
+- `instructions_too_long` — Memory instructions exceed the per-session character cap. Raised by checkMemoryInstructions, and the message names both the actual and the permitted length.
+- `invalid_json` — A settings request body is not valid JSON. Reported as a field error with an empty path.
+- `invalid_path` — A memory mount path fails validation. The message carries the specific path complaint.
+- `model_auth_failed` — Model authentication failed for the configured credentials. Declared as a constant and classified by the session manager.
+- `model_config_invalid` — The model configuration is invalid. Declared as a constant and classified by the session manager alongside authentication failures.
+- `outcome_rubric_file_not_found` — A rubric file referenced by an outcome contract is not present on disk.
+- `pi_policy_mismatch` — A resumed Pi session's recorded policy does not match the policy now in effect, so continuation is refused.
+- `pi_rpc_closed` — An RPC call is made on a Pi transport that has already been closed.
+- `pi_rpc_dialog_unsupported` — A Pi RPC dialog is not supported by this session.
+- `pi_rpc_gate_lost` — The Pi RPC confirmation gate was lost. The runtime classifies this code in the session manager.
+- `pi_rpc_outcome_unknown` — An RPC interaction ended without a decidable outcome, so the caller cannot tell whether the action took effect.
+- `pi_rpc_protocol_error` — The Pi RPC peer violated the wire protocol.
+- `store_full` — The memory store is at capacity. Returned together with the capacity check's own message.
+- `store_unavailable` — The memory store is unavailable or archived.
+- `too_many_stores` — A session would attach more stores than the per-session maximum. Raised by checkSessionStoreCount, and the message names the limit.
+
 ## 5. Reason for the difference
 
 - The invalid-request spelling was unified because the two values were in use at

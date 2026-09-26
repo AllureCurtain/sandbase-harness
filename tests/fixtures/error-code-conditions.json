@@ -1,0 +1,85 @@
+{
+  "note": "The condition each public error code names, for the 16 codes that no test asserts. Recorded because for the other 42 codes the tests are the documentation, and for these them there is nothing else. The module and line are machine-checked by tests/unit/error-code-conditions.test.ts; the condition text is a name-and-site reading, not a behavioural test, so treat a wrong sentence as a documentation bug rather than a broken invariant.",
+  "conditions": {
+    "already_exists": {
+      "module": "src/core/memory/mount-adapter.ts",
+      "line": 68,
+      "condition": "A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount."
+    },
+    "instructions_too_long": {
+      "module": "src/core/memory/semantics.ts",
+      "line": 111,
+      "condition": "Memory instructions exceed the per-session character cap. Raised by checkMemoryInstructions, and the message names both the actual and the permitted length."
+    },
+    "invalid_json": {
+      "module": "src/api/routes/settings.ts",
+      "line": 56,
+      "condition": "A settings request body is not valid JSON. Reported as a field error with an empty path."
+    },
+    "invalid_path": {
+      "module": "src/core/memory/mount-adapter.ts",
+      "line": 192,
+      "condition": "A memory mount path fails validation. The message carries the specific path complaint."
+    },
+    "model_auth_failed": {
+      "module": "src/model/errors.ts",
+      "line": 26,
+      "condition": "Model authentication failed for the configured credentials. Declared as a constant and classified by the session manager."
+    },
+    "model_config_invalid": {
+      "module": "src/model/errors.ts",
+      "line": 23,
+      "condition": "The model configuration is invalid. Declared as a constant and classified by the session manager alongside authentication failures."
+    },
+    "outcome_rubric_file_not_found": {
+      "module": "src/core/outcomes/contract.ts",
+      "line": 20,
+      "condition": "A rubric file referenced by an outcome contract is not present on disk."
+    },
+    "pi_policy_mismatch": {
+      "module": "src/strategy/pi/session-continuity.ts",
+      "line": 17,
+      "condition": "A resumed Pi session's recorded policy does not match the policy now in effect, so continuation is refused."
+    },
+    "pi_rpc_closed": {
+      "module": "src/strategy/pi/rpc-wire.ts",
+      "line": 60,
+      "condition": "An RPC call is made on a Pi transport that has already been closed."
+    },
+    "pi_rpc_dialog_unsupported": {
+      "module": "src/strategy/pi/rpc-wire.ts",
+      "line": 80,
+      "condition": "A Pi RPC dialog is not supported by this session."
+    },
+    "pi_rpc_gate_lost": {
+      "module": "src/strategy/pi/rpc-wire.ts",
+      "line": 90,
+      "condition": "The Pi RPC confirmation gate was lost. The runtime classifies this code in the session manager."
+    },
+    "pi_rpc_outcome_unknown": {
+      "module": "src/strategy/pi/rpc-wire.ts",
+      "line": 59,
+      "condition": "An RPC interaction ended without a decidable outcome, so the caller cannot tell whether the action took effect."
+    },
+    "pi_rpc_protocol_error": {
+      "module": "src/strategy/pi/rpc-wire.ts",
+      "line": 57,
+      "condition": "The Pi RPC peer violated the wire protocol."
+    },
+    "store_full": {
+      "module": "src/core/memory/mount-adapter.ts",
+      "line": 149,
+      "condition": "The memory store is at capacity. Returned together with the capacity check's own message."
+    },
+    "store_unavailable": {
+      "module": "src/core/memory/mount-adapter.ts",
+      "line": 167,
+      "condition": "The memory store is unavailable or archived."
+    },
+    "too_many_stores": {
+      "module": "src/core/memory/semantics.ts",
+      "line": 99,
+      "condition": "A session would attach more stores than the per-session maximum. Raised by checkSessionStoreCount, and the message names the limit."
+    }
+  }
+}
