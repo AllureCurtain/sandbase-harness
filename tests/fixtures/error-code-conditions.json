@@ -5,16 +5,6 @@
       "module": "src/core/memory/mount-adapter.ts",
       "line": 68,
       "condition": "A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount."
-    },
-    "outcome_rubric_file_not_found": {
-      "module": "src/core/outcomes/contract.ts",
-      "line": 20,
-      "condition": "A rubric file referenced by an outcome contract is not present on disk."
-    },
-    "pi_policy_mismatch": {
-      "module": "src/strategy/pi/session-continuity.ts",
-      "line": 17,
-      "condition": "A resumed Pi session's recorded policy does not match the policy now in effect, so continuation is refused."
     }
   }
 }
