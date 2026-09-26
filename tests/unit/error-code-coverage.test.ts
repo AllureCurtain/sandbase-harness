@@ -75,7 +75,6 @@ describe('error-code test coverage', () => {
       'already_exists',
       'invalid_json',
       'model_auth_failed',
-      'model_config_invalid',
       'outcome_rubric_file_not_found',
       'pi_policy_mismatch',
       'pi_rpc_closed',

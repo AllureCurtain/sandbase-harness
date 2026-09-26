@@ -16,11 +16,6 @@
       "line": 26,
       "condition": "Model authentication failed for the configured credentials. Declared as a constant and classified by the session manager."
     },
-    "model_config_invalid": {
-      "module": "src/model/errors.ts",
-      "line": 23,
-      "condition": "The model configuration is invalid. Declared as a constant and classified by the session manager alongside authentication failures."
-    },
     "outcome_rubric_file_not_found": {
       "module": "src/core/outcomes/contract.ts",
       "line": 20,
