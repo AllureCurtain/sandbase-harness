@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf, toApiAgent } from '../standard.js';
+import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, toApiAgent, type ApiCursorPage } from '../standard.js';
 import { rejectUnexpectedQueryParams } from './query-params.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
@@ -89,6 +89,13 @@ export function agentsRoutes(deps: ServerDeps) {
   });
 
   app.get('/:id/versions', (c) => {
+    // This listing is paginated in the published contract, unlike the agent list next door: the
+    // documented clients walk it with the SDK's `autoPager()` (`智能体设置.md`), and
+    // `会话操作.md` documents the convention itself — `limit` sets the page size and the
+    // `next_page` cursor is handed back as the `page` parameter. It previously ignored both and
+    // answered its whole set.
+    const rejected = rejectUnexpectedQueryParams(c, ['limit', 'page']);
+    if (rejected) return rejected;
     const id = c.req.param('id');
     const row = activeAgentRow(deps, id);
     const agent = row ? parseAgentDefinitionFromRow(row) : undefined;
@@ -96,10 +103,13 @@ export function agentsRoutes(deps: ServerDeps) {
       return c.json({ error: { type: 'not_found', message: `Agent not found: ${id}` } }, 404);
     }
     const versions = loadAgentVersions(deps, id);
-    if (versions.length === 0) {
-      return c.json(cursorPageOf([toApiAgent(agent, agentRowMetaFromRow(row))], {}));
+    // An agent with no recorded history still reports its current definition as one version.
+    const rows = versions.length === 0 ? [toApiAgent(agent, agentRowMetaFromRow(row))] : versions;
+    const page = agentVersionsPage(rows, { limit: c.req.query('limit'), page: c.req.query('page') });
+    if (!page.ok) {
+      return c.json({ error: { type: 'invalid_request_error', message: page.message } }, 400);
     }
-    return c.json(cursorPageOf(versions, {}));
+    return c.json(page.page);
   });
 
   const updateAgent = async (c: any) => {
@@ -315,4 +325,43 @@ function createAgentId(deps: ServerDeps): string {
     if (!existing) return id;
   }
   throw new Error('Unable to allocate unique agent id');
+}
+
+/**
+ * One canonical page of the agent version history.
+ *
+ * Mirrors the skills pager: the window is an offset carried by the cursor, a malformed cursor is
+ * refused rather than read as page one, and the limit is clamped into 1..100 with a default of 20.
+ * The cursor also carries the (empty) filter so a cursor cannot be replayed against a different one.
+ */
+function agentVersionsPage<T>(
+  rows: T[],
+  options: { limit?: string; page?: string },
+): { ok: true; page: ApiCursorPage<T> } | { ok: false; message: string } {
+  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
+  const filter = normalizeCollectionFilter({});
+  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
+  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+  const mismatch = cursorQueryMismatch(decoded.state, { filter });
+  if (mismatch) return { ok: false, message: mismatch };
+  const state = decoded.state as { offset?: unknown } | undefined;
+  // No cursor means the first page, which is offset 0 — not an error. A cursor that *is* present
+  // must carry a usable offset, otherwise the caller is replaying something this endpoint never issued.
+  const offset = state === undefined
+    ? 0
+    : typeof state.offset === 'number' && Number.isInteger(state.offset) && state.offset >= 0
+      ? state.offset
+      : undefined;
+  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
+
+  const data = rows.slice(offset, offset + limit);
+  const nextOffset = offset + limit;
+  const prevOffset = offset - limit;
+  return {
+    ok: true,
+    page: cursorPageOf(data, {
+      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
+      next: nextOffset < rows.length ? encodeCursor({ offset: nextOffset, filter }) : null,
+    }),
+  };
 }
