@@ -76,7 +76,6 @@ describe('error-code test coverage', () => {
       'invalid_json',
       'outcome_rubric_file_not_found',
       'pi_policy_mismatch',
-      'pi_rpc_dialog_unsupported',
     ]);
   });
 });
