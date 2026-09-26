@@ -165,6 +165,23 @@ describe('session.error production paths', () => {
     }
   });
 
+  it('leaves the two mixed-case transport codes at unknown on purpose', async () => {
+    // `pi_rpc_closed` and `pi_rpc_command_rejected` each cover sub-cases whose
+    // correct dispositions are opposite, so `unknown` is the answer rather than an
+    // omission. This case exists to make a future symmetry-driven edit fail: a
+    // `not_retryable` or `retryable` entry added for either code tells a client
+    // something the code cannot support, because the code alone cannot distinguish
+    // a session that was already closing from a transport that died mid-command,
+    // or a refusal the engine will repeat forever from a transient one.
+    const mixed = ['pi_rpc_closed', 'pi_rpc_command_rejected'];
+
+    for (const code of mixed) {
+      const { projected } = await errorEventFor(() => coded(code, `${code} arrived`));
+      expect(projected.error?.retry_status, `${code} should stay unknown`).toBe('unknown');
+      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+    }
+  });
+
   it('marks the two Pi failures the transport calls unretryable as not retryable', async () => {
     // The transport's own contract, above `send()`: `PiRpcTimeoutError` and
     // `PiRpcOutcomeUnknownError` "both carry `outcomeUnknown`, meaning the command
