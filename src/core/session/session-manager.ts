@@ -94,6 +94,7 @@ import {
   PI_RPC_APPROVAL_NOT_PENDING_CODE,
   PI_RPC_GATE_LOST_CODE,
   PI_RPC_GATE_UNAVAILABLE_CODE,
+  PI_RPC_PROTOCOL_ERROR_CODE,
 } from '@/strategy/pi/rpc-wire.js';
 import {
   parseEnvironmentConfig,
@@ -1745,6 +1746,13 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     case PI_RPC_GATE_UNAVAILABLE_CODE:
     case PI_RPC_GATE_LOST_CODE:
     case PI_RPC_APPROVAL_NOT_PENDING_CODE:
+    // A frame that could not be trusted is not retryable either. It is raised
+    // while reading, so the command may already have reached the engine: the
+    // transport says of the same situation that the bytes "may or may not have
+    // reached the engine" and "the caller must not retry the command". The one
+    // case where nothing was written is a transport built without a writable
+    // stdin, which a retry cannot fix either.
+    case PI_RPC_PROTOCOL_ERROR_CODE:
     case PI_TOOL_POLICY_UNSUPPORTED_CODE:
     case PI_SANDBOX_UNSUPPORTED_CODE:
     case PI_USER_EVENT_UNSUPPORTED_CODE:
