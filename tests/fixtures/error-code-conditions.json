@@ -11,11 +11,6 @@
       "line": 56,
       "condition": "A settings request body is not valid JSON. Reported as a field error with an empty path."
     },
-    "model_auth_failed": {
-      "module": "src/model/errors.ts",
-      "line": 26,
-      "condition": "Model authentication failed for the configured credentials. Declared as a constant and classified by the session manager."
-    },
     "outcome_rubric_file_not_found": {
       "module": "src/core/outcomes/contract.ts",
       "line": 20,
