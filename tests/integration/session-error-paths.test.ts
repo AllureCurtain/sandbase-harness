@@ -165,6 +165,23 @@ describe('session.error production paths', () => {
     }
   });
 
+  it('marks the two Pi failures the transport calls unretryable as not retryable', async () => {
+    // The transport's own contract, above `send()`: `PiRpcTimeoutError` and
+    // `PiRpcOutcomeUnknownError` "both carry `outcomeUnknown`, meaning the command
+    // must not be retried blindly". Reporting `unknown` here is worse than vague:
+    // it invites a client to retry precisely the two failures the transport
+    // forbids retrying, where the bytes may already have reached the engine.
+    const unretryable = ['pi_rpc_timeout', 'pi_rpc_outcome_unknown'];
+
+    for (const code of unretryable) {
+      const { projected } = await errorEventFor(() => coded(code, `${code} left the outcome unknown`));
+      expect(projected.error?.retry_status, `${code} should be not_retryable`).toBe('not_retryable');
+      // The code must survive into `type`; a classification that only worked
+      // because the code was dropped would report `internal_error`.
+      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+    }
+  });
+
   it('marks an untrusted Pi frame not retryable rather than unknown', async () => {
     // A protocol error is raised from the read loop, so the command may already
     // have reached the engine: the transport's own comment for that situation is

@@ -94,7 +94,9 @@ import {
   PI_RPC_APPROVAL_NOT_PENDING_CODE,
   PI_RPC_GATE_LOST_CODE,
   PI_RPC_GATE_UNAVAILABLE_CODE,
+  PI_RPC_OUTCOME_UNKNOWN_CODE,
   PI_RPC_PROTOCOL_ERROR_CODE,
+  PI_RPC_TIMEOUT_CODE,
 } from '@/strategy/pi/rpc-wire.js';
 import {
   parseEnvironmentConfig,
@@ -1753,6 +1755,13 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     // case where nothing was written is a transport built without a writable
     // stdin, which a retry cannot fix either.
     case PI_RPC_PROTOCOL_ERROR_CODE:
+    // The transport names these two itself, and names them as unretryable: they
+    // "both carry `outcomeUnknown`, meaning the command must not be retried
+    // blindly". A client told `unknown` is invited to retry exactly the failures
+    // the transport forbids retrying, so the disposition is stated rather than
+    // left to fall through.
+    case PI_RPC_TIMEOUT_CODE:
+    case PI_RPC_OUTCOME_UNKNOWN_CODE:
     case PI_TOOL_POLICY_UNSUPPORTED_CODE:
     case PI_SANDBOX_UNSUPPORTED_CODE:
     case PI_USER_EVENT_UNSUPPORTED_CODE:

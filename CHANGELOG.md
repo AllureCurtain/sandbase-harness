@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Reported `pi_rpc_timeout` and `pi_rpc_outcome_unknown` as `not_retryable` instead of `unknown`. The transport states that both carry `outcomeUnknown` and that the command must not be retried blindly, and `unknown` invited exactly that retry.
 - Reported `pi_rpc_protocol_error` as `not_retryable` instead of `unknown`. The code is raised while reading, so the command may already have reached the engine, and the transport's own rule for that situation is that the caller must not retry; `unknown` invited the opposite.
 - Added a unit test pinning the `pi_rpc_gate_lost` wire code, the tool and call it names, and its distinctness from the gate-unavailable code. The behaviour was already covered through the error class; the published code was not. No runtime behaviour changes.
 - Added a unit test pinning the `pi_rpc_outcome_unknown` code, the `outcomeUnknown` marker that survives serialization, and its distinctness from the known-outcome refusal code. No runtime behaviour changes.
