@@ -48,7 +48,14 @@ describe('memory content caps', () => {
   });
 
   it('refuses a ninth memory store on a session', () => {
-    expect(checkSessionStoreCount(MAX_MEMORY_STORES_PER_SESSION).ok).toBe(false);
+    // The wire code is part of the contract: a caller switches on it, so asserting only `ok` would leave the
+    // refusal unidentifiable. The sibling caps above and below assert their codes; this one now does too.
+    const refused = checkSessionStoreCount(MAX_MEMORY_STORES_PER_SESSION);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe('too_many_stores');
+      expect(refused.message).toContain(String(MAX_MEMORY_STORES_PER_SESSION));
+    }
     expect(checkSessionStoreCount(MAX_MEMORY_STORES_PER_SESSION - 1).ok).toBe(true);
   });
 

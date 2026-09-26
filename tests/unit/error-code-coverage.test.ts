@@ -87,7 +87,6 @@ describe('error-code test coverage', () => {
       'pi_rpc_protocol_error',
       'store_full',
       'store_unavailable',
-      'too_many_stores',
     ]);
   });
 });

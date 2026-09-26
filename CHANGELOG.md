@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- The session memory-store cap now asserts the `too_many_stores` wire code and the limit in its message, so a refusal is identifiable by callers rather than only detectable. No runtime behaviour changes.
 - The condition behind each of the 16 public error codes that no test asserts is now documented and pinned to its emitting line, so the codes with no test have documentation instead of only a name. No runtime behaviour changes.
 - The error-code taxonomy now records which codes any test asserts, making the 16 currently unasserted codes a visible, pinned gap rather than an unknown. No runtime behaviour changes.
 - The error-code inventory also pins which module emits each code, so a code that moves or gains a second emitter fails the suite. No runtime behaviour changes.

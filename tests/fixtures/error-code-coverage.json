@@ -1,5 +1,5 @@
 {
-  "note": "Which test files mention each public error code, measured by literal presence in the test tree (not by execution). A code with an empty list is emitted by src but asserted nowhere.",
+  "note": "Which test files mention each public error code, measured by literal presence in the test tree (not by execution). A code with an empty list is emitted by src but asserted nowhere. This file is measured by scanning tests, excluding the coverage test itself, which necessarily names the uncovered codes.",
   "covered": {
     "adapter_unavailable": ["tests/integration/api.test.ts", "tests/unit/settings-schema.test.ts", "tests/unit/settings.test.ts"],
     "agent_required": ["tests/integration/sdk-error-envelope.test.ts"],
@@ -57,7 +57,7 @@
     "store_full": [],
     "store_unavailable": [],
     "too_many_initial_events": ["tests/integration/api.test.ts", "tests/integration/initial-events-transaction.test.ts", "tests/unit/cma-event-contract.test.ts"],
-    "too_many_stores": [],
+    "too_many_stores": ["tests/unit/memory-semantics.test.ts"],
     "unresolved_env_reference": ["tests/unit/settings.test.ts"]
   }
 }
