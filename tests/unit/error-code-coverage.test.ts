@@ -73,7 +73,6 @@ describe('error-code test coverage', () => {
     const uncovered = Object.entries(pinned).filter(([, files]) => files.length === 0).map(([code]) => code);
     expect(uncovered.sort()).toEqual([
       'already_exists',
-      'invalid_json',
       'outcome_rubric_file_not_found',
       'pi_policy_mismatch',
     ]);
