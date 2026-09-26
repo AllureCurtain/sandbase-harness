@@ -6,11 +6,6 @@
       "line": 68,
       "condition": "A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount."
     },
-    "invalid_json": {
-      "module": "src/api/routes/settings.ts",
-      "line": 56,
-      "condition": "A settings request body is not valid JSON. Reported as a field error with an empty path."
-    },
     "outcome_rubric_file_not_found": {
       "module": "src/core/outcomes/contract.ts",
       "line": 20,
