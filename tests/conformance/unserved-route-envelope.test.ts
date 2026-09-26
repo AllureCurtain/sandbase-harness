@@ -22,32 +22,13 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createServer } from '@/api/server.js';
-import { Database } from '@/core/db/database.js';
-import { SessionManager } from '@/core/session/session-manager.js';
+import { disposeConformanceContexts, makeConformanceApp, type ConformanceContext } from './support/app.js';
 
-function makeApp() {
-  const tmpDir = mkdtempSync(join(tmpdir(), 'ma-conformance-404-'));
-  const db = new Database(join(tmpDir, 'test.db'));
-  db.runMigrations();
-  db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
-  const app = createServer({
-    db,
-    sessionManager: new SessionManager(db),
-    agents: [],
-    reloadAgents: () => ({ agents: [], errors: [] }),
-  });
-  return { app, db, tmpDir };
-}
-
-type TestContext = ReturnType<typeof makeApp>;
+type TestContext = ConformanceContext;
 const contexts: TestContext[] = [];
 
 function app() {
-  const ctx = makeApp();
+  const ctx = makeConformanceApp('ma-conformance-404-');
   contexts.push(ctx);
   return ctx.app;
 }
@@ -58,10 +39,7 @@ async function bodyOf(res: Response) {
 
 describe('unserved route envelope', () => {
   afterEach(() => {
-    for (const ctx of contexts.splice(0)) {
-      ctx.db.close();
-      rmSync(ctx.tmpDir, { recursive: true, force: true });
-    }
+    disposeConformanceContexts(contexts);
   });
 
   it('answers an unserved /v1 path in the JSON error envelope, not Hono text', async () => {
