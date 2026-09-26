@@ -8,7 +8,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, toApiAgent, type ApiCursorPage } from '../standard.js';
+import { cursorPageOf, offsetCursorPage, toApiAgent, type ApiCursorPage } from '../standard.js';
 import { rejectUnexpectedQueryParams } from './query-params.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
@@ -338,30 +338,6 @@ function agentVersionsPage<T>(
   rows: T[],
   options: { limit?: string; page?: string },
 ): { ok: true; page: ApiCursorPage<T> } | { ok: false; message: string } {
-  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
-  const filter = normalizeCollectionFilter({});
-  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
-  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
-  const mismatch = cursorQueryMismatch(decoded.state, { filter });
-  if (mismatch) return { ok: false, message: mismatch };
-  const state = decoded.state as { offset?: unknown } | undefined;
-  // No cursor means the first page, which is offset 0 — not an error. A cursor that *is* present
-  // must carry a usable offset, otherwise the caller is replaying something this endpoint never issued.
-  const offset = state === undefined
-    ? 0
-    : typeof state.offset === 'number' && Number.isInteger(state.offset) && state.offset >= 0
-      ? state.offset
-      : undefined;
-  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
-
-  const data = rows.slice(offset, offset + limit);
-  const nextOffset = offset + limit;
-  const prevOffset = offset - limit;
-  return {
-    ok: true,
-    page: cursorPageOf(data, {
-      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
-      next: nextOffset < rows.length ? encodeCursor({ offset: nextOffset, filter }) : null,
-    }),
-  };
+  // The window semantics live in one place; this listing has no filter to carry.
+  return offsetCursorPage(rows, { limit: options.limit, page: options.page });
 }

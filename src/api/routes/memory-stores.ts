@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter, ApiCursorPage } from '../standard.js';
+import { cursorPageOf, offsetCursorPage, ApiCursorPage } from '../standard.js';
 import {
   COLLECTION_LISTING_QUERY_PARAMS,
   INCLUDE_ARCHIVED_PARAM,
@@ -451,28 +451,6 @@ function memoryVersionsPage<T>(
   rows: T[],
   options: { limit?: string; page?: string; memoryId?: string },
 ): { ok: true; page: ApiCursorPage<T> } | { ok: false; message: string } {
-  const limit = Math.max(1, Math.min(Number(options.limit ?? 20) || 20, 100));
-  const filter = normalizeCollectionFilter({ memory_id: options.memoryId });
-  const decoded = options.page === undefined ? { ok: true as const, state: undefined } : decodeCursor(options.page);
-  if (!decoded.ok) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
-  const mismatch = cursorQueryMismatch(decoded.state, { filter });
-  if (mismatch) return { ok: false, message: mismatch };
-  const state = decoded.state as { offset?: unknown } | undefined;
-  const offset = state === undefined
-    ? 0
-    : typeof state.offset === 'number' && Number.isInteger(state.offset) && state.offset >= 0
-      ? state.offset
-      : undefined;
-  if (offset === undefined) return { ok: false, message: 'page must be a cursor returned by this endpoint' };
-
-  const data = rows.slice(offset, offset + limit);
-  const nextOffset = offset + limit;
-  const prevOffset = offset - limit;
-  return {
-    ok: true,
-    page: cursorPageOf(data, {
-      prev: offset > 0 && prevOffset >= 0 ? encodeCursor({ offset: prevOffset, filter }) : null,
-      next: nextOffset < rows.length ? encodeCursor({ offset: nextOffset, filter }) : null,
-    }),
-  };
+  // This listing is filtered by memory, so the filter travels inside the cursor.
+  return offsetCursorPage(rows, { limit: options.limit, page: options.page, filter: { memory_id: options.memoryId } });
 }
