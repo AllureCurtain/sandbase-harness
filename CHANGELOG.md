@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Added a unit test pinning the `model_config_invalid` code, its membership in the resumable model-failure set, and the model names in its message. No runtime behaviour changes.
 - Added a unit test for the memory store-unavailable refusal that pins the `store_unavailable` code and the store identifier in the message. No runtime behaviour changes.
 - Added a unit test for the memory record path validator that pins the `invalid_path` code and the reason in the message for each refusal rule, including traversal segments, the bare root, a trailing slash, and a NUL byte. No runtime behaviour changes.
 - The memory store capacity cap now asserts the `store_full` wire code, the limit in its message, and its promise that existing memories stay readable and editable. No runtime behaviour changes.
