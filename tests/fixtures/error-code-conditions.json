@@ -1,10 +1,4 @@
 {
   "note": "The condition each public error code names, for the codes that no test asserts. Recorded because for the other 42 codes the tests are the documentation, and for these them there is nothing else. The module and line are machine-checked by tests/unit/error-code-conditions.test.ts; the condition text is a name-and-site reading, not a behavioural test, so treat a wrong sentence as a documentation bug rather than a broken invariant.",
-  "conditions": {
-    "already_exists": {
-      "module": "src/core/memory/mount-adapter.ts",
-      "line": 68,
-      "condition": "A memory is mounted at a path already occupied in the same store. Detected from a unique-constraint violation rather than a pre-check, so it is also the answer for a concurrent mount."
-    }
-  }
+  "conditions": {}
 }
