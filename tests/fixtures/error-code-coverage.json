@@ -7,7 +7,7 @@
     "cycle": ["tests/unit/orchestrator.test.ts"],
     "inbound_rate_limited": ["tests/integration/rate-limit-api.test.ts", "tests/unit/rate-limit.test.ts"],
     "incompatible_adapter": ["tests/unit/pi-engine-session.test.ts"],
-    "instructions_too_long": [],
+    "instructions_too_long": ["tests/unit/memory-semantics.test.ts"],
     "internal_error": ["tests/integration/session-error-paths.test.ts"],
     "invalid_agent_ref": ["tests/integration/sdk-error-envelope.test.ts", "tests/integration/session-agent-overrides.test.ts", "tests/integration/session-cli-commands.test.ts", "tests/unit/sdk-client.test.ts"],
     "invalid_define_outcome": ["tests/integration/define-outcome-event.test.ts"],

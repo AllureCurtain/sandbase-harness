@@ -73,7 +73,6 @@ describe('error-code test coverage', () => {
     const uncovered = Object.entries(pinned).filter(([, files]) => files.length === 0).map(([code]) => code);
     expect(uncovered.sort()).toEqual([
       'already_exists',
-      'instructions_too_long',
       'invalid_json',
       'invalid_path',
       'model_auth_failed',
