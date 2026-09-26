@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Added a unit test pinning the `pi_rpc_gate_lost` wire code, the tool and call it names, and its distinctness from the gate-unavailable code. The behaviour was already covered through the error class; the published code was not. No runtime behaviour changes.
 - Added a unit test pinning the `pi_rpc_outcome_unknown` code, the `outcomeUnknown` marker that survives serialization, and its distinctness from the known-outcome refusal code. No runtime behaviour changes.
 - Added a unit test pinning the `pi_rpc_protocol_error` code, its name, its detail-bearing message, and its distinctness from the retryable timeout and rejected-command codes. No runtime behaviour changes.
 - Added a unit test pinning the `pi_rpc_closed` code, its detail-bearing message, and its distinctness from `pi_rpc_session_closed`, the pair a caller branches on to choose a retry disposition. No runtime behaviour changes.

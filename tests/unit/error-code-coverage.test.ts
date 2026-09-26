@@ -77,7 +77,6 @@ describe('error-code test coverage', () => {
       'outcome_rubric_file_not_found',
       'pi_policy_mismatch',
       'pi_rpc_dialog_unsupported',
-      'pi_rpc_gate_lost',
     ]);
   });
 });

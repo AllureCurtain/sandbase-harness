@@ -39,7 +39,7 @@
     "pi_rpc_closed": ["tests/unit/pi-rpc-closed.test.ts"],
     "pi_rpc_command_rejected": ["tests/unit/pi-rpc-transport.test.ts"],
     "pi_rpc_dialog_unsupported": [],
-    "pi_rpc_gate_lost": [],
+    "pi_rpc_gate_lost": ["tests/unit/pi-rpc-gate-lost.test.ts"],
     "pi_rpc_gate_unavailable": ["tests/unit/pi-adapter-gate.test.ts", "tests/unit/pi-rpc-session.test.ts"],
     "pi_rpc_outcome_unknown": ["tests/unit/pi-rpc-outcome-unknown.test.ts"],
     "pi_rpc_protocol_error": ["tests/unit/pi-rpc-protocol-error.test.ts"],
