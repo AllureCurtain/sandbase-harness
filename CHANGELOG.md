@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- Added a unit test pinning the `pi_rpc_closed` code, its detail-bearing message, and its distinctness from `pi_rpc_session_closed`, the pair a caller branches on to choose a retry disposition. No runtime behaviour changes.
 - Added a unit test pinning the `model_auth_failed` wire spelling and the structured-status classification boundary (401/403 versus 404, and no status guessed from a message). No runtime behaviour changes.
 - Added a unit test pinning the `model_config_invalid` code, its membership in the resumable model-failure set, and the model names in its message. No runtime behaviour changes.
 - Added a unit test for the memory store-unavailable refusal that pins the `store_unavailable` code and the store identifier in the message. No runtime behaviour changes.

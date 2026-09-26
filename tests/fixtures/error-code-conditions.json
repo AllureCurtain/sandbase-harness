@@ -21,11 +21,6 @@
       "line": 17,
       "condition": "A resumed Pi session's recorded policy does not match the policy now in effect, so continuation is refused."
     },
-    "pi_rpc_closed": {
-      "module": "src/strategy/pi/rpc-wire.ts",
-      "line": 60,
-      "condition": "An RPC call is made on a Pi transport that has already been closed."
-    },
     "pi_rpc_dialog_unsupported": {
       "module": "src/strategy/pi/rpc-wire.ts",
       "line": 80,
