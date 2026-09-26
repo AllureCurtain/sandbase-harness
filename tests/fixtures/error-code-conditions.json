@@ -35,11 +35,6 @@
       "module": "src/strategy/pi/rpc-wire.ts",
       "line": 59,
       "condition": "An RPC interaction ended without a decidable outcome, so the caller cannot tell whether the action took effect."
-    },
-    "pi_rpc_protocol_error": {
-      "module": "src/strategy/pi/rpc-wire.ts",
-      "line": 57,
-      "condition": "The Pi RPC peer violated the wire protocol."
     }
   }
 }
