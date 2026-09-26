@@ -21,37 +21,17 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createServer } from '@/api/server.js';
-import { Database } from '@/core/db/database.js';
-import { SessionManager } from '@/core/session/session-manager.js';
+import { disposeConformanceContexts, makeConformanceApp, type ConformanceContext } from './support/app.js';
 
 const VERSION = '2023-06-01';
 const MANAGED_AGENTS_BETA = 'managed-agents-2026-04-01';
 const AGENT_MEMORY_BETA = 'agent-memory-2026-07-22';
 
-function makeApp() {
-  const tmpDir = mkdtempSync(join(tmpdir(), 'ma-conformance-beta-'));
-  const db = new Database(join(tmpDir, 'test.db'));
-  db.runMigrations();
-  db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
-  db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_a', 'a', '{}')`);
-  const app = createServer({
-    db,
-    sessionManager: new SessionManager(db),
-    agents: [{ name: 'a', model: 'm', system: 'p' }],
-    reloadAgents: () => ({ agents: [], errors: [] }),
-  });
-  return { app, db, tmpDir };
-}
-
-type TestContext = ReturnType<typeof makeApp>;
+type TestContext = ConformanceContext;
 const contexts: TestContext[] = [];
 
 function app() {
-  const ctx = makeApp();
+  const ctx = makeConformanceApp('ma-conformance-beta-');
   contexts.push(ctx);
   return ctx.app;
 }
@@ -70,10 +50,7 @@ async function errorOf(res: Response): Promise<{ type?: string; code?: string; m
 
 describe('CMA beta-header contract', () => {
   afterEach(() => {
-    for (const ctx of contexts.splice(0)) {
-      ctx.db.close();
-      rmSync(ctx.tmpDir, { recursive: true, force: true });
-    }
+    disposeConformanceContexts(contexts);
   });
 
   it('admits the documented combination for a canonical resource', async () => {
