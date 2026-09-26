@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- The error-code inventory also pins which module emits each code, so a code that moves or gains a second emitter fails the suite. No runtime behaviour changes.
 - The public error-code inventory is now pinned by a test against 	ests/fixtures/error-codes.json, so a renamed or added code fails the suite instead of reaching callers silently. No runtime behaviour changes.
 - Removed imports the operations route module no longer uses; no behaviour change.
 - Webhook retry backoff is now jittered inside the published 5-120 s window instead of a fixed 60 s and 120 s, so endpoints that fail together no longer retry together. The three-attempt limit and the retry schedule's ceiling are unchanged.
