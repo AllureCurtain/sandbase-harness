@@ -123,6 +123,16 @@ export function environmentRoutes(deps: ServerDeps) {
   // published in `docs/api.md` and `docs/api-matrix.md`.
 
   app.get('/environments/:id/worker-keys', (c) => {
+    // Admission first, in the same order as the work-items listing below: this listing
+    // reads no query parameter, and the published contract documents none for it — the
+    // route is a local self-hosted extension with no counterpart in the published CMA
+    // surface, so there is no documented parameter to honour and no ambiguity to resolve.
+    // An empty accept list is therefore the honest one, and a parameter used to be
+    // ignored, so `?limit=5` answered a page as if the request had been understood. Every
+    // local caller passes no query string (`src/sdk/client.ts`, the CLI), and the Console
+    // carries API-reference metadata for the route rather than a request.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const environmentId = activeEnvironmentId(c, deps);
     if (!environmentId) return notFound(c, 'Environment not found');
     return c.json(cursorPageOf(listEnvironmentWorkerKeys(deps.db, environmentId), {}));
