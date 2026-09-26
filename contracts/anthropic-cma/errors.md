@@ -84,13 +84,17 @@ against the published documentation. It is deliberately absent from the message'
 "accepts" list, because that list names implemented parameters and accepting
 `beta` must not be read as honouring it.
 
-Routes that read no query parameters are **not** covered yet: refusing every
+Routes that read no query parameters were **not** covered at first: refusing every
 parameter on a handler that declares none is the same principle but a different
-mechanism, and it is recorded as outstanding rather than assumed. The one case
-where that gap had teeth is closed: `GET /v1/files` now reads the published
-`scope_id` — so it is covered by the refusal above — and the parameter selects
-the session's files rather than being silently ignored. See
-[`files.md`](./files.md) §2.
+mechanism, and the class was recorded as outstanding rather than assumed. One route
+of it is now covered — `GET /v1/sessions/{id}/artifacts` reads no parameter and
+refuses every one by name — which was safe only after measuring that the published
+documentation never names that listing (no occurrence of `artifacts` in the docs
+tree) and that no caller in this repository sends it a parameter. The rest of the
+class remains outstanding. The case where the gap had teeth is closed too:
+`GET /v1/files` now reads the published `scope_id` — so it is covered by the
+refusal above — and the parameter selects the session's files rather than being
+silently ignored. See [`files.md`](./files.md) §2.
 
 Admission failures add a stable code from `CMA_ADMISSION_CODES`:
 
@@ -125,7 +129,7 @@ names the query parameter it refused rather than ignoring it.
 | `invalid_request` as a wire type | Superseded: the canonical spelling is `invalid_request_error`, and every route emits it. `invalid_request` remains a **valid alias** for the same category — a client that branches on `error.type` may treat the two as equal — until the official SDK conformance suite passes against the canonical value, at which point the alias is retired. The value was never an upstream one; the published pages that name this category use `invalid_request_error`. |
 | Unknown query parameters | Refused by name, on the routes that read query parameters. The published contract does not state what an unrecognized parameter should do, so this is a local extension of the field rule in `agents.md` §2 rather than a published requirement — but the alternative is a silently unscoped answer, which is a wrong answer rather than a difference in strictness. |
 | `beta` as a query parameter | Accepted everywhere and ignored, because 36 published examples send it on the URL. Accepted is not implemented: the compatibility semantics are not modelled. |
-| Routes that read no query parameters | Not yet covered, so they still ignore every parameter. The published call that was affected — `GET /v1/files?scope_id=...` — now reads its parameter and is covered; the remaining uncovered routes read no parameters and no published example gives them one. Recorded as outstanding rather than silently included in the claim above. |
+| Routes that read no query parameters | Partly covered. `GET /v1/sessions/{id}/artifacts` reads no parameter and refuses every one by name; that was safe only because the published documentation never names that listing (`artifacts` occurs zero times in the docs tree) and no caller here sends it a parameter. `GET /v1/files` now reads the published `scope_id`, so it is covered by the refusal above. The remaining routes of this class read no parameters and no published example gives them one: recorded as outstanding rather than silently included in the claim above. |
 | HTTP status mapping | SandBase maps a memory content-hash mismatch to 409 `precondition_failed`. The published contract states the precondition concept but not this exact status pairing. |
 | Extensions | `unsupported_capability` and `precondition_failed` are SandBase codes covering local runtime facts. |
 
@@ -165,6 +169,11 @@ names the query parameter it refused rather than ignoring it.
   advertised; the Console's and the SDK's own parameters are pinned as still
   accepted, and one case pins the ordering rule by sending a bad parameter with a
   session that does not exist.
+- `tests/integration/session-artifacts-query-admission.test.ts` — a route that
+  reads no parameter: an unimplemented parameter is refused by name with no
+  envelope in the body, several unimplemented parameters are all named, `beta` is
+  still accepted without being advertised, a bare request still lists the
+  artifacts, and the refusal precedes the session lookup in both directions.
 - `tests/integration/files-scope-id.test.ts` — the one route whose published
   parameter was being ignored: the scope filters (in both directions), an unknown
   scope is an empty page rather than the global list, and an unimplemented
@@ -174,5 +183,6 @@ names the query parameter it refused rather than ignoring it.
 
 `supported` — the envelope and category separation are enforced and tested. The
 specific code strings are a documented local projection, not an upstream claim.
-Query-parameter refusal covers the routes that read query parameters; routes that
-read none are recorded in §4 as outstanding.
+Query-parameter refusal covers the routes that read query parameters, and one route
+that reads none — the artifacts listing, which refuses every parameter by name. The
+rest of that class is recorded in §4 as outstanding.
