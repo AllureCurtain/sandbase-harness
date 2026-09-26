@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { PiRpcClosedError, PiRpcError } from '@/strategy/pi/rpc-transport.js';
+import { PI_RPC_CLOSED_CODE, PI_RPC_SESSION_CLOSED_CODE } from '@/strategy/pi/rpc-wire.js';
 
 describe('pi_rpc_closed', () => {
   it('is the code and name the transport raises for a write it could not place', () => {
@@ -27,8 +28,13 @@ describe('pi_rpc_closed', () => {
   });
 
   it('stays distinct from the code for a session whose engine is gone', () => {
-    // A caller that cannot tell these apart will either retry a command that
-    // already left the process or give up on one that never did.
-    expect(new PiRpcClosedError('stdout ended').code).not.toBe('pi_rpc_session_closed');
+    // Asserted against the constants rather than against their current values.
+    // A comparison of two literals would hold no matter what the constants were
+    // set to, so it could not notice the pair being collapsed onto one code —
+    // which is the change this case exists to catch, because a caller that
+    // cannot tell the two apart either retries a command that already left the
+    // process or abandons one that never did.
+    expect(PI_RPC_CLOSED_CODE).not.toBe(PI_RPC_SESSION_CLOSED_CODE);
+    expect(new PiRpcClosedError('stdout ended').code).not.toBe(PI_RPC_SESSION_CLOSED_CODE);
   });
 });
