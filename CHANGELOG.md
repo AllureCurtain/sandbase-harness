@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- The error-code taxonomy now records which codes any test asserts, making the 16 currently unasserted codes a visible, pinned gap rather than an unknown. No runtime behaviour changes.
 - The error-code inventory also pins which module emits each code, so a code that moves or gains a second emitter fails the suite. No runtime behaviour changes.
 - The public error-code inventory is now pinned by a test against 	ests/fixtures/error-codes.json, so a renamed or added code fails the suite instead of reaching callers silently. No runtime behaviour changes.
 - Removed imports the operations route module no longer uses; no behaviour change.
