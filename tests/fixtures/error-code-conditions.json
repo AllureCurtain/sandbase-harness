@@ -55,11 +55,6 @@
       "module": "src/strategy/pi/rpc-wire.ts",
       "line": 57,
       "condition": "The Pi RPC peer violated the wire protocol."
-    },
-    "store_unavailable": {
-      "module": "src/core/memory/mount-adapter.ts",
-      "line": 167,
-      "condition": "The memory store is unavailable or archived."
     }
   }
 }
