@@ -46,10 +46,16 @@ cursor-query-binding: supported
   `/v1/memory_stores` with its memories); the windowed listings that carry a
   followable cursor (`/v1/sessions`, `/v1/sessions/{id}/events`, `/v1/skills`, both
   credential audit listings, and the `/v1/credential-vaults` and `/v1/memory_stores`
-  listings, and `/v1/sessions/{id}/artifacts`); and the two listing routes that already
-  used `cursorPageOf` (`/v1/memory_stores/{id}/memory_versions` and
-  `/v1/sessions/{id}/resources`). There are no exceptions left: every canonical `/v1`
-  collection serves the canonical envelope.
+  listings); and the listings that serve the canonical envelope through
+  `cursorPageOf` with **both cursors null**, because they return their whole set
+  rather than a window (`/v1/memory_stores/{id}/memory_versions`,
+  `/v1/sessions/{id}/resources`, and `/v1/sessions/{id}/artifacts`). An earlier
+  version of this sentence listed the artifacts listing in the followable-cursor
+  group instead, which it never was: the route passes `{}` to `cursorPageOf`
+  (`src/api/routes/sessions.ts`), so `next_page` is always `null`, and its own test
+  pins that both cursors are null. Reading it as followable told a caller to page a
+  listing that can never hand back a cursor. There are no exceptions left: every
+  canonical `/v1` collection serves the canonical envelope.
 - `cursorPageOf` takes `prev` from the caller rather than inferring it: a
   forward-only scan cannot know its predecessor, and inventing one would
   produce a cursor that does not resolve.
