@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf } from '../standard.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import {
   archiveManagedApiKey,
   configuredApiKeyRecords,
@@ -12,6 +13,17 @@ export function apiKeysRoutes(deps: ServerDeps) {
   const app = new Hono();
 
   app.get('/', (c) => {
+    // Admission first: a parameter this listing does not implement used to be ignored, so
+    // `?limit=5` answered a page as though the request had been understood. The accept list
+    // is empty because the listing implements no parameter. The published CMA contract does
+    // not contain this endpoint at all — a search of every published doc for `api_keys`,
+    // `api-keys` or `/v1/api` returns no match — and this repository's own contract both
+    // classifies the route as a **local collection** (`routes.md`) and names it in the group
+    // that "return their whole set rather than a window" (`pagination.md`), so no window
+    // parameter is implemented or claimed. No caller passes one either: the Console, the SDK,
+    // the CLI and the tests all call it bare.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const data = [
       ...listManagedApiKeys(deps.db),
       ...configuredApiKeyRecords(deps.apiKeys ?? []),
