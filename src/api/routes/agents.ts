@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { cursorPageOf, toApiAgent } from '../standard.js';
+import { rejectUnexpectedQueryParams } from './query-params.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
 import { validateAgentDefinition } from '@/core/agent/schema.js';
@@ -30,6 +31,22 @@ export function agentsRoutes(deps: ServerDeps) {
 
   // GET / — List agents
   app.get('/', (c) => {
+    // Admission first, like every other listing route: a parameter this listing does not
+    // implement used to be ignored, so `?limit=5` answered a page as though the request had been
+    // understood. The accept list is empty because the listing implements no parameter, and four
+    // measurements agree. Of the 21 published `/v1/agents` lines, only two carry a query string and
+    // both are `?beta=true`, the compatibility parameter this route layer already accepts and
+    // ignores. No cursor pagination is documented for the listing at all: `before_id`, `after_id`,
+    // `has_more` and `page_token` appear zero times across the published docs, and the documented
+    // `limit`/`page`/`next_page` convention is shown for `/v1/sessions`. This repository's contract
+    // names `/v1/agents`, with its versions, in the group of collections that return their whole
+    // set (`pagination.md`). And no local caller passes a query string.
+    //
+    // Deliberately NOT applied to `GET /:id/versions` in this file: the published contract states
+    // that the version history listing *is* paginated (`智能体设置.md`), so refusing its `limit` or
+    // `page` would refuse a capability a caller was promised.
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
     const agents = loadActiveAgentRows(deps.db).flatMap((row) => {
       const agent = parseAgentDefinitionFromRow(row);
       return agent ? [toApiAgent(agent, agentRowMetaFromRow(row))] : [];
