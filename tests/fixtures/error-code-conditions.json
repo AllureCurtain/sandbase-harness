@@ -20,11 +20,6 @@
       "module": "src/strategy/pi/session-continuity.ts",
       "line": 17,
       "condition": "A resumed Pi session's recorded policy does not match the policy now in effect, so continuation is refused."
-    },
-    "pi_rpc_dialog_unsupported": {
-      "module": "src/strategy/pi/rpc-wire.ts",
-      "line": 80,
-      "condition": "A Pi RPC dialog is not supported by this session."
     }
   }
 }
