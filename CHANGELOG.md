@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- The public error-code inventory is now pinned by a test against 	ests/fixtures/error-codes.json, so a renamed or added code fails the suite instead of reaching callers silently. No runtime behaviour changes.
 - Removed imports the operations route module no longer uses; no behaviour change.
 - Webhook retry backoff is now jittered inside the published 5-120 s window instead of a fixed 60 s and 120 s, so endpoints that fail together no longer retry together. The three-attempt limit and the retry schedule's ceiling are unchanged.
 - The offset-window semantics shared by the skills listing, the agent version history and the memory version history now live in one exported helper (offsetCursorPage) instead of three near-identical copies. No wire behaviour changes: the cursors, limits, defaults and admission lists each listing emits are unchanged.
