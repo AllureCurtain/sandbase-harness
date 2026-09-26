@@ -165,6 +165,23 @@ describe('session.error production paths', () => {
     }
   });
 
+  it('marks an untrusted Pi frame not retryable rather than unknown', async () => {
+    // A protocol error is raised from the read loop, so the command may already
+    // have reached the engine: the transport's own comment for that situation is
+    // that the bytes "may or may not have reached the engine" and "the caller
+    // must not retry the command". Reporting `unknown` there tells a client the
+    // opposite of what the transport requires, and the alternative failure mode
+    // is a transport built without a writable stdin, which a retry cannot fix.
+    const { projected } = await errorEventFor(
+      () => coded('pi_rpc_protocol_error', 'Pi RPC frame 7 is not valid JSON'),
+    );
+
+    expect(projected.error?.retry_status).toBe('not_retryable');
+    // The code must survive into `type`; a classification that only worked
+    // because the code was dropped would report `internal_error`.
+    expect(projected.error?.type).toBe('pi_rpc_protocol_error');
+  });
+
   it('does not guess a retry disposition for an unrecognized code', async () => {
     // Claiming `not_retryable` for an unknown failure would tell a client to
     // abandon work that might succeed, so `unknown` is the honest answer.
