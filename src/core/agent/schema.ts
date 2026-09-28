@@ -12,7 +12,7 @@ import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
 } from '@/core/agent/web-tool-policy.js';
-import type { AgentDefinition, AgentToolset } from '@/types/agent.js';
+import type { AgentDefinition, AgentModelConfig, AgentModelSpeed, AgentToolset } from '@/types/agent.js';
 
 // ============================================================
 // MCP Server Config Schema
@@ -134,6 +134,14 @@ export const modelEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'
 export const agentModelConfigSchema = z.object({
   id: z.string().min(1, 'Model id is required').optional(),
   speed: modelSpeedSchema.default('standard'),
+  // The local `model_config` spelling is also a request shape, and the read
+  // projection returns `effort` inside it. Accepting it here is what keeps a
+  // value the caller can read back from being silently dropped when they send it
+  // again. A level outside the published set is refused as a shape error at
+  // `model_config.effort`, which names the field: the canonical `model.effort`
+  // path cannot, because there the object and the bare string are one union and
+  // the issue is reported at `model`.
+  effort: modelEffortSchema.optional(),
 });
 
 /**
@@ -315,6 +323,34 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
   return { valid: true, data: normalizeAgentDefinition(result.data) };
 }
 
+/**
+ * The stored model profile, derived from whichever `model` form the caller sent.
+ *
+ * `effort` lives *inside* the profile, beside the id and speed it belongs to.
+ * An earlier version wrote it as a sibling of `model_config`, where nothing read
+ * it: the value survived in the row but no read-back could reach it. Definitions
+ * written then are still readable — `readAgentDefinitionFromRow` folds the sibling
+ * into the profile before validating, and `toApiAgent` honours that spelling as
+ * well — and an update through either path rewrites it in place. When `model` is
+ * the object form it is authoritative: the profile is derived from that object,
+ * and a `model_config` sent beside it is ignored rather than merged.
+ */
+function normalizeModelConfig(profile: {
+  id: string;
+  speed: AgentModelSpeed;
+  effort?: string;
+}): AgentModelConfig {
+  return {
+    id: profile.id,
+    speed: profile.speed,
+    // Parsed and validated before this point so an unsupported level fails
+    // loudly, then carried through so the value survives a read-back. Nothing
+    // varies the provider request by it: the provider model is resolved from the
+    // id, so this is accepted-and-echoed rather than executed.
+    ...(profile.effort ? { effort: profile.effort } : {}),
+  };
+}
+
 function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): AgentDefinition {
   const normalizedTools = normalizeCustomToolsets(data.tools);
 
@@ -323,7 +359,15 @@ function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): 
       ...data,
       model: data.model,
       ...(normalizedTools ? { tools: normalizedTools } : {}),
-      ...(data.model_config ? { model_config: { id: data.model_config.id ?? data.model, speed: data.model_config.speed } } : {}),
+      ...(data.model_config
+        ? {
+            model_config: normalizeModelConfig({
+              id: data.model_config.id ?? data.model,
+              speed: data.model_config.speed,
+              ...(data.model_config.effort ? { effort: data.model_config.effort } : {}),
+            }),
+          }
+        : {}),
     } as AgentDefinition;
   }
 
@@ -331,13 +375,11 @@ function normalizeAgentDefinition(data: z.infer<typeof agentDefinitionSchema>): 
     ...data,
     model: data.model.id,
     ...(normalizedTools ? { tools: normalizedTools } : {}),
-    model_config: {
+    model_config: normalizeModelConfig({
       id: data.model.id,
       speed: data.model.speed ?? 'standard',
-    },
-    // Parsed and validated above so an unsupported level fails loudly, then
-    // carried through so the value survives a read-back.
-    ...(data.model.effort ? { effort: data.model.effort } : {}),
+      ...(data.model.effort ? { effort: data.model.effort } : {}),
+    }),
   } as AgentDefinition;
 }
 /**

@@ -46,6 +46,20 @@ export type AgentModelSpeed = 'fast' | 'standard' | 'extended';
 export interface AgentModelConfig {
   id: string;
   speed: AgentModelSpeed;
+  /**
+   * Canonical reasoning-effort level, retained so a read-back echoes what the
+   * caller sent. Nothing varies the provider request by it: the executor
+   * resolves the provider model from `model` (the id string), so this field is
+   * stored and projected, not executed.
+   *
+   * Typed as a plain string on purpose. `core/agent/model-object.ts` owns the
+   * accepted set (`MODEL_EFFORT_LEVELS`) and the schema that enforces it on the
+   * way in, and this module is the shared vocabulary the core imports from — so
+   * the field stays a string here rather than adding a type-only import back into
+   * the core layer. The cost is that a consumer reading this type does not see the
+   * five levels; the benefit is that `types/` keeps no dependency on `core/`.
+   */
+  effort?: string;
 }
 
 // ============================================================
