@@ -20,8 +20,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cloneArgs, gitAuthEnv } from '@/core/resources/github-materializer.js';
+import { cloneArgs, gitAuthEnv, materializeGithubRepository, type MaterializeDeps } from '@/core/resources/github-materializer.js';
 import { createGithubMaterializeDeps, createGithubMaterializer } from '@/core/resources/github-runtime.js';
+import type { SandboxInstance } from '@/types/sandbox.js';
 
 /** Whether git is on PATH; the whole suite is meaningless without it. */
 function gitAvailable(): boolean {
@@ -81,7 +82,9 @@ function fileUrl(path: string): string {
  * the 5s default is not enough once the full suite is running in parallel and
  * git invocations queue up. A generous ceiling is set at the suite level rather
  * than per test, so a slow machine fails loudly on a genuine hang instead of on
- * scheduling contention.
+ * scheduling contention. The fixture hook gets the same ceiling: it runs three
+ * git commands of its own, and under the global `hookTimeout` a cold machine
+ * failed the hook rather than a test, which reports as an unrelated failure.
  */
 const REAL_GIT_TIMEOUT_MS = 60_000;
 
@@ -96,7 +99,7 @@ describe.skipIf(!hasGit)('github host primitives (real git + real filesystem)', 
     cacheRoot = join(root, 'cache');
     mkdirSync(cacheRoot, { recursive: true });
     ({ repoPath, sha } = createFixtureRepo(root));
-  });
+  }, REAL_GIT_TIMEOUT_MS);
 
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -239,5 +242,74 @@ describe.skipIf(!hasGit)('github host primitives (real git + real filesystem)', 
     expect(existsSync(join(freshCache, 'github-repositories'))).toBe(false);
     createGithubMaterializer({ cacheRoot: freshCache });
     expect(existsSync(join(freshCache, 'github-repositories'))).toBe(true);
+  });
+
+  it('clones the default branch when no checkout was asked for', async () => {
+    // The published resource makes `checkout` optional; a clone with no
+    // `--branch` is what follows the remote's default branch. `--branch HEAD`
+    // is refused by a real git (`fatal: Remote branch HEAD not found in
+    // upstream origin`), which the fake runner in the unit suite cannot show.
+    const deps = createGithubMaterializeDeps({ cacheRoot });
+    const staging = join(cacheRoot, 'default-branch');
+    mkdirSync(staging, { recursive: true });
+    const args = cloneArgs(fileUrl(repoPath), undefined);
+
+    expect(args).not.toContain('--branch');
+    const result = await deps.runGit(args, { cwd: staging, env: gitAuthEnv('unused') });
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(staging, 'README.md'))).toBe(true);
+  });
+
+  it('materializes a repository whose resource names no checkout', async () => {
+    // The materializer only accepts `https://github.com/<owner>/<repo>`, so the
+    // remote URL is rewritten at the git boundary and everything above it — the
+    // revision decision, the argument list, the environment, the tree copy — is
+    // the production path. This is the test that fails if the default branch is
+    // spelled `--branch HEAD` again.
+    const deps = createGithubMaterializeDeps({ cacheRoot });
+    const cloned: string[][] = [];
+    const runGit: MaterializeDeps['runGit'] = async (args, opts) => {
+      const local = args.map((arg) => (arg === 'https://github.com/acme/widget' ? fileUrl(repoPath) : arg));
+      cloned.push(local);
+      return deps.runGit(local, opts);
+    };
+    const written = new Map<string, string>();
+    const sandbox: SandboxInstance = {
+      sessionId: 'sess_default_branch',
+      async execute() {
+        return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+      },
+      async writeFile(path, content) {
+        written.set(path, typeof content === 'string' ? content : content.toString('utf8'));
+      },
+      async readFile() {
+        return '';
+      },
+      async listFiles() {
+        return [];
+      },
+      async cleanup() {},
+    };
+
+    const result = await materializeGithubRepository(
+      {
+        type: 'github_repository',
+        url: 'https://github.com/acme/widget',
+        repository: 'acme/widget',
+        mount_path: '/workspace/widget',
+        authorization_token: 'ghp_localfixturetoken0123456789',
+      },
+      sandbox,
+      { ...deps, runGit },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const clone = cloned.find((args) => args[0] === 'clone');
+    expect(clone).toBeDefined();
+    expect(clone).not.toContain('--branch');
+    expect(result.skills).toEqual(['code-review']);
+    expect(written.has('/workspace/widget/README.md')).toBe(true);
   });
 });
