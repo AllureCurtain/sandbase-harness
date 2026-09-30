@@ -136,6 +136,19 @@ export function cloneArgs(url: string, checkout: GithubCheckout | undefined): st
  * `x-access-token` user. The resulting Basic header is carried through
  * `GIT_CONFIG_*` rather than argv, so `ps`, shell history, and error output do
  * not expose the token.
+ *
+ * No tracing switch is set here, and none may be: git reads `GIT_CURL_VERBOSE`
+ * for its *presence*, so the `GIT_CURL_VERBOSE: ''` an earlier revision set to
+ * "keep the header out of any config dump" did the opposite and turned curl
+ * tracing on for every invocation — that is, it wrote transport metadata and the
+ * `Authorization` header's presence to stderr on every clone, and it pushed the
+ * `fatal:` line past the bounded output this module keeps. The header itself is
+ * redacted by default (`Authorization: Basic <redacted>`, measured on git 2.55)
+ * and unredacted once `GIT_TRACE_REDACT=false` is exported alongside it, so the
+ * trace was one host variable away from the token and the mechanism cannot rest
+ * on redaction. Where that guarantee lives now is `gitChildEnv` in
+ * `github-runtime.ts`, which removes every tracing switch from the child
+ * environment whether it was inherited or passed in.
  */
 export function gitAuthEnv(token: string): Record<string, string> {
   const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
@@ -146,9 +159,6 @@ export function gitAuthEnv(token: string): Record<string, string> {
     GIT_CONFIG_VALUE_0: header,
     GIT_TERMINAL_PROMPT: '0',
     GIT_ASKPASS: '',
-    // Keep the header out of any config dump git might print on error.
-    GIT_TRACE: '',
-    GIT_CURL_VERBOSE: '',
   };
 }
 

@@ -196,6 +196,20 @@ describe('github git environment', () => {
     const decoded = Buffer.from(encoded, 'base64').toString('utf8');
     expect(decoded).toBe(`x-access-token:${TOKEN}`);
   });
+
+  it('sets no tracing switch, because the header a trace would print is in this environment', () => {
+    // `GIT_CURL_VERBOSE: ''` looks like "tracing off" and is the opposite: git
+    // reads the variable for its presence, so it turned curl tracing on for every
+    // invocation. The trace printed the request metadata and the header's
+    // presence — git redacts the value by default — and it printed the header as
+    // base64 once a host also exported `GIT_TRACE_REDACT=false`, which
+    // `sanitizeGitOutput` does not replace, because it strips the token, not its
+    // encoding. The child environment is stripped of every tracing family by
+    // `gitChildEnv` instead.
+    const env = gitAuthEnv(TOKEN);
+    const switches = Object.keys(env).filter((name) => /^(GIT_TRACE|GIT_TRACE2|GIT_CURL_VERBOSE)/.test(name));
+    expect(switches).toEqual([]);
+  });
 });
 
 describe('github cache keying', () => {
