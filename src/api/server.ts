@@ -39,6 +39,7 @@ import type { Database } from '@/core/db/database.js';
 import type { ModelConfig, RuntimeModelInfo } from '@/types/model.js';
 import type { ArtifactStore } from '@/core/storage/artifact-store.js';
 import type { OutcomeEvaluator } from '@/core/operations/outcome-evaluator.js';
+import { RUNTIME_VERSION } from '@/core/version.js';
 
 export interface ServerDeps {
   db: Database;
@@ -197,8 +198,16 @@ app.route('/v1/runs', runsRoutes(deps));
     app.route('/v1/x/worker', workerRoutes(deps.workQueue, deps.db));
   }
 
-  // Root health check (JSON - used by SDK/clients)
-  app.get('/', (c) => c.json({ status: 'ok', name: 'managed-agents', version: '0.1.0' }));
+  // Root health check (JSON - used by SDK/clients). The version is the one the
+  // runtime reports everywhere else — what the composition root read from the
+  // shipped manifest — falling back to that same reader for a server built
+  // without runtime info (tests, embedders). A literal here is what let a
+  // `0.3.8` package answer `0.1.0`.
+  app.get('/', (c) => c.json({
+    status: 'ok',
+    name: 'managed-agents',
+    version: deps.runtime?.version ?? RUNTIME_VERSION,
+  }));
 
   // Web dashboard (R10)
   app.get('/ui', (c) => c.redirect('/dashboard', 308));

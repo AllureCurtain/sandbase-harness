@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { join } from 'node:path';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
@@ -198,6 +198,10 @@ describe('Managed Agents API', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.name).toBe('managed-agents');
+      // This app is built without runtime info, so this is the fallback path: the
+      // version still comes from the package, never from a literal here.
+      const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+      expect(body.version).toBe(version);
     });
   });
 

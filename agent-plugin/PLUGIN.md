@@ -28,7 +28,7 @@ copilot plugin install sandbaseai/sandbase-harness:agent-plugin
 ```
 
 The bundled MCP configuration uses the pinned public image
-`ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8` and passes the two environment
+`ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0` and passes the two environment
 variables through to the bridge. The runtime API URL and any API key belong to
 the user and are not embedded in this plugin.
 
@@ -38,7 +38,7 @@ The source-backed directory page is [Agent Plugins Directory](https://agent-plug
 
 - Agent Plugins 1.0-compatible clients with MCP support
 - Docker on the host running the bridge
-- SandBase Harness v0.3.8 or a compatible runtime API
+- SandBase Harness v0.4.0 or a compatible runtime API
 
 The plugin manifest is version `0.1.1`; this patch release records the
 discovery metadata and current runtime bridge reference without changing the

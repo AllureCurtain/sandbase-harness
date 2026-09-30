@@ -22,10 +22,10 @@ with sandboxed execution, persistent sessions, memory, approvals, audit,
 replay, and a local Console. It also provides a DeepSeek Harness-compatible
 MCP bridge.
 
-Current release: https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8
+Current release: https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.4.0
 Install guide: https://github.com/sandbaseai/sandbase-harness/blob/main/llms-install.md
 MCP example: https://github.com/sandbaseai/sandbase-harness/tree/main/examples/deepseek-harness
-Published bridge image: ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
+Published bridge image: ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0
 ```
 
 ## harnesses.sh
@@ -37,7 +37,7 @@ https://www.harnesses.sh/about. Suggested message:
 Could you consider SandBase Harness for the agent-harness directory?
 
 Repository: https://github.com/sandbaseai/sandbase-harness
-Current release: https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8
+Current release: https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.4.0
 Evidence: https://github.com/sandbaseai/sandbase-harness/blob/main/llms-install.md
 
 It is a local-first, self-hosted runtime with persistent sessions, sandboxed

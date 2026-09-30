@@ -27,8 +27,12 @@ import { attachRuntimeServerErrorHandler, parseCsv, runtimeStartupBannerLines } 
 import { createLogger, InMemoryLogStore } from './core/observability/logger.js';
 import { Metrics } from './core/observability/metrics.js';
 import { runCli, type StartServerOptions } from './cli/program.js';
+import { RUNTIME_VERSION } from './core/version.js';
 
-const VERSION = '0.1.0';
+// The version the CLI reports and the banners print: the one this package ships
+// as. `core/version.ts` is the single reader of `package.json`, so a release
+// cannot announce a version it is not.
+const VERSION = RUNTIME_VERSION;
 
 // V1 local-first quick-start contract:
 // - Settings pages configure the active model provider boundary.

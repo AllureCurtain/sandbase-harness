@@ -8,11 +8,30 @@
  */
 
 import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
 
 const rl = createInterface({ input: process.stdin });
 
 function send(msg) {
   process.stdout.write(JSON.stringify(msg) + '\n');
+}
+
+/**
+ * Record what the connecting client says it is, when a test asks for it.
+ *
+ * A server receiving `initialize` is the only place the caller's identity is
+ * visible, so it is the only place a test can check it. Off unless the test
+ * sets the variable; the path is configuration, never a value sent by a client.
+ */
+function recordClientInfo(params) {
+  const target = process.env.MOCK_MCP_CLIENT_INFO_FILE;
+  if (!target) return;
+  try {
+    writeFileSync(target, JSON.stringify(params?.clientInfo ?? null));
+  } catch {
+    // A test that cannot record will fail on its own assertion; the handshake
+    // itself must not break over this.
+  }
 }
 
 rl.on('line', (line) => {
@@ -27,6 +46,7 @@ rl.on('line', (line) => {
   const { id, method } = req;
 
   if (method === 'initialize') {
+    recordClientInfo(req.params);
     send({
       jsonrpc: '2.0',
       id,

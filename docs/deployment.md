@@ -125,7 +125,7 @@ spec:
     spec:
       containers:
         - name: runtime
-          image: your-registry.example/sandbase-harness:v0.3.8
+          image: your-registry.example/sandbase-harness:v0.4.0
           workingDir: /app
           command:
             - node

@@ -19,6 +19,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { resolveEnvVarsDeep } from '@/core/config/env-resolver.js';
+import { RUNTIME_VERSION } from '@/core/version.js';
 import type { McpServerConfig } from '@/types/agent.js';
 
 /** Default connect + tools/list timeout (ms). */
@@ -352,7 +353,11 @@ export class McpManager {
         : undefined);
     }
 
-    const client = new Client({ name: 'sandbase-harness', version: '1.0.0' });
+    // The identity a third-party MCP server sees when this runtime connects. It
+    // named `1.0.0`, a version this project never shipped, for the same reason
+    // the CLI banner did: it was a literal. A remote operator debugging which
+    // runtime called them should read the version that actually answered.
+    const client = new Client({ name: 'sandbase-harness', version: RUNTIME_VERSION });
     try {
       await client.connect(transport);
     } finally {

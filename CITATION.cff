@@ -8,8 +8,8 @@ authors:
 abstract: "Local-first, self-hosted runtime for durable and auditable AI agent execution with persistent sessions, sandboxed tools, MCP integration, memory, approvals, audit logs, replay, and a local Console."
 repository-code: "https://github.com/sandbaseai/sandbase-harness"
 license: Apache-2.0
-version: 0.3.8
-date-released: 2026-08-30
+version: 0.4.0
+date-released: 2026-09-30
 keywords:
   - agent runtime
   - agent harness

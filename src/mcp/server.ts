@@ -7,6 +7,7 @@ import {
   type SessionSummary,
   type StreamedEvent,
 } from '../sdk/client.js';
+import { RUNTIME_VERSION } from '../core/version.js';
 
 export interface ManagedAgentsMcpClient {
   agents: {
@@ -67,13 +68,15 @@ export function createManagedAgentsMcpServer(options: {
   client?: ManagedAgentsMcpClient;
   baseUrl?: string;
   apiKey?: string;
+  /** Version reported to the MCP client on initialize; defaults to the packaged one. */
+  version?: string;
 } = {}): McpServer {
   const client = options.client ?? new ManagedAgentsClient({
     baseUrl: options.baseUrl ?? process.env.MANAGED_AGENTS_URL ?? 'http://127.0.0.1:3000',
     apiKey: options.apiKey ?? process.env.MANAGED_AGENTS_API_KEY,
   });
   const handlers = createManagedAgentsMcpHandlers(client);
-  const server = new McpServer({ name: 'sandbase-harness', version: '0.1.0' });
+  const server = new McpServer({ name: 'sandbase-harness', version: options.version ?? RUNTIME_VERSION });
 
   server.registerTool('list_agents', {
     description: 'List agents available in the connected SandBase managed-agents runtime.',

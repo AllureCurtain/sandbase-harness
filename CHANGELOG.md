@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-09-30
 
 ### Added
 
@@ -717,6 +717,8 @@ ext_page as well as on the first page. No runtime behaviour changes.
 
 - **`managed-agents chat` reports a turn that failed instead of printing nothing and exiting `0`.** A turn whose provider refuses the credential, whose endpoint is unreachable, or whose model id is not served is recorded as a `session.error` carrying the runtime's own code and message, and the session is left resumable (or `failed`, for a failure the runtime treats as terminal). The command read that event nowhere, so it printed nothing after the session banner and exited `0` — indistinguishable, from a script or a terminal, from an agent that answered with silence, on the exact path the README recommends for the first message. It now prints the recorded message with its code and the session id, and exits `1`; interactive use keeps its prompt, and a run that contained a failure stays non-zero at exit. The failure is not an approval, so nothing is parked and no tool runs. The same change closes the other half of that path: a failure the runtime treats as terminal ends the session with `session.status_terminated` rather than `session.status_idle`, and the tail stream stays open after that frame, so the command waited on a socket that never closes and never reported anything — measured to hang indefinitely after an answered approval, and now ended by that frame. A failure is also reported for the turn that recorded it: the next line in an interactive session is a new turn, and a turn that succeeds no longer re-prints an earlier turn's failure. `StreamedEvent` in the SDK declares the `error` object the runtime projects onto that event (`type`, `message`, `retry_status`), which is what a client needs to tell a failed turn from an empty one.
 
+- **The runtime reports the version it actually is.** The startup banner, `GET /`, and the MCP `serverInfo` each carried their own `0.1.0` literal while the package was `0.3.8`, so the first line a new user read after `start` named a version this project never shipped and a client inspecting a running deployment read the same string back. All three now quote the version of the `package.json` that ships beside the code, resolved once by a single reader (`src/core/version.ts`) instead of copied into each surface; the manifest is found by walking up from the module, because `src/`, `dist/index.js`, and `dist/mcp/index.js` sit at three different depths and a fixed relative path is right for only one of them. The MCP server keeps reporting its own name and still accepts an explicit version for embedders, and a `dist/` copied without its manifest reports `0.0.0-unknown` rather than a guess. `tests/conformance/version-reporting.test.ts` asserts the banner and `GET /` of a runtime started from source, and the `serverInfo` an MCP client receives on initialize, all against the manifest it reads itself.
+
 ## 0.3.8 - 2026-08-30
 
 ### Fixes
@@ -734,8 +736,6 @@ ext_page as well as on the first page. No runtime behaviour changes.
   authority only after validation.
 - Documents the maintainer and organic project-promotion workflow in
   `AGENTS.md` and keeps the DeepSeek Harness Handbook discovery link current.
-
-## Unreleased
 
 ## 0.3.7 - 2026-08-20
 

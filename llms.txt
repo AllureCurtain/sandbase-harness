@@ -7,7 +7,7 @@
 - Installation: https://github.com/sandbaseai/sandbase-harness/blob/main/llms-install.md
 - Showcase: https://github.com/sandbaseai/sandbase-harness/blob/main/docs/showcase.md
 - Official MCP Registry: https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness
-- Latest tagged release: v0.3.8
+- Latest tagged release: v0.4.0
 - Official DeepSeek Harness Showcase: https://github.com/deepseek-ai/deepseek-harness/discussions/1918
 - Official promotion and integration updates: https://github.com/sandbaseai/sandbase-harness/discussions/116
 - Verified dshbase listing: https://dshbase.com/plugins/sandbase-harness/
@@ -75,7 +75,7 @@ release metadata remain the source of truth.
 
 ## MCP bridge
 
-- Docker image: `ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8`
+- Docker image: `ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0`
 - Container package: https://github.com/orgs/sandbaseai/packages/container/package/sandbase-harness-mcp
 - Tools: `list_agents`, `create_session`, `run_session`, `get_session`, `list_artifacts`, `stop_session`
 - Runtime endpoint: `MANAGED_AGENTS_URL` (default `http://127.0.0.1:3000`)

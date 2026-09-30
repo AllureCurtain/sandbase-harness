@@ -371,7 +371,7 @@ remain the source of truth.
 - [Self-host the SandBase agent runtime](https://www.ssdnodes.com/learn/self-host-sandbase-agent-runtime)
   by SSD Nodes — an independent VPS walkthrough covering installation, agent
   configuration, MCP servers, sandbox modes, and reverse-proxy deployment. The
-  article demonstrates v0.3.2; use the current release command above for v0.3.8.
+  article demonstrates v0.3.2; use the current release command above for v0.4.0.
 
 ## Promotion records
 

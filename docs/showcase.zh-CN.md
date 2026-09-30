@@ -5,7 +5,7 @@ Harness 可以从下面三个场景开始使用。
 
 ## 发现和验证项目
 
-- [当前版本：v0.3.8](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8)
+- [当前版本：v0.4.0](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.4.0)
 - [官方 MCP Registry 条目](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
 - [已验证的 dshbase 条目](https://dshbase.com/plugins/sandbase-harness/)
 - [SandBase Agent Runtime 生态地图](https://github.com/sandbaseai/awesome-agent-runtime)
@@ -37,7 +37,7 @@ node "$HARNESS_DIR/dist/index.js" start
 查看产物和取消任务。
 
 完整步骤见[DeepSeek Harness 集成示例](../examples/deepseek-harness/README.md)。
-当前版本为 v0.3.8；跨平台安装请使用 HTTPS Git 地址。
+当前版本为 v0.4.0；跨平台安装请使用 HTTPS Git 地址。
 
 ## 3. 受控执行生成代码
 

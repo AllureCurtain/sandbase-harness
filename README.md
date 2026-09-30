@@ -27,7 +27,7 @@ Anthropic, MiniMax, or any OpenAI-compatible endpoint). Docker is optional and
 only needed for Docker-backed sandboxes.
 
 ```bash
-git clone --branch v0.3.8 --depth 1 https://github.com/sandbaseai/sandbase-harness.git
+git clone --branch v0.4.0 --depth 1 https://github.com/sandbaseai/sandbase-harness.git
 cd sandbase-harness
 npm ci
 npm run build
@@ -132,7 +132,7 @@ copilot plugin install sandbaseai/sandbase-harness:agent-plugin
 ```
 
 The plugin passes these environment variables through to the pinned
-`ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8` image. It does not store a key
+`ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0` image. It does not store a key
 in `plugin.json`, `mcp.json`, or the installed plugin files. On Linux, the
 plugin's Docker command maps `host.docker.internal` through `host-gateway`.
 
@@ -153,10 +153,10 @@ the Harness API, then add this stdio command to an MCP client:
 Container package: [GitHub Container Registry](https://github.com/orgs/sandbaseai/packages/container/package/sandbase-harness-mcp)
 
 ```bash
-docker pull ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
+docker pull ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0
 docker run --rm -i \
   -e MANAGED_AGENTS_URL=http://host.docker.internal:3000 \
-  ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
+  ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0
 ```
 
 For an authenticated remote runtime, also pass `MANAGED_AGENTS_API_KEY`. The
@@ -281,7 +281,7 @@ third-party plugin, read the
 [DeepSeek Harness developer guide](https://blog.sandbase.ai/deepseek-harness-developer-preview-2026/#add-a-real-third-party-runtime-plugin).
 The [Chinese edition](https://blog.sandbase.ai/zh-CN/deepseek-harness-developer-preview-2026/#接入一个真实的第三方-runtime-插件)
 is available as well; both articles are maintained against the pinned
-SandBase Harness v0.3.8 integration.
+SandBase Harness v0.4.0 integration.
 
 Pair the plugin with SandBase Skills to give the same DSH project a portable,
 source-verifiable research workflow:

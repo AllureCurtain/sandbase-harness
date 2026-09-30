@@ -13,7 +13,7 @@ standalone model provider.
 ## Start the runtime
 
 ```bash
-git clone --branch v0.3.8 --depth 1 https://github.com/sandbaseai/sandbase-harness.git
+git clone --branch v0.4.0 --depth 1 https://github.com/sandbaseai/sandbase-harness.git
 cd sandbase-harness
 npm ci
 npm run build
@@ -28,7 +28,7 @@ node ../sandbase-harness/dist/index.js start --workspace "$PWD"
 ```bash
 docker run --rm -i \
   -e MANAGED_AGENTS_URL=http://host.docker.internal:3000 \
-  ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
+  ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0
 ```
 
 If the runtime requires authentication, also pass
@@ -60,7 +60,7 @@ register the published MCP bridge non-interactively:
 
 ```bash
 cline mcp install sandbase-harness --transport stdio --yes -- \
-  docker run --rm -i ghcr.io/sandbaseai/sandbase-harness-mcp:0.3.8
+  docker run --rm -i ghcr.io/sandbaseai/sandbase-harness-mcp:0.4.0
 ```
 
 The command writes a `sandbase-harness` entry to Cline's MCP settings. Docker

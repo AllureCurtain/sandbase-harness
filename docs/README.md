@@ -47,7 +47,9 @@ npm run release:check
 ```
 
 It runs typecheck, tests, production builds, package dry-run, and CLI smoke
-checks for `managed-agents init` plus `examples/basic` startup.
+checks for `managed-agents init`, `examples/basic` startup, the version the
+packaged runtime reports about itself (its startup banner and `GET /`), and the
+packaged MCP server handshake.
 
 ## Documentation Rules
 

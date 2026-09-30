@@ -5,7 +5,7 @@ just a single model request. These are three practical starting points.
 
 ## Find and verify the project
 
-- [Current release: v0.3.8](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.3.8)
+- [Current release: v0.4.0](https://github.com/sandbaseai/sandbase-harness/releases/tag/v0.4.0)
 - [Official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sandbaseai%2Fsandbase-harness)
 - [Verified dshbase listing](https://dshbase.com/plugins/sandbase-harness/)
 - [SandBase Agent Runtime landscape](https://github.com/sandbaseai/awesome-agent-runtime)
@@ -41,7 +41,7 @@ cancellation.
 
 Follow the reproducible setup in
 [`examples/deepseek-harness`](../examples/deepseek-harness/README.md). The
-current tagged release is v0.3.8; use HTTPS Git URLs for cross-platform
+current tagged release is v0.4.0; use HTTPS Git URLs for cross-platform
 installs.
 
 Best for: using DSH as the interactive front end while keeping durable agent
