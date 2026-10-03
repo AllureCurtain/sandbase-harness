@@ -232,11 +232,11 @@ describe('SessionManager budget', () => {
     });
     recordSpend(session.id, tokensForCents(15));
 
-    expect(() => manager.update(session.id, {
+    expect(() => manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '15', currency: 'USD' } },
     })).toThrowError(/must be greater than the session's consumed list cost/);
 
-    const raised = manager.update(session.id, {
+    const raised = manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '50', currency: 'USD' } },
     });
     expect(raised.budget?.max_list_cost.amount).toBe('50');
@@ -248,19 +248,19 @@ describe('SessionManager budget', () => {
       agent: 'agent_priced',
       budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
     });
-    manager.update(session.id, { budget: null });
+    manager.updateBudget(session.id, { budget: null });
 
     expect(manager.get(session.id)?.budget).toBeNull();
     // Re-adding is refused after removal, which is why the row has to keep the
     // removal rather than just clearing the column.
-    expect(() => manager.update(session.id, {
+    expect(() => manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '99', currency: 'USD' } },
     })).toThrowError(/cannot be re-added/);
   });
 
   it('refuses to attach a budget to a session that never had one', () => {
     const session = manager.create({ agent: 'agent_priced' });
-    expect(() => manager.update(session.id, {
+    expect(() => manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
     })).toThrowError(/can only be attached when the session is created/);
   });
@@ -273,7 +273,7 @@ describe('SessionManager budget', () => {
     // A model nobody declared — a delegation could do this in production.
     recordSpend(session.id, 1000, 'model-unpriced');
     expect(manager.isBudgetExhausted(session.id)).toBe(true);
-    expect(() => manager.update(session.id, {
+    expect(() => manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '2000', currency: 'USD' } },
     })).toThrowError(/no list price/);
   });

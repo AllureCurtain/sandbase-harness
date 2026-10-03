@@ -11,6 +11,16 @@
 - Session responses now use only `idle`, `running`, `rescheduling`, and `terminated`. Waiting for approval or a custom tool result is `idle`, with `stop_reason.type: "requires_action"` and pending event ids on the matching `session.status_idle` event. Internal `failed`, `cancelled`, `timed_out`, and `cleanup_pending` all project to `terminated`; their details remain in the event log. A failed session is terminal: new messages and events return `409` without persisting input or starting another turn. The existing single-value session `status` list filter selects every internal state in the requested public group; `rescheduling` currently selects none because automatic rescheduling is not implemented.
 
 ### Added
+- Sessions can now be updated in place with `POST /v1/sessions/{id}`. `agent`
+  admits only `tools` and `mcp_servers` (full replacement, validated like an
+  agent definition, and materialized as the session's own snapshot without
+  touching the agent row), `metadata` merges per key with `null` removing a
+  key, and `title` replaces with `null` clearing. An agent change requires an
+  idle session (`session_not_idle` while running); `vault_ids` returns
+  `vault_ids_not_updatable`, `budget` returns `budget_update_not_supported`,
+  and an `agent` field outside the pair returns `agent_field_not_updatable`.
+  Every changed request emits one `session.updated` event carrying only the
+  fields that changed, and the new configuration applies from the next turn.
 - Sessions can now be archived with `POST /v1/sessions/{id}/archive`. Archiving
   records `archived_at`, projects idle sessions to `terminated`, emits
   `session.status_terminated`, releases the sandbox, and rejects later events

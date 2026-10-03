@@ -331,6 +331,17 @@ export interface ApiEvent {
   description?: string;
   rubric?: OutcomeRubric;
   max_iterations?: number;
+  /**
+   * `session.updated` payload, lifted from the metadata carrier. Each field is
+   * present only when the update changed it: `agent` is the session's full
+   * materialized agent snapshot (the same projection `toApiSession` reports),
+   * `budget` the new ceiling or `null` on removal, `metadata` the session's
+   * full metadata bag (which replaces the carrier's own position at the top
+   * level for this event type), and `title` the new title.
+   */
+  agent?: ApiAgent | { id: string; type: 'agent'; name: string };
+  budget?: SessionBudget | null;
+  title?: string | null;
   model_used?: string;
   tokens_in?: number;
   tokens_out?: number;
@@ -544,18 +555,42 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   const sessionStopReason = event.type === 'session.status_idle'
     ? metadataObject(event, 'stop_reason') as NonNullable<SessionStatusIdleEvent['stop_reason']> | undefined
     : undefined;
+  // `session.updated` persists its changed-fields payload through the metadata
+  // carrier (`metadata.session_updated`), the same route `session.usage` takes.
+  // The stored `agent` entry is the merged definition plus the session's agent
+  // coordinates, which this projection turns back into the full snapshot the
+  // session read reports. `metadata` is special among the lifted fields: on the
+  // published event it IS the session's metadata bag, so it takes the field
+  // over the carrier — the carrier still holds it under `session_updated`.
+  const sessionUpdate = event.type === 'session.updated'
+    ? metadataObject(event, 'session_updated')
+    : undefined;
+  const sessionUpdateAgent = sessionUpdate?.agent !== undefined
+    ? toApiAgent(sessionUpdate.agent as AgentDefinition, {
+        id: sessionUpdate.agent_id as string | undefined,
+        version: sessionUpdate.agent_version as number | undefined,
+      })
+    : undefined;
   return {
     id: event.id,
     seq: event.seq,
     type: event.type,
     content: event.content ?? null,
-    ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
+    ...(event.type === 'session.updated'
+      // For this event type the published `metadata` IS the session's bag, so
+      // the carrier is never projected — a change that did not touch metadata
+      // would otherwise leak the internal `session_updated` wrapper.
+      ? (sessionUpdate?.metadata !== undefined ? { metadata: sessionUpdate.metadata as Record<string, unknown> } : {})
+      : event.metadata !== undefined ? { metadata: event.metadata } : {}),
     ...(event.type === 'user.tool_confirmation' && typeof event.metadata?.tool_use_id === 'string'
       ? { tool_use_id: event.metadata.tool_use_id }
       : {}),
     ...(usage ? { usage } : {}),
     ...(error ? { error } : {}),
     ...(defineOutcome ?? {}),
+    ...(sessionUpdateAgent ? { agent: sessionUpdateAgent } : {}),
+    ...(sessionUpdate?.budget !== undefined ? { budget: sessionUpdate.budget as SessionBudget | null } : {}),
+    ...(sessionUpdate?.title !== undefined ? { title: sessionUpdate.title as string | null } : {}),
     ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
     ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
     ...(toolUseId ? { tool_use_id: toolUseId } : {}),

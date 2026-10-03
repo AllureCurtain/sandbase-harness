@@ -562,6 +562,7 @@ internally failed sessions; those responses still report `terminated`.
 | `GET` | `/v1/sessions` | List sessions. |
 | `POST` | `/v1/sessions` | Create a session. |
 | `GET` | `/v1/sessions/{session_id}` | Retrieve a session. |
+| `POST` | `/v1/sessions/{session_id}` | Update a session: `agent` (`tools`/`mcp_servers` only), `metadata`, `title`. |
 | `POST` | `/v1/sessions/{session_id}/messages` | Send a user message and optionally stream. |
 | `POST` | `/v1/sessions/{session_id}/events` | Append user events. |
 | `GET` | `/v1/sessions/{session_id}/events` | List persisted events. |
@@ -590,6 +591,22 @@ returns `status: "terminated"`; a running session returns `409` with
 New events and messages on an archived session return `409` with
 `session_archived`. Filtering archived sessions from the collection is a later
 session-list behavior and is not included in this operation.
+
+Updating a session patches it in place. `agent` admits only `tools` and
+`mcp_servers`, which replace wholesale and are merged onto the definition the
+session resolves today — its own snapshot or the agent it follows — before the
+result is materialized as the session's snapshot; the agent itself is never
+changed. `metadata` merges per key with `null` removing a key (`null` for the
+whole field is no change), and `title` replaces with `null` clearing. An agent
+change needs an idle session: a running one returns `409` with
+`session_not_idle` and must be interrupted first, while `title` and `metadata`
+move in any non-terminal state. `vault_ids` returns `vault_ids_not_updatable`,
+`budget` returns `budget_update_not_supported`, an `agent` field outside the
+pair returns `agent_field_not_updatable`, and a terminated or archived session
+returns `409` with `session_terminated`. A change emits one `session.updated`
+event carrying only the fields that changed — the full agent snapshot, the
+whole post-update metadata bag, the new title — and a no-op request emits
+none. The new configuration applies from the next turn.
 
 Deleting a session is permanent. A running session returns `409` with
 `session_running` and must be interrupted to `idle` first. Otherwise the runtime

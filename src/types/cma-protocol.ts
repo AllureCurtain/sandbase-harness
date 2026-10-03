@@ -17,7 +17,7 @@
 
 /**
  * All possible CMA event types.
- * 7 user (incl. `user.define_outcome` and `user.steer`) + 8 agent + 5 streaming + 7 session + 5 span + 1 terminal = 33 total
+ * 7 user (incl. `user.define_outcome` and `user.steer`) + 8 agent + 5 streaming + 8 session + 5 span + 1 terminal = 34 total
  */
 export type CMAEventType =
   // User events (7)
@@ -50,6 +50,7 @@ export type CMAEventType =
   | 'session.status_terminated'
   | 'session.error'
   | 'session.deleted'
+  | 'session.updated'
   | 'session.usage'
   // Span events (5)
   | 'span.model_request_start'
@@ -350,6 +351,24 @@ export interface SessionDeletedEvent extends EventBase {
 }
 
 /**
+ * `session.updated` — an UpdateSession request changed at least one field.
+ *
+ * Carries only the fields that changed; absent fields were not part of the
+ * update. The payload is persisted through the generic metadata carrier
+ * (`metadata.session_updated`) and projected back to these top-level fields by
+ * `toApiEvent`, the same route `session.usage` takes. `agent` is the full
+ * materialized snapshot after the update, `metadata` the session's full
+ * metadata bag (omitted when the update left it empty), and `title` the new
+ * title.
+ */
+export interface SessionUpdatedEvent extends EventBase {
+  type: 'session.updated';
+  agent?: Record<string, unknown>;
+  budget?: SessionBudget | null;
+  title?: string | null;
+}
+
+/**
  * A money amount in the published wire form: an integer number of cents written
  * as a string, so the value never passes through a float.
  */
@@ -406,6 +425,7 @@ export type SessionLifecycleEvent =
   | SessionStatusTerminatedEvent
   | SessionErrorEvent
   | SessionDeletedEvent
+  | SessionUpdatedEvent
   | SessionUsageEvent;
 
 // ============================================================

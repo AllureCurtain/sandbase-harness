@@ -608,20 +608,12 @@ describe('documented capability decisions', () => {
     expect(documentNamed('credentials.md').text).toMatch(/plaintext/);
   });
 
-  it('removed the session.updated claim and only mentions it to say it is absent', () => {
-    // `session.updated` was removed from the contract rather than implemented.
-    // A document may say so — that is the point of recording a deletion — but
-    // the mention must carry the absence, or the removed event is back.
-    const absence = /\bno\b|\bnot\b|\bnever\b|removed|without|instead|has no\b/i;
-
-    for (const document of contractDocuments()) {
-      for (const line of document.text.split('\n')) {
-        if (!line.includes('session.updated')) continue;
-        expect(line, `${document.name} mentions session.updated without saying it is absent`).toMatch(
-          absence,
-        );
-      }
-    }
+  it('documents the shipped session.updated event in the sessions contract', () => {
+    // `session.updated` was unimplemented for a while and this guard enforced
+    // that every mention said so. It now ships through POST /v1/sessions/{id},
+    // so the sessions contract must carry the event rather than the removal
+    // note the old guard required.
+    expect(documentNamed('sessions.md').text).toContain('session.updated');
   });
 
   it('does not report a capability as supported while its composition or its blocker says otherwise', () => {

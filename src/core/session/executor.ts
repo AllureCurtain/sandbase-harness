@@ -400,6 +400,21 @@ export class DefaultSessionExecutor implements SessionExecutor {
   }
 
   /**
+   * Drop the session's MCP connections so the next turn reconnects against the
+   * session's current agent definition.
+   *
+   * Called after a session update replaced `agent.tools`/`agent.mcp_servers`.
+   * A credential refresh would reconnect the servers the old definition named
+   * under the old toolset's admission rule, because both were captured when the
+   * manager connected — the only correct answer to a changed server set or
+   * admission set is to connect again. Only MCP state is torn down: the
+   * sandbox stays bound for the session's lifetime.
+   */
+  async resetSessionMcpConnections(sessionId: string): Promise<void> {
+    await this.toolResolver.cleanupSession(sessionId);
+  }
+
+  /**
    * Publish the files an agent wrote under `/mnt/session/outputs`.
    *
    * Only meaningful when a sink is wired: an embedder with no Files API has
