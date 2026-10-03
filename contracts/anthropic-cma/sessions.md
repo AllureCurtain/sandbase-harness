@@ -2,7 +2,9 @@
 
 Contract area: `/v1/sessions` — lifecycle, status transitions, initial events,
 resources, budget.
-Status: `supported` for lifecycle, initial events, and the declared-outcome loop.
+Status: `supported` for lifecycle, initial events, and the declared-outcome loop;
+`partial` for session update (`budget` and `vault_ids` are named refusals, not
+accepted fields).
 The session budget is a separate contract area with its own status and is not
 claimed here; see `budget.md`.
 Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
@@ -13,6 +15,7 @@ Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
 session-lifecycle: supported
 initial-events: supported
 outcome-grading: supported
+session-update: partial
 -->
 
 ---
@@ -34,6 +37,10 @@ outcome-grading: supported
 - Session status is one of `idle`, `running`, `rescheduling`, or `terminated`.
   Waiting for approval or a custom tool result is `idle`; the matching
   `session.status_idle` event identifies the pending action in `stop_reason`.
+- `POST /v1/sessions/{id}` patches a session in place: `agent` admits only a
+  `tools`/`mcp_servers` replacement, `metadata` merges with `null` per key as
+  removal, `title` replaces, and a `session.updated` event reports the fields
+  that changed.
 - The session-scoped event stream is the canonical way to observe progress.
 
 ## 2. Current SandBase shape
@@ -59,6 +66,34 @@ idempotent, and an already terminal session keeps its existing internal status
 and event log while receiving the archive timestamp. Reads remain available;
 new events and messages return `409` with `session_archived`. The session list's
 `include_archived` behavior belongs to the later session-list work package.
+
+`POST /v1/sessions/{id}` patches a session in place and returns the session
+object. `agent` admits only `tools` and `mcp_servers`, both replacing wholesale
+rather than merging; the patch is applied to the definition the session
+currently resolves — its own snapshot when it has one, the current durable
+agent definition when it follows one — and the merged result is validated
+against the same schema as agent creation, including the `mcp_toolset` /
+`mcp_servers` cross-check, before it is materialized as `agent_definition`.
+The agent row and its version list are never touched. `metadata` is a merge
+patch: a `null` value removes its key, `null` for the whole field is no
+change, and an empty resulting bag is stored as empty. `title` replaces and
+`null` clears it. `vault_ids` is refused with `vault_ids_not_updatable`,
+`budget` with `budget_update_not_supported`, any other `agent` field with
+`agent_field_not_updatable`, and an unknown top-level field with
+`invalid_request_error`. An `agent` change additionally needs an externally
+idle session: a running one returns `409` with `session_not_idle` and must be
+interrupted first, while `title` and `metadata` move in any non-terminal
+state. Terminated or archived sessions return `409` with `session_terminated`.
+All admitted changes land in one transaction together with exactly one
+`session.updated` event, which carries only the fields that changed — the
+full materialized agent snapshot under `agent`, the whole post-update
+metadata bag under `metadata` (absent when the update cleared it), and the
+new `title` — and a request that changes nothing emits no event. The payload
+is persisted through the metadata carrier (`metadata.session_updated`) and
+projected back to the documented top-level fields, on the same route as
+`session.usage`. The new configuration applies from the next turn: the
+session's MCP connections are torn down so they reconnect against the updated
+definition and its tool admission rule.
 
 `DELETE /v1/sessions/{id}` permanently removes the session row, event history,
 session-owned resources, snapshots, and generated files. It returns
@@ -278,13 +313,16 @@ Declared outcome evaluation:
 
 Aligned for: lifecycle endpoints, status vocabulary, initial event processing,
 the 50-event ceiling, the initial event type whitelist, the three `agent`
-reference forms, and the tri-state override rule.
+reference forms, the tri-state override rule, session update (`agent` limited
+to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
+`session.updated` event carrying only the changed fields.
 
 ## 4. Differences
 
 | Difference | Detail |
 | --- | --- |
-| Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. |
+| Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. `POST /v1/sessions/{id}` refuses `budget` with `budget_update_not_supported`: the move is unwired, so the route answers a named refusal rather than silently accepting a ceiling it cannot move. |
+| `vault_ids` on update | Refused with `vault_ids_not_updatable` on `POST /v1/sessions/{id}`; the published parameter is reserved and the refusal keeps a caller from believing its bindings moved. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | Automatic rescheduling | `rescheduling` is accepted by the public type and list filter, but no internal retry state or automatic rescheduling is implemented yet. |
 | `cleanup_pending` | Internal fail-closed state for local sandbox teardown, projected to public `terminated`; the event log retains the cleanup error. |
@@ -337,6 +375,11 @@ reference forms, and the tri-state override rule.
   after writing `session.deleted`.
 - `tests/unit/session-archive.test.ts` and `tests/conformance/session-archive.test.ts` — archive
   state, idempotency, terminal-session handling, write refusal, and official SDK shape.
+- `tests/unit/session-update.test.ts` and `tests/conformance/session-update.test.ts` — the
+  update semantics: title replace/clear, the metadata merge patch including a cleared bag,
+  snapshot materialization on a tools swap with the agent row untouched, the named refusals
+  (`vault_ids`, `budget`, a non-tool `agent` field), idle admission for an agent change,
+  no-op suppression of `session.updated`, and the published SDK update over HTTP.
 - `tests/unit/agent-overrides.test.ts` — override parsing and resolution: the
   tri-state rule per field, the refusal codes, the cross-check on the resolved
   definition, and that the base definition is never mutated.
@@ -433,5 +476,9 @@ reference forms, and the tri-state override rule.
 reference including `agent_with_overrides`, and the declared-outcome loop:
 grading runs in its own context window over what the agent produced, a
 `needs_revision` verdict is appended as a real `user.message` and re-enters the
-executor, and the loop is bounded by the declared `max_iterations`. The session
-budget is `partial` in its own contract file, and this file does not claim it.
+executor, and the loop is bounded by the declared `max_iterations`. Session
+update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, and `title`
+with `session.updated`; `budget` and `vault_ids` on that route are named
+refusals rather than accepted fields, which the matrix records under the
+session-update capability. The session budget is `partial` in its own
+contract file, and this file does not claim it.

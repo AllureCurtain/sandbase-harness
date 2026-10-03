@@ -164,6 +164,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     contract: 'contracts/anthropic-cma/sessions.md',
   },
   {
+    area: 'sessions',
+    id: 'session-update',
+    status: 'partial',
+    reason: '`POST /v1/sessions/{id}` applies `agent` limited to `tools`/`mcp_servers` (merged onto the resolved definition, validated like creation, and materialized as `agent_definition` without touching the agent row), a `metadata` merge patch (`null` per key removes, `null` field is no change), and a `title` replace (`null` clears). An agent change requires an externally idle session (`session_not_idle` while running); title and metadata move in any non-terminal state, and a terminated or archived session is `session_terminated`. One `session.updated` event carries only the changed fields — the full agent snapshot, the whole post-update metadata bag, the new title — and a no-op emits none. `budget` is refused with `budget_update_not_supported` because the move is unwired, and `vault_ids` with `vault_ids_not_updatable`, which is why the capability is partial rather than supported.',
+    contract: 'contracts/anthropic-cma/sessions.md',
+  },
+  {
     area: 'budget',
     id: 'session-budget',
     status: 'partial',

@@ -133,6 +133,7 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/sessions/{id}/archive` | `src/api/routes/sessions.ts` |
 | DELETE | `/v1/sessions/{id}` | `src/api/routes/sessions.ts` |
 | GET | `/v1/sessions/{id}` | `src/api/routes/sessions.ts` |
+| POST | `/v1/sessions/{id}` | `src/api/routes/sessions.ts` |
 | GET | `/v1/sessions/{id}/artifacts` | `src/api/routes/sessions.ts` |
 | POST | `/v1/sessions/{id}/artifacts` | `src/api/routes/sessions.ts` |
 | GET | `/v1/sessions/{id}/artifacts/{artifactId}/content` | `src/api/routes/sessions.ts` |

@@ -8,6 +8,7 @@
  * GET  /v1/sessions/:id/events - list events (paginated)
  * POST /v1/sessions/:id/stop - stop session
  * POST /v1/sessions/:id/archive - archive session
+ * POST /v1/sessions/:id      - update session (agent tools/MCP, metadata, title)
  * DELETE /v1/sessions/:id    - delete session
  */
 
@@ -758,6 +759,72 @@ export function sessionsRoutes(deps: ServerDeps) {
     }
   });
 
+  // POST /:id - Update session
+  //
+  // The published update verb on a session resource: `agent` admits only a
+  // tools/MCP swap, `metadata` merges with `null` per key as removal, `title`
+  // replaces. `vault_ids` and `budget` are real parameters of the request and
+  // are refused with their own codes rather than treated as unknown. A
+  // body-level key that names none of these is a plain invalid request — the
+  // parameter spelling that almost worked is worth more than a silent drop.
+  app.post('/:id', async (c) => {
+    const sessionId = c.req.param('id');
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return invalid(c, 'Request body must be valid JSON');
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return invalid(c, 'Request body must be an object');
+    }
+    for (const field of Object.keys(body)) {
+      if (!SESSION_UPDATE_PARAMS.has(field)) {
+        return invalid(c, `Unknown parameter: '${field}'.`);
+      }
+    }
+    if (body.agent !== undefined && (typeof body.agent !== 'object' || body.agent === null || Array.isArray(body.agent))) {
+      return invalid(c, 'agent must be an object');
+    }
+    if (body.metadata !== undefined && body.metadata !== null
+      && (typeof body.metadata !== 'object' || Array.isArray(body.metadata))) {
+      return invalid(c, 'metadata must be an object');
+    }
+    if (body.title !== undefined && body.title !== null && typeof body.title !== 'string') {
+      return invalid(c, 'title must be a string or null');
+    }
+
+    try {
+      const session = await sessionManager.updateSession(sessionId, {
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.budget !== undefined ? { budget: body.budget } : {}),
+        ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.vault_ids !== undefined ? { vault_ids: body.vault_ids } : {}),
+      });
+      return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId)));
+    } catch (err: any) {
+      if (err instanceof UnsupportedCapabilityError) {
+        return unsupportedCapability(c, err);
+      }
+      if (err.message?.includes('not found')) {
+        return c.json({ error: { type: 'not_found', message: err.message } }, 404);
+      }
+      // Both conflicts are named refusals the caller can act on: the session
+      // is gone for good, or it must be interrupted before its agent may move.
+      if (err.code === 'session_terminated' || err.code === 'session_not_idle') {
+        return c.json({ error: { type: 'conflict', code: err.code, message: err.message } }, 409);
+      }
+      // Every other coded refusal is a well-formed request asking for something
+      // the contract does not allow — a parameter that cannot be updated, a
+      // field that is not updatable, or a definition that does not validate.
+      if (typeof err.code === 'string') {
+        return invalidWithCode(c, err.code, err.message);
+      }
+      return c.json({ error: { type: 'internal_error', message: err.message } }, 500);
+    }
+  });
+
   // DELETE /:id - Permanently delete session
   app.delete('/:id', async (c) => {
     const sessionId = c.req.param('id');
@@ -822,6 +889,13 @@ function internalStatusFilter(status: string | undefined) {
       .filter((internal) => STATUS_PROJECTION[internal].wire === status),
   };
 }
+
+/**
+ * The parameter set `POST /v1/sessions/:id` accepts. `vault_ids` and `budget`
+ * are members so they reach the manager and earn their named refusals instead
+ * of the generic unknown-parameter answer.
+ */
+const SESSION_UPDATE_PARAMS = new Set(['agent', 'budget', 'metadata', 'title', 'vault_ids']);
 
 /** The ordering the session listing is issued under, recorded in every cursor it hands out. */
 const SESSION_LIST_ORDER = 'created_at DESC';

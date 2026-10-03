@@ -15,7 +15,7 @@ import type { Database } from '@/core/db/database.js';
 import type { ArtifactStore } from '@/core/storage/artifact-store.js';
 import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
-import { eventTypeForStatus, isAbortError } from './session-lifecycle.js';
+import { eventTypeForStatus, isAbortError, STATUS_PROJECTION } from './session-lifecycle.js';
 import { findOrphanedToolUses, INTERRUPTED_TOOL_OUTCOME_MESSAGE } from './session-recovery.js';
 import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
@@ -49,6 +49,8 @@ import type {
   CreateSessionParams,
   ListSessionsParams,
   PaginatedResult,
+  SessionAgentUpdate,
+  UpdateSessionParams,
 } from '@/types/session.js';
 import type {
   ContentBlock,
@@ -64,6 +66,8 @@ import { assertResourcesMountable as assertResourcesMountableOn } from '@/core/r
 import type { AgentDefinition, AgentOverrides } from '@/types/agent.js';
 import type { LoopEngineSteerReceipt } from '@/strategy/loop-engine/adapter.js';
 import { agentOverrideError, applyAgentOverrides } from '@/core/agent/overrides.js';
+import { validateAgentDefinition, type ValidationError } from '@/core/agent/schema.js';
+import { agentDefinitionsEqual } from '@/core/agent/update.js';
 import { OUTCOME_EVALUATOR_UNAVAILABLE_CODE, type OutcomeGrader } from '@/core/outcomes/grader.js';
 import {
   DEFAULT_OUTCOME_MAX_ITERATIONS,
@@ -153,6 +157,16 @@ export interface SessionExecutor {
    * MCP support, or one whose session never connected a server, has nothing to do.
    */
   refreshSessionMcpCredentials?(sessionId: string): Promise<void>;
+  /**
+   * Drop a session's MCP connections so the next turn reconnects against the
+   * session's current agent definition.
+   *
+   * Called after a session update replaces `agent.tools`/`agent.mcp_servers`:
+   * a credential refresh would keep the previous server topology and the
+   * previous tool-admission set, so the session's cached MCP state is torn down
+   * entirely. The sandbox itself is untouched.
+   */
+  resetSessionMcpConnections?(sessionId: string): Promise<void>;
 }
 
 type Subscriber = (event: SessionEvent) => void;
@@ -378,11 +392,12 @@ export class SessionManager {
    * Move or remove a session's budget.
    *
    * Only the budget is updatable here; the remaining session fields (title,
-   * metadata, agent) belong to the session-update behaviour. The contract's
-   * rules all live in this one method because they are all one question: how a
-   * ceiling may move relative to what has already been consumed.
+   * metadata, agent) belong to {@link updateSession}, which will call this
+   * method once budget updates are admitted. The contract's rules all live in
+   * this one method because they are all one question: how a ceiling may move
+   * relative to what has already been consumed.
    */
-  update(sessionId: string, params: { budget?: SessionBudget | null }): Session {
+  updateBudget(sessionId: string, params: { budget?: SessionBudget | null }): Session {
     const session = this.get(sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -429,6 +444,175 @@ export class SessionManager {
 
     this.persistBudget(sessionId, params.budget);
     return this.get(sessionId) ?? session;
+  }
+
+  /**
+   * Patch a session in place: swap its agent snapshot's tool surface, merge
+   * its metadata, and rename it.
+   *
+   * `agent` admits only `tools` and `mcp_servers`, which replace wholesale
+   * rather than merge; every other definition field belongs to the agent
+   * update route and is refused by name. `metadata` is a merge patch — `null`
+   * per key removes it, and `null` for the whole field is no change. `title`
+   * is a plain replace where `null` clears. `vault_ids` and `budget` are
+   * recognised parameters of the published request and each is refused with
+   * its own code: vault bindings are not updatable, and the budget move is a
+   * separate behaviour from this one.
+   *
+   * An agent change additionally needs the session externally idle: a running
+   * turn resolved its tool surface at start, so a swap underneath it would
+   * only take effect mid-turn — interrupt first. Title and metadata are
+   * durable row state and stay updatable while a turn runs.
+   *
+   * Everything a caller changed is written in one transaction together with
+   * the `session.updated` event that reports it, so a rejected update leaves
+   * the row, and the log, exactly as the request found them. The event carries
+   * only the fields that actually changed — `agent` as the full materialized
+   * snapshot, `metadata` as the whole post-update bag — and a request that
+   * changes nothing is answered with the session and no event.
+   */
+  async updateSession(sessionId: string, params: UpdateSessionParams): Promise<Session> {
+    const session = this.get(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (session.archivedAt || isTerminal(session.status)) {
+      throw sessionOperationError('session_terminated', `Session ${sessionId} is in terminal state: ${session.status}`);
+    }
+    if (params.vault_ids !== undefined) {
+      throw sessionOperationError('vault_ids_not_updatable', `Unknown parameter: 'vault_ids'.`);
+    }
+    if (params.budget !== undefined) {
+      throw sessionOperationError('budget_update_not_supported', `Unknown parameter: 'budget'.`);
+    }
+
+    const agentChange = params.agent === undefined
+      ? undefined
+      : this.resolveAgentUpdate(session, params.agent);
+    const metadataChange = this.resolveMetadataUpdate(session, params.metadata);
+    const titleChange = params.title !== undefined && (params.title ?? undefined) !== session.title
+      ? params.title ?? null
+      : undefined;
+    if (agentChange === undefined && metadataChange === undefined && titleChange === undefined) {
+      return session;
+    }
+
+    const eventPayload: Record<string, unknown> = {};
+    if (agentChange !== undefined) {
+      eventPayload.agent = agentChange;
+      eventPayload.agent_id = session.agentId;
+      eventPayload.agent_version = session.agentVersion;
+    }
+    // An emptied bag is reported by omission: the field is the post-update
+    // metadata, and a cleared one has none to carry.
+    if (metadataChange !== undefined && Object.keys(metadataChange).length > 0) {
+      eventPayload.metadata = metadataChange;
+    }
+    if (titleChange !== undefined) {
+      eventPayload.title = titleChange;
+    }
+
+    const updated = this.db.transaction(() => {
+      this.db.prepare(
+        `UPDATE sessions
+         SET agent_definition = ?, title = ?, metadata = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(
+        agentChange !== undefined
+          ? JSON.stringify(agentChange)
+          : session.agentDefinition ? JSON.stringify(session.agentDefinition) : null,
+        titleChange !== undefined ? titleChange : session.title ?? null,
+        metadataChange !== undefined
+          ? JSON.stringify(metadataChange)
+          : session.metadata ? JSON.stringify(session.metadata) : null,
+        sessionId,
+      );
+      const event = this.eventLogger.append(sessionId, {
+        type: 'session.updated',
+        metadata: { session_updated: eventPayload },
+      });
+      return { session: this.get(sessionId)!, event };
+    });
+    this.broadcast(sessionId, updated.event);
+
+    // The snapshot is durable before the MCP teardown runs: a reset failure
+    // leaves the session's declared tools ahead of its connected servers, which
+    // the next turn's lazy connect repairs — the reverse order could not.
+    if (agentChange !== undefined) {
+      await this.executor?.resetSessionMcpConnections?.(sessionId);
+    }
+    return updated.session;
+  }
+
+  /**
+   * Merge an `agent` patch onto the session's current definition and return
+   * the materialized snapshot — or `undefined` when the patch carries no
+   * tools/MCP fields, or leaves the definition unchanged, so a rewrite to the
+   * same tools stays a no-op end to end.
+   *
+   * The session's own snapshot is the base when it has one; an unpinned
+   * session starts from the current durable definition it follows, and the
+   * merged result is what gets materialized into `agent_definition`. The agent
+   * row itself is never touched.
+   */
+  private resolveAgentUpdate(session: Session, patch: SessionAgentUpdate): AgentDefinition | undefined {
+    for (const field of Object.keys(patch)) {
+      if (!SESSION_UPDATE_AGENT_FIELDS.has(field)) {
+        throw sessionOperationError('agent_field_not_updatable', `Unknown agent parameter: 'agent.${field}'.`);
+      }
+    }
+    if (patch.tools === undefined && patch.mcp_servers === undefined) return undefined;
+    if (STATUS_PROJECTION[session.status].wire !== 'idle') {
+      throw sessionOperationError(
+        'session_not_idle',
+        `Session ${session.id} must be idle to update its agent; send user.interrupt and wait for it to settle first`,
+      );
+    }
+
+    const current = session.agentDefinition ?? this.resolveAgentSnapshot(session.agentId)?.definition;
+    if (!current) {
+      throw new Error(`Agent not found: ${session.agentId}`);
+    }
+    const merged = {
+      ...current,
+      ...(patch.tools !== undefined ? { tools: patch.tools } : {}),
+      ...(patch.mcp_servers !== undefined ? { mcp_servers: patch.mcp_servers } : {}),
+    };
+    const result = validateAgentDefinition(merged);
+    if (!result.valid || !result.data) {
+      throw sessionOperationError(
+        'invalid_agent_definition',
+        `Invalid agent definition: ${(result.errors ?? []).map((error) => `${error.path}: ${error.message}`).join('; ')}`,
+      );
+    }
+    // The comparison runs on the validated form: a patch that only reorders
+    // keys or repeats the stored definition validates to the same value, and
+    // equality is what keeps it from materializing a snapshot and an event.
+    if (agentDefinitionsEqual(current, result.data)) return undefined;
+
+    this.assertAgentCapabilities(result.data);
+    if (session.loopEngine === 'pi') {
+      assertPiAgentCanExecute(result.data);
+    }
+    return result.data;
+  }
+
+  /**
+   * Merge a `metadata` patch onto the session's bag and return the resulting
+   * bag — or `undefined` when the field was absent, `null` (no change), or
+   * merged to the bag the session already has.
+   */
+  private resolveMetadataUpdate(
+    session: Session,
+    patch: Record<string, unknown> | null | undefined,
+  ): Record<string, unknown> | undefined {
+    if (patch === undefined || patch === null) return undefined;
+    const merged = { ...(session.metadata ?? {}) };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) delete merged[key];
+      else merged[key] = value;
+    }
+    return agentDefinitionsEqual(session.metadata ?? {}, merged) ? undefined : merged;
   }
 
   async archive(sessionId: string): Promise<Session> {
@@ -1811,6 +1995,14 @@ function sessionOperationError(code: string, message: string): Error & { code: s
   error.code = code;
   return error;
 }
+
+/**
+ * The definition fields `updateSession` admits under `agent`. One set because
+ * the allow-list, the refusal message, and the contract all name the same
+ * pair: `tools` and `mcp_servers` are the tool surface a session owns, and
+ * everything else belongs to the agent's own update route.
+ */
+const SESSION_UPDATE_AGENT_FIELDS = new Set(['tools', 'mcp_servers']);
 
 function sessionOwnedTables(db: Database): string[] {
   const tables = db.prepare(

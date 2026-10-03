@@ -147,6 +147,36 @@ export interface CreateSessionParams {
   agentOverrides?: AgentOverrides;
 }
 
+/**
+ * The `agent` object an UpdateSession request accepts.
+ *
+ * Only the tool surface is session-updatable — `tools` and `mcp_servers`
+ * replace wholesale rather than merge. Every other definition field belongs
+ * to `agents.update` and is refused by name (`agent_field_not_updatable`).
+ */
+export interface SessionAgentUpdate {
+  tools?: AgentDefinition['tools'];
+  mcp_servers?: AgentDefinition['mcp_servers'];
+}
+
+/**
+ * Parameters for `SessionManager.updateSession`.
+ *
+ * `vault_ids` and `budget` are part of the published parameter set but are
+ * refused rather than applied: `vault_ids` is not updatable at all
+ * (`vault_ids_not_updatable`) and the budget move is not wired yet
+ * (`budget_update_not_supported`). `metadata` is a merge patch — `null` per
+ * key removes it, `null` for the whole field is no change — and `title` is a
+ * plain replace where `null` clears.
+ */
+export interface UpdateSessionParams {
+  agent?: SessionAgentUpdate;
+  budget?: SessionBudget | null;
+  metadata?: Record<string, unknown> | null;
+  title?: string | null;
+  vault_ids?: string[];
+}
+
 export interface ListSessionsParams {
   page?: number;
   pageSize?: number;

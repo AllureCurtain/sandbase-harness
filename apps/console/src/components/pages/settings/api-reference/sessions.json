@@ -104,6 +104,21 @@
     ]
   },
   {
+    "id": "sessions-update",
+    "group": "Sessions",
+    "title": "Update session",
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}",
+    "summary": "Patch a session in place: agent admits only tools/mcp_servers (full replacement, materialized as the session's own snapshot), metadata merges per key with null removing a key, title replaces with null clearing. An agent change needs an idle session; vault_ids and budget are named refusals. One session.updated event reports the fields that changed.",
+    "response": [
+      {
+        "name": "session",
+        "type": "object",
+        "description": "Updated session resource. A request that changed nothing still returns the session, with no session.updated event appended."
+      }
+    ]
+  },
+  {
     "id": "sessions-events-list",
     "group": "Sessions",
     "title": "List session events",
