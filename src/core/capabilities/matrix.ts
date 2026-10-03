@@ -195,14 +195,14 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'events',
     id: 'session-error-structure',
     status: 'supported',
-    reason: 'Every failure path through a turn appends session.error carrying {error:{type,message,retry_status}}, with the retry disposition derived from the error code rather than guessed.',
+    reason: 'Every failure path through a turn appends session.error carrying {error:{type,message,retry_status,code}}. type is one of the eight official values, retry_status is the published {type} object, the runtime\'s own code is preserved under code, and events persisted with the legacy string disposition are normalized on projection.',
     contract: 'contracts/anthropic-cma/events.md',
   },
   {
     area: 'events',
     id: 'error-enum-completeness',
-    status: 'unverified',
-    reason: 'The published error enumeration is not exhaustively documented; local codes are not claimed to match upstream values.',
+    status: 'supported',
+    reason: 'Every published session.error type is one of the eight official values; the runtime\'s finer-grained local codes travel under the error.code extension rather than leaking into type. billing_error has no local producer because this runtime has no billing boundary.',
     contract: 'contracts/anthropic-cma/events.md',
   },
   {

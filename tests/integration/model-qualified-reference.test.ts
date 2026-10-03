@@ -171,8 +171,9 @@ describe('qualified model references reach the provider', () => {
     const error = events.find((event) => event.type === 'session.error');
     expect(error, 'no session.error was appended').toBeDefined();
     expect(toApiEvent(error!).error).toMatchObject({
-      type: 'model_provider_not_configured',
-      retry_status: 'not_retryable',
+      type: 'model_request_failed_error',
+      code: 'model_provider_not_configured',
+      retry_status: { type: 'terminal' },
     });
 
     // A configuration mistake the caller can repair leaves the session
@@ -187,8 +188,9 @@ describe('qualified model references reach the provider', () => {
 
     const error = events.find((event) => event.type === 'session.error');
     expect(toApiEvent(error!).error).toMatchObject({
-      type: 'model_not_found',
-      retry_status: 'not_retryable',
+      type: 'model_request_failed_error',
+      code: 'model_not_found',
+      retry_status: { type: 'terminal' },
     });
     expect(session.status).toBe('paused');
     expect(requests).toHaveLength(0);

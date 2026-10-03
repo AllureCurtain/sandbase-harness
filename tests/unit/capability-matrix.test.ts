@@ -70,11 +70,12 @@ describe('capability matrix', () => {
     }
   });
 
-  it('records the areas whose upstream confirmation is still open as unverified', () => {
+  it('records no unverified claims', () => {
     // `unverified` is the status for a claim that has not been checked against
-    // the published contract. It must stay distinct from `supported` so an
-    // unchecked claim is never counted as done.
-    expect(capabilitiesWithStatus('unverified').map((entry) => entry.id)).toContain('error-enum-completeness');
+    // the published contract. `error-enum-completeness` was the last open one;
+    // with the official error-type enumeration verified, an entry landing here
+    // again is a recorded gap rather than a silent one.
+    expect(capabilitiesWithStatus('unverified')).toEqual([]);
   });
 
   it('does not claim a supported entry is provisional', () => {

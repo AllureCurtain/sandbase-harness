@@ -383,15 +383,17 @@ export interface StreamedEvent {
   stop_reason?: string | { type: 'end_turn' | 'requires_action'; event_ids?: string[] };
   /**
    * Structured failure of a `session.error`, projected from the event's metadata
-   * carrier. Always carries all three keys; a client must treat an unrecognized
-   * `retry_status` as `unknown`. Absent on the transient frame the message route
-   * emits when the stream itself breaks, which carries the text in `content`
-   * instead — a client that only reads this field would miss that one.
+   * carrier. `type` is one of the official error types and `retry_status` is
+   * the published object; the runtime's own code is preserved under `code`.
+   * Absent on the transient frame the message route emits when the stream
+   * itself breaks, which carries the text in `content` instead — a client
+   * that only reads this field would miss that one.
    */
   error?: {
     type: string;
     message: string;
-    retry_status: string;
+    retry_status: { type: 'retrying' | 'exhausted' | 'terminal' };
+    code?: string;
   };
   /** The event's own metadata carrier, as persisted and published. */
   metadata?: Record<string, unknown>;

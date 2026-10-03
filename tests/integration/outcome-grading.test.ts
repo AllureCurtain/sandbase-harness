@@ -121,8 +121,9 @@ describe('declared outcome grading', () => {
 
     expect(error).toBeDefined();
     expect(toApiEvent(error!).error).toMatchObject({
-      type: 'outcome_evaluator_unavailable',
-      retry_status: 'not_retryable',
+      type: 'unknown_error',
+      code: 'outcome_evaluator_unavailable',
+      retry_status: { type: 'terminal' },
     });
     // The evaluation is still closed, so a client waiting on the end event sees
     // the outcome fail rather than hang.

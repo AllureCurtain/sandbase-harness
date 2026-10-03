@@ -2,15 +2,15 @@
 
 Contract area: the session event log — event domains, ordering, `processed_at`,
 and `session.error`.
-Status: `supported`, with the error enumeration marked `unverified`, see §4.
+Status: `supported`.
 Source: `src/api/standard.ts` (`toApiEvent`), `src/core/session/session-manager.ts`,
-`src/core/db/migrations.ts`.
+`src/core/session/session-error.ts`, `src/core/db/migrations.ts`.
 
 <!-- capability-status
 append-only-event-log: supported
 processed-at-lifecycle: supported
 session-error-structure: supported
-error-enum-completeness: unverified
+error-enum-completeness: supported
 -->
 
 ---
@@ -41,7 +41,15 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
 - Event payloads are stored in `events.metadata` and projected through
   `toApiEvent`, so a new field does not require a schema migration.
 - `processed_at` is recorded once an inbound event is admitted.
-- `session.error` carries a structured payload.
+- `session.error` carries a structured payload whose `error.type` is one of the
+  eight official values, whose `error.retry_status` is the published
+  `{type}` object, and whose `error.code` — a local extension — preserves the
+  runtime's own error code so the classification stays official without losing
+  the distinction a caller may need. Events persisted before this shape stored
+  the local code in `type` and a string disposition in `retry_status`; the
+  projection normalizes both on the way out (`retryable` → `retrying`, the
+  other strings → `terminal`, the stored `type` reclassified and preserved as
+  `code`). `src/core/session/session-error.ts` owns both directions.
 - A tool event carries its payload in `content[0]` and also projects `name` and
   `input` to the top level for `agent.tool_use`, `agent.mcp_tool_use` and
   `agent.custom_tool_use`, `tool_use_id` for `agent.tool_result`, and
@@ -105,24 +113,21 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 
 | Difference | Detail |
 | --- | --- |
-| Error enumeration | The published contract does not exhaustively enumerate `session.error` codes. SandBase error codes are local and are marked `unverified` against upstream values. |
+| Error `code` extension | `error.type` is always one of the eight official values. The runtime's own code travels under `error.code`, a local extension the published shape does not define: a self-hosted runtime's failures (Pi transport, work queue, parked wait) are finer-grained than the official vocabulary, and dropping the code would lose the distinction. `billing_error` is part of the enumeration but has no local producer — this runtime has no billing boundary. |
 | Event metadata storage | SandBase stores event payloads in a metadata column rather than per-field columns. This is a storage choice with no wire effect. |
 | Local event types | SandBase emits extension event types under `/v1/x` that are not part of the canonical domain set. |
-| No `session.updated` | The runtime emits no `session.updated` event. A session's `updated_at` field is the whole signal, and the Console reads it rather than subscribing to an event. An event with no producer and no consumer is not documented as if it existed. |
+| `session.updated` fields | `session.updated` is emitted when `POST /v1/sessions/{id}` changes the agent snapshot, metadata, title, or budget; the event carries only the changed fields, and a no-op update appends nothing. |
 | Outcome span vocabulary | `span.outcome_evaluation_*` is the local spelling for the outcome evaluation spans. The three-event shape and the verdict vocabulary are a SandBase profile: they are recorded here rather than presented as a verified upstream enumeration. |
 | Outcome progression | The grader's own reasoning is not published while an evaluation runs. `span.outcome_evaluation_ongoing` marks that the evaluation is in flight and carries no content, because a partial verdict derived from nothing would be a claim about the deliverable that the runtime cannot support. |
 
 ## 5. Reason for the difference
 
-- Marking the error enumeration `unverified` is the honest position: the
-  published documentation does not list the codes, so claiming a match would be
-  a guess presented as a fact.
+- The local `code` field exists because the official `type` enumeration is
+  coarser than what the runtime knows: a client that only branches on `type`
+  works unchanged, while one that needs the local distinction can read `code`.
 - Storing payloads in metadata keeps the log forward-compatible. Adding a
   column per new event field would make migrations the bottleneck for changes
   that have no storage requirement.
-- `session.updated` was removed rather than implemented: `updated_at` already
-  carries the information, the Console reads that field instead of subscribing,
-  and an event no client consumes is scope rather than a contract.
 
 ## 6. Corresponding tests
 
@@ -131,20 +136,26 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 - `tests/unit/event-logger.test.ts` — the append path assigns a monotonically
   increasing `seq` and the listing returns events in that order, plus the
   `afterSeq` filter a resuming reader uses.
-- `tests/unit/cma-event-contract.test.ts` — `session.error` projection: the
-  structured payload reaches the top level, the text `content` survives
-  alongside it, an event without a payload omits `error` rather than inventing
-  one, and an unrecognized `retry_status` is carried through rather than dropped.
+- `tests/unit/session-error-shape.test.ts` — the two directions of the
+  projection: every local code classifies into an official `type` (and
+  `billing_error` is never produced), the three local dispositions publish as
+  the `{type}` object, and events persisted with the legacy string
+  `retry_status` and a code in `type` are normalized on the way out.
+- `tests/conformance/session-error.test.ts` — the official SDK decodes the
+  wire shape end to end: a model request the stub refuses with `401` arrives
+  as `model_request_failed_error` with `retry_status.type` `terminal`.
+- `tests/unit/cma-event-contract.test.ts` — the `user.define_outcome` event
+  contract and the `initial_events` whitelist it is admitted through.
 - `tests/integration/session-error-paths.test.ts` — the production paths, driven
   through `SessionManager.runTurn`: a model failure, a tool failure, and a
   sandbox failure each produce a structured payload; a busy session reports
-  `retryable` and stays `paused`, a timed-out turn reports `not_retryable` and
-  becomes `timed_out`, an unsupported capability reports `not_retryable`, an
-  unrecognized code reports `unknown`, and a codeless failure falls back to
-  `internal_error`. Every admission refusal (Pi policy, sandbox provider, user
-  event, loop engine) is asserted `not_retryable` by its published code rather
-  than by a literal, so a code renamed in one place and not the other fails here.
-  A user abort records no `session.error` at all.
+  `retry_status.type` `retrying` and stays `paused`, a timed-out turn reports
+  `terminal` and becomes `timed_out`, an unsupported capability reports
+  `terminal`, an unrecognized code reports `terminal`, and a codeless failure
+  falls back to `code: internal_error`. Every admission refusal (Pi policy,
+  sandbox provider, user event, loop engine) is asserted by its preserved
+  `code` rather than by a literal, so a code renamed in one place and not the
+  other fails here. A user abort records no `session.error` at all.
 - `tests/unit/model-error.test.ts` — the message carried into the payload is
   enriched with provider detail and has secrets redacted before it is persisted.
 - `tests/unit/outcome-evaluation.test.ts` — one evaluation appends the three span
@@ -156,7 +167,7 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
   session: a declared outcome reaches the agent's context, the completed turn is
   graded with the span triple on the event listing, and a runtime with no
   provider records `session.error` with `outcome_evaluator_unavailable` and
-  `retry_status: not_retryable`.
+  `retry_status.type` `terminal`.
 - `tests/unit/outcome-loop.test.ts` — the loop's span bookkeeping: one triple per
   evaluation with `iteration` counting from 0, the budget verdict on the last
   allowed evaluation, one revision message per revision, and the closes that name

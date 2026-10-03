@@ -90,20 +90,22 @@ describe('session.error production paths', () => {
     const { projected, status } = await errorEventFor(() => coded('model_error', '401 unauthorized'));
 
     expect(projected.error).toEqual({
-      type: 'model_error',
+      type: 'unknown_error',
       message: '401 unauthorized',
-      retry_status: 'unknown',
+      retry_status: { type: 'terminal' },
+      code: 'model_error',
     });
-    // The published shape requires the three keys to be present; `unknown` is a
-    // value, not an omission.
-    expect(Object.keys(projected.error!).sort()).toEqual(['message', 'retry_status', 'type']);
+    // The published shape carries `type` as an official value and the local
+    // code under `code`; `terminal` is a value, not an omission.
+    expect(Object.keys(projected.error!).sort()).toEqual(['code', 'message', 'retry_status', 'type']);
     expect(status).toBe('failed');
   });
 
   it('reports a tool failure distinctly from a model failure', async () => {
     const { projected } = await errorEventFor(() => coded('tool_error', 'tool "read" failed'));
 
-    expect(projected.error?.type).toBe('tool_error');
+    expect(projected.error?.code).toBe('tool_error');
+    expect(projected.error?.type).toBe('unknown_error');
     expect(projected.error?.message).toContain('read');
   });
 
@@ -112,7 +114,8 @@ describe('session.error production paths', () => {
       () => coded('sandbox_error', 'sandbox provisioning failed'),
     );
 
-    expect(projected.error?.type).toBe('sandbox_error');
+    expect(projected.error?.code).toBe('sandbox_error');
+    expect(projected.error?.type).toBe('unknown_error');
     // A failed turn must not leak the sandbox it may have provisioned.
     expect(executor.cleanups).toBe(1);
   });
@@ -120,7 +123,7 @@ describe('session.error production paths', () => {
   it('marks a busy session retryable', async () => {
     const { projected, status } = await errorEventFor(() => coded('pi_session_busy', 'session is busy'));
 
-    expect(projected.error?.retry_status).toBe('retryable');
+    expect(projected.error?.retry_status).toEqual({ type: 'retrying' });
     // A busy session is a transient condition, so it must not be terminal.
     expect(status).toBe('paused');
   });
@@ -128,7 +131,7 @@ describe('session.error production paths', () => {
   it('marks a timed-out turn not retryable', async () => {
     const { projected, status } = await errorEventFor(() => coded('pi_timed_out', 'pi turn timed out'));
 
-    expect(projected.error?.retry_status).toBe('not_retryable');
+    expect(projected.error?.retry_status).toEqual({ type: 'terminal' });
     expect(status).toBe('timed_out');
   });
 
@@ -137,7 +140,7 @@ describe('session.error production paths', () => {
       () => coded('unsupported_capability', 'web_search is not executable'),
     );
 
-    expect(projected.error?.retry_status).toBe('not_retryable');
+    expect(projected.error?.retry_status).toEqual({ type: 'terminal' });
   });
 
   it('classifies every admission refusal as not retryable', async () => {
@@ -158,10 +161,10 @@ describe('session.error production paths', () => {
 
     for (const code of permanent) {
       const { projected } = await errorEventFor(() => coded(code, `${code} refused`));
-      expect(projected.error?.retry_status, `${code} should be not_retryable`).toBe('not_retryable');
-      // The code must also survive into `type`; a classification that only
+      expect(projected.error?.retry_status, `${code} should be terminal`).toEqual({ type: 'terminal' });
+      // The code must also survive into `code`; a classification that only
       // works because the code was dropped would report `internal_error`.
-      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+      expect(projected.error?.code, `${code} should be preserved`).toBe(code);
     }
   });
 
@@ -177,8 +180,11 @@ describe('session.error production paths', () => {
 
     for (const code of mixed) {
       const { projected } = await errorEventFor(() => coded(code, `${code} arrived`));
-      expect(projected.error?.retry_status, `${code} should stay unknown`).toBe('unknown');
-      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+      // The `unknown` disposition publishes as `terminal`: the published
+      // vocabulary has no fourth value, and `terminal` is the one answer that
+      // cannot be misread as an invitation to retry.
+      expect(projected.error?.retry_status, `${code} should publish terminal`).toEqual({ type: 'terminal' });
+      expect(projected.error?.code, `${code} should be preserved`).toBe(code);
     }
   });
 
@@ -192,10 +198,10 @@ describe('session.error production paths', () => {
 
     for (const code of unretryable) {
       const { projected } = await errorEventFor(() => coded(code, `${code} left the outcome unknown`));
-      expect(projected.error?.retry_status, `${code} should be not_retryable`).toBe('not_retryable');
-      // The code must survive into `type`; a classification that only worked
+      expect(projected.error?.retry_status, `${code} should be terminal`).toEqual({ type: 'terminal' });
+      // The code must survive into `code`; a classification that only worked
       // because the code was dropped would report `internal_error`.
-      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+      expect(projected.error?.code, `${code} should be preserved`).toBe(code);
     }
   });
 
@@ -209,15 +215,15 @@ describe('session.error production paths', () => {
     const { projected: retryable } = await errorEventFor(
       () => coded('work_queue_timeout', 'no worker ever claimed the item'),
     );
-    expect(retryable.error?.retry_status).toBe('retryable');
-    expect(retryable.error?.type).toBe('work_queue_timeout');
+    expect(retryable.error?.retry_status).toEqual({ type: 'retrying' });
+    expect(retryable.error?.code).toBe('work_queue_timeout');
 
     for (const code of ['work_outcome_unknown', 'work_lease_lost']) {
       const { projected } = await errorEventFor(() => coded(code, `${code} ended the wait`));
-      expect(projected.error?.retry_status, `${code} should be not_retryable`).toBe('not_retryable');
-      // The code must survive into `type`; a classification that only worked because the
+      expect(projected.error?.retry_status, `${code} should be terminal`).toEqual({ type: 'terminal' });
+      // The code must survive into `code`; a classification that only worked because the
       // code was dropped would report `internal_error`.
-      expect(projected.error?.type, `${code} should be reported as itself`).toBe(code);
+      expect(projected.error?.code, `${code} should be preserved`).toBe(code);
     }
   });
 
@@ -232,24 +238,26 @@ describe('session.error production paths', () => {
       () => coded('pi_rpc_protocol_error', 'Pi RPC frame 7 is not valid JSON'),
     );
 
-    expect(projected.error?.retry_status).toBe('not_retryable');
-    // The code must survive into `type`; a classification that only worked
+    expect(projected.error?.retry_status).toEqual({ type: 'terminal' });
+    // The code must survive into `code`; a classification that only worked
     // because the code was dropped would report `internal_error`.
-    expect(projected.error?.type).toBe('pi_rpc_protocol_error');
+    expect(projected.error?.code).toBe('pi_rpc_protocol_error');
   });
 
   it('does not guess a retry disposition for an unrecognized code', async () => {
-    // Claiming `not_retryable` for an unknown failure would tell a client to
-    // abandon work that might succeed, so `unknown` is the honest answer.
+    // The `unknown` disposition publishes as `terminal` — the published
+    // vocabulary has no fourth value, and `terminal` is the answer that cannot
+    // be misread as an invitation to retry.
     const { projected } = await errorEventFor(() => coded('some_new_failure', 'unexpected'));
 
-    expect(projected.error?.retry_status).toBe('unknown');
+    expect(projected.error?.retry_status).toEqual({ type: 'terminal' });
   });
 
   it('falls back to internal_error when the failure carries no code', async () => {
     const { projected } = await errorEventFor(() => new Error('plain failure'));
 
-    expect(projected.error?.type).toBe('internal_error');
+    expect(projected.error?.type).toBe('unknown_error');
+    expect(projected.error?.code).toBe('internal_error');
     expect(projected.error?.message).toBe('plain failure');
   });
 
