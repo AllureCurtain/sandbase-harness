@@ -69,7 +69,17 @@
       {
         "name": "agent",
         "type": "object",
-        "description": "Pinned agent id, name, and version used by this session."
+        "description": "Materialized agent snapshot: pinned version, and multiagent always null — a declared roster is refused by name."
+      },
+      {
+        "name": "budget",
+        "type": "object | null",
+        "description": "Spending ceiling. Always present; null when the session has none, whether never set or removed."
+      },
+      {
+        "name": "stats",
+        "type": "object",
+        "description": "active_seconds (cumulative running time from the event log) and duration_seconds (since creation, frozen at the last update once terminal or archived)."
       },
       {
         "name": "usage",

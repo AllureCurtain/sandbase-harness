@@ -6,7 +6,7 @@
  * SSE streaming (`tail`) and a convenience `chat` (send + stream the reply).
  */
 
-import type { ContentBlock } from '@/types/cma-protocol.js';
+import type { ContentBlock, SessionBudget } from '@/types/cma-protocol.js';
 import type { ApiSessionStatus } from '@/types/session.js';
 import { withCompatibilityHeaders } from './headers.js';
 
@@ -28,9 +28,19 @@ export interface SessionSummary {
   title?: string | null;
   resources: Array<Record<string, unknown>>;
   vault_ids: string[];
+  /** Spending ceiling — always present, `null` when the session has none. */
+  budget: SessionBudget | null;
+  /** Engine the session was created with (local extension; the upstream shape has no such field). */
+  loop_engine?: string;
   usage: {
     input_tokens: number;
     output_tokens: number;
+  };
+  stats: {
+    /** Cumulative seconds the session spent executing. */
+    active_seconds: number;
+    /** Seconds since creation; frozen at the last update once terminal or archived. */
+    duration_seconds: number;
   };
   metadata: Record<string, string>;
   created_at: string;
@@ -56,6 +66,8 @@ export interface AgentSummary {
   skills: Array<Record<string, unknown>>;
   status: string;
   version: number;
+  /** Resolved multiagent roster — always `null`; no runtime can populate it yet. */
+  multiagent: null;
   created_at: string | null;
   updated_at: string | null;
   archived_at: string | null;

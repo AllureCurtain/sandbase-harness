@@ -36,6 +36,8 @@ export type Agent = {
   metadata: Record<string, unknown>;
   status: string;
   version: number;
+  /** Resolved multiagent roster — always `null`; no runtime can populate it yet. */
+  multiagent: null;
   created_at: string | null;
   updated_at: string | null;
   archived_at: string | null;
@@ -67,13 +69,15 @@ export type Session = {
   id: string;
   type: 'session';
   title: string | null;
-  agent: Agent | { id: string; type: 'agent'; name: string };
+  agent: Agent | { id: string; type: 'agent'; name: string; version: number; multiagent: null };
   environment_id: string;
   status: 'idle' | 'running' | 'rescheduling' | 'terminated';
   resources: Array<Record<string, unknown>>;
   vault_ids: string[];
+  /** Spending ceiling — always present, `null` when the session has none. */
+  budget: { type: 'limit'; max_list_cost: { amount: string; currency: 'USD' } } | null;
   usage: { input_tokens: number; output_tokens: number };
-  stats: Record<string, number>;
+  stats: { active_seconds: number; duration_seconds: number };
   metadata: Record<string, string>;
   created_at: string;
   updated_at: string;

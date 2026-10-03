@@ -91,6 +91,35 @@ export class EventLogger {
   }
 
   /**
+   * The status-transition rows `activeSecondsFromTicks` reads, for a set of
+   * sessions in one query. A session listing needs stats per row, and reading
+   * every full event log per row would make the page size the cost driver for
+   * a projection that only needs three event types.
+   */
+  getStatusEventTicks(sessionIds: readonly string[]): StatusEventTick[] {
+    if (sessionIds.length === 0) return [];
+    const placeholders = sessionIds.map(() => '?').join(', ');
+    const stmt = this.db.prepare(
+      `SELECT session_id, type, processed_at, created_at FROM events
+       WHERE session_id IN (${placeholders})
+         AND type IN ('session.status_running', 'session.status_idle', 'session.status_terminated')
+       ORDER BY session_id, seq ASC`,
+    );
+    const rows = stmt.all(...sessionIds) as Array<{
+      session_id: string;
+      type: string;
+      processed_at: string | null;
+      created_at: string | null;
+    }>;
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      type: row.type,
+      processedAt: row.processed_at ? new Date(row.processed_at) : null,
+      createdAt: row.created_at ? new Date(row.created_at) : null,
+    }));
+  }
+
+  /**
    * Get the latest seq number for a session. Returns 0 if no events exist.
    */
   getLatestSeq(sessionId: string): number {
@@ -118,6 +147,14 @@ export class EventLogger {
 // ============================================================
 // Internal helpers
 // ============================================================
+
+/** One status-transition row, as {@link EventLogger.getStatusEventTicks} returns it. */
+export interface StatusEventTick {
+  sessionId: string;
+  type: string;
+  processedAt: Date | null;
+  createdAt: Date | null;
+}
 
 interface EventRow {
   id: string;

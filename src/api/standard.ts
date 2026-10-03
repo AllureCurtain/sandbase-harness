@@ -4,6 +4,7 @@ import type { ApiSessionStatus, Session, SessionEvent, SessionLoopEngine, Sessio
 import type { SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
 import { projectSessionError, type SessionErrorPayload } from '@/core/session/session-error.js';
 import { STATUS_PROJECTION } from '@/core/session/session-lifecycle.js';
+import { isTerminal } from '@/core/session/state-machine.js';
 
 export interface ApiPage<T extends { id: string }> {
   data: T[];
@@ -210,6 +211,12 @@ export interface ApiAgent {
   metadata: Record<string, string>;
   status: 'active' | 'archived';
   version: number;
+  /**
+   * Resolved multiagent roster. Always `null` in this runtime — a declared
+   * roster is refused by name (`multiagent-roster`), so a populated value can
+   * never appear here today.
+   */
+  multiagent: null;
   created_at: string | null;
   updated_at: string | null;
   archived_at: string | null;
@@ -223,7 +230,7 @@ export interface ApiSession {
   id: string;
   type: 'session';
   title: string | null;
-  agent: ApiAgent | { id: string; type: 'agent'; name: string };
+  agent: ApiAgent | { id: string; type: 'agent'; name: string; version: number; multiagent: null };
   environment_id: string;
   /** Engine frozen when the session was created, not the current Settings default. */
   loop_engine: SessionLoopEngine;
@@ -231,22 +238,31 @@ export interface ApiSession {
   resources: ApiSessionResource[];
   vault_ids: string[];
   /**
-   * Spending ceiling. Omitted entirely when the session never had one, and
-   * `null` when it had one removed — the contract treats those as different
-   * states, so a single "no budget" value would lose the distinction. A session
-   * may acquire a budget only at creation, which is why a session that never had
-   * one can never report `null` here.
+   * Spending ceiling, always present: `null` covers both a session that never
+   * had one and one whose ceiling was removed — the published shape does not
+   * distinguish them (the runtime still does, internally: a removed budget
+   * cannot be re-added).
    */
-  budget?: SessionBudget | null;
+  budget: SessionBudget | null;
   usage: {
     input_tokens: number;
     output_tokens: number;
   };
-  stats: Record<string, number>;
+  stats: ApiSessionStats;
   metadata: Record<string, string>;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+}
+
+export interface ApiSessionStats {
+  /** Cumulative seconds the session spent executing (its `running` intervals). */
+  active_seconds: number;
+  /**
+   * Seconds since creation. For a terminated or archived session this is
+   * frozen at the final update; for a live one it counts up to the read.
+   */
+  duration_seconds: number;
 }
 
 export type ApiSessionResource =
@@ -454,39 +470,55 @@ export function toApiAgent(
     metadata: parseStringRecord(agent.metadata),
     status: dates?.status ?? (dates?.archivedAt ? 'archived' : 'active'),
     version: dates?.version ?? 1,
+    multiagent: null,
     created_at: dates?.createdAt ?? null,
     updated_at: dates?.updatedAt ?? null,
     archived_at: dates?.archivedAt ?? null,
   };
 }
 
-export function toApiSession(session: Session, agent?: AgentDefinition): ApiSession {
+export function toApiSession(
+  session: Session,
+  agent?: AgentDefinition,
+  stats?: { activeSeconds?: number; now?: Date },
+): ApiSession {
   return {
     id: session.id,
     type: 'session',
     title: session.title ?? null,
     agent: agent
       ? toApiAgent(agent, { id: session.agentId, version: session.agentVersion })
-      : { id: session.agentId, type: 'agent', name: session.agentName },
+      : { id: session.agentId, type: 'agent', name: session.agentName, version: session.agentVersion ?? 1, multiagent: null },
     environment_id: session.environmentId,
     // Legacy rows predate explicit engine selection and were executed by builtin.
     loop_engine: session.loopEngine ?? 'builtin',
     status: toApiSessionStatus(session.status),
     resources: parseJsonArray<Record<string, unknown>>(session.resources).map(toApiSessionResource),
     vault_ids: parseJsonArray(session.vaultIds),
-    // Spread rather than assigned, so a session that never had a budget omits
-    // the field instead of reporting `null` — which would claim a removal.
-    ...(session.budget !== undefined ? { budget: session.budget } : {}),
+    budget: session.budget ?? null,
     usage: {
       input_tokens: session.usage?.tokensIn ?? 0,
       output_tokens: session.usage?.tokensOut ?? 0,
     },
-    stats: {},
+    stats: {
+      active_seconds: stats?.activeSeconds ?? 0,
+      duration_seconds: durationSeconds(session, stats?.now ?? new Date()),
+    },
     metadata: parseStringRecord(session.metadata),
     created_at: toIsoString(session.createdAt),
     updated_at: toIsoString(session.updatedAt),
     archived_at: session.archivedAt ? toIsoString(session.archivedAt) : null,
   };
+}
+
+/**
+ * Seconds since creation. A terminal or archived session freezes at its last
+ * update — after that nothing can append a new interval anyway; a live session
+ * counts up to the read.
+ */
+function durationSeconds(session: Session, now: Date): number {
+  const end = isTerminal(session.status) || session.archivedAt ? session.updatedAt : now;
+  return Math.max(0, (end.getTime() - session.createdAt.getTime()) / 1000);
 }
 
 export function toApiEvent(event: SessionEvent): ApiEvent {

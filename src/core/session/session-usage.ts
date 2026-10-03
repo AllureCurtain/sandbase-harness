@@ -27,6 +27,18 @@ export interface SessionUsageSnapshot {
 }
 
 /**
+ * The minimal shape the active-seconds derivation reads: a status-transition
+ * event type and the time it happened. `SessionEvent` satisfies it, and the
+ * session-list route uses it to compute stats from a single bulk query instead
+ * of a full event read per row.
+ */
+export interface ActiveStatusTick {
+  type: string;
+  processedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+}
+
+/**
  * Total seconds the session was executing.
  *
  * An interval that is still open (the turn is mid-flight) is counted up to
@@ -38,10 +50,18 @@ export function activeSecondsFromEvents(
   events: readonly SessionEvent[],
   now: Date = new Date(),
 ): number {
+  return activeSecondsFromTicks(events, now);
+}
+
+/** {@link activeSecondsFromEvents} over any row carrying type + timestamps. */
+export function activeSecondsFromTicks(
+  ticks: readonly ActiveStatusTick[],
+  now: Date = new Date(),
+): number {
   let openSinceMs: number | null = null;
   let totalMs = 0;
 
-  for (const event of events) {
+  for (const event of ticks) {
     if (event.type === ACTIVE_FROM) {
       // Turns never overlap, so a second opening event while one is open means
       // the close was never recorded. Count the earlier interval instead of
@@ -89,7 +109,7 @@ export function buildSessionUsageSnapshot(
  * SQLite `datetime('now')` default. Prefer the former, and fall back to `now`
  * when a row carries no usable timestamp rather than emitting NaN.
  */
-function eventTimeMs(event: SessionEvent, fallback: Date): number {
+function eventTimeMs(event: ActiveStatusTick, fallback: Date): number {
   const value = event.processedAt ?? event.createdAt;
   const ms = value ? new Date(value).getTime() : Number.NaN;
   return Number.isFinite(ms) ? ms : fallback.getTime();
