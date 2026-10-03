@@ -557,6 +557,16 @@ leave the internal state `paused` still allow another turn.
 The legacy local `status=failed` filter remains available and selects only
 internally failed sessions; those responses still report `terminated`.
 
+Every session response carries the published object fields: `budget` is always
+present — the ceiling or `null` — and `stats` reports `active_seconds` (the
+session's cumulative `running` time, derived from its event log) and
+`duration_seconds` (time since creation, frozen at the last update once the
+session is terminal or archived). The embedded `agent` is the session's frozen
+snapshot: `version` pins the definition the session runs, and `multiagent` is
+always `null` because a declared roster is refused rather than silently
+dropped. `loop_engine` is a local extension on top of the published shape.
+The published `outcome_evaluations` field is not emitted yet.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/sessions` | List sessions. |

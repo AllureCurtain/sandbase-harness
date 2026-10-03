@@ -38,6 +38,7 @@ function agent(overrides: Partial<Agent> = {}): Agent {
     metadata: {},
     status: 'active',
     version: 1,
+    multiagent: null,
     created_at: now,
     updated_at: now,
     archived_at: null,

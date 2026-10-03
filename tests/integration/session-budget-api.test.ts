@@ -192,10 +192,10 @@ describe('session budget over HTTP', () => {
     expect(usage.budget).toEqual(PRICED_BUDGET);
   });
 
-  it('omits the budget field entirely for a session that never had one', async () => {
+  it('reports budget: null for a session that never had one', async () => {
     const { res, body } = await postJson('/v1/sessions', { agent: 'agent_priced' });
     expect(res.status).toBe(201);
-    expect(body.budget).toBeUndefined();
+    expect(body.budget).toBeNull();
   });
 
   it('refuses a work-starting event at the ceiling and still accepts a settlement event', async () => {

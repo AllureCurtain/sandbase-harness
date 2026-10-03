@@ -3,8 +3,8 @@
 Contract area: `/v1/sessions` — lifecycle, status transitions, initial events,
 resources, budget.
 Status: `supported` for lifecycle, initial events, and the declared-outcome loop;
-`partial` for session update (`budget` and `vault_ids` are named refusals, not
-accepted fields).
+`partial` for session update (`vault_ids` is a named refusal, not an accepted
+field).
 The session budget is a separate contract area with its own status and is not
 claimed here; see `budget.md`.
 Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
@@ -41,6 +41,10 @@ session-update: partial
   `tools`/`mcp_servers` replacement, `metadata` merges with `null` per key as
   removal, `title` replaces, and a `session.updated` event reports the fields
   that changed.
+- The session object carries `budget` in every state — the ceiling or `null` —
+  a `stats` object with `active_seconds` and `duration_seconds`, and a
+  materialized `agent` whose `version` pins the snapshot the session runs and
+  whose `multiagent` resolves the roster or is `null`.
 - The session-scoped event stream is the canonical way to observe progress.
 
 ## 2. Current SandBase shape
@@ -101,6 +105,20 @@ projected back to the documented top-level fields, on the same route as
 `session.usage`. The new configuration applies from the next turn: the
 session's MCP connections are torn down so they reconnect against the updated
 definition and its tool admission rule.
+
+The session object itself always carries `budget` — the ceiling, or `null` in
+both the never-set and removed states, which the published shape does not
+distinguish — and a `stats` object: `active_seconds` sums the session's
+`running` intervals from the event log (the list route derives it from one
+bulk status-transition query rather than a full event read per row), and
+`duration_seconds` counts from creation to the last update for a terminated
+or archived session and to the read for a live one. The materialized `agent`
+pins `version` to the session snapshot and reports `multiagent: null` — a
+declared roster is refused by name, so a populated value can never appear.
+`loop_engine` remains on the object as a local extension. The published
+shape's required `outcome_evaluations` is not yet emitted; its derivation
+from `user.define_outcome` and `span.outcome_evaluation_*` events is a
+separate work item.
 
 `DELETE /v1/sessions/{id}` permanently removes the session row, event history,
 session-owned resources, snapshots, and generated files. It returns
@@ -321,8 +339,11 @@ Declared outcome evaluation:
 Aligned for: lifecycle endpoints, status vocabulary, initial event processing,
 the 50-event ceiling, the initial event type whitelist, the three `agent`
 reference forms, the tri-state override rule, session update (`agent` limited
-to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
-`session.updated` event carrying only the changed fields.
+to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace), the
+`session.updated` event carrying only the changed fields, and the session
+object's published fields: `budget` always present (`null` when there is no
+ceiling), `stats.active_seconds`/`stats.duration_seconds`, and the
+materialized `agent` with a pinned `version` and `multiagent: null`.
 
 ## 4. Differences
 
@@ -330,6 +351,8 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 | --- | --- |
 | Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. `POST /v1/sessions/{id}` moves it under that contract's rules and reports the change through `session.updated`. |
 | `vault_ids` on update | Refused with `vault_ids_not_updatable` on `POST /v1/sessions/{id}`; the published parameter is reserved and the refusal keeps a caller from believing its bindings moved. |
+| `outcome_evaluations` absent | The published session object requires it, and this runtime does emit the `user.define_outcome` / `span.outcome_evaluation_*` events it derives from — but the projection into the session object is a separate work item, so the field is withheld rather than emitted as a misleading `[]` on sessions whose log does carry evaluations. |
+| `loop_engine` on the object | Local extension with no published equivalent: the engine selection frozen at creation (`builtin` for legacy rows). It is additive and collides with no published field. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | Automatic rescheduling | `rescheduling` is accepted by the public type and list filter, but no internal retry state or automatic rescheduling is implemented yet. |
 | `cleanup_pending` | Internal fail-closed state for local sandbox teardown, projected to public `terminated`; the event log retains the cleanup error. |
@@ -362,6 +385,13 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
   that quietly ran the base agent after a caller asked for a different one is the
   failure the override exists to prevent, and the same reasoning makes an
   unexecutable `effort` a refusal instead of a no-op field.
+- `outcome_evaluations` is withheld rather than emitted empty because an `[]`
+  reads as "evaluated nothing" on a session whose log does carry evaluations —
+  the misleading half of an easy fix. The field returns once the projection
+  exists.
+- `loop_engine` stays on the object because the engine is a real, persisted
+  property a local operator must be able to read; it is additive, so a client
+  written against the published shape ignores it.
 - The MCP cross-check runs on the resolved definition because the defect does not
   depend on which field introduced the binding. The agent definition path already
   refuses an undeclared server reference; letting an override reach the same state
@@ -476,6 +506,15 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 - `tests/integration/custom-tool-execution.test.ts` — the pre-existing closure
   path, unchanged: a custom tool call pauses the session and the caller's result,
   sent by block id, resumes the model with the paired tool result.
+- `tests/unit/api-standard.test.ts` — the session object's published key set,
+  compared against the `BetaManagedAgentsSession` field list transcribed from
+  `@anthropic-ai/sdk@0.129.0` (only `loop_engine` may be extra;
+  `outcome_evaluations` stays absent until its projection lands), plus
+  `budget` always present, `stats` timing, and `agent.version`/`multiagent`.
+- `tests/conformance/session-object-fields.test.ts` — the same fields over the
+  wire on create, retrieve, and list, and `stats.active_seconds` derived from
+  the status-transition log on both the single-session read and the bulk list
+  path.
 
 ## 7. Status
 
@@ -483,9 +522,13 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 reference including `agent_with_overrides`, and the declared-outcome loop:
 grading runs in its own context window over what the agent produced, a
 `needs_revision` verdict is appended as a real `user.message` and re-enters the
-executor, and the loop is bounded by the declared `max_iterations`. Session
-update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, and `title`
-with `session.updated`; `budget` and `vault_ids` on that route are named
-refusals rather than accepted fields, which the matrix records under the
+executor, and the loop is bounded by the declared `max_iterations`. The session
+object's published fields are emitted in full — `budget` always present,
+`stats` derived from the event log, and the snapshot `agent` carrying
+`version` and `multiagent: null` — except `outcome_evaluations`, which waits
+for its own work item. Session
+update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, `title`,
+and `budget` with `session.updated`; `vault_ids` on that route is a named
+refusal rather than an accepted field, which the matrix records under the
 session-update capability. The session budget is `partial` in its own
 contract file, and this file does not claim it.
