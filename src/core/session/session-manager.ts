@@ -391,59 +391,58 @@ export class SessionManager {
   /**
    * Move or remove a session's budget.
    *
-   * Only the budget is updatable here; the remaining session fields (title,
-   * metadata, agent) belong to {@link updateSession}, which will call this
-   * method once budget updates are admitted. The contract's rules all live in
-   * this one method because they are all one question: how a ceiling may move
-   * relative to what has already been consumed.
+   * The move rules themselves live in {@link resolveBudgetUpdate}, which
+   * {@link updateSession} calls so a budget can move in the same request — and
+   * the same transaction — as the other updatable fields. This convenience
+   * wrapper is a budget-only spelling of that call.
    */
-  updateBudget(sessionId: string, params: { budget?: SessionBudget | null }): Session {
-    const session = this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    if (params.budget === undefined) return session;
+  updateBudget(sessionId: string, params: { budget?: SessionBudget | null }): Promise<Session> {
+    return this.updateSession(sessionId, { budget: params.budget });
+  }
 
-    // A budget is attachable at creation only, so "never had one" is a refusal
-    // rather than a default. Removing one is final for the same reason: the
-    // contract refuses to re-attach after a removal, which is why the removal is
-    // recorded in the column as `null` rather than by clearing it.
+  /**
+   * Evaluate a `budget` update against the move rules and return the value to
+   * persist — the new cap, or `null` when it is being removed. `undefined`
+   * means the request reproduces the stored cap exactly, which counts as no
+   * change like every other field.
+   *
+   * A budget is attachable at creation only, so "never had one" is a refusal
+   * rather than a default. Removing one is final for the same reason: the
+   * contract refuses to re-attach after a removal, which is why the removal is
+   * recorded in the column as `null` rather than by clearing it.
+   */
+  private resolveBudgetUpdate(session: Session, budget: SessionBudget | null): SessionBudget | null | undefined {
     if (session.budget === undefined) {
       throw budgetError(
-        BUDGET_ERROR_CODES.notAttachable,
-        `Session ${sessionId} has no budget: a budget can only be attached when the session is created`,
+        BUDGET_ERROR_CODES.createOnly,
+        `Session ${session.id} has no budget: a budget can only be attached when the session is created`,
       );
     }
     if (session.budget === null) {
       throw budgetError(
-        BUDGET_ERROR_CODES.notAttachable,
-        `Session ${sessionId} had its budget removed: a budget cannot be re-added`,
+        BUDGET_ERROR_CODES.createOnly,
+        `Session ${session.id} had its budget removed: a budget cannot be re-added`,
       );
     }
+    if (budget === null) return null;
+    if (agentDefinitionsEqual(session.budget, budget)) return undefined;
 
-    if (params.budget === null) {
-      this.persistBudget(sessionId, null);
-      return this.get(sessionId) ?? session;
-    }
-
-    const spend = this.getSessionSpend(sessionId);
+    const spend = this.getSessionSpend(session.id);
     if (!spend.meterable) {
       throw budgetError(
-        BUDGET_ERROR_CODES.modelWithoutListPrice,
-        `Session ${sessionId} consumed ${spend.unpricedModels.join(', ')}, which has no list price, so its budget cannot be changed`,
+        BUDGET_ERROR_CODES.modelNotBudgetable,
+        `Session ${session.id} consumed ${spend.unpricedModels.join(', ')}, which has no list price, so its budget cannot be changed`,
       );
     }
     // Strictly greater: a cap equal to what was consumed would leave the session
     // paused forever, because the next request could never be admitted.
-    if (spend.microcents >= budgetCapMicrocents(params.budget)) {
+    if (spend.microcents >= budgetCapMicrocents(budget)) {
       throw budgetError(
-        BUDGET_ERROR_CODES.belowConsumed,
-        `The new budget must be greater than the session's consumed list cost (${spend.cents} cents)`,
+        BUDGET_ERROR_CODES.notRaised,
+        `budget.max_list_cost must be greater than the session's consumed list cost`,
       );
     }
-
-    this.persistBudget(sessionId, params.budget);
-    return this.get(sessionId) ?? session;
+    return budget;
   }
 
   /**
@@ -454,15 +453,15 @@ export class SessionManager {
    * rather than merge; every other definition field belongs to the agent
    * update route and is refused by name. `metadata` is a merge patch — `null`
    * per key removes it, and `null` for the whole field is no change. `title`
-   * is a plain replace where `null` clears. `vault_ids` and `budget` are
-   * recognised parameters of the published request and each is refused with
-   * its own code: vault bindings are not updatable, and the budget move is a
-   * separate behaviour from this one.
+   * is a plain replace where `null` clears. `budget` moves the ceiling under
+   * {@link resolveBudgetUpdate}'s rules. `vault_ids` remains the
+   * recognised-but-refused parameter: vault bindings are not updatable.
    *
    * An agent change additionally needs the session externally idle: a running
    * turn resolved its tool surface at start, so a swap underneath it would
-   * only take effect mid-turn — interrupt first. Title and metadata are
-   * durable row state and stay updatable while a turn runs.
+   * only take effect mid-turn — interrupt first. Title, metadata, and budget
+   * are durable row state and stay updatable while a turn runs, because a
+   * budget move only changes what the next model request may spend.
    *
    * Everything a caller changed is written in one transaction together with
    * the `session.updated` event that reports it, so a rejected update leaves
@@ -476,24 +475,24 @@ export class SessionManager {
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
     }
-    if (session.archivedAt || isTerminal(session.status)) {
-      throw sessionOperationError('session_terminated', `Session ${sessionId} is in terminal state: ${session.status}`);
-    }
     if (params.vault_ids !== undefined) {
       throw sessionOperationError('vault_ids_not_updatable', `Unknown parameter: 'vault_ids'.`);
     }
-    if (params.budget !== undefined) {
-      throw sessionOperationError('budget_update_not_supported', `Unknown parameter: 'budget'.`);
+    if (session.archivedAt || isTerminal(session.status)) {
+      throw sessionOperationError('session_terminated', `Session ${sessionId} is in terminal state: ${session.status}`);
     }
 
     const agentChange = params.agent === undefined
       ? undefined
       : this.resolveAgentUpdate(session, params.agent);
+    const budgetChange = params.budget === undefined
+      ? undefined
+      : this.resolveBudgetUpdate(session, params.budget);
     const metadataChange = this.resolveMetadataUpdate(session, params.metadata);
     const titleChange = params.title !== undefined && (params.title ?? undefined) !== session.title
       ? params.title ?? null
       : undefined;
-    if (agentChange === undefined && metadataChange === undefined && titleChange === undefined) {
+    if (agentChange === undefined && budgetChange === undefined && metadataChange === undefined && titleChange === undefined) {
       return session;
     }
 
@@ -502,6 +501,9 @@ export class SessionManager {
       eventPayload.agent = agentChange;
       eventPayload.agent_id = session.agentId;
       eventPayload.agent_version = session.agentVersion;
+    }
+    if (budgetChange !== undefined) {
+      eventPayload.budget = budgetChange;
     }
     // An emptied bag is reported by omission: the field is the post-update
     // metadata, and a cleared one has none to carry.
@@ -527,6 +529,9 @@ export class SessionManager {
           : session.metadata ? JSON.stringify(session.metadata) : null,
         sessionId,
       );
+      if (budgetChange !== undefined) {
+        this.persistBudget(sessionId, budgetChange);
+      }
       const event = this.eventLogger.append(sessionId, {
         type: 'session.updated',
         metadata: { session_updated: eventPayload },
@@ -737,7 +742,7 @@ export class SessionManager {
       );
       if (unpriced.length > 0) {
         throw budgetError(
-          BUDGET_ERROR_CODES.modelWithoutListPrice,
+          BUDGET_ERROR_CODES.modelNotBudgetable,
           `Agent ${agentSnapshot.name} runs ${unpriced.join(', ')}, which has no list price, so the session cannot be given a budget`,
         );
       }

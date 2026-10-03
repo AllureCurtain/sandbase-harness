@@ -77,16 +77,23 @@ against the same schema as agent creation, including the `mcp_toolset` /
 The agent row and its version list are never touched. `metadata` is a merge
 patch: a `null` value removes its key, `null` for the whole field is no
 change, and an empty resulting bag is stored as empty. `title` replaces and
-`null` clears it. `vault_ids` is refused with `vault_ids_not_updatable`,
-`budget` with `budget_update_not_supported`, any other `agent` field with
+`null` clears it. `budget` moves the session's ceiling under the budget
+contract's rules — an object replaces it, `null` removes it, and the move is
+allowed in any non-terminal state because it only changes what the next model
+request may spend; the refusal codes (`budget_create_only`,
+`budget_not_raised`, `model_not_budgetable`, and the `budget_invalid_*`
+family) belong to [`budget.md`](./budget.md). `vault_ids` is refused with
+`vault_ids_not_updatable`, any other `agent` field with
 `agent_field_not_updatable`, and an unknown top-level field with
 `invalid_request_error`. An `agent` change additionally needs an externally
 idle session: a running one returns `409` with `session_not_idle` and must be
-interrupted first, while `title` and `metadata` move in any non-terminal
-state. Terminated or archived sessions return `409` with `session_terminated`.
+interrupted first, while `title`, `metadata`, and `budget` move in any
+non-terminal state. Terminated or archived sessions return `409` with
+`session_terminated`.
 All admitted changes land in one transaction together with exactly one
 `session.updated` event, which carries only the fields that changed — the
-full materialized agent snapshot under `agent`, the whole post-update
+full materialized agent snapshot under `agent`, the new ceiling or `null`
+under `budget`, the whole post-update
 metadata bag under `metadata` (absent when the update cleared it), and the
 new `title` — and a request that changes nothing emits no event. The payload
 is persisted through the metadata carrier (`metadata.session_updated`) and
@@ -321,7 +328,7 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 
 | Difference | Detail |
 | --- | --- |
-| Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. `POST /v1/sessions/{id}` refuses `budget` with `budget_update_not_supported`: the move is unwired, so the route answers a named refusal rather than silently accepting a ceiling it cannot move. |
+| Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. `POST /v1/sessions/{id}` moves it under that contract's rules and reports the change through `session.updated`. |
 | `vault_ids` on update | Refused with `vault_ids_not_updatable` on `POST /v1/sessions/{id}`; the published parameter is reserved and the refusal keeps a caller from believing its bindings moved. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | Automatic rescheduling | `rescheduling` is accepted by the public type and list filter, but no internal retry state or automatic rescheduling is implemented yet. |

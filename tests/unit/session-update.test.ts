@@ -5,7 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Database } from '@/core/db/database.js';
 import { SessionManager, type SessionExecutor } from '@/core/session/session-manager.js';
 import { toApiEvent } from '@/api/standard.js';
+import type { CostProfile } from '@/core/session/cost-profile.js';
 import type { AgentDefinition } from '@/types/agent.js';
+
+/** Prices the fixture agent's model so a budget may attach to its sessions. */
+const PROFILE: CostProfile = {
+  id: 'test',
+  models: {
+    'conformance-model': { input_per_mtok_cents: 1000, output_per_mtok_cents: 1000 },
+  },
+  web_search_per_1000_cents: 0,
+  active_hour_cents: 0,
+};
 
 const AGENT_DEFINITION: AgentDefinition = {
   name: 'test-agent',
@@ -257,14 +268,48 @@ describe('session update', () => {
     expect(manager.getEventLogger().getEvents(session.id)).toHaveLength(1);
   });
 
-  it.each(['vault_ids', 'budget'] as const)('refuses a recognized but unwired parameter: %s', async (field) => {
+  it('refuses the recognized-but-not-updatable vault_ids parameter', async () => {
     const session = manager.create({ agent: 'agent_test' });
-    const params = field === 'vault_ids' ? { vault_ids: ['vlt_one'] } : { budget: null };
 
-    await expect(manager.updateSession(session.id, params)).rejects.toMatchObject({
-      code: field === 'vault_ids' ? 'vault_ids_not_updatable' : 'budget_update_not_supported',
+    await expect(manager.updateSession(session.id, { vault_ids: ['vlt_one'] })).rejects.toMatchObject({
+      code: 'vault_ids_not_updatable',
     });
     expect(manager.getEventLogger().getEvents(session.id)).toEqual([]);
+  });
+
+  it('moves the budget through the update path and reports it on session.updated', async () => {
+    manager.setCostProfile(PROFILE);
+    const session = manager.create({
+      agent: 'agent_test',
+      budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
+    });
+
+    const updated = await manager.updateSession(session.id, {
+      budget: { type: 'limit', max_list_cost: { amount: '50', currency: 'USD' } },
+    });
+
+    expect(updated.budget?.max_list_cost.amount).toBe('50');
+    const events = manager.getEventLogger().getEvents(session.id);
+    expect(events).toHaveLength(1);
+    const apiEvent = toApiEvent(events[0]!);
+    expect(apiEvent.type).toBe('session.updated');
+    expect(apiEvent.budget).toEqual({ type: 'limit', max_list_cost: { amount: '50', currency: 'USD' } });
+    expect(apiEvent.title).toBeUndefined();
+    expect(apiEvent.agent).toBeUndefined();
+  });
+
+  it('removes the budget with null and reports budget: null', async () => {
+    manager.setCostProfile(PROFILE);
+    const session = manager.create({
+      agent: 'agent_test',
+      budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
+    });
+
+    const updated = await manager.updateSession(session.id, { budget: null });
+
+    expect(updated.budget).toBeNull();
+    const apiEvent = toApiEvent(manager.getEventLogger().getEvents(session.id)[0]!);
+    expect(apiEvent.budget).toBeNull();
   });
 
   it('refuses an update on a terminated session', async () => {

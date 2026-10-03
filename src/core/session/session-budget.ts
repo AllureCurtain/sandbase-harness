@@ -54,11 +54,11 @@ export const BUDGET_ERROR_CODES = {
   /** `type` is not `limit`, or the object has an unexpected shape. */
   invalidShape: 'budget_invalid_shape',
   /** The session was created without a budget, or its budget was removed. */
-  notAttachable: 'budget_not_attachable',
+  createOnly: 'budget_create_only',
   /** The new cap is not strictly greater than the consumed list cost. */
-  belowConsumed: 'budget_below_consumed',
+  notRaised: 'budget_not_raised',
   /** The agent (or a roster member) runs a model with no list price. */
-  modelWithoutListPrice: 'budget_model_without_list_price',
+  modelNotBudgetable: 'model_not_budgetable',
   /** Consumption includes a model the profile cannot price, so metering stopped. */
   unpriceable: 'budget_unpriceable',
   /** A work-starting event arrived while the session is paused at its cap. */
@@ -257,8 +257,14 @@ export function budgetError(code: BudgetErrorCode, message: string): Error & { c
 export function isBudgetError(error: unknown): error is Error & { code: BudgetErrorCode } {
   if (!error || typeof error !== 'object' || !('code' in error)) return false;
   const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && code.startsWith('budget_');
+  return typeof code === 'string' && BUDGET_ERROR_CODE_SET.has(code as BudgetErrorCode);
 }
+
+// Membership, not a prefix: `model_not_budgetable` is a budget refusal that
+// does not spell itself with the `budget_` prefix.
+const BUDGET_ERROR_CODE_SET: ReadonlySet<BudgetErrorCode> = new Set(
+  Object.values(BUDGET_ERROR_CODES),
+);
 
 /**
  * Serialize for the `sessions.budget` column.

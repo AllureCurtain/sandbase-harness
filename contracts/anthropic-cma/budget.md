@@ -59,9 +59,11 @@ session-budget: partial
   `budget_reached`. Settlement events pass.
 - `session.usage` now carries `list_cost` (whole cents, priced from the profile),
   `budget` (the value, or `null`), and `server_tool_use`.
-- `manager.update(sessionId, { budget })` implements the raise/remove rules. Only
-  the budget is updatable there; the remaining session fields belong to the
-  session-update behaviour.
+- `POST /v1/sessions/{id}` moves the budget through `SessionManager.updateSession`
+  (`updateBudget` is the budget-only spelling). An object replaces the ceiling,
+  `null` removes it, and the move is allowed in any non-terminal state; the raise
+  and remove rules below are evaluated inside the update's single transaction and
+  reported through `session.updated`.
 - The ceiling is read by a declared outcome's revision loop as well as by admission.
   A revision turn is not an event — appending the revision and re-entering the
   executor are internal to the declaration that was already admitted — so the loop
@@ -88,7 +90,7 @@ session-budget: partial
 | Difference | Detail |
 | --- | --- |
 | Prices are local, not official | `list_cost` is computed from an operator-supplied `CostProfile`. SandBase never embeds vendor prices. With the default empty profile, no model is priced and a session cannot be budgeted at all. |
-| Unpriced model ⇒ no budget | A model the profile does not list makes the session unbudgetable (`budget_model_without_list_price`). The published contract has authoritative prices, so the case does not arise for it. |
+| Unpriced model ⇒ no budget | A model the profile does not list makes the session unbudgetable (`model_not_budgetable`). The published contract has authoritative prices, so the case does not arise for it. |
 | `list_cost` withheld when incomplete | When any model used is unpriced, `usage.list_cost` is omitted rather than reported as a lower bound. Reporting a lower bound as a total would understate spend to a caller that is about to choose a new cap. |
 | The cap refuses the next event instead of pausing the session | The published design pauses the session and reports `budget_reached` on the thread. SandBase refuses the work-starting event with the code `budget_reached` and leaves the session status alone: the pause signal is a thread-level fact, and this runtime has no thread surface to report it on. The consequence the contract cares about — the next model request does not start — holds either way. |
 | An outcome stops at the ceiling with its own verdict | A declared outcome whose session reaches the ceiling closes with `result: "budget_reached"` on its terminal `span.outcome_evaluation_end`. The published contract has no outcome-loop surface, so this is a local rule rather than a published one; `sessions.md` §4 records the outcome side of it. |

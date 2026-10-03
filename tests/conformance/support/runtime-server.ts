@@ -48,6 +48,13 @@ export interface RuntimeHarnessOptions {
    * no default can stand in for it.
    */
   agentTools?: string[];
+  /**
+   * A `MANAGED_AGENTS_COST_PROFILE` value for this run only.
+   *
+   * The profile lives in the child's environment rather than the test process's
+   * so a budgeted test does not re-price every other session in the file.
+   */
+  costProfile?: unknown;
 }
 
 export interface RunningRuntime {
@@ -153,6 +160,9 @@ export async function startRuntimeHarness(options: RuntimeHarnessOptions): Promi
       // The runtime is started without a key so the client's credential is not
       // what the assertions depend on; a key would only add one more variable.
       MANAGED_AGENTS_API_KEY: '',
+      ...(options.costProfile !== undefined
+        ? { MANAGED_AGENTS_COST_PROFILE: JSON.stringify(options.costProfile) }
+        : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

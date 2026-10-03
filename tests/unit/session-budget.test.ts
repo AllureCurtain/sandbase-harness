@@ -225,47 +225,47 @@ describe('SessionManager budget', () => {
     expect(() => manager.assertSessionCanAcceptEvent(session.id, { type: 'user.message', content: [] })).not.toThrow();
   });
 
-  it('raises the cap and refuses a new cap at or below what was already spent', () => {
+  it('raises the cap and refuses a new cap at or below what was already spent', async () => {
     const session = manager.create({
       agent: 'agent_priced',
       budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
     });
     recordSpend(session.id, tokensForCents(15));
 
-    expect(() => manager.updateBudget(session.id, {
+    await expect(manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '15', currency: 'USD' } },
-    })).toThrowError(/must be greater than the session's consumed list cost/);
+    })).rejects.toThrowError(/must be greater than the session's consumed list cost/);
 
-    const raised = manager.updateBudget(session.id, {
+    const raised = await manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '50', currency: 'USD' } },
     });
     expect(raised.budget?.max_list_cost.amount).toBe('50');
     expect(manager.isBudgetExhausted(session.id)).toBe(false);
   });
 
-  it('removes a budget and remembers that a removal happened', () => {
+  it('removes a budget and remembers that a removal happened', async () => {
     const session = manager.create({
       agent: 'agent_priced',
       budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
     });
-    manager.updateBudget(session.id, { budget: null });
+    await manager.updateBudget(session.id, { budget: null });
 
     expect(manager.get(session.id)?.budget).toBeNull();
     // Re-adding is refused after removal, which is why the row has to keep the
     // removal rather than just clearing the column.
-    expect(() => manager.updateBudget(session.id, {
+    await expect(manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '99', currency: 'USD' } },
-    })).toThrowError(/cannot be re-added/);
+    })).rejects.toThrowError(/cannot be re-added/);
   });
 
-  it('refuses to attach a budget to a session that never had one', () => {
+  it('refuses to attach a budget to a session that never had one', async () => {
     const session = manager.create({ agent: 'agent_priced' });
-    expect(() => manager.updateBudget(session.id, {
+    await expect(manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '10', currency: 'USD' } },
-    })).toThrowError(/can only be attached when the session is created/);
+    })).rejects.toThrowError(/can only be attached when the session is created/);
   });
 
-  it('cannot meter a session that later consumes an unpriced model', () => {
+  it('cannot meter a session that later consumes an unpriced model', async () => {
     const session = manager.create({
       agent: 'agent_priced',
       budget: { type: 'limit', max_list_cost: { amount: '1000', currency: 'USD' } },
@@ -273,9 +273,9 @@ describe('SessionManager budget', () => {
     // A model nobody declared — a delegation could do this in production.
     recordSpend(session.id, 1000, 'model-unpriced');
     expect(manager.isBudgetExhausted(session.id)).toBe(true);
-    expect(() => manager.updateBudget(session.id, {
+    await expect(manager.updateBudget(session.id, {
       budget: { type: 'limit', max_list_cost: { amount: '2000', currency: 'USD' } },
-    })).toThrowError(/no list price/);
+    })).rejects.toThrowError(/no list price/);
   });
 
   it('reports list_cost and the budget echo in the usage payload', () => {

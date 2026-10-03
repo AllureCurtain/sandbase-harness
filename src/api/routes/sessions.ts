@@ -8,7 +8,7 @@
  * GET  /v1/sessions/:id/events - list events (paginated)
  * POST /v1/sessions/:id/stop - stop session
  * POST /v1/sessions/:id/archive - archive session
- * POST /v1/sessions/:id      - update session (agent tools/MCP, metadata, title)
+ * POST /v1/sessions/:id      - update session (agent tools/MCP, budget, metadata, title)
  * DELETE /v1/sessions/:id    - delete session
  */
 
@@ -763,10 +763,11 @@ export function sessionsRoutes(deps: ServerDeps) {
   //
   // The published update verb on a session resource: `agent` admits only a
   // tools/MCP swap, `metadata` merges with `null` per key as removal, `title`
-  // replaces. `vault_ids` and `budget` are real parameters of the request and
-  // are refused with their own codes rather than treated as unknown. A
-  // body-level key that names none of these is a plain invalid request — the
-  // parameter spelling that almost worked is worth more than a silent drop.
+  // replaces, and `budget` moves the session's ceiling under the budget
+  // contract's rules. `vault_ids` is the one recognised parameter the request
+  // refuses by name rather than applies. A body-level key that names none of
+  // these is a plain invalid request — the parameter spelling that almost
+  // worked is worth more than a silent drop.
   app.post('/:id', async (c) => {
     const sessionId = c.req.param('id');
     let body: any;
@@ -793,11 +794,17 @@ export function sessionsRoutes(deps: ServerDeps) {
     if (body.title !== undefined && body.title !== null && typeof body.title !== 'string') {
       return invalid(c, 'title must be a string or null');
     }
+    // `null` and a well-formed `limit` object both validate; anything else is a
+    // named refusal rather than a schema failure discovered mid-transaction.
+    const parsedBudget = body.budget !== undefined ? parseSessionBudget(body.budget) : undefined;
+    if (parsedBudget && !parsedBudget.ok) {
+      return invalidWithCode(c, parsedBudget.code ?? 'budget_invalid_shape', parsedBudget.message ?? 'budget is invalid');
+    }
 
     try {
       const session = await sessionManager.updateSession(sessionId, {
         ...(body.agent !== undefined ? { agent: body.agent } : {}),
-        ...(body.budget !== undefined ? { budget: body.budget } : {}),
+        ...(parsedBudget ? { budget: parsedBudget.remove ? null : parsedBudget.budget } : {}),
         ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.vault_ids !== undefined ? { vault_ids: body.vault_ids } : {}),
