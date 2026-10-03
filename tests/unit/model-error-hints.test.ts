@@ -25,9 +25,32 @@ function errorEvent(metadata: unknown): SessionEvent {
 
 describe('sessionErrorCode', () => {
   it('reads the code the runtime recorded on the error event', () => {
+    const event = errorEvent({
+      error: {
+        type: 'model_request_failed_error',
+        message: 'x',
+        retry_status: { type: 'terminal' },
+        code: 'model_auth_failed',
+      },
+    });
+
+    expect(sessionErrorCode(event)).toBe('model_auth_failed');
+  });
+
+  it('reads the code an old event stored in `type`', () => {
+    // Events persisted before the code extension carried the local code in
+    // `type`; the hint must still find it there.
     const event = errorEvent({ error: { type: 'model_auth_failed', message: 'x', retry_status: 'not_retryable' } });
 
     expect(sessionErrorCode(event)).toBe('model_auth_failed');
+  });
+
+  it('does not mistake an official error type for a code', () => {
+    const event = errorEvent({
+      error: { type: 'model_request_failed_error', message: 'x', retry_status: { type: 'terminal' } },
+    });
+
+    expect(sessionErrorCode(event)).toBeUndefined();
   });
 
   it('reports nothing for an event that carries no error metadata', () => {

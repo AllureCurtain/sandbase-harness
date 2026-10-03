@@ -964,7 +964,7 @@ deployment where nobody is coming back to answer:
 ```
 
 With a bound set, a session parked longer than that is ended: a `session.error`
-carrying `requires_action_timeout` (`retry_status: "not_retryable"`) is appended
+carrying `requires_action_timeout` (`retry_status.type: "terminal"`) is appended
 and the session reaches internal `timed_out`, published as `status: "terminated"`
 and `session.status_terminated`.
 
@@ -1083,16 +1083,22 @@ top-level `error` field:
   "type": "session.error",
   "content": [{ "type": "text", "text": "Provider \"openai\" takes its api_key from environment variable OPENAI_API_KEY, which is not set in the runtime's environment. ..." }],
   "error": {
-    "type": "model_config_invalid",
+    "type": "model_request_failed_error",
     "message": "Provider \"openai\" takes its api_key from environment variable OPENAI_API_KEY, which is not set in the runtime's environment. ...",
-    "retry_status": "not_retryable"
+    "retry_status": { "type": "terminal" },
+    "code": "model_config_invalid"
   }
 }
 ```
 
-`type` is the stable code the runtime attached to the failure, or
-`internal_error` when the failure carries none. `content` still carries the
-message as a text block, so a client that only renders content keeps working.
+`type` is one of the eight official error classifications —
+`unknown_error`, `model_overloaded_error`, `model_rate_limited_error`,
+`model_request_failed_error`, `mcp_connection_failed_error`,
+`mcp_authentication_failed_error`, `billing_error`, and
+`credential_host_unreachable_error` — and `code` is the stable local code the
+runtime attached to the failure, or `internal_error` when the failure carries
+none. `content` still carries the message as a text block, so a client that
+only renders content keeps working.
 
 A provider credential or endpoint written as `${VAR}` is resolved before the
 request is built. When the variable is not set in the runtime's own environment
@@ -1112,7 +1118,7 @@ That code and that classification are the builtin engine's. With
 `loop_engine.provider: "pi"` the same unset reference is refused one step earlier
 — the launcher resolves the model's credential before it spawns the Pi CLI, so no
 request is sent there either, and its message names the variable — but it is
-reported as `internal_error` with `retry_status: "unknown"` and the session is
+reported as `unknown_error` with `code: "internal_error"` and the session is
 left `failed` rather than resumable. Only the code and the session's ability to
 continue differ; making the Pi path raise the same error is a decision this
 document does not make.
@@ -1135,25 +1141,29 @@ set to the empty string. The settings layer reports either as `missing_env`, and
 the model client treats either as a configuration mistake rather than sending an
 empty credential the provider would answer with an unattributed `401`.
 
-`retry_status` is derived from `type`, never guessed from the message:
+`retry_status` is the published object `{ "type": "retrying" | "exhausted" |
+"terminal" }`, derived from `code`, never guessed from the message:
 
-| Value | Meaning | Codes |
+| `retry_status.type` | Meaning | Codes |
 | --- | --- | --- |
-| `retryable` | Transient; the same request may succeed. | `pi_session_busy`, `work_queue_timeout` |
-| `not_retryable` | The runtime will refuse this request again. | `pi_cleanup_pending`, `pi_timed_out`, `pi_rpc_gate_unavailable`, `pi_rpc_gate_lost`, `pi_rpc_approval_not_pending`, `pi_rpc_protocol_error`, `pi_rpc_timeout`, `pi_rpc_outcome_unknown`, `pi_always_ask_not_supported`, `pi_tool_policy_not_supported`, `pi_sandbox_provider_not_supported`, `pi_user_event_not_supported`, `pi_message_content_not_supported`, `loop_engine_not_supported`, `loop_engine_invalid`, `unsupported_capability`, `requires_action_timeout`, `work_outcome_unknown`, `work_lease_lost`, `outcome_evaluator_unavailable`, `outcome_rubric_file_not_found`, `model_not_found`, `model_provider_not_configured`, `model_config_invalid`, `model_auth_failed` |
-| `unknown` | Not classified. Treat as possibly retryable. | any other code, including a failure with no code |
+| `retrying` | Transient; the same request may succeed. | `pi_session_busy`, `work_queue_timeout` |
+| `terminal` | The runtime will refuse this request again, or the failure is not classified. | `pi_cleanup_pending`, `pi_timed_out`, `pi_rpc_gate_unavailable`, `pi_rpc_gate_lost`, `pi_rpc_approval_not_pending`, `pi_rpc_protocol_error`, `pi_rpc_timeout`, `pi_rpc_outcome_unknown`, `pi_always_ask_not_supported`, `pi_tool_policy_not_supported`, `pi_sandbox_provider_not_supported`, `pi_user_event_not_supported`, `pi_message_content_not_supported`, `loop_engine_not_supported`, `loop_engine_invalid`, `unsupported_capability`, `requires_action_timeout`, `work_outcome_unknown`, `work_lease_lost`, `outcome_evaluator_unavailable`, `outcome_rubric_file_not_found`, `model_not_found`, `model_provider_not_configured`, `model_config_invalid`, `model_auth_failed`, any other code, and a failure with no code |
 
 `pi_always_ask_not_supported` is retained in that table but is no longer produced:
 an `always_ask` native tool is now decided by the Pi session's pre-execution gate
 instead of being refused at admission, and the code stays classified for sessions
-created by an earlier build so a client branching on it does not fall back to
-`unknown`. The three gate codes are the new permanent failures — the gate
+created by an earlier build so a client branching on it does not lose the
+distinction. The three gate codes are the new permanent failures — the gate
 extension did not load, a gated call executed with no decision attached, or a
 `user.tool_confirmation` named a gate this runtime was not waiting on.
 
-These three values are a SandBase profile: the published contract documents the
-`retry_status` field but does not enumerate its values, so a client must treat an
-unrecognized value as `unknown`.
+The runtime produces only `retrying` and `terminal`: `exhausted` belongs to
+automatic rescheduling, which is not implemented. Events persisted before this
+shape existed stored the local code in `type` and a string disposition —
+`retryable`, `not_retryable`, or `unknown` — in `retry_status`; the projection
+normalizes them on the way out, so a client reading an old log sees the same
+published shape (`retryable` → `retrying`, the other two → `terminal`, and the
+stored `type` reclassified and preserved as `code`).
 
 A turn aborted by the caller is not a failure and records no `session.error`.
 
@@ -1292,7 +1302,7 @@ Each iteration is observable: one revision `user.message` per revision and one
 
 Grading needs a model provider. With none configured the evaluation closes as
 `failed` and the session records `session.error` with code
-`outcome_evaluator_unavailable` and `retry_status: "not_retryable"`, because a
+`outcome_evaluator_unavailable` and `retry_status.type: "terminal"`, because a
 missing provider is a configuration problem rather than a transient one. A
 `{ "type": "file" }` rubric is read from the uploaded file; if it cannot be read
 the refusal is `outcome_rubric_file_not_found` rather than a verdict against an

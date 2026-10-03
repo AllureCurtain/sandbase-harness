@@ -19,9 +19,26 @@ import type { SessionEvent } from '../types';
 export function sessionErrorCode(event: SessionEvent): string | undefined {
   const error = event.metadata?.error;
   if (!error || typeof error !== 'object') return undefined;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string') return code;
+  // Events persisted before the error-code extension stored the local code in
+  // `type`, which now carries the official classification. A `type` that is
+  // not one of the eight official values can only be such a legacy code.
   const type = (error as { type?: unknown }).type;
-  return typeof type === 'string' ? type : undefined;
+  return typeof type === 'string' && !OFFICIAL_ERROR_TYPES.has(type) ? type : undefined;
 }
+
+/** The eight `error.type` values the published contract enumerates. */
+const OFFICIAL_ERROR_TYPES: ReadonlySet<string> = new Set([
+  'unknown_error',
+  'model_overloaded_error',
+  'model_rate_limited_error',
+  'model_request_failed_error',
+  'mcp_connection_failed_error',
+  'mcp_authentication_failed_error',
+  'billing_error',
+  'credential_host_unreachable_error',
+]);
 
 const HINTS: Record<string, string> = {
   model_not_found:

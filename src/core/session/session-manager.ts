@@ -21,6 +21,7 @@ import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
 import { attachSessionResources } from './session-resources.js';
+import { officialErrorType, retryStatus } from './session-error.js';
 import { buildSessionUsageSnapshot } from './session-usage.js';
 import type { SnapshotManager } from './snapshot-manager.js';
 import {
@@ -2058,13 +2059,21 @@ const INTERNAL_ERROR_CODE = 'internal_error';
  * the message. A code the runtime does not recognize reports `unknown`, which
  * is the honest answer: claiming `not_retryable` for an unknown failure would
  * tell a client to give up on work that might succeed on retry.
+ *
+ * The published `error.type` is the official classification, never the local
+ * code: `officialErrorType` maps a provider 401 and a missing model id to
+ * `model_request_failed_error` alike, while the code the failure was raised
+ * with is preserved under `error.code`.
  */
 function sessionErrorMetadata(error: unknown, code: string | undefined): Record<string, unknown> {
   return {
     error: {
-      type: code ?? INTERNAL_ERROR_CODE,
+      type: officialErrorType(code, error),
       message: error instanceof Error ? error.message : String(error),
       retry_status: retryStatusFor(code),
+      // A codeless failure still records `internal_error` — the same fallback
+      // it previously published as `type`, now in the extension field.
+      code: code ?? INTERNAL_ERROR_CODE,
     },
   };
 }
@@ -2085,7 +2094,7 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     // intent is safe to submit again. It is the one way that wait can end with no
     // possible side effect, which is exactly what makes the reason worth reporting.
     case WORK_QUEUE_TIMEOUT_CODE:
-      return 'retryable';
+      return retryStatus('retryable');
     case PI_CLEANUP_PENDING_CODE:
     case PI_TIMED_OUT_CODE:
     // The parked-wait bound is not a condition a retry fixes either: the runtime
@@ -2140,7 +2149,7 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     case MODEL_PROVIDER_NOT_CONFIGURED_CODE:
     case MODEL_CONFIG_INVALID_CODE:
     case MODEL_AUTH_FAILED_CODE:
-      return 'not_retryable';
+      return retryStatus('not_retryable');
     // Two transport codes are deliberately absent, and their absence is the
     // decision rather than an omission: `pi_rpc_closed` and
     // `pi_rpc_command_rejected` each cover sub-cases with opposite dispositions,
@@ -2165,7 +2174,7 @@ function retryStatusFor(code: string | undefined): SessionErrorRetryStatus {
     // refusal from a permanent one, which changes the published error taxonomy
     // and is a product decision rather than a classification one.
     default:
-      return 'unknown';
+      return retryStatus('unknown');
   }
 }
 

@@ -8,9 +8,9 @@
  * runtime crash and points an operator at the wrong layer.
  *
  * The code travels on the error's `code` property, which `SessionManager`
- * already projects into `session.error.type` and classifies for
- * `retry_status` — so a code added here is visible to a client without a new
- * carrier.
+ * already projects into `session.error.code` and classifies for the official
+ * `type` and `retry_status` — so a code added here is visible to a client
+ * without a new carrier.
  */
 
 /** The requested model id is not available on the configured provider. */

@@ -2,6 +2,7 @@ import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/age
 import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { ApiSessionStatus, Session, SessionEvent, SessionLoopEngine, SessionStatus } from '@/types/session.js';
 import type { SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
+import { projectSessionError, type SessionErrorPayload } from '@/core/session/session-error.js';
 import { STATUS_PROJECTION } from '@/core/session/session-lifecycle.js';
 
 export interface ApiPage<T extends { id: string }> {
@@ -278,14 +279,10 @@ export interface ApiEvent {
   custom_tool_use_id?: string;
   /**
    * Structured payload of a `session.error`, projected from the metadata
-   * carrier. Always carries all three keys; a client must treat an
-   * unrecognized `retry_status` value as `unknown`.
+   * carrier. `type` is always one of the official error types; the runtime's
+   * own code travels under `code` when one was recorded.
    */
-  error?: {
-    type: string;
-    message: string;
-    retry_status: string;
-  };
+  error?: SessionErrorPayload;
   /**
    * Server that produced an `agent.mcp_tool_use` / `agent.mcp_tool_result`.
    * Without it, two MCP servers exposing the same tool name are
@@ -503,8 +500,12 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   // `session.error` is persisted through the generic metadata carrier (the
   // events table has no per-type payload column) and projected to its
   // documented top-level field here, on the same route as `session.usage`.
+  // `projectSessionError` normalizes both generations of stored payload: new
+  // events already carry the official `type` and object `retry_status`; old
+  // events store the local code in `type` and a string disposition, which the
+  // projection reclassifies rather than leaking.
   const error = event.type === 'session.error'
-    ? metadataObject(event, 'error') as ApiEvent['error']
+    ? projectSessionError(metadataObject(event, 'error'))
     : undefined;
   const mcpServerName = metadataString(event, 'mcp_server_name');
   const mcpToolUseId = event.type === 'agent.mcp_tool_result' ? contentToolUseId(event) : undefined;

@@ -296,7 +296,7 @@ Declared outcome evaluation:
   rather than grading against an empty rubric.
 - A grader that cannot run — no model provider configured — closes the end event
   as `failed` and surfaces `session.error` with code
-  `outcome_evaluator_unavailable` and `retry_status: not_retryable`. The
+  `outcome_evaluator_unavailable` and `retry_status: { "type": "terminal" }`. The
   evaluation is never silently skipped: an ungraded outcome and a failed outcome
   would otherwise be indistinguishable to a client.
 - A turn that threw is not graded, and the end event is appended on every path so
@@ -337,7 +337,7 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 | Override refusal codes | `agent_model_required` is the published code for a cleared `model`. `agent_tools_cleared_with_skills`, `agent_mcp_server_not_found`, `invalid_agent_override_field`, `invalid_agent_overrides`, `invalid_agent_ref` and `agent_required` are SandBase spellings for the same conditions, published so a client can distinguish them without parsing prose. |
 | `model.effort` in an override | Refused with `invalid_agent_override_field` rather than accepted and ignored. A definition retains `effort` and the read projection returns it — including a session's frozen snapshot, which reports the profile it resolved — but the provider model is resolved from the agent's model id, so a level set on a session would reach no request. Only a deployment's own `reasoning_effort` model setting reaches a provider, and that is operator-level. The refusal names the definition as where to set it. |
 | MCP cross-check scope | The published exception covers clearing `mcp_servers`. Locally the same check runs on the resolved definition, so a `tools` override that binds an `mcp_toolset` to an undeclared server is refused with `agent_mcp_server_not_found` instead of persisting a toolset that silently does nothing. |
-| Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: not_retryable` rather than reporting a verdict the runtime cannot produce. |
+| Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: { "type": "terminal" }` rather than reporting a verdict the runtime cannot produce. |
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
 | Outcome iteration stopped for confirmation | A revision turn that stops for a tool confirmation ends the outcome as `interrupted`: the loop cannot drive another turn while the session waits for a human, and an outcome does not resume by itself. The published contract does not describe what a confirmation does to an outcome's iteration. |
 | Outcome verdict at the spending ceiling | A session that spends its declared ceiling during an outcome closes it with `result: "budget_reached"` instead of transitioning to the published paused state. The ceiling is enforced between model requests and the loop's turns are not events, so this verdict is how a client learns why the iterations stopped; `budget.md` owns the ceiling itself. |
@@ -398,7 +398,7 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace) and the
 - `tests/integration/outcome-grading.test.ts` — a declared outcome reaches the
   agent's context, the completed turn is graded, the span triple reaches the
   event log in order, and a runtime with no provider records
-  `outcome_evaluator_unavailable` with `retry_status: not_retryable`.
+  `outcome_evaluator_unavailable` with `retry_status: { "type": "terminal" }`.
 - `tests/unit/outcome-loop.test.ts` and `tests/integration/outcome-loop.test.ts` —
   the revision loop: a `needs_revision` verdict appended as a real `user.message`
   with the executor re-entered for it, the spent budget reported as

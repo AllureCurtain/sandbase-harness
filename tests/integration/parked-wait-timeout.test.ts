@@ -156,9 +156,10 @@ describe('Bounded parked wait', () => {
     const error = events(sessionManager, sessionId).find((e) => e.type === 'session.error');
     expect(error).toBeDefined();
     // The reason is machine-readable, on the carrier every coded failure uses.
-    expect((error!.metadata?.error as { type: string }).type).toBe(PARKED_WAIT_TIMEOUT_CODE);
+    expect((error!.metadata?.error as { code?: string }).code).toBe(PARKED_WAIT_TIMEOUT_CODE);
     // The runtime decided to stop waiting; no retry by the runtime changes that.
-    expect((error!.metadata?.error as { retry_status: string }).retry_status).toBe('not_retryable');
+    expect((error!.metadata?.error as { retry_status: { type: string } }).retry_status)
+      .toEqual({ type: 'terminal' });
   });
 
   it('leaves a parked session alone until the bound has actually passed', () => {

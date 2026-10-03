@@ -327,22 +327,48 @@ export interface SessionStatusTerminatedEvent extends EventBase {
 }
 
 /**
+ * The `error.type` values the published contract enumerates.
+ *
+ * Local error codes never land here: a failure is classified into one of these
+ * on the way out, and the code it was raised with travels under `error.code`.
+ */
+export type SessionErrorType =
+  | 'unknown_error'
+  | 'model_overloaded_error'
+  | 'model_rate_limited_error'
+  | 'model_request_failed_error'
+  | 'mcp_connection_failed_error'
+  | 'mcp_authentication_failed_error'
+  | 'billing_error'
+  | 'credential_host_unreachable_error';
+
+/**
  * Retry disposition carried by `session.error`.
  *
- * Contract note: the published contract documents a typed `error` object
- * carrying `retry_status`, but the value set is not enumerated there. These
- * three strings are therefore a SandBase profile, not a verified upstream
- * enumeration. Only the field's type and presence are asserted; a client must
- * treat an unrecognized value as `unknown`.
+ * `retrying` says the runtime is retrying the request itself; `exhausted` says
+ * the retry budget ran out; `terminal` says this turn is dead. The runtime only
+ * produces `terminal` today — automatic rescheduling is a separate behaviour —
+ * but the field is projected as the published object either way.
  */
-export type SessionErrorRetryStatus = 'retryable' | 'not_retryable' | 'unknown';
+export interface SessionErrorRetryStatus {
+  type: 'retrying' | 'exhausted' | 'terminal';
+}
 
 export interface SessionErrorEvent extends EventBase {
   type: 'session.error';
   error: {
-    type: string;
+    type: SessionErrorType;
     message: string;
     retry_status: SessionErrorRetryStatus;
+    /**
+     * Local extension: the runtime's own error code (e.g. `pi_timed_out`),
+     * preserved so the published `type` can stay official without losing the
+     * distinction a caller may need.
+     */
+    code?: string;
+    mcp_server_name?: string;
+    credential_id?: string;
+    vault_id?: string;
   };
 }
 

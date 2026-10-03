@@ -154,7 +154,8 @@ export const WORK_LEASE_LOST_CODE = 'work_lease_lost';
  * Raised by a bounded wait that gave up.
  *
  * It carries `code` for the same reason every other failure in this runtime does:
- * `session.error.type` and its `retry_status` are derived from the code, so a caller
+ * `session.error` preserves the code under `error.code` and derives the official
+ * `type` and `retry_status` from it, so a caller
  * reads the reason and its disposition instead of parsing a message. A caller told only
  * that time passed has to guess, and both guesses are wrong — treating the timeout as
  * safe to replay duplicates a side effect, and treating it as unsafe abandons work that

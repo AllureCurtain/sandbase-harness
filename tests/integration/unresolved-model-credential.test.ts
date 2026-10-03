@@ -93,9 +93,10 @@ describe('A turn whose provider credential variable is not set', () => {
     const events = manager.getEventLogger().getEvents(session.id);
     const errorEvent = events.find((event) => event.type === 'session.error');
     expect(errorEvent).toBeDefined();
-    const error = (errorEvent!.metadata as { error: { type: string; message: string } }).error;
+    const error = (errorEvent!.metadata as { error: { type: string; code?: string; message: string } }).error;
 
-    expect(error.type).toBe('model_config_invalid');
+    expect(error.type).toBe('model_request_failed_error');
+    expect(error.code).toBe('model_config_invalid');
     expect(error.message).toContain(CREDENTIAL_VAR);
     expect(error.message).toContain('api_key');
     // The refusal happens before the request, so the placeholder never reaches
@@ -141,9 +142,10 @@ describe('A turn whose provider credential variable is not set', () => {
       .getEvents(session.id)
       .find((event) => event.type === 'session.error');
     expect(errorEvent).toBeDefined();
-    const error = (errorEvent!.metadata as { error: { type: string; message: string } }).error;
+    const error = (errorEvent!.metadata as { error: { type: string; code?: string; message: string } }).error;
 
-    expect(error.type).toBe('model_config_invalid');
+    expect(error.type).toBe('model_request_failed_error');
+    expect(error.code).toBe('model_config_invalid');
     expect(error.message).toContain(CREDENTIAL_VAR);
     expect(error.message).toContain('empty value');
     expect(stub.requests).toHaveLength(0);
