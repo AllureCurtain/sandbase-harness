@@ -171,7 +171,7 @@ describe('session budget over HTTP', () => {
     });
 
     expect(res.status).toBe(400);
-    expect(body.error.code).toBe('budget_model_without_list_price');
+    expect(body.error.code).toBe('model_not_budgetable');
     // Refused before the row exists, so the refusal cannot leave an unbudgeted
     // session that looks like the ceiling was accepted.
     expect(sessionManager.list().data.every((session) => session.agentId !== 'agent_unpriced')).toBe(true);

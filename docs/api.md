@@ -599,13 +599,17 @@ result is materialized as the session's snapshot; the agent itself is never
 changed. `metadata` merges per key with `null` removing a key (`null` for the
 whole field is no change), and `title` replaces with `null` clearing. An agent
 change needs an idle session: a running one returns `409` with
-`session_not_idle` and must be interrupted first, while `title` and `metadata`
-move in any non-terminal state. `vault_ids` returns `vault_ids_not_updatable`,
-`budget` returns `budget_update_not_supported`, an `agent` field outside the
-pair returns `agent_field_not_updatable`, and a terminated or archived session
-returns `409` with `session_terminated`. A change emits one `session.updated`
-event carrying only the fields that changed — the full agent snapshot, the
-whole post-update metadata bag, the new title — and a no-op request emits
+`session_not_idle` and must be interrupted first, while `title`, `metadata`,
+and `budget` move in any non-terminal state. `budget` moves the session's
+ceiling under the budget rules below — an object replaces it, `null` removes
+it — with refusals spelled `budget_create_only`, `budget_not_raised`,
+`model_not_budgetable`, or the `budget_invalid_*` family for a malformed
+value. `vault_ids` returns `vault_ids_not_updatable`, an `agent` field outside
+the pair returns `agent_field_not_updatable`, and a terminated or archived
+session returns `409` with `session_terminated`. A change emits one
+`session.updated` event carrying only the fields that changed — the full
+agent snapshot, the new ceiling or `null`, the whole post-update metadata
+bag, the new title — and a no-op request emits
 none. The new configuration applies from the next turn.
 
 Deleting a session is permanent. A running session returns `409` with
@@ -1394,7 +1398,7 @@ and no session can be budgeted.
 | `amount` is not a positive integer string, or has a leading zero | `budget_invalid_amount` |
 | `currency` is not `USD` | `budget_invalid_currency` |
 | `type` is not `limit`, the shape is wrong, or `budget` is `null` | `budget_invalid_shape` |
-| The session's model has no list price in the configured profile | `budget_model_without_list_price` |
+| The session's model has no list price in the configured profile | `model_not_budgetable` |
 
 Once a session has reached its ceiling, an event that would start new model work
 is refused with `budget_reached`, and only events that settle work already in

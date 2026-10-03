@@ -17,9 +17,13 @@
   touching the agent row), `metadata` merges per key with `null` removing a
   key, and `title` replaces with `null` clearing. An agent change requires an
   idle session (`session_not_idle` while running); `vault_ids` returns
-  `vault_ids_not_updatable`, `budget` returns `budget_update_not_supported`,
-  and an `agent` field outside the pair returns `agent_field_not_updatable`.
-  Every changed request emits one `session.updated` event carrying only the
+  `vault_ids_not_updatable`, and an `agent` field outside the pair returns
+  `agent_field_not_updatable`. `budget` moves the session's ceiling — an
+  object replaces it, `null` removes it — under the published rules in any
+  non-terminal state: a session created without one is `budget_create_only`,
+  a cap at or below consumed spend is `budget_not_raised`, and a session that
+  consumed an unpriced model is `model_not_budgetable`. Every changed request
+  emits one `session.updated` event carrying only the
   fields that changed, and the new configuration applies from the next turn.
 - Sessions can now be archived with `POST /v1/sessions/{id}/archive`. Archiving
   records `archived_at`, projects idle sessions to `terminated`, emits
