@@ -227,9 +227,17 @@ working.
 
 ## Context Compaction
 
-When projected history exceeds the configured context threshold, the runtime
-creates a summary boundary event. Future context projection includes the latest
-summary and events after that boundary.
+When projected history exceeds the context threshold, the runtime creates a
+summary boundary event. Future context projection includes the latest summary
+and events after that boundary.
+
+The context window is model-aware: an explicit `contextWindowTokens` config
+wins, then the capability table's per-model value (200k for published Claude
+models), then a conservative 128k default for models the table does not know.
+For the Anthropic provider, the trigger measures the context from the last
+`span.model_request_end`'s real usage — `input + cache_read + cache_write`
+tokens — plus a chars/4 estimate for events appended after it, instead of
+estimating the whole projection. Other providers keep the chars/4 estimate.
 
 Compaction failure is best-effort: it should not fail the user turn.
 

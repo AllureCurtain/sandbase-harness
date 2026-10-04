@@ -124,6 +124,17 @@
 - **A session's resources are now named in the agent's system prompt.** A session that declares a `file` or `github_repository` resource carries a `# Session Resources` section naming where each one landed: a file's sandbox path (`/mnt/session/uploads/<path>`) and a repository's URL, checkout, and mount path (`/workspace/<repo>`). A mounted file the agent was never told about is a mount it will not read. On the `local` backend the same file has to be named differently in a shell, because a local command resolves an absolute path against the host filesystem, so the section also gives the sandbox-relative spelling there (`mnt/session/uploads/<path>`, `workspace/<repo>`) and only there: a container backend's own root is where the canonical path points, and a self-hosted worker owns its working directory. The backend it names is the one recorded when the sandbox was provisioned rather than the Environment row re-read, so editing an Environment after a session is bound cannot change the spelling its instructions give. A session with no such resource has no section at all, and no credential reaches the text: only the fields the contract publishes are rendered, a repository `authorization_token` is never read, a URL carrying userinfo is stripped of it before printing, and a stored value that is not a single clean line disqualifies its entry rather than being rewritten — an announced path that is not the exact path is worse than silence. At this point the two capability matrix entries stayed `partial` — the container backends still refused the canonical roots, and a session on one was still accepted before it failed at provisioning — while their recorded reason stopped claiming the mount is unannounced. Creation-time refusal later in this release raises both to `supported`.
 
 ### Changed
+- **Context compaction is model-aware and measures Anthropic contexts instead
+  of estimating them.** The context window now resolves per model: an explicit
+  `contextWindowTokens` config still wins, then the capability table's
+  per-model value (200k for every published Claude model), then the previous
+  128k default for models the table does not know — and the preserved-tail
+  budget follows the resolved window. For the Anthropic provider the trigger
+  no longer estimates the whole projection by chars/4: the last
+  `span.model_request_end` reports the real size the model received
+  (`input + cache_read + cache_write` tokens) and only events appended after
+  it are estimated, so prompt caching no longer masquerades as a small
+  context. Other providers keep the chars/4 estimate.
 - **Context compaction now preserves the recent tail it always promised.** The
   compactor splits history into atomic groups — a user turn plus everything the
   agent produced in reply, including tool calls and their results and any

@@ -29,11 +29,11 @@ class NoopStrategy implements AgentStrategy {
   }
 }
 
-function fakeModel(): LanguageModel {
+function fakeModel(provider = 'test', modelId = 'test'): LanguageModel {
   return {
     specificationVersion: 'v4',
-    provider: 'test',
-    modelId: 'test',
+    provider,
+    modelId,
     supportedUrls: {},
     async doGenerate() {
       return {
@@ -221,5 +221,149 @@ describe('Compaction during execution', () => {
     expect(joined).toContain('the summary');
     expect(joined).toContain('fresh question');
     expect(joined).not.toContain('ancient history');
+  });
+
+  describe('model-aware context window and measured usage', () => {
+    function executorFor(
+      compactor: ContextCompactor,
+      model: LanguageModel,
+    ): DefaultSessionExecutor {
+      return new DefaultSessionExecutor({
+        agents: [{ name: 'big', model: 'm', system: 'p' }],
+        modelRegistry: { createModel: () => model } as any,
+        sandboxProvider: new LocalSandboxProvider(tmpDir),
+        strategy,
+        eventLogger: manager.getEventLogger(),
+        compactor,
+        compactionStore: new CompactionStore(db),
+      });
+    }
+
+    async function boundaryRow(sessionId: string) {
+      await new Promise((r) => setTimeout(r, 80));
+      return db
+        .prepare('SELECT summary FROM compaction_boundaries WHERE session_id = ?')
+        .get(sessionId) as { summary: string } | undefined;
+    }
+
+    it('uses the capability-table window for a known Anthropic model', async () => {
+      // claude-opus-4-5's window is 200k — the trigger sits at 160k, so a
+      // measured 130k stays under it.
+      manager.setExecutor(executorFor(
+        new ContextCompactor(),
+        fakeModel('anthropic.messages', 'claude-opus-4-5'),
+      ));
+      const session = manager.create({ agent: 'agent_big' });
+      const logger = manager.getEventLogger();
+      logger.append(session.id, {
+        type: 'span.model_request_end',
+        tokensIn: 100_000,
+        cacheReadTokens: 30_000,
+      });
+      await manager.sendEvent(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'next' }],
+      } as any);
+      expect(await boundaryRow(session.id)).toBeUndefined();
+    });
+
+    it('falls back to the default window for a model id the table does not know', async () => {
+      // An unrecognized id keeps the 128k default — trigger at 102.4k, so the
+      // same measured 130k exceeds it. The tiny preserve budget keeps an
+      // early group outside the tail so there is something to summarize.
+      manager.setExecutor(executorFor(
+        new ContextCompactor({ preserveBudgetTokens: 15 }),
+        fakeModel('anthropic.messages', 'claude-future-9000'),
+      ));
+      const session = manager.create({ agent: 'agent_big' });
+      const logger = manager.getEventLogger();
+      logger.append(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'old ' + 'x'.repeat(200) }],
+      });
+      logger.append(session.id, {
+        type: 'span.model_request_end',
+        tokensIn: 100_000,
+        cacheReadTokens: 30_000,
+      });
+      await manager.sendEvent(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'next' }],
+      } as any);
+      expect(await boundaryRow(session.id)).toBeDefined();
+    });
+
+    it('lets an explicit contextWindowTokens config win over the table', async () => {
+      // Explicit 150k — trigger at 120k — beats the model's 200k table value.
+      manager.setExecutor(executorFor(
+        new ContextCompactor({ contextWindowTokens: 150_000, preserveBudgetTokens: 15 }),
+        fakeModel('anthropic.messages', 'claude-opus-4-5'),
+      ));
+      const session = manager.create({ agent: 'agent_big' });
+      const logger = manager.getEventLogger();
+      logger.append(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'old ' + 'x'.repeat(200) }],
+      });
+      logger.append(session.id, {
+        type: 'span.model_request_end',
+        tokensIn: 100_000,
+        cacheReadTokens: 30_000,
+      });
+      await manager.sendEvent(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'next' }],
+      } as any);
+      expect(await boundaryRow(session.id)).toBeDefined();
+    });
+
+    it('measures an Anthropic context from the last request usage instead of estimating', async () => {
+      // The chars/4 estimate of this log is ~1000 tokens, over the 800-token
+      // trigger — but the provider reported 100, so nothing compacts.
+      manager.setExecutor(executorFor(
+        new ContextCompactor({ contextWindowTokens: 1000, triggerFraction: 0.8 }),
+        fakeModel('anthropic.messages', 'claude-opus-4-5'),
+      ));
+      const session = manager.create({ agent: 'agent_big' });
+      const logger = manager.getEventLogger();
+      logger.append(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'x'.repeat(4000) }],
+      });
+      logger.append(session.id, {
+        type: 'span.model_request_end',
+        tokensIn: 100,
+      });
+      await manager.sendEvent(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'next' }],
+      } as any);
+      expect(await boundaryRow(session.id)).toBeUndefined();
+    });
+
+    it('keeps the chars/4 estimate for a provider that reports no usage baseline', async () => {
+      // Same log and same compactor, but a non-Anthropic model — the seeded
+      // span is not a usage baseline it trusts, so the ~1000-token estimate
+      // crosses the 800-token trigger.
+      manager.setExecutor(executorFor(
+        new ContextCompactor({ contextWindowTokens: 1000, triggerFraction: 0.8 }),
+        fakeModel('test', 'test'),
+      ));
+      const session = manager.create({ agent: 'agent_big' });
+      const logger = manager.getEventLogger();
+      logger.append(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'x'.repeat(4000) }],
+      });
+      logger.append(session.id, {
+        type: 'span.model_request_end',
+        tokensIn: 100,
+      });
+      await manager.sendEvent(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'next' }],
+      } as any);
+      expect(await boundaryRow(session.id)).toBeDefined();
+    });
   });
 });
