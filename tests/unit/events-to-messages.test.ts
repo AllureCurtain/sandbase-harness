@@ -105,26 +105,70 @@ describe('eventsToMessages', () => {
     expect(reasoning.text).toBe('let me think');
   });
 
-  it('honors the compaction boundary — only events after it, plus summary', () => {
+  it('honors a legacy compaction event that carries its summary', () => {
     const events = [
       ev('user.message', [{ type: 'text', text: 'old message' }]),
       ev('agent.message', [{ type: 'text', text: 'old reply' }]),
-      ev('agent.thread_context_compacted'),
+      ev('agent.thread_context_compacted', [{ type: 'text', text: 'legacy summary' }]),
       ev('user.message', [{ type: 'text', text: 'new message' }]),
     ];
-    const msgs = eventsToMessages(events, 'summary of earlier chat');
+    const msgs = eventsToMessages(events);
 
-    // Should contain the summary + the post-boundary user message only
     const texts = msgs.flatMap((m) =>
       typeof (m as any).content === 'string'
         ? [(m as any).content]
         : (m as any).content.map((p: any) => p.text ?? ''),
     );
     const joined = texts.join(' ');
-    expect(joined).toContain('summary of earlier chat');
+    expect(joined).toContain('legacy summary');
     expect(joined).toContain('new message');
     expect(joined).not.toContain('old message');
     expect(joined).not.toContain('old reply');
+  });
+
+  it('honors a seq boundary and keeps the preserved tail after it', () => {
+    const events = [
+      ev('user.message', [{ type: 'text', text: 'old message' }]),
+      ev('agent.message', [{ type: 'text', text: 'old reply' }]),
+      ev('user.message', [{ type: 'text', text: 'PRESERVED-TAIL' }]),
+      ev('agent.message', [{ type: 'text', text: 'tail reply' }]),
+      ev('agent.thread_context_compacted'),
+      ev('user.message', [{ type: 'text', text: 'new message' }]),
+    ];
+    // Boundary covers the first two events; the preserved tail follows it.
+    const boundary = { summary: 'the summary', eventSeqBefore: events[1].seq };
+    const msgs = eventsToMessages(events, boundary);
+
+    const texts = msgs.flatMap((m) =>
+      typeof (m as any).content === 'string'
+        ? [(m as any).content]
+        : (m as any).content.map((p: any) => p.text ?? ''),
+    );
+    const joined = texts.join(' ');
+    expect(joined).toContain('the summary');
+    expect(joined).toContain('PRESERVED-TAIL');
+    expect(joined).toContain('tail reply');
+    expect(joined).toContain('new message');
+    expect(joined).not.toContain('old message');
+    expect(joined).not.toContain('old reply');
+  });
+
+  it('does not drop history behind a notification-only compacted event', () => {
+    // A compacted event without content and without a boundary row gives the
+    // projection no way to know which tail was preserved — dropping everything
+    // before it would silently lose context.
+    const events = [
+      ev('user.message', [{ type: 'text', text: 'earlier' }]),
+      ev('agent.message', [{ type: 'text', text: 'earlier reply' }]),
+      ev('agent.thread_context_compacted'),
+      ev('user.message', [{ type: 'text', text: 'latest' }]),
+    ];
+    const msgs = eventsToMessages(events);
+    const joined = msgs
+      .flatMap((m) => (m as any).content.map((p: any) => p.text ?? ''))
+      .join(' ');
+    expect(joined).toContain('earlier');
+    expect(joined).toContain('latest');
   });
 
   it('returns empty for an empty event log', () => {

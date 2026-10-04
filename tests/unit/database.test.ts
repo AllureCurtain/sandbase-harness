@@ -425,6 +425,47 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('adds seq-based boundary columns to compaction_boundaries (054)', () => {
+    // Fresh: both columns exist as soon as migrations run.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'compaction_boundaries')).toEqual(
+      expect.arrayContaining(['event_seq_before', 'compacted_event_id']),
+    );
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 54').get()).toEqual({
+      name: '054_compaction_boundary_seq',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped at the migration before it, already
+    // holding a boundary written by the legacy writer. The upgrade adds the
+    // columns with safe defaults, and the row remains readable.
+    const upgradedPath = join(tmpDir, 'upgraded-boundary.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 51));
+    expect(columnsOf(upgraded, 'compaction_boundaries')).not.toContain('event_seq_before');
+    upgraded.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_b', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_b', 'b', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id)
+      VALUES ('sess_old', 'agent_b', 'b', 'env_b');
+      INSERT INTO compaction_boundaries
+        (id, session_id, summary, event_id_before, tokens_before, tokens_after)
+      VALUES ('cmpb_old', 'sess_old', 'old summary', 'sevt_old', 100, 20)
+    `);
+
+    upgraded.runMigrations();
+    expect(columnsOf(upgraded, 'compaction_boundaries')).toEqual(
+      expect.arrayContaining(['event_seq_before', 'compacted_event_id']),
+    );
+    expect(
+      upgraded
+        .prepare('SELECT summary, event_seq_before, compacted_event_id FROM compaction_boundaries WHERE id = ?')
+        .get('cmpb_old'),
+    ).toEqual({ summary: 'old summary', event_seq_before: 0, compacted_event_id: null });
+    upgraded.close();
+  });
+
   it('transaction rolls back on error', () => {
     const db = new Database(dbPath);
     db.runMigrations();

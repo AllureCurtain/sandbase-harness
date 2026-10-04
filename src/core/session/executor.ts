@@ -25,6 +25,7 @@ import type { McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { EventLogger } from './event-logger.js';
 import { parkedCalls } from './parked-calls.js';
 import { ContextCompactor } from './context-compactor.js';
+import type { CompactionStore } from './compaction-store.js';
 import { parseSkill, type Skill } from '@/core/skills/loader.js';
 import type { MemoryProvider } from '@/core/memory/memory-provider.js';
 import type { MemoryMountAdapter } from '@/core/memory/mount-adapter.js';
@@ -80,6 +81,12 @@ export interface ExecutorDeps {
   eventLogger: EventLogger;
   /** Optional context compactor. If provided, long histories are summarized. */
   compactor?: ContextCompactor;
+  /**
+   * Boundary persistence for the compactor. Required for the preserved tail
+   * to survive compaction; without it the summary rides on the log event and
+   * the tail is dropped, matching the pre-store behavior.
+   */
+  compactionStore?: CompactionStore;
   /** Loaded skills, injected into agent system prompts by name (R4). */
   skills?: Skill[];
   /** Root directory containing explicit skill packages for Pi --skill flags. */
@@ -170,6 +177,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
     this.contextBuilder = new ContextBuilder({
       eventLogger: deps.eventLogger,
       compactor: deps.compactor,
+      compactionStore: deps.compactionStore,
       skills: deps.skills,
       memory: deps.memory,
       memoryRecords: deps.memoryRecords,

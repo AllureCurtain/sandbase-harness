@@ -1,6 +1,7 @@
 import { eventsToMessages } from './events-to-messages.js';
 import type { EventLogger } from './event-logger.js';
 import type { ContextCompactor } from './context-compactor.js';
+import type { CompactionStore } from './compaction-store.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { Session, SessionEvent, TurnTrigger } from '@/types/session.js';
@@ -23,6 +24,12 @@ type SessionAwareMemoryProvider = MemoryProvider & {
 export interface ContextBuilderDeps {
   eventLogger: EventLogger;
   compactor?: ContextCompactor;
+  /**
+   * Boundary persistence for compaction. Without it the compactor falls back
+   * to the legacy behavior of writing the summary onto the boundary event,
+   * which drops the preserved tail.
+   */
+  compactionStore?: CompactionStore;
   skills?: Skill[];
   memory?: MemoryProvider;
   /** API-managed memory_records provider selected by memory_store resources. */
@@ -69,7 +76,7 @@ export class ContextBuilder {
     await this.compactIfNeeded(session, model, broadcast);
 
     const events = this.deps.eventLogger.getEvents(session.id);
-    const messages = eventsToMessages(events);
+    const messages = eventsToMessages(events, this.compactionBoundary(session.id));
 
     let systemPrompt = this.composeSystemPrompt(agent, options?.repositorySkills);
     if (this.deps.memory && session.contextId) {
@@ -146,21 +153,54 @@ export class ContextBuilder {
     // construct or invoke an AI SDK model on their behalf.
     if (!this.deps.compactor || !model) return;
 
-    const projected = eventsToMessages(this.deps.eventLogger.getEvents(session.id));
+    const events = this.deps.eventLogger.getEvents(session.id);
+    const prior = this.compactionBoundary(session.id);
+    const projected = eventsToMessages(events, prior);
     if (!this.deps.compactor.shouldCompact(projected)) return;
 
     try {
-      const result = await this.deps.compactor.compact(projected, model as any);
+      if (!this.deps.compactionStore) {
+        // An embedder without boundary persistence keeps the legacy behavior:
+        // the summary rides on the event and the tail is lost, same as before
+        // this store existed.
+        const legacy = await this.deps.compactor.compact(events, null, model as any);
+        if (legacy) {
+          const boundary = this.deps.eventLogger.append(session.id, {
+            type: 'agent.thread_context_compacted',
+            content: [{ type: 'text', text: legacy.summary }],
+          });
+          broadcast(boundary);
+        }
+        return;
+      }
+      const result = await this.deps.compactor.compact(events, prior ?? null, model as any);
       if (result) {
-        const boundary = this.deps.eventLogger.append(session.id, {
+        const notification = this.deps.eventLogger.append(session.id, {
           type: 'agent.thread_context_compacted',
-          content: [{ type: 'text', text: result.summary }],
         });
-        broadcast(boundary);
+        this.deps.compactionStore.insert({
+          sessionId: session.id,
+          summary: result.summary,
+          eventIdBefore: result.eventIdBefore,
+          eventSeqBefore: result.eventSeqBefore,
+          compactedEventId: notification.id,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+        });
+        broadcast(notification);
       }
     } catch {
       // Compaction is best-effort — a summarize failure must not fail the turn.
     }
+  }
+
+  private compactionBoundary(
+    sessionId: string,
+  ): { summary: string; eventSeqBefore: number } | undefined {
+    const boundary = this.deps.compactionStore?.latest(sessionId);
+    return boundary
+      ? { summary: boundary.summary, eventSeqBefore: boundary.eventSeqBefore }
+      : undefined;
   }
 
   private async injectMemory(

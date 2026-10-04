@@ -11,6 +11,7 @@ import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
 import { DefaultSessionExecutor } from '@/core/session/executor.js';
 import { ContextCompactor } from '@/core/session/context-compactor.js';
+import { CompactionStore } from '@/core/session/compaction-store.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
 import { eventsToMessages } from '@/core/session/events-to-messages.js';
@@ -74,7 +75,8 @@ describe('Compaction during execution', () => {
       strategy,
       eventLogger: manager.getEventLogger(),
       // Aggressive compactor: tiny window so it always triggers
-      compactor: new ContextCompactor({ contextWindowTokens: 50, triggerFraction: 0.5, preserveTailMessages: 1 }),
+      compactor: new ContextCompactor({ contextWindowTokens: 50, triggerFraction: 0.5 }),
+      compactionStore: new CompactionStore(db),
     });
     manager.setExecutor(executor);
   });
@@ -84,7 +86,7 @@ describe('Compaction during execution', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('writes a compaction boundary event when history is large', async () => {
+  it('writes a boundary row and a content-free notification when history is large', async () => {
     const session = manager.create({ agent: 'agent_big' });
     const logger = manager.getEventLogger();
 
@@ -111,7 +113,96 @@ describe('Compaction during execution', () => {
     const events = logger.getEvents(session.id);
     const boundary = events.find((e) => e.type === 'agent.thread_context_compacted');
     expect(boundary).toBeDefined();
-    expect((boundary!.content![0] as any).text).toContain('SUMMARY');
+    // The official notification shape carries no content.
+    expect(boundary!.content ?? []).toHaveLength(0);
+
+    const row = db
+      .prepare('SELECT * FROM compaction_boundaries WHERE session_id = ?')
+      .get(session.id) as
+      | { summary: string; event_seq_before: number; compacted_event_id: string | null }
+      | undefined;
+    expect(row).toBeDefined();
+    expect(row!.summary).toContain('SUMMARY');
+    expect(row!.compacted_event_id).toBe(boundary!.id);
+
+    // The preserved tail survives: the projection the strategy received is
+    // summary + the newest group only.
+    expect(strategy.lastMessageCount).toBe(2);
+  });
+
+  it('keeps tool calls paired with results in the preserved tail', async () => {
+    // Wider preserve budget so the recent tool-call group survives verbatim.
+    const wideCompactor = new ContextCompactor({
+      contextWindowTokens: 50,
+      triggerFraction: 0.5,
+      preserveBudgetTokens: 200,
+    });
+    manager.setExecutor(new DefaultSessionExecutor({
+      agents: [{ name: 'big', model: 'm', system: 'p' }],
+      modelRegistry: { createModel: () => fakeModel() } as any,
+      sandboxProvider: new LocalSandboxProvider(tmpDir),
+      strategy,
+      eventLogger: manager.getEventLogger(),
+      compactor: wideCompactor,
+      compactionStore: new CompactionStore(db),
+    }));
+
+    const session = manager.create({ agent: 'agent_big' });
+    const logger = manager.getEventLogger();
+
+    for (let i = 0; i < 6; i++) {
+      logger.append(session.id, {
+        type: 'user.message',
+        content: [{ type: 'text', text: 'x'.repeat(200) }],
+      });
+      logger.append(session.id, {
+        type: 'agent.message',
+        content: [{ type: 'text', text: 'y'.repeat(200) }],
+      });
+    }
+    // The most recent turn: a tool call and its result, split by a confirmation.
+    logger.append(session.id, {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'run ls please' }],
+    });
+    logger.append(session.id, {
+      type: 'agent.tool_use',
+      content: [{ type: 'tool_use', id: 'toolu_1', name: 'bash', input: { cmd: 'ls' } } as any],
+    });
+    logger.append(session.id, { type: 'user.tool_confirmation' });
+    logger.append(session.id, {
+      type: 'agent.tool_result',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'file.txt' } as any],
+    });
+    logger.append(session.id, {
+      type: 'agent.message',
+      content: [{ type: 'text', text: 'listed' }],
+    });
+
+    await manager.sendEvent(session.id, {
+      type: 'user.message',
+      content: [{ type: 'text', text: 'trigger' }],
+    } as any);
+    await new Promise((r) => setTimeout(r, 80));
+
+    const row = db
+      .prepare('SELECT summary, event_seq_before FROM compaction_boundaries WHERE session_id = ?')
+      .get(session.id) as { summary: string; event_seq_before: number } | undefined;
+    expect(row).toBeDefined();
+
+    const messages = eventsToMessages(logger.getEvents(session.id), {
+      summary: row!.summary,
+      eventSeqBefore: row!.event_seq_before,
+    });
+    const calls = messages.flatMap((m: any) =>
+      m.role === 'assistant' ? m.content.filter((p: any) => p.type === 'tool-call') : [],
+    );
+    const results = messages.flatMap((m: any) => (m.role === 'tool' ? m.content : []));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls).toHaveLength(results.length);
+    for (const call of calls) {
+      expect(results.some((r: any) => r.toolCallId === call.toolCallId)).toBe(true);
+    }
   });
 
   it('projection after boundary includes the summary and drops old messages', async () => {
