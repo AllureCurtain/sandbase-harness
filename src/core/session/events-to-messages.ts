@@ -66,15 +66,23 @@ export type Message = UserMessage | AssistantMessage | ToolMessage | SystemMessa
 // Main Function
 // ============================================================
 
+/** Compaction boundary honored by the projection. */
+export interface CompactionBoundaryProjection {
+  summary?: string;
+  /** Events with `seq <= eventSeqBefore` are covered by the summary. */
+  eventSeqBefore?: number;
+}
+
 /**
  * Project Event_Log into a message array suitable for the LLM.
  *
  * @param events - Events sorted by seq (ascending)
- * @param compactionSummary - Optional summary text from compaction boundary
+ * @param boundary - A compaction boundary `{summary, eventSeqBefore}`, or a
+ *   bare summary string for legacy callers.
  */
 export function eventsToMessages(
   events: SessionEvent[],
-  compactionSummary?: string,
+  boundary?: CompactionBoundaryProjection | string,
 ): Message[] {
   // Pre-pass: build toolName lookup across ALL events (OMA pattern)
   const toolNameById = new Map<string, string>();
@@ -92,27 +100,39 @@ export function eventsToMessages(
     }
   }
 
-  // Find last compaction boundary with non-empty summary
-  let boundaryIdx = -1;
-  for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].type === 'agent.thread_context_compacted') {
-      // In our MVP, any compaction boundary is honored
-      boundaryIdx = i;
-      break;
+  const boundaryObj = typeof boundary === 'object' ? boundary : undefined;
+  const summaryOverride = typeof boundary === 'string' ? boundary : undefined;
+
+  let relevantEvents: SessionEvent[];
+  let summary: string | undefined;
+  if (boundaryObj?.eventSeqBefore !== undefined) {
+    // Table-backed boundary: the summary covers every event up to this seq,
+    // and the preserved tail sits after it. The notification event itself is
+    // skipped by the projection switch below.
+    relevantEvents = events.filter((e) => e.seq > boundaryObj.eventSeqBefore!);
+    summary = boundaryObj.summary ?? summaryOverride;
+  } else {
+    // Legacy logs: a compacted event that still carries its summary in
+    // `content` is the boundary. A notification-only compacted event (no
+    // content) is not one — without a boundary row there is no way to know
+    // which tail it preserved, so dropping history would be wrong.
+    let boundaryIdx = -1;
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (
+        events[i].type === 'agent.thread_context_compacted' &&
+        extractText(events[i].content)
+      ) {
+        boundaryIdx = i;
+        break;
+      }
     }
+    relevantEvents = boundaryIdx >= 0 ? events.slice(boundaryIdx + 1) : events;
+    summary =
+      summaryOverride ??
+      (boundaryIdx >= 0 ? extractText(events[boundaryIdx].content) : undefined);
   }
 
-  // Determine start index (events after boundary)
-  const startIdx = boundaryIdx >= 0 ? boundaryIdx + 1 : 0;
-  const relevantEvents = events.slice(startIdx);
-
   const messages: Message[] = [];
-
-  // Resolve the summary: explicit param overrides, else read from the
-  // boundary event's own content (that's where the compactor stores it).
-  const summary =
-    compactionSummary ??
-    (boundaryIdx >= 0 ? extractText(events[boundaryIdx].content) : undefined);
 
   // Inject compaction summary as opening context
   if (summary) {

@@ -5,6 +5,7 @@ import { loadAgentDefinitionById } from '../agent/store.js';
 import { SessionManager } from '../session/session-manager.js';
 import { DefaultSessionExecutor } from '../session/executor.js';
 import { ContextCompactor } from '../session/context-compactor.js';
+import { CompactionStore } from '../session/compaction-store.js';
 import { recordSessionOutputs } from '@/core/session/session-outputs.js';
 import { readRubricFileText } from '@/core/session/outcome-rubric.js';
 import { createModelOutcomeGrader } from '@/core/outcomes/grader.js';
@@ -149,6 +150,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     disposeStrategySessions: options.disposeStrategySessions,
     eventLogger,
     compactor: new ContextCompactor(),
+    compactionStore: new CompactionStore(options.db),
     skills: options.skills,
     skillsDir: options.skillsDir,
     // Version-pinned skill references resolve inside the managed upload tree;

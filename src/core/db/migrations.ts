@@ -1257,6 +1257,11 @@ FROM skills
 WHERE latest_version IS NOT NULL AND latest_version != '';
 `;
 
+const M054_COMPACTION_BOUNDARY_SEQ = `
+ALTER TABLE compaction_boundaries ADD COLUMN event_seq_before INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE compaction_boundaries ADD COLUMN compacted_event_id TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1311,4 +1316,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 51, name: '051_credential_audit_events_drop_fks', sql: M051_CREDENTIAL_AUDIT_EVENTS_DROP_FKS },
   { version: 52, name: '052_deployment_official_shape', sql: M052_DEPLOYMENT_OFFICIAL_SHAPE },
   { version: 53, name: '053_skill_versions', sql: M053_SKILL_VERSIONS },
+  { version: 54, name: '054_compaction_boundary_seq', sql: M054_COMPACTION_BOUNDARY_SEQ },
 ];

@@ -4,6 +4,8 @@
 
 ### Breaking
 
+- `agent.thread_context_compacted` no longer carries the compaction summary in `content`. New compaction boundaries store their summary in the `compaction_boundaries` table and the log event is a notification only (`{id, type, processed_at}`), matching the published shape; readers replaying an older log still honor a compacted event that carries a summary, and a notification-only compacted event is not treated as a boundary.
+
 - Webhook subscriptions now accept only names from the official event catalog — the `BetaWebhook*EventData.type` union in `@anthropic-ai/sdk@0.129.0`. `POST` and `PUT` under `/v1/webhooks` refuse `*`, `prefix.*`, and any unknown name with `400` naming the offenders; stored subscriptions created before this change keep working but can no longer be written through the API with wildcard spellings. Session stream events no longer reach subscribers under their raw names — `session.status_running` arrives as `session.status_run_started`, `session.status_idle` as `session.status_idled`, `span.outcome_evaluation_end` as `session.outcome_evaluation_ended`, and internal events (`agent.message`, `user.message`, `span.model_request_*`, `session.usage`, `session.error`) are dropped rather than forwarded. Subscriptions listing the old raw names will stop receiving them; update the subscription to the published names.
 
 - Memory objects now project the published shape: `store_id` is renamed `memory_store_id`, `content_hash` is renamed `content_sha256`, `memory_version_id` names the version row recording the current state, and `metadata` and `archived_at` no longer appear on a memory. `content` is populated only under `view=full` — it is `null` on list, create, and update responses by default, while retrieve defaults to `full`. Memory-version objects emit the published vocabulary: `operation` is `created` / `modified` / `deleted` (the stored `updated` kind is emitted as `modified`) and the row carries `redacted_at`; the `version`, `change`, and `session_id` fields are replaced by `created_by` (a `session_actor` when a mounted session wrote it). A memory delete answers `{id, type: "memory_deleted"}` instead of `{deleted: true, id}`. A content-precondition mismatch is a `409` `memory_precondition_failed_error` (was `conflict`), a path collision is a `409` `memory_path_conflict_error`, and the update verb is `POST /v1/memory_stores/{id}/memories/{memoryId}` with `PUT` kept as a deprecated alias.
@@ -115,6 +117,18 @@
 - **A session's resources are now named in the agent's system prompt.** A session that declares a `file` or `github_repository` resource carries a `# Session Resources` section naming where each one landed: a file's sandbox path (`/mnt/session/uploads/<path>`) and a repository's URL, checkout, and mount path (`/workspace/<repo>`). A mounted file the agent was never told about is a mount it will not read. On the `local` backend the same file has to be named differently in a shell, because a local command resolves an absolute path against the host filesystem, so the section also gives the sandbox-relative spelling there (`mnt/session/uploads/<path>`, `workspace/<repo>`) and only there: a container backend's own root is where the canonical path points, and a self-hosted worker owns its working directory. The backend it names is the one recorded when the sandbox was provisioned rather than the Environment row re-read, so editing an Environment after a session is bound cannot change the spelling its instructions give. A session with no such resource has no section at all, and no credential reaches the text: only the fields the contract publishes are rendered, a repository `authorization_token` is never read, a URL carrying userinfo is stripped of it before printing, and a stored value that is not a single clean line disqualifies its entry rather than being rewritten — an announced path that is not the exact path is worse than silence. At this point the two capability matrix entries stayed `partial` — the container backends still refused the canonical roots, and a session on one was still accepted before it failed at provisioning — while their recorded reason stopped claiming the mount is unannounced. Creation-time refusal later in this release raises both to `supported`.
 
 ### Changed
+- **Context compaction now preserves the recent tail it always promised.** The
+  compactor splits history into atomic groups — a user turn plus everything the
+  agent produced in reply, including tool calls and their results and any
+  mid-turn confirmation — then keeps the newest groups inside a token budget
+  (a quarter of the context window, capped at 20000 estimated tokens, at least
+  one group) verbatim after the summary, instead of summarizing everything up
+  to the log end. A `tool_use` can no longer be separated from its
+  `tool_result` across the boundary, and `eventsToMessages` projects
+  `summary + preserved groups + new events` from the `compaction_boundaries`
+  row (migration 054 adds `event_seq_before` and `compacted_event_id`), while
+  an embedder that wires no boundary store keeps the previous
+  summary-on-the-event behavior.
 - **Official agent-create examples may omit `system`.** The public CMA SDK marks
   the field optional and nullable, so the runtime now normalizes an omitted or
   null system prompt to an empty string instead of rejecting the request. An
