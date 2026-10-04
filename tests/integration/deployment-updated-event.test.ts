@@ -141,7 +141,9 @@ describe('deployment.updated', () => {
   }
 
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter(
+      (item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId,
+    );
   }
 
   /**
@@ -166,7 +168,7 @@ describe('deployment.updated', () => {
   it('publishes when name changes, and not when it is re-sent', async () => {
     const { webhookId, id } = await fieldCase('rename', { name: 'renamed' });
     const got = receivedFor(webhookId, 'deployment.updated');
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.updated', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
     // The signature header set is the one the dispatcher emits, so this path did
     // not bypass signing.
     expect(got[0].headers['webhook-signature']).toBeDefined();

@@ -1,10 +1,9 @@
-import { createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 import {
   WEBHOOK_HEADERS,
   signWebhookDelivery,
-  webhookSigningKey,
 } from './webhook-signature.js';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
@@ -15,12 +14,46 @@ import { resolveWebhookSigningSecrets, type StoredWebhookSecret } from './webhoo
 const MIN_RETRY_SECONDS = 5;
 const MAX_RETRY_SECONDS = 120;
 
+/**
+ * The ids this single-tenant runtime reports in the published envelope. There
+ * is no multi-organization or multi-workspace layer locally, but a conforming
+ * receiver reads both fields, so the constants exist rather than omitting them.
+ */
+export const LOCAL_ORGANIZATION_ID = 'org_local';
+export const LOCAL_WORKSPACE_ID = 'wrkspc_local';
+
 export type WebhookDispatchEvent = {
-  event: string;
-  data: Record<string, unknown>;
+  /** The published event name, e.g. `session.status_idled`. */
+  type: string;
+  /**
+   * The resource id `data.id` carries — a reference, not the resource. The
+   * receiver fetches current state itself, which is also what keeps a retry
+   * from carrying a snapshot the resource has since moved past.
+   */
+  subjectId: string;
+  /** Extra `data` fields the event type declares, e.g. `vault_id` on vault_credential events. */
+  extra?: Record<string, unknown>;
+  /**
+   * The `whe_` event id. Session-stream triggers pass a deterministic one —
+   * see {@link sessionEventWebhookId} — because one stream event can raise
+   * more than one webhook event and each must keep a stable id across retries.
+   */
   id?: string;
   created_at?: string;
 };
+
+/**
+ * The deterministic `whe_` id for a webhook event derived from a session event.
+ *
+ * A session event's own `sevt_` id cannot be reused directly: one stream event
+ * can map to two webhook events (`session.status_idled` and
+ * `session.budget_reached` from one `session.status_idle`), and two events must
+ * not share an id. Hashing the pair keeps every retry of a trigger on the same
+ * `webhook-id`, which is what the receiver deduplicates on.
+ */
+export function sessionEventWebhookId(sessionEventId: string, webhookType: string): string {
+  return `whe_${createHash('sha256').update(`${sessionEventId}|${webhookType}`).digest('hex').slice(0, 24)}`;
+}
 
 export type WebhookDispatchOptions = {
   /** The key a subscription with no stored secret is signed with. */
@@ -68,10 +101,10 @@ export async function dispatchWebhookEvent(
      WHERE archived_at IS NULL AND status = 'active'
      ORDER BY created_at ASC`,
   ).all() as WebhookRow[];
-  const matched = webhooks.filter((webhook) => eventMatches(parseStringArray(webhook.events), event.event));
+  const matched = webhooks.filter((webhook) => eventMatches(parseStringArray(webhook.events), event.type));
   const results: WebhookDeliveryResult[] = [];
   for (const webhook of matched) {
-    results.push(await attemptDelivery(db, webhook, makePayload(webhook.id, event, opts.now), opts));
+    results.push(await attemptDelivery(db, webhook, makePayload(event, opts.now), opts));
   }
   return results;
 }
@@ -111,16 +144,22 @@ async function attemptDelivery(
   // Each endpoint is signed with its own secret; a subscription written before
   // per-endpoint secrets existed falls back to the caller's value.
   const signingSecrets = resolveWebhookSigningSecrets(webhook, opts.secret, opts.dataDir);
-  // The legacy body signature follows the current key; the published header set
-  // carries every key a rotation window still accepts.
-  const signature = signPayload(payloadJson, signingSecrets[0]);
   const id = `whd_${nanoid(18)}`;
   const createdAt = (opts.now?.() ?? new Date()).toISOString();
-  // The published header set is keyed by the delivery id and the timestamp the
-  // signature covers, so a receiver can verify a replay or an altered body.
-  const deliveryIdentity = {
-    id,
+  // The published header set is keyed by the *event* id — the receiver
+  // deduplicates on `webhook-id`, which the contract defines as the event's id
+  // — and the timestamp the signature covers, so a receiver can verify a replay
+  // or an altered body.
+  const signature = webhookDeliverySignature({
+    secret: signingSecrets[0],
+    id: String(payload.id),
     timestamp: String(Math.floor(new Date(createdAt).getTime() / 1000)),
+    body: payloadJson,
+  });
+  const deliveryIdentity = {
+    id: String(payload.id),
+    timestamp: String(Math.floor(new Date(createdAt).getTime() / 1000)),
+    endpointId: webhook.id,
   };
   // The address is screened before the connection rather than after, because the point of
   // the rule is that no packet reaches a network the operator has not exposed.
@@ -133,7 +172,6 @@ async function attemptDelivery(
     : await postWebhook(
       webhook.url,
       payloadJson,
-      signature,
       opts.fetchImpl,
       { ...deliveryIdentity, secrets: signingSecrets },
     );
@@ -163,7 +201,7 @@ async function attemptDelivery(
   ).run(
     id,
     webhook.id,
-    String(payload.event ?? 'event'),
+    String((payload.data as Record<string, unknown> | undefined)?.type ?? 'event'),
     payloadJson,
     attempt.ok ? 'delivered' : nextRetry ? 'pending_retry' : 'failed',
     attempt.statusCode,
@@ -184,19 +222,28 @@ async function retryDelivery(
 ): Promise<WebhookDeliveryResult> {
   const attemptCount = row.attempt_count + 1;
   const signingSecrets = resolveWebhookSigningSecrets(row, opts.secret, opts.dataDir);
-  const signature = signPayload(row.payload, signingSecrets[0]);
   const attemptTime = opts.now?.() ?? new Date();
-  // A retry is another attempt at the same delivery, so it carries the same
-  // published header set as the first attempt: `webhook-id` stays the delivery
-  // id so a receiver can deduplicate, and the timestamp is this attempt's, which
-  // is what keeps the receiver's freshness window satisfied.
+  // `webhook-id` is the event id inside the stored body — a receiver
+  // deduplicates on it across every attempt. A row persisted before the
+  // published envelope keeps the delivery id its first attempt sent, so the
+  // id is read from the payload shape rather than assumed.
+  const storedPayload = parsePayloadId(row.payload);
+  const webhookId = storedPayload ?? row.id;
+  const timestamp = String(Math.floor(attemptTime.getTime() / 1000));
+  const signature = webhookDeliverySignature({
+    secret: signingSecrets[0],
+    id: webhookId,
+    timestamp,
+    body: row.payload,
+  });
   const blocked = await screenEndpointAddress(row.url, opts.addressPolicy ?? webhookAddressPolicyFromEnv());
   const attempt = blocked
     ? { ok: false, statusCode: null, error: blocked }
-    : await postWebhook(row.url, row.payload, signature, opts.fetchImpl, {
-      id: row.id,
-      timestamp: String(Math.floor(attemptTime.getTime() / 1000)),
+    : await postWebhook(row.url, row.payload, opts.fetchImpl, {
+      id: webhookId,
+      timestamp,
       secrets: signingSecrets,
+      endpointId: row.webhook_id,
     });
   // The rules are about the response and the address, not the attempt number, so a retry
   // takes the same terminal path when it observes either condition. This is reachable: a
@@ -235,9 +282,8 @@ async function retryDelivery(
 async function postWebhook(
   url: string,
   payload: string,
-  signature: string,
   fetchImpl: typeof fetch = fetch,
-  delivery?: { id: string; timestamp: string; secrets: string[] },
+  delivery?: { id: string; timestamp: string; secrets: string[]; endpointId: string },
 ) {
   try {
     const res = await fetchImpl(url, {
@@ -252,10 +298,10 @@ async function postWebhook(
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'managed-agents-webhook/0.1',
-        'X-Managed-Agents-Signature': signature,
-        // The published header set. `webhook-id` and `webhook-timestamp` are
-        // what the signature covers, so a receiver can verify a replay or an
-        // altered body rather than only a forged one.
+        // The published header set. `webhook-id` is the event id and
+        // `webhook-timestamp` is what the signature covers together with the
+        // body, so a receiver can verify a replay or an altered body rather
+        // than only a forged one.
         ...(delivery
           ? {
             [WEBHOOK_HEADERS.id]: delivery.id,
@@ -270,6 +316,9 @@ async function postWebhook(
                 body: payload,
               }))
               .join(' '),
+            // The endpoint the delivery targets, carried in a local header
+            // because the published envelope has no field for it.
+            'x-sandbase-webhook-endpoint-id': delivery.endpointId,
           }
           : {}),
       },
@@ -537,28 +586,37 @@ export function nextRetryAt(ok: boolean, attemptCount: number, opts: WebhookDisp
   return new Date((opts.now?.() ?? new Date()).getTime() + delaySeconds * 1000).toISOString();
 }
 
-function makePayload(webhookId: string, event: WebhookDispatchEvent, now?: () => Date) {
+function makePayload(event: WebhookDispatchEvent, now?: () => Date) {
   return {
-    type: 'webhook_event',
-    id: event.id ?? `whevt_${nanoid(18)}`,
-    event: event.event,
-    webhook_id: webhookId,
-    data: event.data,
+    type: 'event',
+    id: event.id ?? `whe_${nanoid(24)}`,
     created_at: event.created_at ?? (now?.() ?? new Date()).toISOString(),
+    data: {
+      type: event.type,
+      id: event.subjectId,
+      organization_id: LOCAL_ORGANIZATION_ID,
+      workspace_id: LOCAL_WORKSPACE_ID,
+      ...event.extra,
+    },
   };
+}
+
+/**
+ * The event id inside a stored payload, or null for a row written before the
+ * published envelope. Retries read this rather than assuming the id, so a
+ * pre-change delivery keeps the `webhook-id` its first attempt sent.
+ */
+function parsePayloadId(payloadJson: string): string | null {
+  try {
+    const parsed = JSON.parse(payloadJson) as { type?: unknown; id?: unknown };
+    return parsed.type === 'event' && typeof parsed.id === 'string' ? parsed.id : null;
+  } catch {
+    return null;
+  }
 }
 
 function eventMatches(subscriptions: string[], event: string): boolean {
   return subscriptions.includes('*') || subscriptions.includes(event) || subscriptions.some((item) => item.endsWith('.*') && event.startsWith(item.slice(0, -1)));
-}
-
-/**
- * Legacy signature, kept so a receiver that predates the published header set
- * keeps working. The canonical signature is carried in `webhook-signature`; see
- * `webhook-signature.ts`.
- */
-export function signPayload(payload: string, secret: string) {
-  return `sha256=${createHmac('sha256', webhookSigningKey(secret)).update(payload).digest('hex')}`;
 }
 
 /**

@@ -107,8 +107,8 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     // transition that did not happen. The receiver learns the status by resolving
     // this reference, which is the mechanism the published contract supplies.
     await publishOperationEvent(deps, {
-      event: 'deployment.created',
-      data: { type: 'deployment', id },
+      type: 'deployment.created',
+      subjectId: id,
     });
     return c.json(toScheduledDeployment(row), 201);
   });
@@ -203,8 +203,8 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     );
     if (fieldsChanged) {
       await publishOperationEvent(deps, {
-        event: 'deployment.updated',
-        data: { type: 'deployment', id },
+        type: 'deployment.updated',
+        subjectId: id,
       });
     }
     // A `PUT` can change the pause state through its `status` field, which is a
@@ -251,8 +251,8 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     // delivery time sees `archived_at` set rather than an unarchived deployment.
     if (outcome.archived) {
       await publishOperationEvent(deps, {
-        event: 'deployment.archived',
-        data: { type: 'deployment', id: outcome.row.id },
+        type: 'deployment.archived',
+        subjectId: outcome.row.id,
       });
     }
     return outcome.response;

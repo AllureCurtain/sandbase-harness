@@ -150,7 +150,7 @@ describe('Deployment pause webhook events', () => {
 
   /** Events the receiver took for one subscription. */
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter((item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
   }
 
   it('publishes deployment.paused to a subscriber, carrying a reference to the deployment', async () => {
@@ -166,7 +166,7 @@ describe('Deployment pause webhook events', () => {
     expect(got).toHaveLength(1);
     // A reference, not the object: the published contract says a body carries the
     // event's type and id and the receiver fetches current state itself.
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.paused', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
     // The signature header set is the one the dispatcher already emits, so this
     // path did not bypass signing.
     expect(got[0].headers['webhook-id']).toBeDefined();
@@ -190,7 +190,7 @@ describe('Deployment pause webhook events', () => {
 
     const got = receivedFor(webhookId, 'deployment.unpaused');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.unpaused', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
   });
 
   it('publishes nothing when the pause changes nothing', async () => {
@@ -242,7 +242,7 @@ describe('Deployment pause webhook events', () => {
     expect(receivedFor(wildcard, 'deployment.paused')).toHaveLength(1);
     // Nothing at all reached the subscriber on another family — asserted over every
     // event it could have taken, not just the two new names.
-    const everything = received.filter((item) => item.body?.webhook_id === unrelated);
+    const everything = received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === unrelated);
     expect(everything).toEqual([]);
   });
 

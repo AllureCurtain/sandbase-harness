@@ -174,7 +174,9 @@ describe('deployment_run lifecycle events', () => {
   }
 
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter(
+      (item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId,
+    );
   }
 
   function runRow(runId: string): { status: string; trigger_type: string } | undefined {
@@ -207,8 +209,8 @@ describe('deployment_run lifecycle events', () => {
     // name, because filtering by name would hide an outcome that overtook its
     // start.
     const order = received
-      .filter((item) => item.body?.webhook_id === webhookId)
-      .map((item) => item.body.event);
+      .filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId)
+      .map((item) => item.body?.data?.type);
     expect(order).toEqual(['deployment_run.started', 'deployment_run.succeeded']);
   });
 
@@ -220,13 +222,15 @@ describe('deployment_run lifecycle events', () => {
 
     const got = receivedFor(webhookId, 'deployment_run.succeeded');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data.type).toBe('deployment_run');
+    expect(got[0].body.type).toBe('event');
+    expect(got[0].body.data.id).toMatch(/^srun_/);
     // Resolvability is measured in the receiver, at delivery time. A run published
     // before its row existed would read back as null here.
     expect(got[0].runAtDelivery).not.toBeNull();
     expect(got[0].runAtDelivery?.status).toBe('created_session');
-    expect(got[0].body.webhook_id).toBe(webhookId);
+    expect(got[0].headers['x-sandbase-webhook-endpoint-id']).toBe(webhookId);
     expect(got[0].headers['webhook-signature']).toBeDefined();
+    expect(got[0].headers['webhook-id']).toBe(got[0].body.id);
   });
 
   it('leaves started resolvable too, because the run is recorded before it is reported', async () => {
@@ -312,7 +316,7 @@ describe('deployment_run lifecycle events', () => {
     const res = await runDue();
     expect(res.status).toBe(202);
 
-    const mine = received.filter((item) => item.body?.webhook_id === webhookId);
+    const mine = received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
     expect(mine).toHaveLength(0);
   });
 
@@ -324,11 +328,11 @@ describe('deployment_run lifecycle events', () => {
     await runDue();
 
     const events = received
-      .filter((item) => item.body?.webhook_id === runWebhook)
-      .map((item) => item.body.event);
+      .filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === runWebhook)
+      .map((item) => item.body?.data?.type);
     expect(events).toEqual(['deployment_run.started', 'deployment_run.succeeded']);
     expect(receivedFor(otherWebhook, 'deployment_run.succeeded')).toHaveLength(0);
-    expect(received.filter((item) => item.body?.webhook_id === otherWebhook)).toHaveLength(0);
+    expect(received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === otherWebhook)).toHaveLength(0);
   });
 
   it('runs every due deployment even when the subscriber cannot be reached', async () => {

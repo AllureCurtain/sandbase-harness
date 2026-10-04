@@ -144,7 +144,7 @@ describe('webhook sustained-failure auto-disable', () => {
   async function dispatchAt(when: Date) {
     return dispatchWebhookEvent(
       db,
-      { event: EVENT, id: `evt_${when.getTime()}`, created_at: when.toISOString(), data: { ok: true } },
+      { type: EVENT, id: `whe_${when.getTime()}`, created_at: when.toISOString(), subjectId: 'sess_1' },
       { secret: 'whsec_sustained_test', now: () => when },
     );
   }

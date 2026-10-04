@@ -63,12 +63,18 @@ is created `active` (the schema default) and stays `active` until archived.
   rows, matches the event name against each subscription's `events` array
   (exact, `*`, or a `prefix.*` wildcard), and delivers synchronously, returning
   one delivery record per match.
-- `makePayload` builds the local envelope
-  `{type: 'webhook_event', id, event, webhook_id, data, created_at}`. The root
-  `type` is the local `webhook_event` literal and the event name is a top-level
-  `event` field, so the body is not the published reference envelope. The
-  resource is not inlined, which is the one property it shares with the
-  published shape.
+- `makePayload` builds the published envelope
+  `{type: 'event', id, created_at, data: {type, id, organization_id, workspace_id, ...}}`.
+  The root `type` is the literal `event`, the root `id` is the `whe_` webhook
+  event id, and the event's own name and subject live in `data.type` /
+  `data.id`, so the body is the published reference: a receiver resolves the
+  resource by that pair rather than trusting a snapshot. `organization_id` and
+  `workspace_id` are the local constants `org_local` / `wrkspc_local`, and
+  event-specific extras (such as `vault_id`) merge into `data` beside them.
+  A session-derived event gets a deterministic `whe_` id —
+  `sessionEventWebhookId` hashes the stream event id and the webhook event
+  name — so one stream event can raise more than one webhook event without two
+  deliveries sharing a `webhook-id`.
 - Two sources raise events. Session events reach the dispatcher through a
   broadcast listener the runtime installs (`operations-bridge.ts`), which fires
   and forgets because it runs on the hot path of every session event. Operations
@@ -178,13 +184,19 @@ is created `active` (the schema default) and stays `active` until archived.
   omit the decision, only pass the wrong pair of values. The events are derived
   from the stored state, so the sequence holds whichever route performs each
   transition.
-- Every attempt sends the legacy `X-Managed-Agents-Signature`
-  (`sha256=<hex>` over the body) *and* the published `webhook-id`,
+- Every attempt sends the published `webhook-id`,
   `webhook-timestamp` and `webhook-signature` headers, the last computed by
-  `webhookDeliverySignature` over `id.timestamp.body`. The stored `signature`
-  column holds the legacy value, so its meaning does not change with the header
-  set. A retry keeps the delivery id and re-signs with its own timestamp, so the
-  published header set is continuous across attempts.
+  `webhookDeliverySignature` over `id.timestamp.body`. `webhook-id` is the
+  event id inside the body — what a receiver deduplicates on — and
+  `x-sandbase-webhook-endpoint-id` carries the subscription id the body no
+  longer names. The legacy `X-Managed-Agents-Signature` header is gone: a
+  receiver verifying the old `sha256=` body HMAC sees an unsigned delivery, so
+  the removal is recorded in the changelog rather than shipped silently. The
+  stored `signature` column holds the `v1` value of the latest attempt. A retry
+  keeps the same event id and `webhook-id` — read back out of the stored
+  payload, so a `webhook_event` row written before this change falls back to
+  the delivery id rather than crashing — and re-signs with its own timestamp,
+  so the published header set is continuous across attempts.
 - Each subscription is signed with its own `whsec_` secret, minted by `M038` when
   the subscription is created and returned by that response only; the row keeps it
   encrypted with the same AES-256-GCM store the credential vaults use. A
@@ -319,14 +331,15 @@ rather than a shifted one, and a fall-back overlap resolves to its first
 instant. `nextCronRun` refuses an unknown zone, and `M037` plus the route-level
 validation means the stored zone is the zone the cadence actually runs in.
 
-**Signature arithmetic — correct, but only half-wired.**
+**Signature arithmetic — wired through.**
 `webhook-signature.ts` implements the published scheme: `whsec_` + base64 key
 derivation, `id.timestamp.body` as the signed content, `v1,<base64>` output, a
 constant-time verifier, and a space-separated rotation window.
 `verifyWebhookDelivery` recomputes the signature, so the format is asserted
-rather than assumed. The header set is wired into every attempt: a retry keeps
-the delivery id and carries its own timestamp. The one local choice left is the
-persisted `signature` column, which holds the legacy value.
+rather than assumed. The header set is wired into every attempt: `webhook-id`
+is the event id inside the body, a retry keeps it and carries its own
+timestamp, and the persisted `signature` column records the `v1` value of the
+latest attempt.
 
 **The deployment paths are now aligned, and a run is readable as the published
 resource; the rest is local behaviour that overlaps the published contract in name
@@ -342,7 +355,7 @@ implemented differently, as §4 records.
 
 | Difference | Detail |
 | --- | --- |
-| Delivery payload envelope | The published body is `{type: "event", id, created_at, data: {type, id}}` so a receiver reads current state by `data.type` / `data.id`. The local body is `{type: "webhook_event", id, event, webhook_id, data, created_at}`. A handler written for the published envelope cannot read this one. The new deployment events carry the published `data: {type, id}` reference inside that envelope; the envelope itself is unchanged, so this narrows the divergence without closing it. |
+| Delivery payload envelope | Now the published body: `{type: "event", id, created_at, data: {type, id, organization_id, workspace_id}}`, verified end-to-end by the official SDK's `client.beta.webhooks.unwrap` (conformance test §6). `organization_id` / `workspace_id` are the local constants `org_local` / `wrkspc_local` — a real org/workspace does not exist locally, and the constants keep the field set a receiver destructures. The event names carried in `data.type` remain the vocabulary row below: the session stream still forwards raw session event names rather than the published `session.*` event names, which is the gap that remains. |
 | Event coverage | The published table names events across agents, environments, vaults and credentials, deployments, deployment runs, and sessions. The runtime raises the session event types, the five deployment lifecycle events and the three timed-run events listed in the webhook event vocabulary row below. A subscription listing a name nothing produces is accepted and simply silent, which is indistinguishable from "that event has not happened yet" — so a receiver cannot tell an unimplemented event from a quiet one. Recorded rather than papered over by refusing unknown names, which would break a subscription created against the published list. |
 | `deployment.paused` causes | The published description covers a requested pause **and** an automatic pause after a non-recoverable trigger failure, and states that recoverable failures including rate limits do not pause. Only the requested cause exists: the automatic one needs the failure taxonomy of the run path, which the `M042` migration comment records as arriving with that work. The event is raised only when the state changes, so a repeat pause is silent. |
 | `deployment.created` scope | Emitted by both mount prefixes of the create route. A create refused before the insert publishes nothing. A deployment created already `paused` is reported by `deployment.created` alone, not by `deployment.paused`: that pair reports a transition, and a resource coming into existence paused has not moved from anything. |
@@ -357,7 +370,7 @@ implemented differently, as §4 records.
 | Secret rotation | A window is opened by `POST /v1/webhooks/{id}/rotate-secret` and closed by `POST /v1/webhooks/{id}/retire-secret`, with both signatures carried in `webhook-signature` while it is open. Nothing retires the previous secret automatically: the operator decides when the old value stops being accepted, because only they know when every receiver has moved. |
 | Delivery trigger | The runtime's own bridge ticks every 60 seconds and projects each durable event as it is broadcast, so an unwatched runtime delivers; `POST /webhooks/dispatch` and `POST /webhooks/retry-due` remain for on-demand passes. The tick is when a due retry is picked up; the retry delay itself follows the retry backoff row. |
 | Subscription management surface | REST under `/v1/webhooks` with the `/v1/x` mirror. `PUT /{id}` is the enable/disable surface: it writes the published `status` field, and omitting it leaves the stored value unchanged like every other field in that partial update, so a rename cannot silently re-enable an endpoint an operator switched off. |
-| Webhook event vocabulary | Subscriptions name SandBase event types, and are accepted as written — an unrecognized name is silent rather than refused. Producers exist for the deployment lifecycle (`deployment.created`, `.paused`, `.unpaused`, `.updated`, `.archived`) and for timed runs (`deployment_run.started`, `.succeeded`, `.failed`); `agent.*`, `environment.*`, `vault.*`, `vault_credential.*` and `deployment.deleted` have none. The runtime also publishes its own names (`turn_complete`, `span.*`), which are not in the published table. The local envelope carries the event name on the top-level `event` field while the published one carries it in `data.type` — see the delivery payload envelope row. The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
+| Webhook event vocabulary | Subscriptions name SandBase event types, and are accepted as written — an unrecognized name is silent rather than refused. Producers exist for the deployment lifecycle (`deployment.created`, `.paused`, `.unpaused`, `.updated`, `.archived`) and for timed runs (`deployment_run.started`, `.succeeded`, `.failed`); `agent.*`, `environment.*`, `vault.*`, `vault_credential.*` and `deployment.deleted` have none. The runtime also publishes its own names (`turn_complete`, `span.*`), which are not in the published table. The envelope carries the event name in `data.type` as published; the names themselves are still the local vocabulary rather than the published event-name mapping, which the delivery payload envelope row records. The `session.updated` name recorded here earlier had no producer either and has been removed rather than kept as a documented event; see `events.md` §4. |
 | Deployment endpoint paths | Both spellings are served: the published `/v1/deployments` and the historical local `/v1/scheduled-deployments`. They are one router mounted twice (`src/api/routes/deployments.ts`), so they cannot diverge route by route, and the local spelling is neither deprecated nor redirected. The published contract also updates a deployment with `POST /v1/deployments/{id}` while this runtime uses `PUT`; the verb is not aliased, so a client written against the published verb still gets no route for that one call. |
 | Deployment control surface | Create, read, update, archive, manual run, run-due, **pause and unpause**. `POST /{id}/pause` records `paused_reason: {"type": "manual"}`; `POST /{id}/unpause` clears it and resumes from the next scheduled instant. Pause suppresses the scheduler and leaves the `run` endpoint open, which the published contract requires. The automatic pause after a non-recoverable trigger failure is **not** implemented, so `paused_reason` only ever holds `manual`: a caller can tell "paused by a person" from "not paused", but not yet from "paused by the runtime". |
 | Paused semantics | A paused deployment still accepts a manual `run`. The route previously refused any status but `active`, which was reachable only through `paused` — the one status `定时部署.md:490` says must still run. The scheduler path was already correct (`runDueScheduledDeployments` selects `status = 'active'`), so pause already suppressed timed runs and only the manual path was wrongly closed. Unpausing does not catch up missed triggers: a stored `next_run_at` that has already passed is recomputed forward, and one still in the future is left alone. |
@@ -408,9 +421,14 @@ implemented differently, as §4 records.
   tampered body, id or timestamp, a wrong secret, an empty header, and any
   signature in a rotation window), and the published header names.
 - `tests/unit/webhook-dispatcher.test.ts` — dispatch to matching active
-  subscriptions with a stored signed delivery record, the published header set
-  on every attempt with the delivery id unchanged across a two-attempt retry,
-  and a failed delivery queued as `pending_retry` and later marked delivered.
+  subscriptions with a stored signed delivery record, the exact published
+  envelope key set (`{type, id, created_at, data}` with
+  `{type, id, organization_id, workspace_id}` inside `data`), `webhook-id`
+  equal to the event id, no legacy signature header, and a retry keeping the
+  event id while re-signing with its own timestamp.
+- `tests/conformance/webhook-unwrap.test.ts` — a real delivery to a live
+  receiver verified by the official SDK's `client.beta.webhooks.unwrap`, and a
+  one-byte body mutation rejected by the same call.
 - `tests/integration/webhook-endpoint-secret.test.ts` — the secret returned once at
   creation and absent from every read, the row holding ciphertext that decrypts
   back to it (including from a second handle), a different secret per

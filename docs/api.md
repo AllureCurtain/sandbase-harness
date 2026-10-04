@@ -2421,12 +2421,35 @@ cannot be reached does not fail the call — the state change is already committ
 and the failed attempt is recorded for the retry sweep.
 
 ### Webhooks
+Every delivery body is the published event envelope — a reference, not a
+snapshot:
+
+```json
+{
+  "type": "event",
+  "id": "whe_...",
+  "created_at": "2026-03-18T14:05:22Z",
+  "data": {
+    "type": "session.status_idled",
+    "id": "sesn_...",
+    "organization_id": "org_local",
+    "workspace_id": "wrkspc_local"
+  }
+}
+```
+
+`data.type` is the event name and `data.id` is the subject's id — a receiver
+fetches current state by that pair. `organization_id` and `workspace_id` are
+the local constants; event-specific fields such as `vault_id` may appear
+beside them.
+
 Every delivery attempt carries the Standard Webhooks v1 headers:
 
 ```text
-webhook-id: <delivery id>
+webhook-id: <event id — the id inside the body>
 webhook-timestamp: <unix seconds>
 webhook-signature: v1,<base64 hmac over "<id>.<timestamp>.<body>">
+x-sandbase-webhook-endpoint-id: <subscription id>
 ```
 
 The signature covers the id, the timestamp, and the exact request body, so a
@@ -2451,10 +2474,13 @@ the current secret signing. Nothing closes it automatically, because only the
 operator knows when the last receiver has moved. A second rotation replaces the
 window rather than adding to it.
 
-The legacy `X-Managed-Agents-Signature` header is still sent, so an existing
-receiver keeps working. A retry keeps the same `webhook-id` and signs with its own
-`webhook-timestamp`, so the published header set is continuous across attempts and
-a receiver can deduplicate on the id.
+The legacy `X-Managed-Agents-Signature` header is no longer sent: the Standard
+Webhooks set above is the whole signature story, and a receiver still verifying
+the old `sha256=` body HMAC must move to `webhook-signature`. A retry keeps the
+same `webhook-id` — the event id — and signs with its own `webhook-timestamp`,
+so the published header set is continuous across attempts and a receiver can
+deduplicate on the id. The official SDK verifies a delivery with
+`client.beta.webhooks.unwrap(body, {headers, key: secret_key})`.
 
 An endpoint is automatically disabled — `status: "disabled"` with a
 machine-readable `disabled_reason` — when a delivery observes a `3xx` (never
@@ -2496,9 +2522,9 @@ curl -X POST http://127.0.0.1:3000/v1/webhooks \
   }'
 ```
 
-Delivery responses include a `signature` field using the `sha256=...` format.
-Failed dispatches are stored as `pending_retry` until their next retry time or
-as `failed` after the maximum attempts.
+Delivery records include a `signature` field holding the `v1,` signature of the
+latest attempt. Failed dispatches are stored as `pending_retry` until their
+next retry time or as `failed` after the maximum attempts.
 
 ### Scheduled Deployments
 A schedule's cron expression is evaluated in the deployment's own timezone, not in

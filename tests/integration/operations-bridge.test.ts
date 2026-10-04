@@ -9,9 +9,10 @@
  *
  * Adapted from the reviewed snapshot rather than replayed verbatim: the
  * snapshot seeded a plaintext `secret` column that M038 replaced with an
- * encrypted per-endpoint secret, and it asserted the published
- * `{type: "event", ...}` payload envelope where this runtime documents and sends
- * the local `{type: "webhook_event", ...}` one. Both are stated in the PR.
+ * encrypted per-endpoint secret. The deliveries now carry the published
+ * `{type: "event", ...}` envelope; the seeded `webhook_event` payloads below
+ * are pre-migration rows kept so the retry path proves it does not crash on
+ * them and falls back to the delivery id for `webhook-id`.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -90,12 +91,22 @@ describe('Operations bridge (webhooks + scheduled deployments)', () => {
 
     expect(requests).toHaveLength(1);
     const [delivery] = requests;
-    // This runtime's documented envelope, not the published reference one.
-    expect(JSON.parse(delivery.body)).toMatchObject({
-      type: 'webhook_event',
-      event: 'user.message',
-      webhook_id: 'wh_test',
+    // The published envelope: the body is an event envelope whose `data` is a
+    // reference — a receiver resolves `data.id` through the API rather than
+    // trusting a shipped snapshot.
+    const payload = JSON.parse(delivery.body) as Record<string, any>;
+    expect(payload).toMatchObject({
+      type: 'event',
+      data: {
+        type: 'user.message',
+        id: 'sess_a',
+        organization_id: 'org_local',
+        workspace_id: 'wrkspc_local',
+      },
     });
+    expect(payload.id).toMatch(/^whe_/);
+    expect(payload).not.toHaveProperty('webhook_id');
+    expect(delivery.headers[WEBHOOK_HEADERS.id]).toBe(payload.id);
     // The published header set, verifiable with the key that signs it.
     expect(verifyWebhookDelivery({
       secret: WEBHOOK_SECRET,

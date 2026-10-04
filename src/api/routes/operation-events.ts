@@ -14,24 +14,20 @@
  * must agree is how they stop agreeing.
  */
 
-import { dispatchWebhookEvent } from '@/core/operations/webhook-dispatcher.js';
+import { dispatchWebhookEvent, type WebhookDispatchEvent } from '@/core/operations/webhook-dispatcher.js';
 import type { ServerDeps } from '../server.js';
 
 export function webhookSigningSecret(deps: ServerDeps): string {
   return deps.workspace?.dataDir ?? 'managed-agents';
 }
 
-export type OperationEvent = {
-  event: string;
-  /**
-   * A reference to the resource, not the resource. The published contract says a
-   * webhook body carries the event's `type` and `id` and that the receiver
-   * fetches current state itself (`订阅Webhook.md:9`), which is also what keeps a
-   * retry from carrying a snapshot the resource has since moved past.
-   */
-  data: Record<string, unknown>;
-  id?: string;
-};
+/**
+ * The event a route raises. `data` carries the event's `type` and the resource
+ * `id` as a reference — the receiver fetches current state itself
+ * (`订阅Webhook.md:9`), which is also what keeps a retry from carrying a
+ * snapshot the resource has since moved past.
+ */
+export type OperationEvent = Pick<WebhookDispatchEvent, 'type' | 'subjectId' | 'extra' | 'id'>;
 
 /**
  * Deliver an operations event, swallowing any failure.
@@ -96,7 +92,7 @@ export async function publishPauseTransition(
 ): Promise<void> {
   if (previous === next) return;
   await publishOperationEvent(deps, {
-    event: next === 'paused' ? 'deployment.paused' : 'deployment.unpaused',
-    data: { type: 'deployment', id: deploymentId },
+    type: next === 'paused' ? 'deployment.paused' : 'deployment.unpaused',
+    subjectId: deploymentId,
   });
 }

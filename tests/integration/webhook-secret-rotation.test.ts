@@ -75,7 +75,7 @@ describe('Webhook signing-secret rotation', () => {
   /** One dispatch pass, as the repeated fetch calls it produced. */
   async function deliver() {
     const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
-    await dispatchWebhookEvent(db, { event: 'turn_complete', data: {} }, {
+    await dispatchWebhookEvent(db, { type: 'turn_complete', subjectId: 'sess_1' }, {
       secret: 'legacy-key',
       dataDir,
       fetchImpl,

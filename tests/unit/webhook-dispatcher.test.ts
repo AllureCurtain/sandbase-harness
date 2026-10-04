@@ -9,7 +9,6 @@ import {
   dispatchWebhookEvent,
   resolveWebhookSustainedFailureWindow,
   retryDueWebhookDeliveries,
-  signPayload,
 } from '@/core/operations/webhook-dispatcher.js';
 import { mintAndStoreWebhookSecret } from '@/core/operations/webhook-secrets.js';
 import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
@@ -76,14 +75,28 @@ describe('webhook dispatcher', () => {
     const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
 
     const results = await dispatchWebhookEvent(db, {
-      event: 'session.status_running',
-      data: { session_id: 'sess_1' },
+      type: 'session.status_running',
+      subjectId: 'sess_1',
     }, { secret: 'secret', fetchImpl, now: () => fixedNow });
 
     expect(fetchImpl).toHaveBeenCalledOnce();
     const [, init] = (fetchImpl as any).mock.calls[0];
-    expect(String(init.body)).toContain('session.status_running');
-    expect(init.headers['X-Managed-Agents-Signature']).toMatch(/^sha256=/);
+    const body = JSON.parse(String(init.body)) as Record<string, any>;
+    // The published BetaWebhookEvent envelope: the body is exactly
+    // {type, id, created_at, data}, and data is a reference — the receiver
+    // fetches current state by data.type/data.id.
+    expect(Object.keys(body).sort()).toEqual(['created_at', 'data', 'id', 'type']);
+    expect(body.type).toBe('event');
+    expect(body.id).toMatch(/^whe_/);
+    expect(Object.keys(body.data).sort()).toEqual(['id', 'organization_id', 'type', 'workspace_id']);
+    expect(body.data).toMatchObject({
+      type: 'session.status_running',
+      id: 'sess_1',
+      organization_id: 'org_local',
+      workspace_id: 'wrkspc_local',
+    });
+    expect(init.headers['X-Managed-Agents-Signature']).toBeUndefined();
+    expect(init.headers['x-sandbase-webhook-endpoint-id']).toBe('wh_ok');
     expect(results[0]).toMatchObject({
       webhook_id: 'wh_ok',
       status: 'delivered',
@@ -101,18 +114,16 @@ describe('webhook dispatcher', () => {
     const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
 
     await dispatchWebhookEvent(db, {
-      event: 'session.status_idle',
-      data: { session_id: 'sess_1' },
-      id: 'whevt_fixed',
+      type: 'session.status_idled',
+      subjectId: 'sess_1',
+      id: 'whe_fixed',
     }, { secret: 'whsec_secret_value', fetchImpl, now: () => fixedNow });
 
     const [, init] = (fetchImpl as any).mock.calls[0];
     const headers = init.headers as Record<string, string>;
-    // The legacy header is still sent, so an existing receiver keeps working.
-    expect(headers['X-Managed-Agents-Signature']).toMatch(/^sha256=/);
-    // The published set, keyed by the delivery id and the timestamp the
-    // signature covers.
-    expect(headers['webhook-id']).toMatch(/^whd_/);
+    // The published set, keyed by the event id — `webhook-id` is the id inside
+    // the body, which is what a receiver deduplicates on.
+    expect(headers['webhook-id']).toBe('whe_fixed');
     expect(headers['webhook-timestamp']).toBe(String(Math.floor(fixedNow.getTime() / 1000)));
     expect(headers['webhook-signature']).toMatch(/^v1,/);
 
@@ -134,8 +145,8 @@ describe('webhook dispatcher', () => {
     const failingFetch = vi.fn(async () => ({ status: 503 })) as unknown as typeof fetch;
 
     const first = await dispatchWebhookEvent(db, {
-      event: 'turn_complete',
-      data: { ok: false },
+      type: 'turn_complete',
+      subjectId: 'sess_1',
     }, { secret: 'secret', fetchImpl: failingFetch, now: () => fixedNow });
 
     expect(first[0]).toMatchObject({
@@ -165,13 +176,15 @@ describe('webhook dispatcher', () => {
     });
 
     // The retry is the same delivery, so it carries the published header set the
-    // first attempt carried: the id is unchanged and the timestamp is this
-    // attempt's, which is what the receiver's freshness window checks.
+    // first attempt carried: `webhook-id` stays the event id inside the body so a
+    // receiver can deduplicate, and the timestamp is this attempt's, which is
+    // what the receiver's freshness window checks.
+    const eventId = (JSON.parse(String((failingFetch as any).mock.calls[0][1].body)) as { id: string }).id;
     const [, retryInit] = (successfulFetch as any).mock.calls[0];
     const retryHeaders = retryInit.headers as Record<string, string>;
-    expect(retryHeaders['webhook-id']).toBe(first[0].id);
+    expect(retryHeaders['webhook-id']).toBe(eventId);
     expect(retryHeaders['webhook-timestamp']).toBe(String(Math.floor(new Date('2026-07-23T00:02:00.000Z').getTime() / 1000)));
-    expect(retryHeaders['X-Managed-Agents-Signature']).toMatch(/^sha256=/);
+    expect(retryHeaders['X-Managed-Agents-Signature']).toBeUndefined();
     expect(retryHeaders['webhook-signature']).toBe(signWebhookDelivery({
       secret: 'secret',
       id: retryHeaders['webhook-id'],
@@ -196,7 +209,7 @@ describe('webhook dispatcher', () => {
       new Date('2026-07-23T00:05:00.000Z'),
     ];
 
-    const [first] = await dispatchWebhookEvent(db, { event: 'turn_failed', data: {} }, { secret, fetchImpl: attemptOne, now: () => times[0] });
+    const [first] = await dispatchWebhookEvent(db, { type: 'turn_failed', subjectId: 'sess_1' }, { secret, fetchImpl: attemptOne, now: () => times[0] });
     const [second] = await retryDueWebhookDeliveries(db, { secret, fetchImpl: attemptTwo, now: () => times[1] });
     const [third] = await retryDueWebhookDeliveries(db, { secret, fetchImpl: attemptThree, now: () => times[2] });
 
@@ -205,15 +218,16 @@ describe('webhook dispatcher', () => {
     expect([first.attempt_count, second.attempt_count, third.attempt_count]).toEqual([1, 2, 3]);
     expect(third).toMatchObject({ status: 'delivered', status_code: 200 });
 
+    const eventId = (JSON.parse(String((attemptOne as any).mock.calls[0][1].body)) as { id: string }).id;
     const attempts = [attemptOne, attemptTwo, attemptThree];
     attempts.forEach((fetchImpl, index) => {
       const [, init] = (fetchImpl as any).mock.calls[0];
       const headers = init.headers as Record<string, string>;
-      expect(headers['webhook-id']).toBe(first.id);
+      expect(headers['webhook-id']).toBe(eventId);
       expect(headers['webhook-timestamp']).toBe(String(Math.floor(times[index].getTime() / 1000)));
       expect(headers['webhook-signature']).toBe(signWebhookDelivery({
         secret,
-        id: first.id,
+        id: eventId,
         timestamp: headers['webhook-timestamp'],
         body: String(init.body),
       }));
@@ -233,7 +247,7 @@ describe('webhook dispatcher', () => {
     const minted = mintAndStoreWebhookSecret(db, 'wh_fresh', dataDir);
 
     const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
-    await dispatchWebhookEvent(db, { event: 'turn_complete', data: {} }, {
+    await dispatchWebhookEvent(db, { type: 'turn_complete', subjectId: 'sess_1' }, {
       secret: 'legacy-key',
       dataDir,
       fetchImpl,
@@ -245,7 +259,6 @@ describe('webhook dispatcher', () => {
     const legacy = calls.find(([url]) => url === 'https://example.com/legacy')!;
 
     // The minted endpoint signs with the value its receiver was given...
-    expect(fresh[1].headers['X-Managed-Agents-Signature']).toBe(signPayload(String(fresh[1].body), minted));
     expect(fresh[1].headers['webhook-signature']).toBe(signWebhookDelivery({
       secret: minted,
       id: fresh[1].headers['webhook-id'],
@@ -254,11 +267,15 @@ describe('webhook dispatcher', () => {
     }));
     // ...and not with the value the runtime used before per-endpoint secrets, so
     // one endpoint's key is not another endpoint's key.
-    expect(fresh[1].headers['X-Managed-Agents-Signature']).not.toBe(signPayload(String(fresh[1].body), 'legacy-key'));
+    expect(fresh[1].headers['webhook-signature']).not.toBe(signWebhookDelivery({
+      secret: 'legacy-key',
+      id: fresh[1].headers['webhook-id'],
+      timestamp: fresh[1].headers['webhook-timestamp'],
+      body: String(fresh[1].body),
+    }));
 
     // A row with no stored secret keeps the legacy derivation, so upgrading does
     // not invalidate a receiver that verifies today.
-    expect(legacy[1].headers['X-Managed-Agents-Signature']).toBe(signPayload(String(legacy[1].body), 'legacy-key'));
     expect(legacy[1].headers['webhook-signature']).toBe(signWebhookDelivery({
       secret: 'legacy-key',
       id: legacy[1].headers['webhook-id'],
