@@ -24,6 +24,7 @@ import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
 import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 import { resolvedModelIdOf } from '@/model/registry.js';
+import { applyAnthropicCacheBreakpoints } from '@/strategy/anthropic-cache-breakpoints.js';
 import { splitModelRequestUsage } from './model-usage.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
@@ -268,15 +269,28 @@ export class DefaultStrategy implements AgentStrategy {
         content: m.content as any,
       }));
 
+      // Anthropic requests carry the fixed prompt-cache breakpoints (system
+      // prompt, last tool, second-to-last message); every other provider sees
+      // the unchanged shape — `model.provider` survives the retry-middleware
+      // wrap, so it stays the routing fact rather than a config echo. The
+      // `model` union admits a bare string id, which carries no provider.
+      const cacheShape = typeof model === 'object' && model.provider === 'anthropic.messages'
+        ? applyAnthropicCacheBreakpoints({
+            systemPrompt: systemPrompt || undefined,
+            messages: aiMessages,
+            tools: Object.keys(aiTools).length > 0 ? aiTools : undefined,
+          })
+        : undefined;
+
       const result = streamText({
         model: model as LanguageModel,
         // The registry's middleware owns every retry: the SDK's own step-level
         // retry would re-enter it silently, multiplying requests and hiding
         // the rescheduling the session is supposed to publish.
         maxRetries: 0,
-        system: systemPrompt || undefined,
-        messages: aiMessages,
-        tools: Object.keys(aiTools).length > 0 ? aiTools : undefined,
+        system: cacheShape ? cacheShape.system : systemPrompt || undefined,
+        messages: cacheShape ? cacheShape.messages : aiMessages,
+        tools: cacheShape ? cacheShape.tools : (Object.keys(aiTools).length > 0 ? aiTools : undefined),
         stopWhen: [
           stepCountIs(maxSteps),
           // Spend is committed per step in onStepFinish below, so by the time

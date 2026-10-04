@@ -165,6 +165,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   },
   {
     area: 'sessions',
+    id: 'prompt-caching',
+    status: 'supported',
+    reason: 'A session whose model resolves to an anthropic-provider client sends cache_control: {type: "ephemeral"} breakpoints on the system prompt, the last tool definition, and the second-to-last message — the end of the previous turn — so three markers stay inside the four-breakpoint cap at the default five-minute TTL, the same automatic caching the platform applies without caller configuration. Requests to every other provider type carry none.',
+    contract: 'contracts/anthropic-cma/sessions.md',
+  },
+  {
+    area: 'sessions',
     id: 'session-update',
     status: 'partial',
     reason: '`POST /v1/sessions/{id}` applies `agent` limited to `tools`/`mcp_servers` (merged onto the resolved definition, validated like creation, and materialized as `agent_definition` without touching the agent row), a `metadata` merge patch (`null` per key removes, `null` field is no change), a `title` replace (`null` clears), and a `budget` move under the budget contract\'s rules (`budget_create_only`, `budget_not_raised`, `model_not_budgetable`, `budget_invalid_*`). An agent change requires an externally idle session (`session_not_idle` while running); title, metadata, and budget move in any non-terminal state, and a terminated or archived session is `session_terminated`. One `session.updated` event carries only the changed fields — the full agent snapshot, the new ceiling or `null`, the whole post-update metadata bag, the new title — and a no-op emits none. `vault_ids` is refused with `vault_ids_not_updatable`, which is why the capability is partial rather than supported.',

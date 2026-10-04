@@ -15,6 +15,7 @@ Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
 session-lifecycle: supported
 initial-events: supported
 outcome-grading: supported
+prompt-caching: supported
 session-update: partial
 -->
 
@@ -388,6 +389,7 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
 | `loop_engine` on the object | Local extension with no published equivalent: the engine selection frozen at creation (`builtin` for legacy rows). It is additive and collides with no published field. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | Automatic rescheduling | Implemented for transient model failures: a retryable error schedules a wait, reports `session.status_rescheduled` (internal `retrying`), and either recovers to `running` or idles as `retries_exhausted` once the policy gives up. Retry counts and delays come from the local retry policy, not a published schedule. |
+| Prompt caching | The published platform caches prompts automatically with no caller configuration. Locally the request itself carries the markers: a session whose model resolves to an `anthropic`-provider client sends `cache_control: {type: "ephemeral"}` on the system prompt, the last tool definition, and the second-to-last message — the end of the previous turn, since the last message is the input that just changed. Three markers stay inside the four-breakpoint cap, the default five-minute TTL applies, and requests to every other provider type are byte-identical to before. The usage a cached request reports lands in the cache buckets (`budget.md` owns the pricing). |
 | `cleanup_pending` | Internal fail-closed state for local sandbox teardown, projected to public `terminated`; the event log retains the cleanup error. |
 | Extension endpoints | Session inspection and control endpoints under `/v1/x` are local additions and are excluded from CMA admission. |
 | Override refusal codes | `agent_model_required` is the published code for a cleared `model`. `agent_tools_cleared_with_skills`, `agent_mcp_server_not_found`, `invalid_agent_override_field`, `invalid_agent_overrides`, `invalid_agent_ref` and `agent_required` are SandBase spellings for the same conditions, published so a client can distinguish them without parsing prose. |
@@ -410,6 +412,14 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
 - Internal `cleanup_pending` exists because local sandbox teardown is asynchronous
   and must not release a workspace until child-tree cleanup is proved. Its public
   status stays `terminated`, and its error details remain in the event log.
+- Explicit breakpoints stand in for the platform's automatic caching because a
+  request through a local provider is the only place caching can happen. The
+  second-to-last message is the anchor rather than the last: the last message is
+  the input that changed, so caching through it would rewrite the cached prefix
+  every turn instead of reusing it. Gatekeeping on the provider type keeps a
+  gateway that does not understand `cache_control` from seeing it — an
+  Anthropic-compatible endpoint reached through the `openai` or
+  `openai_compatible` provider receives an unmarked request.
 - Delete is logical because the event log is append-only by project rule: a
   physical delete would remove events a resumable stream or an audit may still
   read. Stopping a running session instead of refusing it keeps delete usable
@@ -458,6 +468,13 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
   agent's context, the completed turn is graded, the span triple reaches the
   event log in order, and a runtime with no provider records
   `outcome_evaluator_unavailable` with `retry_status: { "type": "terminal" }`.
+- `tests/unit/anthropic-cache-breakpoints.test.ts` — the breakpoint placement:
+  system, last tool, second-to-last message, the merging and non-mutation
+  rules, and the two-breakpoint fallbacks.
+- `tests/integration/anthropic-prompt-caching.test.ts` — a real turn through an
+  `anthropic` provider sends the request with exactly three `cache_control`
+  markers in the published positions, and a non-Anthropic provider's request
+  carries none.
 - `tests/unit/outcome-loop.test.ts` and `tests/integration/outcome-loop.test.ts` —
   the revision loop: a `needs_revision` verdict appended as a real `user.message`
   with the executor re-entered for it, the spent budget reported as
@@ -587,5 +604,7 @@ carrying `version` and `multiagent: null`. Session
 update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, `title`,
 and `budget` with `session.updated`; `vault_ids` on that route is a named
 refusal rather than an accepted field, which the matrix records under the
-session-update capability. The session budget is `partial` in its own
+session-update capability. Prompt caching is `supported` as the explicit
+breakpoint spelling of the platform's automatic behaviour. The session
+budget is `partial` in its own
 contract file, and this file does not claim it.
