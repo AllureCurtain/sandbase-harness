@@ -2,7 +2,13 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
 import { collectionPager } from '../standard.js';
-import { dispatchWebhookEvent, retryDueWebhookDeliveries, signPayload } from '@/core/operations/webhook-dispatcher.js';
+import {
+  dispatchWebhookEvent,
+  LOCAL_ORGANIZATION_ID,
+  LOCAL_WORKSPACE_ID,
+  retryDueWebhookDeliveries,
+} from '@/core/operations/webhook-dispatcher.js';
+import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
 import {
   mintAndStoreWebhookSecret,
   resolveWebhookSigningSecret,
@@ -89,9 +95,14 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     if (!body.ok) return body.response;
     const event = stringField(body.value.event);
     if (!event) return invalid(c, 'event is required');
+    const data = objectField(body.value.data);
+    // The envelope's own fields are set from the event, not from the caller's
+    // bag — a `data.id` here names the subject once, not twice.
+    const { id: _subjectIdFromData, type: _typeFromData, ...extra } = data;
     const deliveries = await dispatchWebhookEvent(deps.db, {
-      event,
-      data: objectField(body.value.data),
+      type: event,
+      subjectId: stringField(body.value.subject_id) ?? stringField(data.id) ?? 'manual',
+      extra,
       id: stringField(body.value.id),
     }, { secret: webhookSigningSecret(deps), dataDir: deps.workspace?.dataDir });
     return collections.json(c, deliveries, 202);
@@ -201,21 +212,29 @@ export function operationsRoutes(deps: ServerDeps, options: OperationsRoutesOpti
     const webhook = deps.db.prepare('SELECT * FROM webhooks WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as WebhookRow | undefined;
     if (!webhook) return notFound(c, 'Webhook not found');
     const event = stringField(body.value.event) ?? parseArray(webhook.events)[0] ?? 'test';
+    const simulatedAt = now();
     const payload = {
-      type: 'webhook_test',
-      event,
-      webhook_id: webhook.id,
-      data: objectField(body.value.payload),
-      created_at: now(),
+      type: 'event',
+      id: `whe_${nanoid(18)}`,
+      created_at: simulatedAt,
+      data: {
+        type: event,
+        id: webhook.id,
+        organization_id: LOCAL_ORGANIZATION_ID,
+        workspace_id: LOCAL_WORKSPACE_ID,
+        ...objectField(body.value.payload),
+      },
     };
     const payloadJson = JSON.stringify(payload);
     // The same derivation a real delivery uses. The raw secret is not the HMAC
     // key of a `whsec_` value, so signing it directly would produce a signature
     // the receiver cannot verify.
-    const signature = signPayload(
-      payloadJson,
-      resolveWebhookSigningSecret(webhook, webhookSigningSecret(deps), deps.workspace?.dataDir),
-    );
+    const signature = signWebhookDelivery({
+      secret: resolveWebhookSigningSecret(webhook, webhookSigningSecret(deps), deps.workspace?.dataDir),
+      id: String(payload.id),
+      timestamp: String(Math.floor(new Date(simulatedAt).getTime() / 1000)),
+      body: payloadJson,
+    });
     const id = `whd_${nanoid(18)}`;
     deps.db.prepare(`
       INSERT INTO webhook_deliveries (

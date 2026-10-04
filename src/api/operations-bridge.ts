@@ -19,6 +19,7 @@ import {
   dispatchWebhookEvent,
   resolveWebhookSustainedFailureWindow,
   retryDueWebhookDeliveries,
+  sessionEventWebhookId,
 } from '@/core/operations/webhook-dispatcher.js';
 import { rearmScheduledDeployments, runDueScheduledDeployments } from '@/core/operations/scheduler.js';
 import { sweepExpiredParkedWaits } from '@/core/operations/parked-wait-sweep.js';
@@ -77,14 +78,17 @@ export function createWebhookEventListener(opts: {
     void dispatchWebhookEvent(
       opts.db,
       {
-        event: event.type,
-        id: event.id,
-        created_at: createdAt,
+        type: event.type,
         // The payload is a reference, not the resource: a receiver fetches
         // `GET /v1/sessions/<id>` for current state. Shipping a projection here
         // would also make a retry carry a snapshot the session has since moved
         // past.
-        data: { session_id: event.sessionId, event_id: event.id },
+        subjectId: event.sessionId,
+        // Deterministic per (stream event, webhook type): one stream event can
+        // raise more than one webhook event, and every retry of a trigger must
+        // keep the `webhook-id` it first carried.
+        id: sessionEventWebhookId(event.id, event.type),
+        created_at: createdAt,
       },
       {
         secret: opts.webhookSecret,

@@ -21,7 +21,7 @@ import {
 
 const ID = 'whd_01';
 const TIMESTAMP = '1755700000';
-const BODY = JSON.stringify({ type: 'webhook_event', id: ID });
+const BODY = JSON.stringify({ type: 'event', id: ID });
 
 describe('webhook secret minting', () => {
   it('mints a whsec_-prefixed base64 secret', () => {

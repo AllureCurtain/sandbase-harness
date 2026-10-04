@@ -75,8 +75,10 @@ type RearmRow = {
  * half-adopted per event.
  */
 export type ScheduledDeploymentEvent = {
-  event: string;
-  data: { type: 'deployment_run'; id: string };
+  /** The published event name. */
+  type: string;
+  /** The run id `data.id` carries — a reference the receiver resolves itself. */
+  subjectId: string;
 };
 
 /**
@@ -139,10 +141,10 @@ export async function runDueScheduledDeployments(
     const result = runSchedule(db, sessionManager, schedule, 'scheduled', now);
     // Both events carry the run's own id, which is what the published table uses
     // to tie an outcome to the run that started.
-    await emit({ event: 'deployment_run.started', data: { type: 'deployment_run', id: result.id } });
+    await emit({ type: 'deployment_run.started', subjectId: result.id });
     await emit({
-      event: result.status === 'created_session' ? 'deployment_run.succeeded' : 'deployment_run.failed',
-      data: { type: 'deployment_run', id: result.id },
+      type: result.status === 'created_session' ? 'deployment_run.succeeded' : 'deployment_run.failed',
+      subjectId: result.id,
     });
     results.push(result);
   }

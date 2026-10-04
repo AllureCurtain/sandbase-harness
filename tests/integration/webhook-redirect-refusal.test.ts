@@ -92,8 +92,8 @@ describe('webhook delivery does not follow redirects', () => {
     subscribe('wh_redir', `http://127.0.0.1:${redirector.port}/hook`);
 
     const results = await dispatchWebhookEvent(db, {
-      event: 'session.status_idle',
-      data: { session_id: 'sess_1' },
+      type: 'session.status_idle',
+      subjectId: 'sess_1',
     }, { secret: 'whsec_redir_test', now: () => fixedNow });
 
     // The redirector was reached once, as the configured endpoint.
@@ -148,8 +148,8 @@ describe('webhook delivery does not follow redirects', () => {
     subscribe('wh_307', `http://127.0.0.1:${redirector.port}/hook`);
 
     const results = await dispatchWebhookEvent(db, {
-      event: 'turn_complete',
-      data: { ok: true },
+      type: 'turn_complete',
+      subjectId: 'sess_1',
     }, { secret: 'whsec_redir_test', now: () => fixedNow });
 
     expect(target.hits).toEqual([]);
@@ -169,8 +169,8 @@ describe('webhook delivery does not follow redirects', () => {
     subscribe('wh_ok', `http://127.0.0.1:${endpoint.port}/hook`);
 
     const results = await dispatchWebhookEvent(db, {
-      event: 'session.status_idle',
-      data: { session_id: 'sess_1' },
+      type: 'session.status_idle',
+      subjectId: 'sess_1',
     }, { secret: 'whsec_redir_test', now: () => fixedNow });
 
     expect(endpoint.hits).toEqual(['POST /hook']);
@@ -191,8 +191,8 @@ describe('webhook delivery does not follow redirects', () => {
     subscribe('wh_503', `http://127.0.0.1:${endpoint.port}/hook`);
 
     const results = await dispatchWebhookEvent(db, {
-      event: 'turn_complete',
-      data: {},
+      type: 'turn_complete',
+      subjectId: 'sess_1',
     }, { secret: 'whsec_redir_test', now: () => fixedNow });
 
     expect(results[0]).toMatchObject({

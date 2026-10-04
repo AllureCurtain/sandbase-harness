@@ -126,7 +126,7 @@ describe('webhook address screening', () => {
   }
 
   async function dispatch(policy?: WebhookAddressPolicy) {
-    return dispatchWebhookEvent(db, { event: EVENT, data: { ok: true } }, {
+    return dispatchWebhookEvent(db, { type: EVENT, subjectId: 'sess_1' }, {
       secret: 'whsec_address_test',
       ...(policy ? { addressPolicy: policy } : {}),
     });

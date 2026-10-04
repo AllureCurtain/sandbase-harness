@@ -14,7 +14,7 @@ import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
 import { createServer } from '@/api/server.js';
 import { decryptSecret } from '@/core/security/secrets.js';
-import { signPayload } from '@/core/operations/webhook-dispatcher.js';
+import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
 import { resolveWebhookSigningSecret } from '@/core/operations/webhook-secrets.js';
 
 describe('Webhook endpoint signing secret', () => {
@@ -135,9 +135,11 @@ describe('Webhook endpoint signing secret', () => {
 
     const delivery = db.prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ?')
       .get(created.body.id) as Record<string, string>;
-    expect(tested.body.signature).toBe(signPayload(delivery.payload, secret));
-    // The legacy body signature is not the one the old global value produced.
-    expect(tested.body.signature).not.toBe(signPayload(delivery.payload, dataDir));
+    const payload = JSON.parse(delivery.payload) as { id: string; created_at: string };
+    const timestamp = String(Math.floor(Date.parse(payload.created_at) / 1000));
+    expect(tested.body.signature).toBe(signWebhookDelivery({ secret, id: payload.id, timestamp, body: delivery.payload }));
+    // The signed value is not the one the old global derivation produced.
+    expect(tested.body.signature).not.toBe(signWebhookDelivery({ secret: dataDir, id: payload.id, timestamp, body: delivery.payload }));
   });
 
   it('keeps a subscription written before M038 on the legacy derivation', async () => {
