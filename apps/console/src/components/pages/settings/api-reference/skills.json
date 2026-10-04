@@ -96,5 +96,103 @@
         "description": "True when the Skill was removed."
       }
     ]
+  },
+  {
+    "id": "skill-versions-list",
+    "group": "Skills",
+    "title": "List skill versions",
+    "method": "GET",
+    "path": "/v1/skills/{skill_id}/versions",
+    "summary": "List a Skill's versions newest first. Custom Skills read the stored version records; built-in Anthropic Skills answer their catalog metadata read-only.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SkillVersion[]",
+        "description": "Published skill_version objects: id, skill_id, name, description, created_at, type."
+      }
+    ]
+  },
+  {
+    "id": "skill-versions-create",
+    "group": "Skills",
+    "title": "Upload skill version",
+    "method": "POST",
+    "path": "/v1/skills/{skill_id}/versions",
+    "summary": "Upload a new version of a custom Skill using the same package format as skill creation. The package's frontmatter name must match the Skill's name; a mismatch answers 409.",
+    "parameters": [
+      {
+        "name": "files",
+        "type": "multipart file[] | JSON file[]",
+        "required": true,
+        "description": "Zip, .skill file, directory upload, or JSON file list."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Server-generated skv_... version identifier."
+      },
+      {
+        "name": "type",
+        "type": "skill_version",
+        "description": "Object type."
+      }
+    ]
+  },
+  {
+    "id": "skill-versions-get",
+    "group": "Skills",
+    "title": "Get skill version",
+    "method": "GET",
+    "path": "/v1/skills/{skill_id}/versions/{version_id}",
+    "summary": "Retrieve one version's metadata.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Version identifier."
+      },
+      {
+        "name": "skill_id",
+        "type": "string",
+        "description": "Owning Skill identifier."
+      }
+    ]
+  },
+  {
+    "id": "skill-versions-delete",
+    "group": "Skills",
+    "title": "Delete skill version",
+    "method": "DELETE",
+    "path": "/v1/skills/{skill_id}/versions/{version_id}",
+    "summary": "Delete one version and its stored package. Deleting the only remaining version answers 409; deleting the latest repoints latest_version at the newest survivor.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Deleted version identifier."
+      },
+      {
+        "name": "type",
+        "type": "skill_version_deleted",
+        "description": "Object type."
+      }
+    ]
+  },
+  {
+    "id": "skill-versions-content",
+    "group": "Skills",
+    "title": "Download skill version",
+    "method": "GET",
+    "path": "/v1/skills/{skill_id}/versions/{version_id}/content",
+    "summary": "Download a custom Skill version's stored package as a zip archive.",
+    "response": [
+      {
+        "name": "body",
+        "type": "application/zip",
+        "description": "Zip archive whose entries are rooted at the Skill's name."
+      }
+    ]
   }
 ]

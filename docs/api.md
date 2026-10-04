@@ -1754,6 +1754,21 @@ format and upload rules.
 | `POST` | `/v1/skills` | Upload a skill package. |
 | `GET` | `/v1/skills/{skill_id}` | Retrieve a skill. |
 | `DELETE` | `/v1/skills/{skill_id}` | Delete a custom skill. |
+| `GET` | `/v1/skills/{skill_id}/versions` | List a skill's versions, newest first. |
+| `POST` | `/v1/skills/{skill_id}/versions` | Upload a new version with the same package format as `POST /v1/skills`. |
+| `GET` | `/v1/skills/{skill_id}/versions/{version_id}` | Retrieve one version's metadata. |
+| `DELETE` | `/v1/skills/{skill_id}/versions/{version_id}` | Delete one version; the only remaining version is refused with `409`. |
+| `GET` | `/v1/skills/{skill_id}/versions/{version_id}/content` | Download the version's package as a zip archive. |
+
+Skill objects carry `latest_version` and the published `latest_version_id`
+alias; both point at the newest uploaded version. A version upload must keep
+the skill's frontmatter `name` — a package naming a different skill is a
+`409`. Deleting the latest version repoints both fields at the newest
+surviving version. Version objects use the published `skill_version` shape
+(`id`, `skill_id`, `name`, `description`, `created_at`, `type`), and deletion
+returns `{id, type: "skill_version_deleted"}`. Built-in `anthropic` skills
+answer version listings and retrievals read-only; writes and content
+downloads are refused.
 
 List query parameters:
 

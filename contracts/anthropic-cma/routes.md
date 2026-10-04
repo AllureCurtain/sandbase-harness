@@ -173,6 +173,11 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/skills` | `src/api/routes/skills.ts` |
 | DELETE | `/v1/skills/{skillId}` | `src/api/routes/skills.ts` |
 | GET | `/v1/skills/{skillId}` | `src/api/routes/skills.ts` |
+| GET | `/v1/skills/{skillId}/versions` | `src/api/routes/skills.ts` |
+| POST | `/v1/skills/{skillId}/versions` | `src/api/routes/skills.ts` |
+| GET | `/v1/skills/{skillId}/versions/{versionId}` | `src/api/routes/skills.ts` |
+| DELETE | `/v1/skills/{skillId}/versions/{versionId}` | `src/api/routes/skills.ts` |
+| GET | `/v1/skills/{skillId}/versions/{versionId}/content` | `src/api/routes/skills.ts` |
 | GET | `/v1/webhooks` | `src/api/routes/operations.ts` |
 | POST | `/v1/webhooks` | `src/api/routes/operations.ts` |
 | GET | `/v1/webhooks/{id}` | `src/api/routes/operations.ts` |

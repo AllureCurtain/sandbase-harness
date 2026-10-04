@@ -20,6 +20,14 @@ export interface SkillVersion {
   id: string;
   created_at: string | null;
   latest: boolean;
+  /**
+   * Absolute path of this version's extracted package directory, when the
+   * version is stored on this host. Populated from `skill_versions` for
+   * custom skills so an agent reference that pins `version` resolves the
+   * pinned package rather than the latest one. Never projected onto the
+   * wire; `skillResource` strips it.
+   */
+  storage_path?: string;
 }
 
 export interface Skill {
@@ -70,6 +78,10 @@ type SkillMetadata = Partial<Pick<Skill, 'id' | 'display_title' | 'created_at' |
 
 export function createSkillId(): string {
   return `skill_${randomBytes(18).toString('base64url')}`;
+}
+
+export function createSkillVersionId(): string {
+  return `skv_${randomBytes(18).toString('base64url')}`;
 }
 
 export function customSkillId(name: string): string {

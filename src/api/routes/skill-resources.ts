@@ -1,7 +1,7 @@
 import type { ServerDeps } from '../server.js';
 import { offsetCursorPage, type ApiCursorPage } from '../standard.js';
 import { BUILTIN_SKILLS } from '@/core/skills/catalog.js';
-import { createSkillId, type Skill } from '@/core/skills/loader.js';
+import { createSkillId, createSkillVersionId, type Skill } from '@/core/skills/loader.js';
 
 export type SkillSourceFilter = 'custom' | 'anthropic';
 
@@ -17,6 +17,9 @@ export function skillResource(skill: Skill) {
     created_at: skill.created_at,
     display_title: skill.display_title,
     latest_version: skill.latest_version,
+    // The published name for the pointer a `latest` reference resolves to;
+    // `latest_version` stays for the Console and older callers.
+    latest_version_id: skill.latest_version,
     source: skill.source,
     type: skill.type,
     updated_at: skill.updated_at,
@@ -24,7 +27,37 @@ export function skillResource(skill: Skill) {
     description: skill.description,
     compatibility: skill.compatibility,
     file: skill.file || null,
-    versions: skill.versions,
+    // `storage_path` is a host-local detail: it names where a version's
+    // package was extracted for the executor, not part of the version's API
+    // identity, and an absolute path on the operator's disk must not leave
+    // the process.
+    versions: skill.versions.map((version) => ({
+      id: version.id,
+      created_at: version.created_at,
+      latest: version.latest,
+    })),
+  };
+}
+
+/** The published `skill_version` object — metadata only, never package bytes. */
+export function skillVersionResource(
+  skill: Pick<Skill, 'id' | 'name'>,
+  version: { id: string; created_at: string | null; description?: string },
+): {
+  id: string;
+  created_at: string | null;
+  description: string;
+  name: string;
+  skill_id: string;
+  type: 'skill_version';
+} {
+  return {
+    id: version.id,
+    created_at: version.created_at,
+    description: version.description ?? '',
+    name: skill.name,
+    skill_id: skill.id,
+    type: 'skill_version',
   };
 }
 
@@ -68,7 +101,7 @@ export function createUniqueSkillId(existingSkills: Skill[]): string {
 
 export function materializeCustomSkill(skill: Skill, displayTitle?: string): Skill {
   const now = new Date().toISOString();
-  const version = String(Date.now());
+  const version = createSkillVersionId();
   return {
     ...skill,
     display_title: displayTitle?.trim() || skill.display_title || skill.name,

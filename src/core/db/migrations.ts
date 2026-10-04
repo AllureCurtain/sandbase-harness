@@ -1223,6 +1223,40 @@ ALTER TABLE scheduled_deployment_runs ADD COLUMN scheduled_at TEXT;
 ALTER TABLE scheduled_deployment_runs ADD COLUMN error_type TEXT;
 `;
 
+/**
+ * Skill versions were a JSON blob inside `skills.versions`, which can name a
+ * version but cannot store one: there is nowhere for a second uploaded
+ * package to live and no row a delete can remove. A dedicated table gives
+ * each uploaded package an immutable identity (`skv_…`), a per-skill
+ * monotonically increasing `seq` for newest-first ordering, and the
+ * `storage_path` of that version's extracted package so a pinned agent
+ * reference and the content-download route resolve real files.
+ *
+ * Existing skills keep working through backfill: their single current
+ * package becomes version `latest_version` at `seq` 1, with `storage_path`
+ * pointing at the skill directory it already occupies. That is why
+ * `storage_path` is not constrained to a `versions/` child layout — a
+ * pre-migration package sits at the skill root.
+ */
+const M053_SKILL_VERSIONS = `
+CREATE TABLE skill_versions (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  storage_path TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (skill_id, seq)
+);
+CREATE INDEX idx_skill_versions_skill
+  ON skill_versions(skill_id, seq DESC);
+INSERT INTO skill_versions (id, skill_id, seq, name, description, storage_path, created_at)
+SELECT latest_version, id, 1, name, description, COALESCE(storage_path, ''), COALESCE(created_at, datetime('now'))
+FROM skills
+WHERE latest_version IS NOT NULL AND latest_version != '';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1276,4 +1310,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 50, name: '050_memory_version_redaction', sql: M050_MEMORY_VERSION_REDACTION },
   { version: 51, name: '051_credential_audit_events_drop_fks', sql: M051_CREDENTIAL_AUDIT_EVENTS_DROP_FKS },
   { version: 52, name: '052_deployment_official_shape', sql: M052_DEPLOYMENT_OFFICIAL_SHAPE },
+  { version: 53, name: '053_skill_versions', sql: M053_SKILL_VERSIONS },
 ];
