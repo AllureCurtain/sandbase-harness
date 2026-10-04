@@ -112,6 +112,8 @@ export type SessionEvent = {
   /** Some protocol adapters put the result correlation id on the event. */
   tool_use_id?: string;
   mcp_tool_use_id?: string;
+  /** `user.custom_tool_result`: the custom tool call it answers. */
+  custom_tool_use_id?: string;
   is_error?: boolean;
   isError?: boolean;
   delta?: string;
