@@ -275,7 +275,7 @@ export class PiRpcSession implements LoopEngineSession {
       model: options.model,
       eventLog: options.sink,
       broadcast: (event) => options.sink.broadcast(event),
-      recordUsage: (sessionId, tokensIn, tokensOut) => options.sink.recordUsage(sessionId, tokensIn, tokensOut),
+      recordUsage: (sessionId, tokensIn, tokensOut, cache) => options.sink.recordUsage(sessionId, tokensIn, tokensOut, cache),
       spillToolOutput: (output) => options.sink.spillToolOutput(output),
     });
     this.transport = new PiRpcTransport({

@@ -25,6 +25,8 @@ export class InMemoryEventLog implements EventLogWriter {
       modelUsed: event.modelUsed,
       tokensIn: event.tokensIn,
       tokensOut: event.tokensOut,
+      cacheReadTokens: event.cacheReadTokens,
+      cacheWriteTokens: event.cacheWriteTokens,
       stopReason: event.stopReason,
       durationMs: event.durationMs,
       parentEventId: event.parentEventId,
@@ -40,7 +42,12 @@ export class InMemoryEventLog implements EventLogWriter {
     return this.events.length;
   }
 
-  recordUsage(_sessionId: string, _tokensIn: number, _tokensOut: number): void {
+  recordUsage(
+    _sessionId: string,
+    _tokensIn: number,
+    _tokensOut: number,
+    _cache?: { read?: number; write?: number },
+  ): void {
     // Ephemeral delegated sessions have no durable session aggregate.
   }
 

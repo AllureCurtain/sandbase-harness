@@ -1262,6 +1262,26 @@ ALTER TABLE compaction_boundaries ADD COLUMN event_seq_before INTEGER NOT NULL D
 ALTER TABLE compaction_boundaries ADD COLUMN compacted_event_id TEXT;
 `;
 
+/**
+ * Prompt-caching splits one model request's input into three buckets — the
+ * tokens that missed the cache, the tokens read from it, and the tokens
+ * written to it — and each bucket is billed at a different rate. The session
+ * aggregate and the per-request span row each gain the two cache buckets; the
+ * uncached remainder keeps living in the columns that already exist.
+ *
+ * `usage_tokens_in` predates this split and therefore counts every input
+ * token, cached or not. That is not a defect to repair: prompt caching was
+ * never enabled before this change, so every cached bucket on an old row is
+ * genuinely zero and `usage_tokens_in` already equals the uncached count.
+ * Nothing is rewritten.
+ */
+const M055_USAGE_CACHE_BUCKETS = `
+ALTER TABLE sessions ADD COLUMN usage_cache_read_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN usage_cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN cache_read_tokens INTEGER;
+ALTER TABLE events ADD COLUMN cache_write_tokens INTEGER;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1317,4 +1337,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 52, name: '052_deployment_official_shape', sql: M052_DEPLOYMENT_OFFICIAL_SHAPE },
   { version: 53, name: '053_skill_versions', sql: M053_SKILL_VERSIONS },
   { version: 54, name: '054_compaction_boundary_seq', sql: M054_COMPACTION_BOUNDARY_SEQ },
+  { version: 55, name: '055_usage_cache_buckets', sql: M055_USAGE_CACHE_BUCKETS },
 ];

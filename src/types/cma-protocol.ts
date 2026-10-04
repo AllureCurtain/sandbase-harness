@@ -436,8 +436,16 @@ export interface SessionBudget {
 export interface SessionUsageEvent extends EventBase {
   type: 'session.usage';
   usage: {
+    /** Input tokens that missed the provider's prompt cache. */
     input_tokens: number;
     output_tokens: number;
+    /** Input tokens read from the provider's prompt cache. */
+    cache_read_input_tokens?: number;
+    /** Input tokens written to the provider's prompt cache, split by TTL. */
+    cache_creation?: {
+      ephemeral_5m_input_tokens: number;
+      ephemeral_1h_input_tokens: number;
+    };
     /** Wall-clock seconds the harness loop was executing this session. */
     active_seconds: number;
     /** Accumulated list cost in the published wire form; omitted when incomplete. */

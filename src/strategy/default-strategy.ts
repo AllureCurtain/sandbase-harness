@@ -24,6 +24,7 @@ import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
 import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 import { resolvedModelIdOf } from '@/model/registry.js';
+import { splitModelRequestUsage } from './model-usage.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
 /**
@@ -277,7 +278,10 @@ export class DefaultStrategy implements AgentStrategy {
         onStepFinish: async (step) => {
           totalSteps++;
 
-          const tokensIn = step.usage?.inputTokens ?? 0;
+          // The recorded input is only the uncached share; the cache buckets
+          // travel separately so a cache read is never billed at the full rate.
+          const { input: tokensIn, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens } =
+            splitModelRequestUsage(step.usage);
           const tokensOut = step.usage?.outputTokens ?? 0;
           const stopReason = modelStopReason(step.finishReason);
           totalTokensIn += tokensIn;
@@ -288,6 +292,8 @@ export class DefaultStrategy implements AgentStrategy {
             type: 'span.model_request_end',
             tokensIn,
             tokensOut,
+            cacheReadTokens,
+            cacheWriteTokens,
             modelUsed,
             stopReason,
             durationMs: Date.now() - startTime,
@@ -296,7 +302,10 @@ export class DefaultStrategy implements AgentStrategy {
           // Persist the aggregate once per model request. The same usage is
           // intentionally copied to projected message/tool events for local
           // attribution, so metrics must not sum those projections.
-          eventLog.recordUsage(session.id, tokensIn, tokensOut);
+          eventLog.recordUsage(session.id, tokensIn, tokensOut, {
+            read: cacheReadTokens,
+            write: cacheWriteTokens,
+          });
 
           // Emit agent.thinking as a progress signal only. CMA defines this
           // event as "thinking started/stopped" and explicitly not as a carrier

@@ -1501,6 +1501,8 @@ client can settle the finished turn before it observes the idle transition:
   "usage": {
     "input_tokens": 5000,
     "output_tokens": 3200,
+    "cache_read_input_tokens": 800,
+    "cache_creation": { "ephemeral_5m_input_tokens": 100, "ephemeral_1h_input_tokens": 0 },
     "active_seconds": 12.5,
     "list_cost": { "amount": "7", "currency": "USD" },
     "budget": { "type": "limit", "max_list_cost": { "amount": "500", "currency": "USD" } },
@@ -1518,7 +1520,10 @@ present, because the runtime holds a true value for each:
 
 | Field | Status |
 | --- | --- |
-| `input_tokens`, `output_tokens` | Reported from the session's aggregate token counters. |
+| `input_tokens` | Reported from the session's aggregate counters — the uncached share only. Cache reads and writes are priced and reported separately, so a cache hit never appears here as a full-rate input token. |
+| `output_tokens` | Reported from the session's aggregate counters. |
+| `cache_read_input_tokens` | Input tokens read from the provider's prompt cache. Zero when the provider reports no cache buckets. |
+| `cache_creation` | Input tokens written to the provider's prompt cache, split by TTL. Only the five-minute bucket is populated — it is the only TTL this runtime requests — so `ephemeral_1h_input_tokens` is a true zero. |
 | `active_seconds` | Reported. Single-threaded session, so "at least one thread running" is the sum of the turn intervals. |
 | `list_cost` | Accumulated list cost as a published monetary amount — `{amount, currency: "USD"}` with `amount` the whole-cent total as a string — priced from the operator's cost profile. Omitted when any model the session used has no list price. |
 | `budget` | The session's budget, or `null` when it has none. |

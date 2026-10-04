@@ -246,8 +246,16 @@ export interface ApiSession {
    */
   budget: SessionBudget | null;
   usage: {
+    /** Input tokens that missed the provider's prompt cache. */
     input_tokens: number;
     output_tokens: number;
+    /** Input tokens read from the provider's prompt cache. */
+    cache_read_input_tokens: number;
+    /** Input tokens written to the provider's prompt cache, split by TTL. */
+    cache_creation: {
+      ephemeral_5m_input_tokens: number;
+      ephemeral_1h_input_tokens: number;
+    };
   };
   stats: ApiSessionStats;
   /**
@@ -335,6 +343,11 @@ export interface ApiEvent {
   usage?: {
     input_tokens: number;
     output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation?: {
+      ephemeral_5m_input_tokens: number;
+      ephemeral_1h_input_tokens: number;
+    };
     active_seconds: number;
     list_cost?: MonetaryAmount;
     budget?: SessionBudget | null;
@@ -511,6 +524,13 @@ export function toApiSession(
     usage: {
       input_tokens: session.usage?.tokensIn ?? 0,
       output_tokens: session.usage?.tokensOut ?? 0,
+      cache_read_input_tokens: session.usage?.cacheReadTokens ?? 0,
+      // The only TTL this runtime requests is five minutes, so the one-hour
+      // bucket is a real zero, not an uncounted one.
+      cache_creation: {
+        ephemeral_5m_input_tokens: session.usage?.cacheWriteTokens ?? 0,
+        ephemeral_1h_input_tokens: 0,
+      },
     },
     stats: {
       active_seconds: derived?.activeSeconds ?? 0,

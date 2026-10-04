@@ -23,6 +23,8 @@ export interface SessionRow {
   sandbox_state: string | null;
   usage_tokens_in: number;
   usage_tokens_out: number;
+  usage_cache_read_tokens: number;
+  usage_cache_write_tokens: number;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -46,7 +48,12 @@ export function rowToSession(row: SessionRow): Session {
     archivedAt: row.archived_at ? new Date(row.archived_at) : undefined,
     sandboxType: row.sandbox_type ?? undefined,
     sandboxState: row.sandbox_state ? JSON.parse(row.sandbox_state) : undefined,
-    usage: { tokensIn: row.usage_tokens_in, tokensOut: row.usage_tokens_out },
+    usage: {
+      tokensIn: row.usage_tokens_in,
+      tokensOut: row.usage_tokens_out,
+      cacheReadTokens: row.usage_cache_read_tokens,
+      cacheWriteTokens: row.usage_cache_write_tokens,
+    },
     budget: deserializeBudget(row.budget),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),

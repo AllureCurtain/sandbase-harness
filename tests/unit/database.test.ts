@@ -466,6 +466,49 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('adds the usage cache-bucket columns to sessions and events (055)', () => {
+    // Fresh: both tables carry the columns from the start.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'sessions')).toEqual(
+      expect.arrayContaining(['usage_cache_read_tokens', 'usage_cache_write_tokens']),
+    );
+    expect(columnsOf(fresh, 'events')).toEqual(
+      expect.arrayContaining(['cache_read_tokens', 'cache_write_tokens']),
+    );
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 55').get()).toEqual({
+      name: '055_usage_cache_buckets',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped before the split, holding a session
+    // whose recorded input is entirely uncached — prompt caching was never
+    // enabled before, so its cache buckets are genuinely zero.
+    const upgradedPath = join(tmpDir, 'upgraded-cache.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 51));
+    expect(columnsOf(upgraded, 'sessions')).not.toContain('usage_cache_read_tokens');
+    upgraded.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_b', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_b', 'b', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id, usage_tokens_in, usage_tokens_out)
+      VALUES ('sess_old', 'agent_b', 'b', 'env_b', 1000, 4);
+      INSERT INTO events (id, session_id, seq, type, model_used, tokens_in, tokens_out)
+      VALUES ('sevt_old', 'sess_old', 1, 'span.model_request_end', 'm', 1000, 4)
+    `);
+
+    upgraded.runMigrations();
+    expect(
+      upgraded
+        .prepare('SELECT usage_tokens_in, usage_cache_read_tokens, usage_cache_write_tokens FROM sessions WHERE id = ?')
+        .get('sess_old'),
+    ).toEqual({ usage_tokens_in: 1000, usage_cache_read_tokens: 0, usage_cache_write_tokens: 0 });
+    expect(
+      upgraded.prepare('SELECT tokens_in, cache_read_tokens FROM events WHERE id = ?').get('sevt_old'),
+    ).toEqual({ tokens_in: 1000, cache_read_tokens: null });
+    upgraded.close();
+  });
+
   it('transaction rolls back on error', () => {
     const db = new Database(dbPath);
     db.runMigrations();

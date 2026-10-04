@@ -138,24 +138,39 @@ describe('Session usage is one addition per model request', () => {
     // The provider's numbers, not a re-derivation and not zero.
     expect(snapshot.input_tokens).toBe(PROMPT_TOKENS);
     expect(snapshot.output_tokens).toBe(COMPLETION_TOKENS);
-    // The session aggregate agrees with the published snapshot.
-    expect(manager.get(session.id)!.usage).toEqual({ tokensIn: PROMPT_TOKENS, tokensOut: COMPLETION_TOKENS });
+    // The session aggregate agrees with the published snapshot — and the
+    // stub provider reports no cache details, so both cache buckets are zero.
+    expect(manager.get(session.id)!.usage).toEqual({
+      tokensIn: PROMPT_TOKENS,
+      tokensOut: COMPLETION_TOKENS,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
 
-    // The budget echo and the server-tool counters are always present — the
-    // runtime holds a true value for each — and list_cost is withheld because
-    // the stub provider's model has no list price.
+    // The budget echo, the cache counters, and the server-tool counters are
+    // always present — the runtime holds a true value for each — and list_cost
+    // is withheld because the stub provider's model has no list price.
     expect(Object.keys(snapshot).sort()).toEqual([
       'active_seconds',
       'budget',
+      'cache_creation',
+      'cache_read_input_tokens',
       'input_tokens',
       'output_tokens',
       'server_tool_use',
     ]);
+    expect(snapshot.cache_read_input_tokens).toBe(0);
+    expect(snapshot.cache_creation).toEqual({
+      ephemeral_5m_input_tokens: 0,
+      ephemeral_1h_input_tokens: 0,
+    });
 
     // And the same values are what a client reads off the wire projection.
     expect(toApiEvent(events[0]).usage).toEqual({
       input_tokens: PROMPT_TOKENS,
       output_tokens: COMPLETION_TOKENS,
+      cache_read_input_tokens: 0,
+      cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 },
       active_seconds: expect.any(Number),
       budget: null,
       server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
@@ -173,6 +188,8 @@ describe('Session usage is one addition per model request', () => {
     expect(manager.get(session.id)!.usage).toEqual({
       tokensIn: PROMPT_TOKENS * 2,
       tokensOut: COMPLETION_TOKENS * 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
     });
   });
 

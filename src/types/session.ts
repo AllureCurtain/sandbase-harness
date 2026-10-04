@@ -76,8 +76,13 @@ export interface Session {
   sandboxType?: string;
   sandboxState?: Record<string, unknown>;
   usage?: {
+    /** Input tokens that missed the provider's prompt cache. */
     tokensIn: number;
     tokensOut: number;
+    /** Input tokens read from the provider's prompt cache. */
+    cacheReadTokens: number;
+    /** Input tokens written into the provider's prompt cache. */
+    cacheWriteTokens: number;
   };
   /**
    * Spending ceiling. `undefined` means the session never had one and `null`
@@ -101,8 +106,13 @@ export interface SessionEvent {
   type: CMAEventType;
   content?: ContentBlock[];
   modelUsed?: string;
+  /** Input tokens that missed the provider's prompt cache. */
   tokensIn?: number;
   tokensOut?: number;
+  /** Input tokens read from the provider's prompt cache. */
+  cacheReadTokens?: number;
+  /** Input tokens written into the provider's prompt cache. */
+  cacheWriteTokens?: number;
   stopReason?: string;
   durationMs?: number;
   parentEventId?: string;
