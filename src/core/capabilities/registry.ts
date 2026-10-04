@@ -1,19 +1,7 @@
-import { getEnabledToolNames } from '@/core/agent/standard.js';
-import type { AgentDefinition } from '@/types/agent.js';
+import { getExplicitlyEnabledToolNames } from '@/core/agent/standard.js';
+import { BUILTIN_TOOL_NAMES, type AgentDefinition, type BuiltinToolName } from '@/types/agent.js';
 
-/** Built-in tool identifiers accepted by the CMA agent schema. */
-export const BUILTIN_TOOL_NAMES = [
-  'bash',
-  'edit',
-  'read',
-  'write',
-  'glob',
-  'grep',
-  'web_fetch',
-  'web_search',
-] as const;
-
-export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
+export { BUILTIN_TOOL_NAMES, type BuiltinToolName };
 export type RuntimeCapabilityStatus = 'available' | 'unavailable';
 
 export interface RuntimeCapability {
@@ -76,7 +64,13 @@ export class RuntimeCapabilityRegistry {
   }
 
   getUnavailableCapabilities(agent: AgentDefinition): RuntimeCapability[] {
-    return getEnabledToolNames(agent).flatMap((name) => {
+    // Refusal applies to tools the caller named: the published semantic for a
+    // bare toolset is "every tool enabled", and treating an implicit enable as
+    // a request for an unavailable capability would make the simplest official
+    // toolset shape un-creatable. An implicitly enabled tool the runtime
+    // cannot execute (web_search) simply never reaches the model — no tool
+    // implementation is registered for it.
+    return getExplicitlyEnabledToolNames(agent).flatMap((name) => {
       const capability = this.capabilitiesById.get(name as BuiltinToolName);
       return capability?.status === 'unavailable' ? [{ ...capability }] : [];
     });

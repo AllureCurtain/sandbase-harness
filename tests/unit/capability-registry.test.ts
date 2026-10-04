@@ -3,7 +3,8 @@ import {
   RuntimeCapabilityRegistry,
   UnsupportedCapabilityError,
 } from '@/core/capabilities/registry.js';
-import type { AgentDefinition } from '@/types/agent.js';
+import { getEnabledToolNames } from '@/core/agent/standard.js';
+import { BUILTIN_TOOL_NAMES, type AgentDefinition } from '@/types/agent.js';
 
 const unavailableWebAgent = {
   name: 'web-agent',
@@ -52,6 +53,41 @@ describe('RuntimeCapabilityRegistry', () => {
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(UnsupportedCapabilityError);
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(
       'Agent requests unavailable runtime capabilities: web_search',
+    );
+  });
+
+  it('enables every built-in for a bare toolset and still refuses only explicit declarations', () => {
+    const registry = new RuntimeCapabilityRegistry();
+    const bareToolset = {
+      name: 'bare-toolset-agent',
+      model: 'gpt-4o',
+      system: 'Use the configured tools.',
+      tools: [{ type: 'agent_toolset_20260401' }],
+    } satisfies AgentDefinition;
+
+    // The published semantic: including the toolset enables all tools.
+    // configs entries disable or reconfigure — they are not the enable list.
+    expect(getEnabledToolNames(bareToolset)).toEqual([...BUILTIN_TOOL_NAMES]);
+
+    // An implicitly enabled unavailable tool is accepted but inert (no
+    // implementation is offered to the model); only a caller who *named*
+    // web_search is refused.
+    expect(() => registry.assertAgentSupported(bareToolset)).not.toThrow();
+  });
+
+  it('lets a configs entry subtract from the implicit all-enabled set', () => {
+    const agent = {
+      name: 'no-bash-agent',
+      model: 'gpt-4o',
+      system: 'Use the configured tools.',
+      tools: [{
+        type: 'agent_toolset_20260401',
+        configs: [{ name: 'bash', enabled: false }],
+      }],
+    } satisfies AgentDefinition;
+
+    expect(getEnabledToolNames(agent)).toEqual(
+      BUILTIN_TOOL_NAMES.filter((name) => name !== 'bash'),
     );
   });
 

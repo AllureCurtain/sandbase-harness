@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '@/api/server.js';
-import { getEnabledToolNames } from '@/core/agent/standard.js';
+import { getExplicitlyEnabledToolNames } from '@/core/agent/standard.js';
 import { Database } from '@/core/db/database.js';
 import { SessionManager, type SessionExecutor } from '@/core/session/session-manager.js';
 import type { AgentDefinition } from '@/types/agent.js';
@@ -143,9 +143,11 @@ describe('capability ingress admission', () => {
     const templates = await templatesResponse.json() as { data: Array<{ id: string; agent: AgentDefinition }> };
 
     for (const template of templates.data) {
-      const enabledToolNames = getEnabledToolNames(template.agent);
-      expect(enabledToolNames, template.id).not.toContain('web_fetch');
-      expect(enabledToolNames, template.id).not.toContain('web_search');
+      // Admission refuses only tools the caller named. The bare toolset
+      // implicitly enables every built-in per the published default, so the
+      // check is that no template explicitly declares an unavailable tool.
+      const explicitToolNames = getExplicitlyEnabledToolNames(template.agent);
+      expect(explicitToolNames, template.id).not.toContain('web_search');
 
       const created = await postJson(context.app, '/v1/agents', template.agent);
       expect(created.res.status, template.id).toBe(201);

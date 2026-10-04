@@ -4,6 +4,20 @@
  * Declarative agent configuration loaded from YAML/JSON files.
  */
 
+/** Built-in tool identifiers accepted by the CMA agent schema. */
+export const BUILTIN_TOOL_NAMES = [
+  'bash',
+  'edit',
+  'read',
+  'write',
+  'glob',
+  'grep',
+  'web_fetch',
+  'web_search',
+] as const;
+
+export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
+
 // ============================================================
 // Agent Definition (loaded from YAML)
 // ============================================================

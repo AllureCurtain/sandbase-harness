@@ -1,12 +1,13 @@
-import type {
-  AgentDefinition,
-  AgentToolConfig,
-  AgentToolset,
-  BuiltinAgentToolset,
-  CanonicalCustomTool,
-  CustomToolConfig,
-  McpToolset,
-  PermissionPolicyType,
+import {
+  BUILTIN_TOOL_NAMES,
+  type AgentDefinition,
+  type AgentToolConfig,
+  type AgentToolset,
+  type BuiltinAgentToolset,
+  type CanonicalCustomTool,
+  type CustomToolConfig,
+  type McpToolset,
+  type PermissionPolicyType,
 } from '@/types/agent.js';
 import { MCP_TOOL_PREFIX, mcpServerToolPrefix, resolveMcpServerName } from '@/core/mcp/tool-naming.js';
 
@@ -70,10 +71,19 @@ export function getEnabledToolNames(agent: AgentDefinition): string[] {
   const names = new Set<string>();
   for (const toolset of getAgentToolsets(agent)) {
     const defaultEnabled = toolset.default_config?.enabled !== false;
+    // The published semantic: including the toolset enables every built-in.
+    // `configs` entries only disable or reconfigure specific tools, so the
+    // base set is the full inventory rather than the listed names.
+    if (defaultEnabled) {
+      for (const name of BUILTIN_TOOL_NAMES) names.add(name);
+    }
     for (const config of toolset.configs ?? []) {
       const enabled = config.enabled ?? defaultEnabled;
-      if (enabled && getPermissionPolicy(config, toolset.default_config, toolset.type) !== 'never_allow') {
+      const admitted = enabled && getPermissionPolicy(config, toolset.default_config, toolset.type) !== 'never_allow';
+      if (admitted) {
         names.add(config.name);
+      } else {
+        names.delete(config.name);
       }
     }
   }
@@ -83,6 +93,30 @@ export function getEnabledToolNames(agent: AgentDefinition): string[] {
       continue;
     }
     if (toolset.type !== 'custom_toolset') continue;
+    const defaultEnabled = toolset.default_config?.enabled !== false;
+    for (const config of toolset.configs ?? []) {
+      const enabled = config.enabled ?? defaultEnabled;
+      if (enabled && getPermissionPolicy(config, toolset.default_config, toolset.type) !== 'never_allow') {
+        names.add(config.name);
+      }
+    }
+  }
+  return [...names];
+}
+
+/**
+ * The tools a caller named in `configs`, without the toolset-level default.
+ * Capability admission checks use this: an implicitly enabled built-in is the
+ * published default rather than a request, so only an explicit declaration can
+ * be refused as unsupported.
+ */
+export function getExplicitlyEnabledToolNames(agent: AgentDefinition): string[] {
+  const names = new Set<string>();
+  for (const toolset of agent.tools ?? []) {
+    if (toolset.type !== DEFAULT_AGENT_TOOLSET_TYPE && toolset.type !== 'custom_toolset') {
+      if (toolset.type === 'custom') names.add(toolset.name);
+      continue;
+    }
     const defaultEnabled = toolset.default_config?.enabled !== false;
     for (const config of toolset.configs ?? []) {
       const enabled = config.enabled ?? defaultEnabled;

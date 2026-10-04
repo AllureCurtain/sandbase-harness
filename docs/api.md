@@ -470,6 +470,13 @@ published `version`: absent means no precondition, and a malformed value is a `4
 rather than a silent downgrade to an unguarded update. A successful update writes a new
 immutable version, and an update that changes nothing writes no version at all.
 
+Including `{ "type": "agent_toolset_20260401" }` enables every built-in tool;
+`configs` entries disable (`enabled: false`, `never_allow`) or reconfigure
+specific tools, and `default_config.enabled: false` empties the implicit set.
+`web_search` has no provider in this runtime: naming it in `configs` is refused
+at admission, while the implicit enable from a bare toolset is accepted and
+simply never offered to the model.
+
 ### MCP servers and toolsets
 
 An MCP toolset grants the tools a declared MCP server provides, so `mcp_servers`

@@ -92,7 +92,16 @@ Tool output overflow (`tool-output-overflow.ts`):
   carries `TOOL_OVERFLOW_MARKER` so a reader can tell a preview from a complete
   output.
 
-MCP toolset approval (`standard.ts`, `tool-naming.ts`):
+Toolset enablement (`standard.ts`):
+
+- Including `agent_toolset_20260401` enables every built-in tool; a `configs`
+  entry with `enabled: false` or `never_allow` subtracts from that implicit
+  set, and `default_config.enabled: false` empties it. This mirrors what
+  `mcpDiscoveredToolAdmitted` already did for MCP tools and matches the
+  published contract's default. `getExplicitlyEnabledToolNames` gives the
+  caller-named subset — the set capability admission refuses on, because an
+  implicit enable is the published default, not a request.
+Toolset approval (`standard.ts`, `tool-naming.ts`):
 
 - Defaults by toolset kind: `agent_toolset_20260401` → `always_allow`,
   `mcp_toolset` → `always_ask`. A custom tool is outside permission policy
@@ -152,7 +161,7 @@ loop reads.
 
 | Difference | Detail |
 | --- | --- |
-| `web_search` execution | SandBase has no search provider, so a request enabling `web_search` fails before a session is persisted. The published contract describes an executable tool. |
+| `web_search` execution | SandBase has no search provider, so a `configs` entry that *names* `web_search` fails before a session is persisted. A bare `agent_toolset_20260401` implicitly enables every built-in per the published default; an implicitly enabled `web_search` is accepted but never offered to the model, because no tool implementation is registered for it. |
 | `web_fetch` content types | Only text-like content is converted. An image, PDF, or other binary response is reported as its media type and size instead of being inlined, so the model is told what it did not receive. |
 | `web_fetch` content budget | `max_content_tokens` is enforced through a chars-per-token estimate, and the truncation marker says so. The published contract describes a token budget without fixing the unit. |
 | Overflow threshold | 50,000 local chars versus the published 100,000. The published value is recorded rather than silently replaced. |
@@ -163,8 +172,11 @@ loop reads.
 
 - `web_search` is `unavailable` rather than `planned` because there is no local
   implementation to plan: a search provider is a third-party service and
-  scraping a search engine's HTML is not an accepted substitute, so the
-  declaration is refused instead of accepted and ignored. `web_fetch` is a
+  scraping a search engine's HTML is not an accepted substitute, so an
+  *explicit* declaration is refused instead of accepted and ignored. The bare
+  toolset's implicit enable is a different thing — the caller asked for "the
+  toolset", not for search by name, and refusing it would make the simplest
+  published shape un-creatable. `web_fetch` is a
   different question — a single URL with a known host is answerable in-process
   behind the address guard, which is why it executes while `web_search` does
   not.
