@@ -242,6 +242,21 @@ export class DefaultStrategy implements AgentStrategy {
         })
       : undefined;
     const requestSpeed = anthropicOptions?.anthropic.speed;
+    // Durable `agent.message` ids are minted per step in `prepareStep` —
+    // before the step's request is issued, so before any of its deltas can
+    // reach the consumer loop. Both the preview carrier broadcasts (which run
+    // when the consumer pulls `text-delta` parts) and the buffered append in
+    // `onStepFinish` (which runs stream-transform-side, possibly ahead of the
+    // consumer) read the same slot: the index is the step number on both
+    // sides, so no cross-side ordering is required.
+    const mintedMessageIds: string[] = [];
+    // The SDK runs `onStepFinish` stream-transform-side, after the consumer
+    // has pulled the step's `finish-step` part — so by the time the buffered
+    // `agent.message` is broadcast, every `event_deltas[]` preview for it has
+    // already reached subscribers, and durable events go out in append order.
+    // Delaying them would invert seq order on the wire (a later step's
+    // `span.model_request_start` would overtake the queue) and cursor-following
+    // consumers drop out-of-order frames, so they are broadcast directly.
     const closeRequestSpan = (isError: boolean): void => {
       // Clear before appending: a failed append must not invite a second end.
       const start = inFlightRequestStart;
@@ -340,6 +355,7 @@ export class DefaultStrategy implements AgentStrategy {
             modelUsed,
           });
           broadcast(inFlightRequestStart);
+          mintedMessageIds.push(`sevt_${nanoid(16)}`);
         },
         onError: () => {
           closeRequestSpan(true);
@@ -411,6 +427,10 @@ export class DefaultStrategy implements AgentStrategy {
           // Emit agent.message for this step's text (OMA pattern: per-step, not end-of-loop)
           if (step.text && step.text.trim()) {
             const agentMsgEvent = eventLog.append(session.id, {
+              // The id was minted in prepareStep so the `event_deltas[]`
+              // previews — broadcast from the consumer loop — and this buffered
+              // event name the same id, letting accumulators reconcile the two.
+              id: mintedMessageIds[totalSteps - 1],
               type: 'agent.message',
               content: [{ type: 'text', text: step.text }] as ContentBlock[],
               tokensIn,
@@ -536,13 +556,23 @@ export class DefaultStrategy implements AgentStrategy {
       // onStepFinish callbacks to completion.
       let streaming = false;
       let messageId = '';
+      // `mintedMessageIds` is indexed by step: `prepareStep` pushes before the
+      // request, the `start-step` stream part names the same step here, and
+      // `onStepFinish` appends under `mintedMessageIds[totalSteps - 1]`.
+      let consumedStepIndex = -1;
       let streamError: unknown;
       for await (const part of result.fullStream) {
         guard.push(part);
-        if (part.type === 'text-delta') {
+        if (part.type === 'start-step') {
+          consumedStepIndex++;
+          messageId = mintedMessageIds[consumedStepIndex] ?? '';
+        } else if (part.type === 'text-delta') {
           if (!streaming) {
             streaming = true;
-            messageId = `msg_${Date.now()}_${totalSteps}`;
+            // The durable `agent.message` id was minted in prepareStep so that
+            // `event_deltas[]` previews announce the id the buffered event
+            // lands under; the fallback covers streams that omit start-step.
+            if (!messageId) messageId = `sevt_${nanoid(16)}`;
             broadcast(transientEvent(session.id, 'agent.message_stream_start', { message_id: messageId }));
           }
           broadcast(
