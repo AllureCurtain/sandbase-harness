@@ -451,6 +451,27 @@ export function SessionDetail({
     }
   };
 
+  const submitCustomToolResult = async (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => {
+    if (!beginToolConfirmation(confirmingToolIdsRef.current, toolUseId)) return;
+    setConfirmingToolIds((current) => new Set(current).add(toolUseId));
+    setMessageError('');
+    try {
+      await postJson(`/v1/sessions/${encodeURIComponent(session.id)}/events`, customToolResultPayload(customToolUseEventId, text, isError));
+      setConfirmedToolIds((current) => new Set(current).add(toolUseId));
+      await loadEvents({ silent: true });
+      onRefresh();
+    } catch (err) {
+      setMessageError(err instanceof Error ? err.message : String(err));
+    } finally {
+      confirmingToolIdsRef.current.delete(toolUseId);
+      setConfirmingToolIds((current) => {
+        const next = new Set(current);
+        next.delete(toolUseId);
+        return next;
+      });
+    }
+  };
+
   const interrupt = async () => {
     await postJson(`/v1/sessions/${encodeURIComponent(session.id)}/events`, { events: [{ type: 'user.interrupt', content: [{ type: 'text', text: 'Run interrupted by the user.' }] }] });
     setActionsOpen(false);
@@ -621,6 +642,7 @@ export function SessionDetail({
                     confirmingToolIds={confirmingToolIds}
                     confirmedToolIds={confirmedToolIds}
                     onConfirm={(toolUseId, result) => void confirmTool(toolUseId, result)}
+                    onSubmitResult={(toolUseId, eventId, text, isError) => void submitCustomToolResult(toolUseId, eventId, text, isError)}
                   />
                 ) : (
                   <article key={entry.id} className={`conversationMessage ${entry.role}`}>
@@ -838,14 +860,19 @@ function ConversationToolCard({
   confirmingToolIds,
   confirmedToolIds,
   onConfirm,
+  onSubmitResult,
 }: {
   entry: Extract<ConversationEntry, { role: 'tool' }>;
   confirmingToolIds: Set<string>;
   confirmedToolIds: Set<string>;
   onConfirm: (toolUseId: string, result: 'allow' | 'deny') => void;
+  onSubmitResult: (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => void;
 }) {
+  const awaitingResult = Boolean(
+    entry.awaitingResult && entry.toolUseId && !confirmedToolIds.has(entry.toolUseId),
+  );
   const awaiting = Boolean(
-    entry.awaitingConfirmation
+    (entry.awaitingConfirmation || awaitingResult)
       && entry.toolUseId
       && !confirmingToolIds.has(entry.toolUseId)
       && !confirmedToolIds.has(entry.toolUseId),
@@ -919,8 +946,61 @@ function ConversationToolCard({
             </button>
           </div>
         ) : null}
+        {awaitingResult && entry.toolUseId ? (
+          <CustomToolResultForm
+            submitting={confirmingToolIds.has(entry.toolUseId)}
+            onSubmit={(text, isError) => onSubmitResult(entry.toolUseId!, entry.id, text, isError)}
+          />
+        ) : null}
       </details>
     </article>
+  );
+}
+
+/**
+ * Result form for a parked `agent.custom_tool_use` — the runtime cannot
+ * execute a custom tool, so the caller supplies the result. Submitting writes
+ * a `user.custom_tool_result` event; the paired card settles when it lands.
+ */
+function CustomToolResultForm({
+  submitting,
+  onSubmit,
+}: {
+  submitting: boolean;
+  onSubmit: (text: string, isError: boolean) => void;
+}) {
+  const [text, setText] = useState('');
+  const [isError, setIsError] = useState(false);
+  return (
+    <form
+      className="conversationToolApproval conversationToolResultForm"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(text, isError);
+      }}
+    >
+      <span>Waiting for this tool's result</span>
+      <textarea
+        className="conversationToolResultInput"
+        rows={3}
+        placeholder="Tool result…"
+        value={text}
+        disabled={submitting}
+        onChange={(event) => setText(event.target.value)}
+      />
+      <label className="conversationToolResultError">
+        <input
+          type="checkbox"
+          checked={isError}
+          disabled={submitting}
+          onChange={(event) => setIsError(event.target.checked)}
+        />
+        Mark as error
+      </label>
+      <button type="submit" className="primaryButton" disabled={submitting || text.trim() === ''}>
+        {submitting ? 'Submitting…' : 'Submit result'}
+      </button>
+    </form>
   );
 }
 
@@ -935,6 +1015,8 @@ type ConversationEntry = ConversationMessage | {
   event: SessionEvent;
   toolUseId?: string;
   awaitingConfirmation?: boolean;
+  /** `agent.custom_tool_use` parked for a caller-supplied result. */
+  awaitingResult?: boolean;
   requiresConfirmation?: boolean;
   permission?: ToolPermission;
 };
@@ -1031,6 +1113,10 @@ export function conversationEntries(events: SessionEvent[]): ConversationEntry[]
     // confirmation has been recorded yet. This also works when the API maps
     // `requires_action` to `idle` in the session status.
     const awaitingConfirmation = toolAwaitingConfirmation(details, Boolean(result), confirmedToolUseIds.has(details.toolUseId ?? ''));
+    // A custom tool call is parked not for approval but for its result: the
+    // runtime has no executor for it, so the caller supplies one. Pairing by
+    // `custom_tool_use_id` means the card settles itself once the result lands.
+    const awaitingResult = event.type === 'agent.custom_tool_use' && !result;
     entries.push({
       id: event.id,
       role: 'tool',
@@ -1038,9 +1124,10 @@ export function conversationEntries(events: SessionEvent[]): ConversationEntry[]
       toolName: details.toolName,
       input: details.input,
       result: result?.text ?? '',
-      status: awaitingConfirmation ? 'awaiting' : result ? (result.failed ? 'failed' : 'completed') : 'running',
+      status: awaitingConfirmation || awaitingResult ? 'awaiting' : result ? (result.failed ? 'failed' : 'completed') : 'running',
       event,
       ...(toolUseId ? { toolUseId, awaitingConfirmation } : {}),
+      ...(awaitingResult ? { awaitingResult: true } : {}),
       ...(details.requiresConfirmation !== undefined ? { requiresConfirmation: details.requiresConfirmation } : {}),
       ...(details.permission ? { permission: details.permission } : {}),
     });
@@ -1063,6 +1150,23 @@ export function toolAwaitingConfirmation(
 
 export function toolConfirmationPayload(toolUseId: string, result: 'allow' | 'deny') {
   return { events: [{ type: 'user.tool_confirmation' as const, tool_use_id: toolUseId, result }] };
+}
+
+/**
+ * A custom tool call is answered by `custom_tool_use_id` naming the
+ * `agent.custom_tool_use` **event** id (the published contract's spelling; the
+ * runtime also resolves the tool-call block id). `is_error` is sent explicitly
+ * so an unchecked box cannot be misread as an omitted field.
+ */
+export function customToolResultPayload(customToolUseEventId: string, text: string, isError: boolean) {
+  return {
+    events: [{
+      type: 'user.custom_tool_result' as const,
+      custom_tool_use_id: customToolUseEventId,
+      content: [{ type: 'text' as const, text }],
+      is_error: isError,
+    }],
+  };
 }
 
 /** Atomically claims a tool id for a confirmation submission. */
@@ -1128,6 +1232,7 @@ function toolResultText(event: SessionEvent): string {
 function toolResultFailed(event: SessionEvent): boolean {
   const block = findToolBlock(event, ['tool_result', 'mcp_tool_result']) as Record<string, unknown> | undefined;
   return block?.is_error === true || block?.isError === true || event.is_error === true || event.isError === true
+    || event.metadata?.is_error === true
     || event.type.includes('error') || event.type.includes('failed');
 }
 
@@ -1192,7 +1297,7 @@ export function toolResultId(event: SessionEvent): string | undefined {
   if (typeof block?.mcp_tool_use_id === 'string') return block.mcp_tool_use_id;
   if (typeof block?.toolUseId === 'string') return block.toolUseId;
   if (typeof block?.mcpToolUseId === 'string') return block.mcpToolUseId;
-  return event.tool_use_id ?? event.mcp_tool_use_id;
+  return event.tool_use_id ?? event.mcp_tool_use_id ?? event.custom_tool_use_id;
 }
 
 function sessionDisplayStatus(session: Session, events: SessionEvent[]): SessionDisplayStatus {
