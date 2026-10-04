@@ -53,9 +53,15 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
   version listing, and a session's frozen snapshot — as `model_config`
   (`id`, `speed`, and `effort` when one was set). It is omitted for the ordinary
   case (the local `standard` speed and no `effort`), so a plain model id looks
-  the same as it always did. `effort` is echoed and not executed: the provider
-  model is resolved from the id string, so no request changes because of the
-  level, which is why §4 records it as accepted-but-no-effect. When `model` is
+  the same as it always did. On the Anthropic provider `effort` and `speed`
+  are also executed: the level reaches the request as `output_config.effort`
+  and `fast` as `speed` with the published `fast-mode-2026-02-01` beta, each
+  gated by the model capability table in `src/model/anthropic-capabilities.ts`,
+  and a model the table marks adaptive gets
+  `thinking: {type: "adaptive", display: "omitted"}` — no caller-facing
+  thinking field exists because the published contract has none. On every
+  other provider, and for model ids the table does not know, the profile is
+  stored and echoed but nothing is sent. When `model` is
   the object form it is authoritative — the profile comes from that object, and a
   `model_config` sent beside it is ignored rather than merged, which is the
   precedence the update rule already relies on.
@@ -94,8 +100,8 @@ field the runtime cannot honour instead of dropping it.
 
 | Difference | Detail |
 | --- | --- |
-| `model.speed` | Accepted and stored as the local config spelling; `fast` / `standard` / `extended` are local vocabulary. |
-| `model.effort` | Parsed, validated, stored in the model profile, and returned by every read projection (agent, version, and session snapshot). It does not change the provider request: the model is resolved from the id, so the level has no path into a request. A deployment may set `reasoning_effort` in its own model settings, and that is operator-level — it applies to the model, not to an agent or a session. Recorded as accepted-but-no-effect rather than as executed. A level outside the published set is refused rather than stored. |
+| `model.speed` | Executed on the Anthropic provider when the model supports it: `fast` is sent as `speed: "fast"` and the provider attaches the `fast-mode-2026-02-01` beta. The capability table (`src/model/anthropic-capabilities.ts`) holds the published fast-mode list — Opus 5.5, Opus 5, Opus 4.8 — and `fast` on a listed model that cannot take it is refused at create/update with `unsupported_model_speed` rather than stored and silently degraded. `standard` and the local `extended` produce no wire field. A model id the table does not know is accepted and sends nothing. |
+| `model.effort` | Parsed, validated, stored in the model profile, and returned by every read projection (agent, version, and session snapshot). On the Anthropic provider the level reaches the request as `output_config.effort` — capability-gated per level, because the published lists are not uniform (Opus 4.6 and Sonnet 4.6 take `max` but not `xhigh`; Opus 4.5 tops out at `high`; Haiku 4.5 takes no effort). A listed model refused its level fails create/update with `unsupported_model_effort` naming the allowed set; a level outside the published vocabulary is `invalid_model_effort`. Models outside the table, and every non-Anthropic provider, accept the field and send nothing. A deployment may also set `reasoning_effort` in its own model settings — operator-level, applying to the model rather than to an agent. |
 | `model.inference_geo` | Refused by name with `unsupported_model_field` when a well-formed pin is sent: this runtime has no inference-geography control, so accepting it would promise a pin it cannot hold. An unknown value is `invalid_inference_geo` first. |
 | `multiagent` roster | Refused by name on create and update (capability `multiagent-roster`) because no thread, coordinator, or advisor surface exists. The published roster is not implemented. See [`threads.md`](./threads.md). |
 | Local delegation extension | `delegations` plus `enable_general_subagent` is a local one-level parent/child mechanism with its own tool names (`delegate_to_<name>`, `general_subagent`). The published contract defines neither field, and this is not presented as the canonical roster. |
@@ -108,14 +114,22 @@ field the runtime cannot honour instead of dropping it.
   pin would mean inventing semantics. Refusing it by name tells the caller the
   field was understood and cannot take effect, which is the only answer they can
   act on.
-- `effort` is retained rather than refused because the canonical request shape
-  carries it and the value is worth preserving for a provider that can use it
-  later; it is echoed on every read — a field that is stored and never returned
-  is the silent loss this profile exists to prevent — and it is recorded as
-  having no effect today so no caller infers a quality change from it. An agent
-  override refuses it for the same reason the definition keeps it: a level set on
-  a session would reach no request, so accepting one there would promise execution
-  the runtime has no path for.
+- `effort` is executed on Anthropic and retained elsewhere rather than
+  refused: the canonical request shape carries it, so a definition keeps the
+  value even where it cannot take effect — a field that is stored and never
+  returned is the silent loss this profile exists to prevent. On a known model
+  the runtime can prove a level does nothing — `xhigh` on Sonnet 4.6, any
+  effort on Haiku 4.5 — so that combination is refused at admission; on a
+  model id the capability table does not know it cannot prove anything, so the
+  value is kept and simply not sent. An agent override refuses `effort` on
+  every model: the published contract says a level set on a session override
+  does not take effect, so accepting one there would promise execution the
+  contract itself rules out.
+- Adaptive thinking is runtime-selected rather than caller-configured: the
+  published agent contract has no thinking field, so the runtime sends
+  `thinking: {type: "adaptive", display: "omitted"}` for the models that
+  support it and nothing for the rest. `omitted` keeps thinking content out of
+  the response, matching the policy of never persisting reasoning traces.
 - The `multiagent` roster is a substantial protocol surface (threads,
   coordinator role, advisor role). Mapping a local delegation helper onto it
   would overstate coverage, and accepting the field would let a caller build on
@@ -135,13 +149,22 @@ field the runtime cannot honour instead of dropping it.
   toolset rejection cases.
 - `tests/unit/agent-model-object.test.ts` — the model object profile: each
   field's acceptance or refusal, `effort` carried through validation into the
-  profile and reported as accepted-but-no-effect, and `inference_geo` refused by
-  name.
+  profile, and `inference_geo` refused by name.
+- `tests/unit/anthropic-model-options.test.ts` — the capability table's
+  per-level facts and prefix resolution; the `providerOptions` builder's
+  gating; and admission refusing `fast` on a non-fast-mode model, an
+  unsupported level, and any effort on an effort-less model, through both the
+  `model` object and the `model_config` spelling.
+- `tests/integration/anthropic-model-options.test.ts` — a real Anthropic-shaped
+  turn carries `output_config.effort`, `speed`, the fast-mode beta header, and
+  adaptive thinking for a capable model; a listed model that takes none and an
+  unknown model id both send none.
 - `tests/integration/agent-effort-echo.test.ts` — the two halves of
-  accepted-but-no-effect: an agent read, the version listing, a session's frozen
-  snapshot, and the session list all return the level; an update that changes only
-  another field keeps it and repairs a definition still carrying it as a sibling;
-  and a real turn for a definition carrying `effort: "max"` sends a provider
+  stored-and-echoed on a provider with no effort parameter: an agent read, the
+  version listing, a session's frozen snapshot, and the session list all
+  return the level; an update that changes only another field keeps it and
+  repairs a definition still carrying it as a sibling; and a real turn for a
+  definition carrying `effort: "max"` sends an OpenAI-compatible provider
   request without it.
 - `tests/integration/agent-update-contract.test.ts` — the unified partial-update
   semantics, the unknown-field refusal, the roster refusal on the update path,
@@ -154,9 +177,10 @@ field the runtime cannot honour instead of dropping it.
 
 ## 7. Status
 
-`supported` for agent CRUD and toolset validation. `partial` overall, because
-the model object profile is understood but partly unexecuted: `effort` is
-accepted and returned on read but has no effect on the provider request, and
-`inference_geo` is refused rather than honoured. The canonical
+`supported` for agent CRUD and toolset validation. `partial` overall for the
+model object profile: `effort` and `speed` are executed on the Anthropic
+provider under the capability table — with admission refusing what a listed
+model cannot take — and stored-not-sent elsewhere, while `inference_geo` is
+refused rather than honoured. The canonical
 `multiagent` roster is `unavailable` and refused by name; the local delegation
 extension is `supported` and is recorded as an extension, never as the roster.

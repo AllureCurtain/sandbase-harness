@@ -100,6 +100,16 @@ export interface AgentStrategyConfig {
   onError?: (error: Error) => Promise<'retry' | 'abort'>;
   /** Called once after the loop exits normally */
   onComplete?: (result: CompletionResult) => Promise<void>;
+  /**
+   * The agent's `model` profile options (`effort`, `speed`), carried beside the
+   * id so a strategy can map them onto provider-specific request options. A
+   * strategy that owns its transport (Pi) ignores this.
+   *
+   * `effort` is a plain string here for the same reason `AgentModelConfig`
+   * keeps it one: the accepted set lives in `core/agent/model-object.ts` and
+   * `types/` takes no dependency on `core/`.
+   */
+  modelOptions?: { effort?: string; speed?: string };
 }
 
 // ============================================================
@@ -141,6 +151,8 @@ export interface EventLogWriter {
     parentEventId?: string;
     /** `span.model_request_end` only: whether the request ended in an error. */
     isError?: boolean;
+    /** `span.model_request_end` only: the speed tier the request ran at. */
+    speed?: 'standard' | 'fast';
     delegationDepth?: number;
     metadata?: Record<string, unknown>;
   }): SessionEvent;

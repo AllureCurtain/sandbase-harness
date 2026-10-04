@@ -1292,6 +1292,17 @@ const M056_MODEL_REQUEST_IS_ERROR = `
 ALTER TABLE events ADD COLUMN is_error INTEGER;
 `;
 
+/**
+ * 057: `span.model_request_end` publishes `model_usage.speed` — the speed tier
+ * the request ran at — so the tier a fast-mode request used has to live on the
+ * event row like the usage buckets do. NULL on every other row and on span ends
+ * written before the option existed; the projection emits the key only for a
+ * stored value.
+ */
+const M057_MODEL_REQUEST_SPEED = `
+ALTER TABLE events ADD COLUMN speed TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1349,4 +1360,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 54, name: '054_compaction_boundary_seq', sql: M054_COMPACTION_BOUNDARY_SEQ },
   { version: 55, name: '055_usage_cache_buckets', sql: M055_USAGE_CACHE_BUCKETS },
   { version: 56, name: '056_model_request_is_error', sql: M056_MODEL_REQUEST_IS_ERROR },
+  { version: 57, name: '057_model_request_speed', sql: M057_MODEL_REQUEST_SPEED },
 ];

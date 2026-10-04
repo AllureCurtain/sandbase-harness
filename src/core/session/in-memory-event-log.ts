@@ -31,6 +31,7 @@ export class InMemoryEventLog implements EventLogWriter {
       durationMs: event.durationMs,
       parentEventId: event.parentEventId,
       isError: event.isError,
+      speed: event.speed,
       delegationDepth: event.delegationDepth,
       createdAt: new Date(),
       processedAt: new Date(),

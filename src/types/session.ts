@@ -118,6 +118,8 @@ export interface SessionEvent {
   parentEventId?: string;
   /** `span.model_request_end` only: whether the request ended in an error. */
   isError?: boolean;
+  /** `span.model_request_end` only: the speed tier the request ran at. */
+  speed?: 'standard' | 'fast';
   delegationDepth?: number;
   /** Immutable event-specific data that does not belong in content blocks. */
   metadata?: Record<string, unknown>;

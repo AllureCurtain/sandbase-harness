@@ -65,16 +65,18 @@ describe('parseAgentOverrides', () => {
       ok: true,
       overrides: { model: { id: 'gpt-4o-mini' } },
     });
-    expect(parseAgentOverrides({ id: 'agent_x', model: { id: 'claude-sonnet-4', speed: 'fast' } })).toEqual({
+    expect(parseAgentOverrides({ id: 'agent_x', model: { id: 'claude-opus-4-8', speed: 'fast' } })).toEqual({
       ok: true,
-      overrides: { model: { id: 'claude-sonnet-4', speed: 'fast' } },
+      overrides: { model: { id: 'claude-opus-4-8', speed: 'fast' } },
     });
     const invalid = refused({ id: 'agent_x', model: { id: 'claude-sonnet-4', speed: 'turbo' } });
     expect(invalid.code).toBe('invalid_model_speed');
   });
 
   it('refuses the model fields this runtime cannot honour instead of dropping them', () => {
-    const effort = refused({ id: 'agent_x', model: { id: 'claude-sonnet-4', effort: 'high' } });
+    // `claude-opus-5` takes effort, so this refusal is the override-level one —
+    // "a session override cannot set effort" — not the capability gate.
+    const effort = refused({ id: 'agent_x', model: { id: 'claude-opus-5', effort: 'high' } });
     expect(effort.code).toBe(AGENT_OVERRIDE_ERROR_CODES.invalidField);
     expect(effort.message).toContain('model.effort');
 

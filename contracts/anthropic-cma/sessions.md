@@ -393,7 +393,7 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
 | `cleanup_pending` | Internal fail-closed state for local sandbox teardown, projected to public `terminated`; the event log retains the cleanup error. |
 | Extension endpoints | Session inspection and control endpoints under `/v1/x` are local additions and are excluded from CMA admission. |
 | Override refusal codes | `agent_model_required` is the published code for a cleared `model`. `agent_tools_cleared_with_skills`, `agent_mcp_server_not_found`, `invalid_agent_override_field`, `invalid_agent_overrides`, `invalid_agent_ref` and `agent_required` are SandBase spellings for the same conditions, published so a client can distinguish them without parsing prose. |
-| `model.effort` in an override | Refused with `invalid_agent_override_field` rather than accepted and ignored. A definition retains `effort` and the read projection returns it — including a session's frozen snapshot, which reports the profile it resolved — but the provider model is resolved from the agent's model id, so a level set on a session would reach no request. Only a deployment's own `reasoning_effort` model setting reaches a provider, and that is operator-level. The refusal names the definition as where to set it. |
+| `model.effort` in an override | Refused with `invalid_agent_override_field` rather than accepted and ignored. The published contract states a session-level `effort` does not take effect, so accepting one would promise execution the contract itself rules out. A definition retains `effort`, the read projection returns it — including a session's frozen snapshot — and on the Anthropic provider it executes (see `agents.md` §4), which makes the definition the place to set it, as the refusal names. |
 | MCP cross-check scope | The published exception covers clearing `mcp_servers`. Locally the same check runs on the resolved definition, so a `tools` override that binds an `mcp_toolset` to an undeclared server is refused with `agent_mcp_server_not_found` instead of persisting a toolset that silently does nothing. |
 | Outcome grader is provider-backed | Grading runs through a model provider. With none configured the evaluation closes as `failed` and the session records `outcome_evaluator_unavailable` with `retry_status: { "type": "terminal" }` rather than reporting a verdict the runtime cannot produce. |
 | No grader composed | `user.define_outcome` is refused at admission with `outcome_grader_unavailable` on both ingress paths, rather than accepted as an outcome the runtime can never evaluate. |
@@ -426,8 +426,8 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
   as the single cleanup call a local operator makes.
 - An override that cannot be honoured is refused rather than repaired: a session
   that quietly ran the base agent after a caller asked for a different one is the
-  failure the override exists to prevent, and the same reasoning makes an
-  unexecutable `effort` a refusal instead of a no-op field.
+  failure the override exists to prevent, and the same reasoning makes a
+  contractually-ignored `effort` a refusal instead of a no-op field.
 - `loop_engine` stays on the object because the engine is a real, persisted
   property a local operator must be able to read; it is additive, so a client
   written against the published shape ignores it.

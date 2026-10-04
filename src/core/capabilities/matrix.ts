@@ -132,7 +132,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'agents',
     id: 'model-object-profile',
     status: 'partial',
-    reason: 'String and object model forms parse field by field. `effort` is accepted, stored, and returned by the read projection (the agent read, the version read, and the session snapshot), but it does not change the provider request — recorded as accepted-but-no-effect rather than as executed, because the provider model is resolved from the id, so the level has no path into a request (a deployment\'s own `reasoning_effort` model setting is operator-level and separate); `inference_geo` is refused by name with `unsupported_model_field` because this runtime has no inference-geography control; and a canonical `multiagent` roster is refused by name rather than executed.',
+    reason: 'String and object model forms parse field by field. `effort` and `speed` are stored, returned by the read projection (the agent read, the version read, and the session snapshot), and executed on the Anthropic provider under a model capability table — `effort` becomes `output_config.effort`, `fast` becomes `speed: "fast"` with the fast-mode beta, and adaptive-thinking models receive `thinking: {type: "adaptive", display: "omitted"}`; a listed model refused a level or speed it cannot take fails admission, an unknown model id or non-Anthropic provider sends nothing, and a deployment\'s own `reasoning_effort` model setting is operator-level and separate. `inference_geo` is refused by name with `unsupported_model_field` because this runtime has no inference-geography control; and a canonical `multiagent` roster is refused by name rather than executed.',
     contract: 'contracts/anthropic-cma/agents.md',
   },
   {
@@ -216,7 +216,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'events',
     id: 'model-request-span-pair',
     status: 'supported',
-    reason: 'Every model request brackets itself with a span.model_request_start / _end pair: the builtin strategy opens the start when the SDK prepares the step and closes the end on completion or failure, the Pi translator emits its own, and one prepareStep-to-onStepFinish cycle is one request, so middleware retries produce exactly one pair. The end carries model_request_start_id, is_error (null on rows persisted before the events.is_error column), and model_usage projected from the row\'s usage columns so input_tokens is the uncached share; the local extension fields (model_used, tokens_in/out, stop_reason, duration_ms, parent_event_id) project beside it, and model_usage.speed stays absent until a fast-mode option exists.',
+    reason: 'Every model request brackets itself with a span.model_request_start / _end pair: the builtin strategy opens the start when the SDK prepares the step and closes the end on completion or failure, the Pi translator emits its own, and one prepareStep-to-onStepFinish cycle is one request, so middleware retries produce exactly one pair. The end carries model_request_start_id, is_error (null on rows persisted before the events.is_error column), and model_usage projected from the row\'s usage columns so input_tokens is the uncached share; the local extension fields (model_used, tokens_in/out, stop_reason, duration_ms, parent_event_id) project beside it, and model_usage.speed reports the request\'s effective speed when the run actually used fast mode.',
     contract: 'contracts/anthropic-cma/events.md',
   },
   {

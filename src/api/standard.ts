@@ -394,7 +394,7 @@ export interface ApiEvent {
   /**
    * `span.model_request_end`: the single request's usage buckets, in the same
    * split `session.usage` reports — `input_tokens` counts the uncached share
-   * only. `speed` is absent until a fast-mode option exists.
+   * only. `speed` is present only on a request that ran at a named tier.
    */
   model_usage?: {
     input_tokens: number;
@@ -469,10 +469,10 @@ function toApiToolsets(toolsets: AgentToolset[]): AgentToolset[] {
  *
  * `effort` is echoed because the definition retains it: a value that is stored but
  * never returned is the silent loss the model profile exists to prevent, and the
- * published response shape is documented as echoing the profile it was given. The
- * field carries no execution behind it — the provider model is resolved from the
- * id — which is why the matrix records `effort` as accepted-but-no-effect rather
- * than as executed.
+ * published response shape is documented as echoing the profile it was given. On
+ * Anthropic provider models the level also reaches the request through
+ * `providerOptions.anthropic.effort`, gated by the capability table; on other
+ * providers it remains a stored-and-echoed field.
  *
  * `model_config` is still omitted for the ordinary case (the local `standard`
  * speed and no effort), so this projection is unchanged for every agent that never
@@ -679,6 +679,10 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
           output_tokens: event.tokensOut ?? 0,
           cache_creation_input_tokens: event.cacheWriteTokens ?? 0,
           cache_read_input_tokens: event.cacheReadTokens ?? 0,
+          // The tier the request ran at. Only a fast-mode request carries a
+          // stored value, so the key is absent on ordinary rows — publishing
+          // `null` there would claim a reading the provider never reported.
+          ...(event.speed ? { speed: event.speed } : {}),
         },
       }
     : undefined;

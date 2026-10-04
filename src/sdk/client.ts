@@ -66,9 +66,10 @@ export interface AgentSummary {
   system: string;
   model: string;
   /**
-   * The stored model profile. `effort` is echoed here — on the agent read, the
-   * version read, and a session's agent snapshot — but no provider request
-   * carries it, so it does not change what the agent runs.
+   * The stored model profile. `effort` and `speed` are echoed here — on the
+   * agent read, the version read, and a session's agent snapshot — and on the
+   * Anthropic provider both also reach the request under the model capability
+   * table.
    */
   model_config?: { id?: string; speed: string; effort?: string };
   tools: Array<Record<string, unknown>>;

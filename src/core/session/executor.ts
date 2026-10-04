@@ -384,6 +384,17 @@ export class DefaultSessionExecutor implements SessionExecutor {
         confirmTools,
         onRequiresAction: options?.onRequiresAction,
         budgetExhausted: options?.budgetExhausted,
+        // The agent's model profile rides into the provider request here; a
+        // provider that does not consume the options sees the same request as
+        // before, so a bare `model` string costs nothing.
+        ...(agent.model_config
+          ? {
+              modelOptions: {
+                ...(agent.model_config.effort ? { effort: agent.model_config.effort } : {}),
+                speed: agent.model_config.speed,
+              },
+            }
+          : {}),
       },
       abortSignal: options?.abortSignal,
     };

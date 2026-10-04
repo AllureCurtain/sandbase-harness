@@ -1,13 +1,14 @@
 /**
- * `effort` is accepted, stored, and echoed — and it does not reach the provider.
+ * `effort` is accepted, stored, and echoed — and on a non-Anthropic provider
+ * it does not reach the provider.
  *
- * The canonical `model` object carries `effort`, and a definition's level has no
- * path into a request: the executor resolves the provider model from the id
- * string (`agent.model`), so no request changes because of it. (A deployment's own
- * `reasoning_effort` model setting is a separate, operator-level control, which is
- * why the claim here is about the definition field and not about the runtime.)
- * The honest shape for that is "accepted-but-no-effect", which has two halves
- * that must both be true:
+ * The canonical `model` object carries `effort`. On the Anthropic provider the
+ * level now reaches the request as `output_config.effort` (gated by the model
+ * capability table — see `anthropic-model-options.test.ts`); on every other
+ * provider there is no wire field for it and the definition's level is
+ * stored-and-echoed, not executed. The honest shape for a provider with no
+ * such parameter is "accepted-but-no-effect", which has two halves that must
+ * both be true:
  *
  * 1. **the value comes back.** An agent read, a version read, and a session
  *    snapshot all return it, because a definition that stores a field and never

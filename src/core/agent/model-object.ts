@@ -25,6 +25,7 @@
  */
 
 import type { AgentModelSpeed } from '@/types/agent.js';
+import { anthropicModelCapabilities } from '@/model/anthropic-capabilities.js';
 
 /** Effort levels accepted by the published contract. */
 export const MODEL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -147,6 +148,9 @@ export function normalizeModelField(value: unknown): ModelObjectResult {
     );
   }
 
+  const capabilityRejection = modelCapabilityRejection(normalized);
+  if (capabilityRejection) return capabilityRejection;
+
   return { ok: true, value: normalized };
 }
 
@@ -174,17 +178,24 @@ function readEffort(value: unknown): ModelEffortLevel | undefined {
 export function describeModelFieldProfile(): ModelFieldDisposition[] {
   return [
     { field: 'id', status: 'supported' },
-    { field: 'speed', status: 'supported', local: 'standard | fast | extended' },
     {
-      field: 'effort',
-      // Accepted, stored, and echoed on read, but not executed: the provider model
-      // is resolved from the id, so the level has no path into a request. A
-      // deployment's own `reasoning_effort` model setting is what a provider sees,
-      // and that is operator-level rather than per agent. `supported` would claim
-      // the level takes effect somewhere.
+      field: 'speed',
+      // `fast` reaches Anthropic requests for the models on the published
+      // fast-mode list; a listed model that cannot take it is refused at
+      // admission. `extended` is a local value with no wire form.
       status: 'partial',
       reason:
-        'Accepted, validated, stored, and returned by the read projection, but it does not change the provider request (accepted-but-no-effect).',
+        'Executed for Anthropic provider models that support fast mode (Opus 5.5, Opus 5, Opus 4.8); refused at admission for known models that cannot take it; not sent on other providers or unknown model ids. Local value set: standard | fast | extended.',
+    },
+    {
+      field: 'effort',
+      // Executed for Anthropic provider models whose capability entry lists the
+      // level; a listed model that cannot take the level is refused at
+      // admission. Other providers and unknown model ids keep the stored value
+      // but send nothing.
+      status: 'partial',
+      reason:
+        'Executed as providerOptions.anthropic.effort on Anthropic models that support the level (admission refuses a level the selected model does not list); accepted and echoed but not sent on other providers or unknown model ids.',
     },
     {
       field: 'inference_geo',
@@ -192,6 +203,43 @@ export function describeModelFieldProfile(): ModelFieldDisposition[] {
       reason: 'The local runtime has no inference-geography control, so a pin cannot be honoured.',
     },
   ];
+}
+
+/**
+ * Refuse a normalized profile's options a known model cannot take — refused
+ * here rather than stored and silently dropped at request time.
+ *
+ * Exported for the `model_config` spelling, which the schema parses without
+ * going through `normalizeModelField` but which must obey the same
+ * capability rules. Unknown model ids pass either way: absence from the
+ * capability table is not proof of incapability, and the request builder
+ * simply sends nothing for them.
+ */
+export function modelCapabilityRejection(profile: {
+  id: string;
+  speed?: string;
+  effort?: string;
+}): ModelObjectResult | undefined {
+  const capabilities = anthropicModelCapabilities(profile.id);
+  if (!capabilities) return undefined;
+  if (profile.speed === 'fast' && !capabilities.fastMode) {
+    return reject(
+      'unsupported_model_speed',
+      `model.speed "fast" is not supported by ${profile.id}; fast mode is limited to the published fast-mode model list.`,
+      'speed',
+    );
+  }
+  const effort = profile.effort as ModelEffortLevel | undefined;
+  if (effort && !capabilities.effortLevels.includes(effort)) {
+    return reject(
+      'unsupported_model_effort',
+      capabilities.effortLevels.length > 0
+        ? `model.effort "${effort}" is not supported by ${profile.id}. Supported levels: ${capabilities.effortLevels.join(', ')}.`
+        : `model.effort is not supported by ${profile.id}.`,
+      'effort',
+    );
+  }
+  return undefined;
 }
 
 function reject(code: string, message: string, field: string): ModelObjectResult {

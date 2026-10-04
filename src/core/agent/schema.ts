@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { BUILTIN_TOOL_NAMES } from '@/core/capabilities/registry.js';
-import { normalizeModelField } from '@/core/agent/model-object.js';
+import { modelCapabilityRejection, normalizeModelField } from '@/core/agent/model-object.js';
 import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
@@ -320,6 +320,27 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     };
   }
 
+  // The `model_config` spelling bypasses `normalizeModelField` — the object
+  // `model` form carries its own profile — so its capability check runs here
+  // against the effective id. When the object `model` form is authoritative
+  // `model_config` is ignored entirely and needs no second look.
+  if (typeof result.data.model === 'string' && result.data.model_config) {
+    const configRejection = modelCapabilityRejection({
+      id: result.data.model_config.id ?? result.data.model,
+      speed: result.data.model_config.speed,
+      effort: result.data.model_config.effort,
+    });
+    if (configRejection) {
+      return {
+        valid: false,
+        errors: [{
+          path: configRejection.field ? `model_config.${configRejection.field}` : 'model_config',
+          message: configRejection.message ?? 'model_config is invalid',
+        }],
+      };
+    }
+  }
+
   return { valid: true, data: normalizeAgentDefinition(result.data) };
 }
 
@@ -344,9 +365,8 @@ function normalizeModelConfig(profile: {
     id: profile.id,
     speed: profile.speed,
     // Parsed and validated before this point so an unsupported level fails
-    // loudly, then carried through so the value survives a read-back. Nothing
-    // varies the provider request by it: the provider model is resolved from the
-    // id, so this is accepted-and-echoed rather than executed.
+    // loudly, then carried through so the value survives a read-back — and, on
+    // Anthropic provider models that support the level, reaches the request.
     ...(profile.effort ? { effort: profile.effort } : {}),
   };
 }

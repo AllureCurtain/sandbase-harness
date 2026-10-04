@@ -47,10 +47,9 @@ export interface AgentModelConfig {
   id: string;
   speed: AgentModelSpeed;
   /**
-   * Canonical reasoning-effort level, retained so a read-back echoes what the
-   * caller sent. Nothing varies the provider request by it: the executor
-   * resolves the provider model from `model` (the id string), so this field is
-   * stored and projected, not executed.
+   * Canonical reasoning-effort level. On Anthropic provider models that list
+   * the level it reaches the request as `providerOptions.anthropic.effort`; on
+   * other providers it is stored and echoed on read, not executed.
    *
    * Typed as a plain string on purpose. `core/agent/model-object.ts` owns the
    * accepted set (`MODEL_EFFORT_LEVELS`) and the schema that enforces it on the
