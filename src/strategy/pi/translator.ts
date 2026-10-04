@@ -13,6 +13,8 @@ type DurableEvent = {
   modelUsed?: string;
   tokensIn?: number;
   tokensOut?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   stopReason?: string;
   durationMs?: number;
   parentEventId?: string;
@@ -23,7 +25,12 @@ export interface PiTranslatorOptions {
   model: string;
   eventLog: EventLogWriter;
   broadcast: (event: SessionEvent) => void;
-  recordUsage: (sessionId: string, inputTokens: number, outputTokens: number) => void;
+  recordUsage: (
+    sessionId: string,
+    inputTokens: number,
+    outputTokens: number,
+    cache?: { read?: number; write?: number },
+  ) => void;
   /**
    * Shared overflow contract. Injected rather than imported so the translator
    * stays a pure stdout reader and the spill decision, including whether a
@@ -299,6 +306,8 @@ export class PiTranslator {
       modelUsed: this.options.model,
       tokensIn: this.requestInputTokens,
       tokensOut: this.requestOutputTokens,
+      cacheReadTokens: this.requestCacheReadTokens,
+      cacheWriteTokens: this.requestCacheWriteTokens,
       stopReason,
       durationMs: Math.max(0, Date.now() - this.requestStartedAt),
       parentEventId: this.requestStart.id,
@@ -306,22 +315,30 @@ export class PiTranslator {
     this.requestStart = undefined;
     this.requestInputTokens = 0;
     this.requestOutputTokens = 0;
+    this.requestCacheReadTokens = 0;
+    this.requestCacheWriteTokens = 0;
   }
 
   private requestInputTokens = 0;
   private requestOutputTokens = 0;
+  private requestCacheReadTokens = 0;
+  private requestCacheWriteTokens = 0;
 
   private recordUsage(raw: unknown): void {
     if (this.requestUsageRecorded || !raw || typeof raw !== 'object' || Array.isArray(raw)) return;
     const usage = raw as RawPiEvent;
     const input = numberValue(usage.input ?? usage.inputTokens ?? usage.input_tokens);
     const output = numberValue(usage.output ?? usage.outputTokens ?? usage.output_tokens);
+    const cacheRead = numberValue(usage.cacheRead ?? usage.cache_read_input_tokens ?? usage.cache_read);
+    const cacheWrite = numberValue(usage.cacheWrite ?? usage.cache_creation_input_tokens ?? usage.cache_write);
     this.requestInputTokens = input;
     this.requestOutputTokens = output;
+    this.requestCacheReadTokens = cacheRead;
+    this.requestCacheWriteTokens = cacheWrite;
     this.summary.inputTokens += input;
     this.summary.outputTokens += output;
     this.summary.requestCount += 1;
-    this.options.recordUsage(this.options.sessionId, input, output);
+    this.options.recordUsage(this.options.sessionId, input, output, { read: cacheRead, write: cacheWrite });
     this.requestUsageRecorded = true;
   }
 

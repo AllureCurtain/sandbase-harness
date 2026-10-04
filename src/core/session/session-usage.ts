@@ -13,6 +13,7 @@
  * CMA semantic for a single-threaded session.
  */
 
+import type { MonetaryAmount, SessionBudget } from '@/types/cma-protocol.js';
 import type { SessionEvent } from '@/types/session.js';
 
 /** Opens an activity interval. */
@@ -21,9 +22,25 @@ const ACTIVE_FROM = 'session.status_running';
 const ACTIVE_UNTIL = new Set(['session.status_idle', 'session.status_terminated']);
 
 export interface SessionUsageSnapshot {
+  /** Input tokens that missed the provider's prompt cache. */
   input_tokens: number;
   output_tokens: number;
   active_seconds: number;
+}
+
+/** The published `session.usage` payload — the snapshot plus the full counters. */
+export interface SessionUsagePayload extends SessionUsageSnapshot {
+  /** Input tokens read from the provider's prompt cache. */
+  cache_read_input_tokens: number;
+  /** Input tokens written to the provider's prompt cache, split by TTL. */
+  cache_creation: {
+    ephemeral_5m_input_tokens: number;
+    ephemeral_1h_input_tokens: number;
+  };
+  /** Present only when every model the session used has a list price. */
+  list_cost?: MonetaryAmount;
+  budget: SessionBudget | null;
+  server_tool_use: { web_search_requests: number; web_fetch_requests: number };
 }
 
 /**

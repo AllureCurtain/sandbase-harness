@@ -180,7 +180,9 @@ export function sessionSpend(
   const rows = db.prepare(`
     SELECT model_used AS model,
            SUM(COALESCE(tokens_in, 0)) AS input_tokens,
-           SUM(COALESCE(tokens_out, 0)) AS output_tokens
+           SUM(COALESCE(tokens_out, 0)) AS output_tokens,
+           SUM(COALESCE(cache_read_tokens, 0)) AS cache_read_tokens,
+           SUM(COALESCE(cache_write_tokens, 0)) AS cache_write_tokens
     FROM events
     WHERE session_id = ? AND type = 'span.model_request_end'
     GROUP BY model_used
@@ -188,12 +190,16 @@ export function sessionSpend(
     model: string | null;
     input_tokens: number | null;
     output_tokens: number | null;
+    cache_read_tokens: number | null;
+    cache_write_tokens: number | null;
   }>;
 
   const consumptions: ModelConsumption[] = rows.map((row) => ({
     model: row.model && row.model.length > 0 ? row.model : '(unknown-model)',
     inputTokens: row.input_tokens ?? 0,
     outputTokens: row.output_tokens ?? 0,
+    cacheReadTokens: row.cache_read_tokens ?? 0,
+    cacheWriteTokens: row.cache_write_tokens ?? 0,
   }));
 
   const breakdown = computeCost(profile, consumptions, {

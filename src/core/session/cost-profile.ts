@@ -110,16 +110,22 @@ const SECONDS_PER_HOUR = 3600;
 function modelMicrocents(consumption: ModelConsumption, price: ModelListPrice): number {
   const cacheRead = consumption.cacheReadTokens ?? 0;
   const cacheWrite = consumption.cacheWriteTokens ?? 0;
-  // Unlisted cache rates fall back to the input rate: caching changes how many
-  // tokens were billed, not what one token costs, and treating a cache read as
-  // free would under-report spend.
-  const cacheReadRate = price.cache_read_per_mtok_cents ?? price.input_per_mtok_cents;
-  const cacheWriteRate = price.cache_write_per_mtok_cents ?? price.input_per_mtok_cents;
+  // A profile without cache rates prices the buckets at the multipliers
+  // Anthropic publishes for prompt caching — a 5-minute cache write at 1.25x
+  // the input rate, a cache read at 0.1x — rather than at the full input rate
+  // (which would over-report) or free (which would under-report). Each term is
+  // rounded to whole microcents so the running total stays integer.
+  const cacheReadMicrocents = price.cache_read_per_mtok_cents !== undefined
+    ? cacheRead * price.cache_read_per_mtok_cents
+    : Math.round(cacheRead * price.input_per_mtok_cents / 10);
+  const cacheWriteMicrocents = price.cache_write_per_mtok_cents !== undefined
+    ? cacheWrite * price.cache_write_per_mtok_cents
+    : Math.round(cacheWrite * price.input_per_mtok_cents * 5 / 4);
 
   return consumption.inputTokens * price.input_per_mtok_cents
     + consumption.outputTokens * price.output_per_mtok_cents
-    + cacheRead * cacheReadRate
-    + cacheWrite * cacheWriteRate;
+    + cacheReadMicrocents
+    + cacheWriteMicrocents;
 }
 
 /**

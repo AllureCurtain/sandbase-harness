@@ -24,6 +24,8 @@ export class EventLogger {
       modelUsed?: string;
       tokensIn?: number;
       tokensOut?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
       stopReason?: string;
       durationMs?: number;
       parentEventId?: string;
@@ -36,8 +38,8 @@ export class EventLogger {
     const now = new Date();
 
     const stmt = this.db.prepare(`
-      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, stop_reason, duration_ms, parent_event_id, delegation_depth, metadata, processed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, cache_read_tokens, cache_write_tokens, stop_reason, duration_ms, parent_event_id, delegation_depth, metadata, processed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -49,6 +51,8 @@ export class EventLogger {
       event.modelUsed ?? null,
       event.tokensIn ?? 0,
       event.tokensOut ?? 0,
+      event.cacheReadTokens ?? null,
+      event.cacheWriteTokens ?? null,
       event.stopReason ?? null,
       event.durationMs ?? null,
       event.parentEventId ?? null,
@@ -66,6 +70,8 @@ export class EventLogger {
       modelUsed: event.modelUsed,
       tokensIn: event.tokensIn,
       tokensOut: event.tokensOut,
+      cacheReadTokens: event.cacheReadTokens,
+      cacheWriteTokens: event.cacheWriteTokens,
       stopReason: event.stopReason,
       durationMs: event.durationMs,
       parentEventId: event.parentEventId,
@@ -166,14 +172,21 @@ export class EventLogger {
    * Callers must invoke this once per model request, not once per event
    * projection, because several events may describe the same request.
    */
-  recordUsage(sessionId: string, tokensIn: number, tokensOut: number): void {
+  recordUsage(
+    sessionId: string,
+    tokensIn: number,
+    tokensOut: number,
+    cache?: { read?: number; write?: number },
+  ): void {
     this.db.prepare(`
       UPDATE sessions
       SET usage_tokens_in = COALESCE(usage_tokens_in, 0) + ?,
           usage_tokens_out = COALESCE(usage_tokens_out, 0) + ?,
+          usage_cache_read_tokens = COALESCE(usage_cache_read_tokens, 0) + ?,
+          usage_cache_write_tokens = COALESCE(usage_cache_write_tokens, 0) + ?,
           updated_at = datetime('now')
       WHERE id = ?
-    `).run(tokensIn, tokensOut, sessionId);
+    `).run(tokensIn, tokensOut, cache?.read ?? 0, cache?.write ?? 0, sessionId);
   }
 }
 
@@ -207,6 +220,8 @@ interface EventRow {
   model_used: string | null;
   tokens_in: number;
   tokens_out: number;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
   stop_reason: string | null;
   duration_ms: number | null;
   parent_event_id: string | null;
@@ -238,6 +253,8 @@ function rowToEvent(row: EventRow): SessionEvent {
     modelUsed: row.model_used ?? undefined,
     tokensIn: row.tokens_in,
     tokensOut: row.tokens_out,
+    cacheReadTokens: row.cache_read_tokens ?? undefined,
+    cacheWriteTokens: row.cache_write_tokens ?? undefined,
     stopReason: row.stop_reason ?? undefined,
     durationMs: row.duration_ms ?? undefined,
     parentEventId: row.parent_event_id ?? undefined,

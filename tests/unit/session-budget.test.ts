@@ -104,6 +104,37 @@ describe('computeCost', () => {
     expect(breakdown.unpricedModels).toEqual(['model-priced']);
     expect(breakdown.microcents).toBe(0);
   });
+
+  it('prices the cache buckets at the profile rates when it lists them', () => {
+    const profile: CostProfile = {
+      ...PROFILE,
+      models: {
+        'model-priced': {
+          input_per_mtok_cents: 1000,
+          output_per_mtok_cents: 1000,
+          cache_read_per_mtok_cents: 50,
+          cache_write_per_mtok_cents: 4000,
+        },
+      },
+    };
+    const breakdown = computeCost(profile, [
+      { model: 'model-priced', inputTokens: 100, outputTokens: 10, cacheReadTokens: 800, cacheWriteTokens: 100 },
+    ]);
+    // 100*1000 + 10*1000 + 800*50 + 100*4000 = 100000 + 10000 + 40000 + 400000.
+    expect(breakdown.microcents).toBe(550_000);
+  });
+
+  it('prices the cache buckets at the published multipliers when the profile lists no cache rates', () => {
+    // Anthropic's published prompt-caching rates: a cache read bills at 0.1x
+    // the input rate, a five-minute cache write at 1.25x. A profile that names
+    // no cache rates prices the buckets there rather than at full input rate
+    // (over-report) or free (under-report).
+    const breakdown = computeCost(PROFILE, [
+      { model: 'model-priced', inputTokens: 100, outputTokens: 10, cacheReadTokens: 800, cacheWriteTokens: 100 },
+    ]);
+    // 100*1000 + 10*1000 + 800*1000/10 + 100*1000*1.25 = 100000+10000+80000+125000.
+    expect(breakdown.microcents).toBe(315_000);
+  });
 });
 
 describe('SessionManager budget', () => {

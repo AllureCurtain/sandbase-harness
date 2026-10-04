@@ -24,7 +24,7 @@ import { attachSessionResources } from './session-resources.js';
 import { officialErrorType, retryStatus } from './session-error.js';
 import { isRetriesExhausted } from '@/model/registry.js';
 import type { RetryObserver } from '@/types/model.js';
-import { buildSessionUsageSnapshot } from './session-usage.js';
+import { buildSessionUsageSnapshot, type SessionUsagePayload } from './session-usage.js';
 import type { SnapshotManager } from './snapshot-manager.js';
 import {
   BUDGET_ERROR_CODES,
@@ -60,7 +60,6 @@ import type {
 import type {
   ContentBlock,
   SessionBudget,
-  MonetaryAmount,
   SessionErrorRetryStatus,
   UserEvent,
 } from '@/types/cma-protocol.js';
@@ -373,26 +372,12 @@ export class SessionManager {
    * choosing a new cap. `budget` is always present — `null` when the session has
    * none — because the runtime holds that answer.
    */
-  buildUsagePayload(sessionId: string): {
-    input_tokens: number;
-    output_tokens: number;
-    active_seconds: number;
-    list_cost?: MonetaryAmount;
-    budget: SessionBudget | null;
-    server_tool_use: { web_search_requests: number; web_fetch_requests: number };
-  } {
+  buildUsagePayload(sessionId: string): SessionUsagePayload {
     return this.usagePayloadFor(sessionId, this.eventLogger.getEvents(sessionId));
   }
 
   /** Shared with the snapshot the status transition already loaded the log for. */
-  private usagePayloadFor(sessionId: string, events: SessionEvent[]): {
-    input_tokens: number;
-    output_tokens: number;
-    active_seconds: number;
-    list_cost?: MonetaryAmount;
-    budget: SessionBudget | null;
-    server_tool_use: { web_search_requests: number; web_fetch_requests: number };
-  } {
+  private usagePayloadFor(sessionId: string, events: SessionEvent[]): SessionUsagePayload {
     const session = this.get(sessionId);
     const snapshot = buildSessionUsageSnapshot(events, {
       tokensIn: session?.usage?.tokensIn,
@@ -402,6 +387,11 @@ export class SessionManager {
 
     return {
       ...snapshot,
+      cache_read_input_tokens: session?.usage?.cacheReadTokens ?? 0,
+      // Every cache write this runtime can record uses the five-minute TTL —
+      // it is the only TTL it requests — so the one-hour bucket is genuinely
+      // zero rather than uncounted.
+      cache_creation: { ephemeral_5m_input_tokens: session?.usage?.cacheWriteTokens ?? 0, ephemeral_1h_input_tokens: 0 },
       ...(spend.meterable ? { list_cost: { amount: String(spend.cents), currency: 'USD' as const } } : {}),
       budget: session?.budget ?? null,
       // Genuinely zero, not unknown: this runtime has no built-in web tool, so

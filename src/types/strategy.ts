@@ -134,6 +134,8 @@ export interface EventLogWriter {
     modelUsed?: string;
     tokensIn?: number;
     tokensOut?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
     stopReason?: string;
     durationMs?: number;
     parentEventId?: string;
@@ -141,8 +143,19 @@ export interface EventLogWriter {
     metadata?: Record<string, unknown>;
   }): SessionEvent;
   getLatestSeq(sessionId: string): number;
-  /** Record canonical model usage for the owning session. */
-  recordUsage(sessionId: string, tokensIn: number, tokensOut: number): void;
+  /**
+   * Record canonical model usage for the owning session.
+   *
+   * `tokensIn` is the uncached share of the request's input; the prompt-cache
+   * buckets travel in `cache` so a cache read is never priced or reported as
+   * a full-rate input token.
+   */
+  recordUsage(
+    sessionId: string,
+    tokensIn: number,
+    tokensOut: number,
+    cache?: { read?: number; write?: number },
+  ): void;
 }
 
 // ============================================================
