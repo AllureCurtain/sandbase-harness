@@ -96,9 +96,9 @@
     "id": "environments-update",
     "group": "Environments",
     "title": "Update environment",
-    "method": "PUT",
+    "method": "POST",
     "path": "/v1/environments/{environment_id}",
-    "summary": "Update an environment template used by future sessions.",
+    "summary": "Update an environment template with patch semantics: omitted fields are preserved, a metadata value of null or empty string deletes that key, and description: null clears the description. PUT remains accepted as a deprecated alias.",
     "parameters": [
       {
         "name": "name",
@@ -133,7 +133,7 @@
       {
         "name": "metadata",
         "type": "object",
-        "description": "Opaque tags."
+        "description": "Merged key-by-key into the stored tags; a null or empty-string value deletes its key."
       }
     ],
     "response": [
@@ -146,6 +146,83 @@
         "name": "environment",
         "type": "object",
         "description": "Created or updated environment resource."
+      }
+    ]
+  },
+  {
+    "id": "environments-update-put",
+    "group": "Environments",
+    "title": "Update environment (deprecated alias)",
+    "method": "PUT",
+    "path": "/v1/environments/{environment_id}",
+    "summary": "Deprecated alias of POST /v1/environments/{environment_id} with identical patch semantics. Prefer POST.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Human-readable environment name."
+      },
+      {
+        "name": "hosting_type",
+        "type": "local | docker | kubernetes | cloud | self_hosted",
+        "description": "Hosting mode. The published config.type spelling of the same field is also read, and sending both with different values is refused. An update that names one spelling replaces the stored spelling in the other, so an environment stored with the published spelling can be repaired from this form. cloud means the platform decides: sessions provision on the workspace's configured default backend."
+      },
+      {
+        "name": "config",
+        "type": "object",
+        "description": "Published CMA configuration. config.type is read as hosting_type (config.type: \"cloud\" runs sessions on the workspace's configured default backend), config.networking is normalized into the recorded local network key names, and config.packages is preserved without being installed."
+      },
+      {
+        "name": "network",
+        "type": "object",
+        "description": "Network policy, recorded but not enforced: no shipped provider reads it, so a declared limit does not change what a session can reach."
+      },
+      {
+        "name": "packages",
+        "type": "array",
+        "description": "Package declarations. Recorded, not installed: no provider here installs them."
+      },
+      {
+        "name": "sandbox",
+        "type": "object",
+        "description": "Sandbox override."
+      },
+      {
+        "name": "metadata",
+        "type": "object",
+        "description": "Merged key-by-key into the stored tags; a null or empty-string value deletes its key."
+      }
+    ],
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Environment identifier."
+      },
+      {
+        "name": "environment",
+        "type": "object",
+        "description": "Created or updated environment resource."
+      }
+    ]
+  },
+  {
+    "id": "environments-delete",
+    "group": "Environments",
+    "title": "Delete environment",
+    "method": "DELETE",
+    "path": "/v1/environments/{environment_id}",
+    "summary": "Permanently delete an environment. Refused with environment_protected for the workspace default and with environment_in_use while any session — running or finished — references it.",
+    "response": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Deleted environment identifier."
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "description": "Always environment_deleted."
       }
     ]
   },

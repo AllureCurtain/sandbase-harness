@@ -7,8 +7,6 @@ export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<{ pattern: RegExp; reaso
 ];
 
 export const PENDING_OFFICIAL_ROUTES = [
-  ['DELETE /v1/environments/:id', 'Environment deletion'],
-  ['POST /v1/environments/:id', 'Environment update'],
   ['DELETE /v1/memory_stores/:id', 'Memory-store deletion'],
   ['POST /v1/memory_stores/:id', 'Memory-store update'],
   ['GET /v1/memory_stores/:id/memories/:id', 'Memory retrieval'],

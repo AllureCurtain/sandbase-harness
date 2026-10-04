@@ -1775,7 +1775,8 @@ the returned `env_...` id when creating sessions or updating an environment.
 | `GET` | `/v1/environments` | List environments. |
 | `POST` | `/v1/environments` | Create an environment. |
 | `GET` | `/v1/environments/{environment_id}` | Retrieve an environment. |
-| `PUT` | `/v1/environments/{environment_id}` | Update an environment. |
+| `POST, PUT` | `/v1/environments/{environment_id}` | Update an environment. `POST` is the published verb; `PUT` remains an alias. Omitted fields are preserved; a `metadata` patch deletes a key on `null` or `""`, and `description: null` clears the description. |
+| `DELETE` | `/v1/environments/{environment_id}` | Permanently delete an environment and return `{id, type: "environment_deleted"}`. Returns `409` `environment_protected` for `env_default` and `409` `environment_in_use` while any session — running or finished — references it. |
 | `POST` | `/v1/environments/{environment_id}/archive` | Archive an environment. |
 | `GET` | `/v1/environments/{environment_id}/worker-keys` | List self-hosted worker keys without raw secrets. |
 | `POST` | `/v1/environments/{environment_id}/worker-keys` | Generate a worker key. The raw key is returned once. |
@@ -1914,7 +1915,7 @@ serve at all still refuses to derive its runtime settings on a workspace that
 has no settings row yet, rather than quietly seeding the local backend the
 declaration did not ask for. Repair the row with an update that names one
 spelling, which replaces the other one rather than disagreeing with it:
-`PUT /v1/environments/env_default {"hosting_type": "local"}`.
+`POST /v1/environments/env_default {"hosting_type": "local"}`.
 
 Worker keys and work queues are advanced self-hosted controls. They are not
 needed for the default local runtime.

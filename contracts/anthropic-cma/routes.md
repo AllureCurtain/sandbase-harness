@@ -78,7 +78,9 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/vaults/{id}/credentials/{credentialId}/rotate` | `src/api/routes/credential-vaults.ts` |
 | GET | `/v1/environments` | `src/api/routes/environments.ts` |
 | POST | `/v1/environments` | `src/api/routes/environments.ts` |
+| DELETE | `/v1/environments/{id}` | `src/api/routes/environments.ts` |
 | GET | `/v1/environments/{id}` | `src/api/routes/environments.ts` |
+| POST | `/v1/environments/{id}` | `src/api/routes/environments.ts` |
 | PUT | `/v1/environments/{id}` | `src/api/routes/environments.ts` |
 | POST | `/v1/environments/{id}/archive` | `src/api/routes/environments.ts` |
 | GET | `/v1/environments/{id}/worker-keys` | `src/api/routes/environments.ts` |
