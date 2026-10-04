@@ -1120,10 +1120,12 @@ describe('Managed Agents API', () => {
       expect(usage.input_tokens).toBe(0);
       expect(usage.output_tokens).toBe(0);
       expect(usage.active_seconds).toBeGreaterThanOrEqual(0);
-      // Capabilities this runtime does not have are omitted, not zeroed.
-      expect(usage).not.toHaveProperty('list_cost');
-      expect(usage).not.toHaveProperty('budget');
-      expect(usage).not.toHaveProperty('server_tool_use');
+      // Every model the session used is priced (vacuously — it ran none), so
+      // the monetary amount reports a true zero; the budget echo and the
+      // server-tool counters are always present.
+      expect(usage.list_cost).toEqual({ amount: '0', currency: 'USD' });
+      expect(usage.budget).toBeNull();
+      expect(usage.server_tool_use).toEqual({ web_search_requests: 0, web_fetch_requests: 0 });
     });
 
     describe('POST /v1/runs', () => {

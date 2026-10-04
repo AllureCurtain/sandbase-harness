@@ -141,15 +141,24 @@ describe('Session usage is one addition per model request', () => {
     // The session aggregate agrees with the published snapshot.
     expect(manager.get(session.id)!.usage).toEqual({ tokensIn: PROMPT_TOKENS, tokensOut: COMPLETION_TOKENS });
 
-    // Cost, budget and server-tool counters are deliberately omitted rather than
-    // reported as zero, because this runtime has no truthful value for them.
-    expect(Object.keys(snapshot).sort()).toEqual(['active_seconds', 'input_tokens', 'output_tokens']);
+    // The budget echo and the server-tool counters are always present — the
+    // runtime holds a true value for each — and list_cost is withheld because
+    // the stub provider's model has no list price.
+    expect(Object.keys(snapshot).sort()).toEqual([
+      'active_seconds',
+      'budget',
+      'input_tokens',
+      'output_tokens',
+      'server_tool_use',
+    ]);
 
     // And the same values are what a client reads off the wire projection.
     expect(toApiEvent(events[0]).usage).toEqual({
       input_tokens: PROMPT_TOKENS,
       output_tokens: COMPLETION_TOKENS,
       active_seconds: expect.any(Number),
+      budget: null,
+      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
     });
   });
 

@@ -440,8 +440,8 @@ export interface SessionUsageEvent extends EventBase {
     output_tokens: number;
     /** Wall-clock seconds the harness loop was executing this session. */
     active_seconds: number;
-    /** Accumulated list cost in whole cents; omitted when incomplete. */
-    list_cost?: number;
+    /** Accumulated list cost in the published wire form; omitted when incomplete. */
+    list_cost?: MonetaryAmount;
     /** The session's budget echo, or `null` when it has none. */
     budget?: SessionBudget | null;
     server_tool_use?: {

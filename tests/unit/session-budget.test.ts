@@ -286,7 +286,7 @@ describe('SessionManager budget', () => {
     recordSpend(session.id, tokensForCents(7));
 
     const usage = manager.buildUsagePayload(session.id);
-    expect(usage.list_cost).toBe(7);
+    expect(usage.list_cost).toEqual({ amount: '7', currency: 'USD' });
     expect(usage.budget?.max_list_cost.amount).toBe('100');
     expect(usage.server_tool_use).toEqual({ web_search_requests: 0, web_fetch_requests: 0 });
   });
