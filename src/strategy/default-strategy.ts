@@ -536,6 +536,41 @@ export class DefaultStrategy implements AgentStrategy {
             }
           }
 
+          // A call the SDK never executed — an input that fails schema
+          // validation is the observed case: the SDK returns a `tool-error`
+          // part to the model, and that part is not in `step.toolResults`.
+          // The call already produced an `agent.tool_use` above, so it must
+          // pair with an explicit error result — otherwise the append-only
+          // log holds a use that looks forever unanswered, which is exactly
+          // what callers of the pairing contract read as a parked call.
+          if (step.toolCalls && step.toolCalls.length > 0) {
+            const resultIds = new Set((step.toolResults ?? []).map((result) => result.toolCallId));
+            for (const toolCall of step.toolCalls) {
+              if (resultIds.has(toolCall.toolCallId)) continue;
+              if (customTools.has(toolCall.toolName) || confirmTools.has(toolCall.toolName)) continue;
+              const isMcp = toolCall.toolName.startsWith('mcp_');
+              const error = (toolCall as { error?: unknown }).error;
+              const message = error instanceof Error
+                ? error.message
+                : typeof error === 'string'
+                  ? error
+                  : 'Tool call produced no result.';
+              const toolErrorEvent = eventLog.append(session.id, {
+                type: isMcp ? 'agent.mcp_tool_result' : 'agent.tool_result',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolCall.toolCallId,
+                  content: message,
+                  is_error: true,
+                }] as ContentBlock[],
+                isError: true,
+                modelUsed,
+                stopReason,
+              });
+              broadcast(toolErrorEvent);
+            }
+          }
+
           // afterStep hook
           if (config.afterStep) {
             await config.afterStep({

@@ -57,6 +57,12 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   `custom_tool_use_id` for `user.custom_tool_result`. The top-level `id` stays the
   persisted event id and `content` is unchanged; [`tools.md`](./tools.md) records
   why the two ids must not be conflated.
+- A persisted `agent.tool_use` always pairs with a persisted result. When the
+  tool executed, the result is the tool's output; when the SDK refused the
+  call before execution — an input that failed schema validation — the paired
+  `agent.tool_result` carries `is_error: true` in its content block and the
+  row's `is_error` column, so the log never holds a use that looks parked
+  forever.
 - `session.usage` is emitted before the session goes idle, so a client reading
   the stream observes usage before the terminal status.
 - Every model request is bracketed by a `span.model_request_start` /
