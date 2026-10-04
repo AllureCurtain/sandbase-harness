@@ -2829,7 +2829,7 @@ description: Uploaded from a compressed package.
 
       const deleteRes = await app.request(`/v1/credential-vaults/${vault.id}/credentials/${credential.id}`, { method: 'DELETE' });
       expect(deleteRes.status).toBe(200);
-      expect((await deleteRes.json()).status).toBe('deleted');
+      expect(await deleteRes.json()).toEqual({ id: credential.id, type: 'vault_credential_deleted' });
     });
   });
 

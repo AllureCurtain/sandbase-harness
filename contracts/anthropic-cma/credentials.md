@@ -212,13 +212,48 @@ Session execution:
   be offered as a SandBase extension, but it must not replace the canonical
   resource field or make GitHub mounts depend on an unrelated Vault.
 
+Vault and credential lifecycle:
+
+- Vault create accepts `display_name` (the published `VaultCreateParams` field)
+  or the local `name` spelling; a body carrying both is a `400`, and the vault
+  object projects both `name` and `display_name` with the same value.
+- `POST /v1/vaults/{vault_id}` is the published update verb (`VaultUpdateParams`).
+  `display_name` (1–255 characters) replaces the name — the local `name` spelling
+  is accepted as an alias, and a body carrying both is a `400`; `description`
+  replaces with `null` clearing; `metadata` is a merge patch where a `null` or
+  empty-string value deletes the key and omitted keys are preserved. An archived
+  vault refuses the write with `409 vault_archived`; a missing one is `404`.
+- `DELETE /v1/vaults/{vault_id}` physically removes the vault and every credential
+  it holds and answers the published tombstone `{id, type: "vault_deleted"}`. A
+  session references a vault through its `vault_ids` list: a **non-terminal**
+  session blocks the delete with `409 vault_in_use` (a live session holds MCP
+  transports built from the vault's credentials), while a terminal session keeps
+  its `vault_ids` as history and does not block. An archived vault may be deleted
+  — archival hides it, deletion removes it. Each credential gets a `delete` audit
+  event before its row goes, and a `vault.deleted` plus per-credential
+  `vault_credential.deleted` operation event is published after the transaction.
+- `GET /v1/vaults/{vault_id}/credentials/{credential_id}` retrieves one
+  credential. The projection carries the canonical `auth` object, the local
+  fields, and `value_hint` — never the secret material, on this route or any
+  other.
+- `DELETE /v1/vaults/{vault_id}/credentials/{credential_id}` is a physical
+  delete that answers `{id, type: "vault_credential_deleted"}`; a second delete
+  is `404`. The audit trail survives: the `delete` event and every earlier event
+  stay readable at vault scope (`GET /v1/vaults/{vault_id}/audit`), and the
+  audit table's foreign keys were dropped in migration 051 so the trail is not
+  part of the deleted resource. Rows the old soft delete left with
+  `status = 'deleted'` were already invisible to every listing and read and
+  answer `404` here too.
+
 ## 3. Alignment
 
 Aligned for: the nested `auth` profile, all three type shapes, MCP keying by
 URL with normalization, write-only secret handling, locked structural fields,
 the `injection_location` create rules and the both-fields-resolved read
 projection, rotation that preserves identity and reconnects the MCP transports of
-the sessions that reference the vault, the published `/v1/vaults*` paths, and the
+the sessions that reference the vault, the published `/v1/vaults*` paths, the
+published vault update/delete and credential retrieve/delete verbs with their
+`vault_in_use`/`vault_archived` refusals and tombstone envelopes, and the
 session path that injects a
 vault's environment into its own sandbox commands and into a stdio MCP server the
 agent declares, attaches a `static_bearer` credential to the url-transport server
@@ -305,6 +340,15 @@ means archive and recreate.
   archived label intact, `false` equal to omitting it, a malformed value and a
   repeated parameter each refused, both prefixes agreeing, and the archived vault
   still `404` on its own read.
+- `tests/integration/vault-update-delete.test.ts` — the published lifecycle
+  verbs: `display_name`/`metadata` patch semantics with a `null` key delete and
+  omitted-field preservation, `vault_archived` on an archived update, the
+  `vault_deleted` tombstone and physical removal of the vault and its
+  credentials, `vault_in_use` only for a non-terminal session reference, a
+  terminal session's `vault_ids` history not blocking, delete-on-archived
+  allowed, credential retrieve carrying no secret material, the
+  `vault_credential_deleted` tombstone and second-delete `404`, the audit trail
+  surviving at vault scope, and both prefixes serving the same verbs.
 - `tests/integration/collection-pagination.test.ts` — the published `limit`/`page`
   window on this listing and the memory-store listing together: the default page
   of 20, a walk that partitions the collection exactly once, `prev_page` returning

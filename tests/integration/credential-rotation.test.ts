@@ -227,13 +227,18 @@ describe('Credential rotation and audit (documented routes)', () => {
     const deleted = await app.request(`/v1/credential-vaults/vlt_test/credentials/${credential.id}`, { method: 'DELETE' });
     expect(deleted.status).toBe(200);
 
-    // The credential is gone from listings but its history is not.
+    // The credential is gone physically — listings, retrieve and its own
+    // audit path all answer as if it never existed — but its history is not:
+    // the vault-scoped trail keeps the rotate and the delete itself.
     const listed = await get('/v1/credential-vaults/vlt_test/credentials');
     expect(listed.body.data).toEqual([]);
+    expect((await get(`/v1/credential-vaults/vlt_test/credentials/${credential.id}`)).res.status).toBe(404);
+    expect((await get(`/v1/credential-vaults/vlt_test/credentials/${credential.id}/audit`)).res.status).toBe(404);
 
-    const audit = await get(`/v1/credential-vaults/vlt_test/credentials/${credential.id}/audit`);
+    const audit = await get('/v1/credential-vaults/vlt_test/audit');
     expect(audit.res.status).toBe(200);
-    expect(audit.body.data.map((e: any) => e.action)).toEqual(['rotate']);
+    expect(audit.body.data.filter((e: any) => e.credential_id === credential.id).map((e: any) => e.action))
+      .toEqual(['delete', 'rotate']);
   });
 
   it('honours the audit limit and rejects unknown vaults', async () => {

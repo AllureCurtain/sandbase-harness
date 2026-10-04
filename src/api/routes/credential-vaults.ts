@@ -15,11 +15,16 @@ import {
   appendCredentialAuditEvent,
   listCredentialAuditEvents,
 } from '@/core/credentials/audit.js';
+import { parseSessionVaultIds } from '@/core/credentials/injection.js';
+import { isTerminal } from '@/core/session/state-machine.js';
+import type { SessionStatus } from '@/types/session.js';
+import { publishOperationEvent } from './operation-events.js';
 import {
   archiveResource,
   conflict,
   invalid,
   notFound,
+  objectField,
   parseObject,
   parseStringArray,
   readObjectBody,
@@ -33,7 +38,6 @@ import {
   parseIncludeArchived,
   rejectUnexpectedQueryParams,
 } from './query-params.js';
-import { publishOperationEvent } from './operation-events.js';
 
 /**
  * The vault listing's ordering, as the token a page cursor carries.
@@ -115,7 +119,13 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   app.post('/', async (c) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
-    const name = stringField(body.value.name);
+    // `display_name` is the published field (`VaultCreateParams`); `name` is the
+    // local spelling the Console and stored callers already use. A body that
+    // supplies both is refused rather than letting one silently win.
+    const hasCanonicalName = body.value.display_name !== undefined;
+    const hasLocalName = body.value.name !== undefined;
+    if (hasCanonicalName && hasLocalName) return invalid(c, 'supply only one of display_name or name');
+    const name = stringField(hasCanonicalName ? body.value.display_name : body.value.name);
     if (!name) return invalid(c, 'name is required');
     const id = `vlt_${nanoid(18)}`;
     try {
@@ -139,6 +149,85 @@ export function credentialVaultRoutes(deps: ServerDeps) {
   app.get('/:id', (c) => {
     const row = deps.db.prepare(vaultSelect('WHERE v.id = ? AND v.archived_at IS NULL')).get(c.req.param('id')) as VaultRow | undefined;
     return row ? c.json(toVault(row, deps)) : notFound(c, 'Credential vault not found');
+  });
+
+  // `POST /vaults/{id}` is the published update verb (`VaultUpdateParams`):
+  // a patch where `display_name` and `description` replace, `metadata` merges
+  // per key (a `null` or empty-string value deletes the key), and omitted
+  // fields are preserved. `name` is the local spelling of `display_name`; a
+  // body that supplies both is refused rather than letting one silently win.
+  app.post('/:id', async (c) => {
+    const body = await readObjectBody(c);
+    if (!body.ok) return body.response;
+    const id = c.req.param('id');
+    const existing = deps.db.prepare('SELECT * FROM credential_vaults WHERE id = ?').get(id) as VaultRow | undefined;
+    if (!existing) return notFound(c, 'Credential vault not found');
+    if (existing.archived_at) return conflict(c, 'Credential vault is archived', 'vault_archived');
+
+    const hasCanonicalName = body.value.display_name !== undefined;
+    const hasLocalName = body.value.name !== undefined;
+    if (hasCanonicalName && hasLocalName) return invalid(c, 'supply only one of display_name or name');
+    const namePatch = hasCanonicalName ? body.value.display_name : body.value.name;
+    let name = existing.name;
+    if (namePatch !== undefined) {
+      const next = stringField(namePatch);
+      if (!next) return invalid(c, 'display_name is required');
+      if (next.length > 255) return invalid(c, 'display_name must be 255 characters or fewer');
+      name = next;
+    }
+    if (body.value.metadata !== undefined && body.value.metadata !== null && typeof body.value.metadata !== 'object') {
+      return invalid(c, 'metadata must be an object');
+    }
+    deps.db.prepare(
+      'UPDATE credential_vaults SET name = ?, description = ?, metadata = ?, updated_at = datetime(\'now\') WHERE id = ?',
+    ).run(
+      name,
+      descriptionPatch(body.value.description, existing.description),
+      JSON.stringify(mergeMetadataPatch(existing.metadata, body.value.metadata)),
+      id,
+    );
+    const row = deps.db.prepare(vaultSelect('WHERE v.id = ? AND v.archived_at IS NULL')).get(id) as unknown as VaultRow;
+    return c.json(toVault(row, deps));
+  });
+
+  // `DELETE /vaults/{id}` physically removes the vault and every credential it
+  // holds. The published `vault_in_use` guard checks only non-terminal
+  // sessions: a live session holds MCP transports built from this vault's
+  // credentials, so deleting it underneath would strand them; a terminal
+  // session keeps `vault_ids` as history and does not block. Deleting an
+  // archived vault is allowed — archival hides it, deletion removes it.
+  app.delete('/:id', async (c) => {
+    const id = c.req.param('id');
+    const existing = deps.db.prepare('SELECT * FROM credential_vaults WHERE id = ?').get(id) as VaultRow | undefined;
+    if (!existing) return notFound(c, 'Credential vault not found');
+    const referencing = deps.db.prepare('SELECT id, vault_ids, status FROM sessions').all() as Array<{
+      id: string;
+      vault_ids: string;
+      status: SessionStatus;
+    }>;
+    if (referencing.some((row) => !isTerminal(row.status) && parseSessionVaultIds(row.vault_ids).includes(id))) {
+      return conflict(c, 'Credential vault is in use by an active session', 'vault_in_use');
+    }
+
+    // The audit rows are kept — they are an operator trail, not part of the
+    // resource — so each credential gets a `delete` event before its row goes.
+    // `credential_audit_events` no longer carries the foreign keys that would
+    // have made these deletes constraint violations (migration 051).
+    const credentials = deps.db.prepare(
+      'SELECT id FROM credential_records WHERE vault_id = ?',
+    ).all(id) as Array<{ id: string }>;
+    deps.db.transaction(() => {
+      for (const credential of credentials) {
+        appendCredentialAuditEvent(deps.db, { vaultId: id, credentialId: credential.id, action: 'delete' });
+      }
+      deps.db.prepare('DELETE FROM credential_records WHERE vault_id = ?').run(id);
+      deps.db.prepare('DELETE FROM credential_vaults WHERE id = ?').run(id);
+    });
+    await publishOperationEvent(deps, { type: 'vault.deleted', subjectId: id });
+    for (const credential of credentials) {
+      await publishOperationEvent(deps, { type: 'vault_credential.deleted', subjectId: credential.id, extra: { vault_id: id } });
+    }
+    return c.json({ id, type: 'vault_deleted' });
   });
 
   app.get('/:id/credentials', (c) => {
@@ -217,9 +306,41 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     return c.json(withWarnings(toCredential(row), parsed.warnings), 201);
   });
 
+  // The published credential retrieve. The projection carries a hint and
+  // metadata only — the secret material (ciphertext, nonce, tag) never leaves
+  // the store, on this route or any other.
+  app.get('/:id/credentials/:credentialId', (c) => {
+    const vaultId = c.req.param('id');
+    const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
+    if (!vault) return notFound(c, 'Credential vault not found');
+    const row = liveCredential(deps, vaultId, c.req.param('credentialId'));
+    return row ? c.json(toCredential(row)) : notFound(c, 'Credential not found');
+  });
+
   app.post('/:id/credentials/:credentialId/archive', (c) => updateCredentialState(c, deps, 'archived'));
 
-  app.delete('/:id/credentials/:credentialId', (c) => updateCredentialState(c, deps, 'deleted'));
+  // `DELETE` is a physical delete, matching the published shape: the resource
+  // stops existing and the response is the `{id, type}` tombstone rather than
+  // the credential object. Rows `status = 'deleted'` left by the old soft
+  // delete are already gone from every listing and read, so they answer 404
+  // here too. The audit row is appended before the delete; the audit table
+  // itself is not part of the resource and survives it.
+  app.delete('/:id/credentials/:credentialId', async (c) => {
+    const vaultId = c.req.param('id');
+    const credentialId = c.req.param('credentialId');
+    const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
+    if (!vault) return notFound(c, 'Credential vault not found');
+    const existing = deps.db.prepare(
+      "SELECT * FROM credential_records WHERE id = ? AND vault_id = ? AND status != 'deleted'",
+    ).get(credentialId, vaultId) as CredentialRow | undefined;
+    if (!existing) return notFound(c, 'Credential not found');
+    deps.db.transaction(() => {
+      appendCredentialAuditEvent(deps.db, { vaultId, credentialId, action: 'delete' });
+      deps.db.prepare('DELETE FROM credential_records WHERE id = ? AND vault_id = ?').run(credentialId, vaultId);
+    });
+    await publishOperationEvent(deps, { type: 'vault_credential.deleted', subjectId: credentialId, extra: { vault_id: vaultId } });
+    return c.json({ id: credentialId, type: 'vault_credential_deleted' });
+  });
 
   // Archiving a vault archives its credentials with it: the published table
   // emits one `vault_credential.archived` per credential alongside the vault's
@@ -430,6 +551,10 @@ function toVault(row: VaultRow, deps?: ServerDeps) {
     id: row.id,
     type: 'credential_vault' as ResourceKind,
     name: row.name,
+    // `display_name` is the published field name (`BetaManagedAgentsVault`);
+    // `name` stays beside it because the Console, the local SDK and stored
+    // references all read that spelling.
+    display_name: row.name,
     description: row.description ?? '',
     status: row.archived_at ? 'archived' : row.status,
     credential_count: Number(row.credential_count ?? 0),
@@ -540,14 +665,39 @@ function secretHint(value: string) {
   return visible ? `••••${visible}` : '••••';
 }
 
-async function updateCredentialState(c: any, deps: ServerDeps, status: 'archived' | 'deleted') {
+/**
+ * The `description` half of an update patch: an omitted field preserves the
+ * stored value, a `null` clears it, anything else is read as a string.
+ * Same rule as `descriptionPatch` in `environments.ts`.
+ */
+function descriptionPatch(incoming: unknown, stored: string | null): string {
+  if (incoming === undefined) return stored ?? '';
+  if (incoming === null) return '';
+  return stringField(incoming) ?? '';
+}
+
+/**
+ * Merge a `metadata` patch onto the stored bag. The published update deletes
+ * a key on a `null` **or** empty-string value; an omitted or whole `null`
+ * field preserves the bag unchanged. Same rule as `mergeMetadataPatch` in
+ * `environments.ts`.
+ */
+function mergeMetadataPatch(stored: string | null | undefined, patch: unknown): Record<string, unknown> {
+  const merged = parseObject(stored);
+  if (patch === undefined || patch === null) return merged;
+  for (const [key, value] of Object.entries(objectField(patch))) {
+    if (value === null || value === '') delete merged[key];
+    else merged[key] = String(value);
+  }
+  return merged;
+}
+
+async function updateCredentialState(c: any, deps: ServerDeps, status: 'archived') {
   const vaultId = c.req.param('id');
   const credentialId = c.req.param('credentialId');
   const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
   if (!vault) return notFound(c, 'Credential vault not found');
-  const existing = status === 'deleted'
-    ? deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ? AND status != ?').get(credentialId, vaultId, 'deleted') as CredentialRow | undefined
-    : deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ? AND archived_at IS NULL AND status != ?').get(credentialId, vaultId, 'deleted') as CredentialRow | undefined;
+  const existing = deps.db.prepare('SELECT * FROM credential_records WHERE id = ? AND vault_id = ? AND archived_at IS NULL AND status != ?').get(credentialId, vaultId, 'deleted') as CredentialRow | undefined;
   if (!existing) return notFound(c, 'Credential not found');
   deps.db.prepare(
     'UPDATE credential_records SET status = ?, archived_at = datetime(\'now\'), updated_at = datetime(\'now\') WHERE id = ? AND vault_id = ?',
@@ -556,7 +706,7 @@ async function updateCredentialState(c: any, deps: ServerDeps, status: 'archived
   // The row filter above only admits a credential that was not already in the
   // target state, so reaching here is the transition itself.
   await publishOperationEvent(deps, {
-    type: status === 'archived' ? 'vault_credential.archived' : 'vault_credential.deleted',
+    type: 'vault_credential.archived',
     subjectId: credentialId,
     extra: { vault_id: vaultId },
   });
