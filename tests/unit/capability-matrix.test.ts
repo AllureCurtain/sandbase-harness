@@ -171,7 +171,7 @@ describe('capability matrix', () => {
     expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
       .toContain('only when the deployment sets managed_agents_webhook_screen_private_addresses');
     expect(capabilityEntry('scheduled-deployment-timers').reason.toLowerCase())
-      .toContain('there is no failure split');
+      .toContain('deployment.deleted has no producer');
   });
 
   it('does not describe shipped operations behaviour as absent', () => {

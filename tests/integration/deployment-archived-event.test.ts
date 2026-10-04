@@ -9,10 +9,10 @@
  * > 如果智能体被删除，定时部署会在其下一次计划运行时被归档；没有计划的部署不会自动归档。
  * > — `订阅Webhook.md:62`
  *
- * This file covers the **direct** cause only. The agent-archived cascade does not
- * exist in this runtime and is recorded as a gap in `operations.md` §4 rather than
- * asserted here — a test asserting it would fail, and a test asserting its absence
- * would pin a missing feature as intended.
+ * Both causes are covered here. The cascade fires **at the next scheduled run**,
+ * not eagerly — archiving the agent touches no deployment row, and the next due
+ * pass archives it with the event delivered and no run recorded, which is the
+ * published asymmetry made real.
  *
  * The interesting case is a repeat archive. `archiveById` filters
  * `archived_at IS NULL`, so the second call is a **404**, not a quiet success, and
@@ -26,7 +26,7 @@
  * and every assertion is scoped to the subscription its own case created.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -144,7 +144,13 @@ describe('deployment.archived', () => {
     const res = await app.request('/v1/deployments', {
       method: 'POST',
       headers: CMA_HEADERS,
-      body: JSON.stringify({ name, agent_id: 'agent_one', cron: '0 20 * * 5' }),
+      body: JSON.stringify({
+        name,
+        agent_id: 'agent_one',
+        environment_id: 'env_default',
+        cron: '0 20 * * 5',
+        initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+      }),
     });
     expect(res.status).toBe(201);
     return (await res.json()).id;
@@ -165,7 +171,9 @@ describe('deployment.archived', () => {
 
     const res = await archive(`/v1/deployments/${id}/archive`);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('archived');
+    // The published shape keeps `status` on the pause axis: an archived
+    // deployment reports `active` beside its `archived_at`.
+    expect(res.body.status).toBe('active');
     expect(res.body.archived_at).not.toBeNull();
 
     const got = receivedFor(webhookId, 'deployment.archived');
@@ -250,21 +258,32 @@ describe('deployment.archived', () => {
     expect(receivedFor(reachable, 'deployment.archived')).toHaveLength(1);
   });
 
-  it('archiving an agent does not archive its deployments and publishes no deployment event', async () => {
+  it('archiving an agent archives its deployments at the next trigger, with the event and no run', async () => {
     const webhookId = await subscribe(['deployment.archived']);
     const id = await createDeployment('archived-agent-cascade');
 
-    // The published row gives `deployment.archived` a second cause — the agent
-    // being archived — which this runtime does not implement. This case records
-    // the boundary rather than blessing it: it asserts what the code does today so
-    // that implementing the cascade later has to update this expectation
-    // deliberately instead of discovering it by surprise.
+    // The published cascade fires **at the next scheduled run**, not eagerly:
+    // archiving the agent touches no deployment row and publishes nothing yet.
     const agentRes = await app.request('/v1/agents/agent_one/archive', { method: 'POST', headers: CMA_HEADERS });
     expect([200, 404]).toContain(agentRes.status);
 
     const row = db.prepare('SELECT archived_at FROM scheduled_deployments WHERE id = ?').get(id) as { archived_at: string | null };
     expect(row.archived_at).toBeNull();
     expect(receivedFor(webhookId, 'deployment.archived')).toHaveLength(0);
+
+    // The next due pass archives the deployment, publishes the event, and —
+    // the published asymmetry — records no run for it.
+    db.prepare('UPDATE scheduled_deployments SET next_run_at = ? WHERE id = ?')
+      .run('2020-01-01T00:00:00.000Z', id);
+    const due = await app.request('/v1/deployments/run-due', { method: 'POST', headers: CMA_HEADERS });
+    expect(due.status).toBe(202);
+
+    const after = db.prepare('SELECT archived_at FROM scheduled_deployments WHERE id = ?').get(id) as { archived_at: string | null };
+    expect(after.archived_at).not.toBeNull();
+    expect(db.prepare('SELECT id FROM scheduled_deployment_runs WHERE schedule_id = ?').all(id)).toEqual([]);
+    await vi.waitFor(() => {
+      expect(receivedFor(webhookId, 'deployment.archived')).toHaveLength(1);
+    });
   });
 
   it('leaves the webhook archive route publishing nothing while still archiving', async () => {

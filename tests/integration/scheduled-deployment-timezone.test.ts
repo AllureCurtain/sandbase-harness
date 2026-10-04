@@ -81,7 +81,11 @@ describe('scheduled deployment timezone over HTTP', () => {
     return { res, body: (await res.json()) as any };
   }
 
-  const create = (body: unknown) => send('POST', '/v1/scheduled-deployments', body);
+  const create = (body: Record<string, unknown>) => send('POST', '/v1/scheduled-deployments', {
+    environment_id: 'env_default',
+    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+    ...body,
+  });
 
   /** The stored column, so a passing assertion cannot come from the projection alone. */
   function storedTimeZone(id: string): string {
@@ -92,19 +96,19 @@ describe('scheduled deployment timezone over HTTP', () => {
   it('stores the named zone and resolves the cadence in it', async () => {
     const tokyo = await create({ name: 'Tokyo morning', agent_id: 'agent_sched', cron: '0 9 * * *', timezone: 'Asia/Tokyo' });
     expect(tokyo.res.status).toBe(201);
-    expect(tokyo.body.timezone).toBe('Asia/Tokyo');
+    expect(tokyo.body.schedule.timezone).toBe('Asia/Tokyo');
     // 09:00 Tokyo is 00:00 UTC, so the instant must not be the UTC one.
-    expect(tokyo.body.next_run_at.endsWith('T00:00:00.000Z')).toBe(true);
+    expect(tokyo.body.schedule.upcoming_runs_at[0].endsWith('T00:00:00.000Z')).toBe(true);
     expect(storedTimeZone(tokyo.body.id)).toBe('Asia/Tokyo');
 
     const utc = await create({ name: 'UTC morning', agent_id: 'agent_sched', cron: '0 9 * * *' });
     expect(utc.res.status).toBe(201);
-    expect(utc.body.timezone).toBe('UTC');
-    expect(utc.body.next_run_at.endsWith('T09:00:00.000Z')).toBe(true);
+    expect(utc.body.schedule.timezone).toBe('UTC');
+    expect(utc.body.schedule.upcoming_runs_at[0].endsWith('T09:00:00.000Z')).toBe(true);
     expect(storedTimeZone(utc.body.id)).toBe('UTC');
 
     // The two differ by the zone offset, which is the whole point of the field.
-    expect(tokyo.body.next_run_at).not.toBe(utc.body.next_run_at);
+    expect(tokyo.body.schedule.upcoming_runs_at[0]).not.toBe(utc.body.schedule.upcoming_runs_at[0]);
   });
 
   it('accepts the canonical schedule object as well as the flat fields', async () => {
@@ -114,9 +118,9 @@ describe('scheduled deployment timezone over HTTP', () => {
       schedule: { type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Tokyo' },
     });
     expect(canonical.res.status).toBe(201);
-    expect(canonical.body.timezone).toBe('Asia/Tokyo');
-    expect(canonical.body.cron).toBe('0 9 * * *');
-    expect(canonical.body.next_run_at.endsWith('T00:00:00.000Z')).toBe(true);
+    expect(canonical.body.schedule.timezone).toBe('Asia/Tokyo');
+    expect(canonical.body.schedule.expression).toBe('0 9 * * *');
+    expect(canonical.body.schedule.upcoming_runs_at[0].endsWith('T00:00:00.000Z')).toBe(true);
     expect(storedTimeZone(canonical.body.id)).toBe('Asia/Tokyo');
   });
 
@@ -136,21 +140,24 @@ describe('scheduled deployment timezone over HTTP', () => {
 
   it('re-arms the next run when an update moves the zone', async () => {
     const created = await create({ name: 'Movable', agent_id: 'agent_sched', cron: '0 9 * * *' });
-    expect(created.body.next_run_at.endsWith('T09:00:00.000Z')).toBe(true);
+    const storedNextRun = () => (db.prepare('SELECT next_run_at FROM scheduled_deployments WHERE id = ?').get(created.body.id) as { next_run_at: string }).next_run_at;
+    expect(storedNextRun().endsWith('T09:00:00.000Z')).toBe(true);
 
     const moved = await send('PUT', `/v1/scheduled-deployments/${created.body.id}`, { timezone: 'Asia/Tokyo' });
     expect(moved.res.status).toBe(200);
-    expect(moved.body.timezone).toBe('Asia/Tokyo');
+    expect(moved.body.schedule.timezone).toBe('Asia/Tokyo');
     // Changing only the zone must move the run, not leave it at the old instant.
-    expect(moved.body.next_run_at.endsWith('T00:00:00.000Z')).toBe(true);
+    expect(storedNextRun().endsWith('T00:00:00.000Z')).toBe(true);
+    expect(moved.body.schedule.upcoming_runs_at[0].endsWith('T00:00:00.000Z')).toBe(true);
     expect(storedTimeZone(created.body.id)).toBe('Asia/Tokyo');
 
     const untouched = await send('PUT', `/v1/scheduled-deployments/${created.body.id}`, { name: 'Renamed' });
-    expect(untouched.body.timezone).toBe('Asia/Tokyo');
-    expect(untouched.body.next_run_at).toBe(moved.body.next_run_at);
+    expect(untouched.body.schedule.timezone).toBe('Asia/Tokyo');
+    expect(storedNextRun().endsWith('T00:00:00.000Z')).toBe(true);
 
     const pinned = await send('PUT', `/v1/scheduled-deployments/${created.body.id}`, { next_run_at: '2030-01-01T00:00:00.000Z' });
-    expect(pinned.body.next_run_at).toBe('2030-01-01T00:00:00.000Z');
+    expect(pinned.res.status).toBe(200);
+    expect(storedNextRun()).toBe('2030-01-01T00:00:00.000Z');
   });
 
   it('refuses an unknown zone on update without changing the stored zone', async () => {
@@ -165,10 +172,10 @@ describe('scheduled deployment timezone over HTTP', () => {
 
     const listed = await send('GET', '/v1/scheduled-deployments');
     const found = listed.body.data.find((row: any) => row.id === created.body.id);
-    expect(found.timezone).toBe('Asia/Tokyo');
+    expect(found.schedule.timezone).toBe('Asia/Tokyo');
 
     const single = await send('GET', `/v1/scheduled-deployments/${created.body.id}`);
-    expect(single.body.timezone).toBe('Asia/Tokyo');
+    expect(single.body.schedule.timezone).toBe('Asia/Tokyo');
 
     // A row written before the column existed took no value at all, so it must
     // read as UTC — the same zone the runner already fell back to — rather than
@@ -178,10 +185,12 @@ describe('scheduled deployment timezone over HTTP', () => {
       VALUES ('sched_pre_column', 'Pre-column', 'agent_sched', '0 9 * * *', '{}', 'active', '2020-01-01T09:00:00.000Z', '{}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
     `).run();
     const legacy = await send('GET', '/v1/scheduled-deployments/sched_pre_column');
-    expect(legacy.body.timezone).toBe('UTC');
+    expect(legacy.body.schedule.timezone).toBe('UTC');
 
     // Two due rows differing only in zone: the runner must advance each in the
-    // zone the column holds, which is the whole behaviour under test.
+    // zone the column holds, which is the whole behaviour under test. Their
+    // `initial_events` stay empty like a pre-migration row, so the run records a
+    // classified failure and pauses — but the instant is consumed either way.
     for (const [id, timezone] of [['sched_legacy_utc', 'UTC'], ['sched_legacy_tokyo', 'Asia/Tokyo']] as const) {
       db.prepare(`
         INSERT INTO scheduled_deployments (id, name, agent_id, cron, timezone, payload, status, next_run_at, metadata, created_at, updated_at)

@@ -16,9 +16,9 @@ type WebhookDelivery = {
 
 type ScheduledDeploymentRun = {
   id: string;
-  schedule_id: string;
+  deployment_id: string;
   session_id: string | null;
-  status: string;
+  error: { type: string; message: string } | null;
 };
 
 type SessionOutcome = {
@@ -180,9 +180,10 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
     try {
       const run = await postJson<ScheduledDeploymentRun>(`/v1/scheduled-deployments/${schedule.id}/run`, {
         trigger_type: 'manual',
-        payload: { title: `Manual run: ${schedule.name}` },
       });
-      setMessage(`Run ${truncateMiddle(run.id, 18)} created${run.session_id ? ` session ${truncateMiddle(run.session_id, 18)}` : ''}.`);
+      setMessage(run.session_id
+        ? `Run ${truncateMiddle(run.id, 18)} created session ${truncateMiddle(run.session_id, 18)}.`
+        : `Run ${truncateMiddle(run.id, 18)} failed: ${run.error?.message ?? 'unknown error'}.`);
       onRefresh();
     } catch (err: any) {
       setMessage(err?.message ?? 'Could not run schedule');
@@ -224,7 +225,7 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
       <SummaryStrip items={[
         { label: 'Schedules', value: data.scheduledDeployments.length, icon: <CalendarClock size={18} /> },
         { label: 'Active', value: data.scheduledDeployments.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
-        { label: 'Due candidates', value: data.scheduledDeployments.filter((item) => item.status === 'active' && item.next_run_at).length, icon: <Play size={18} /> },
+        { label: 'Due candidates', value: data.scheduledDeployments.filter((item) => item.status === 'active' && item.schedule?.upcoming_runs_at?.[0]).length, icon: <Play size={18} /> },
         { label: 'Runner', value: 'manual', icon: <Play size={18} /> },
       ]} />
       <OperationGuide items={[
@@ -240,11 +241,11 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
               <tr key={schedule.id}>
                 <td><code>{truncateMiddle(schedule.id, 18)}</code></td>
                 <td><strong>{schedule.name}</strong></td>
-                <td><code>{truncateMiddle(schedule.agent_id, 20)}</code></td>
+                <td><code>{truncateMiddle(schedule.agent.id, 20)}</code></td>
                 <td>{schedule.environment_id ? <code>{truncateMiddle(schedule.environment_id, 18)}</code> : <span className="mutedValue">default</span>}</td>
-                <td><span className="monoValue">{schedule.cron}</span></td>
+                <td><span className="monoValue">{schedule.schedule?.expression ?? 'manual'}</span></td>
                 <td><StatusPill status={schedule.status} /></td>
-                <td>{schedule.next_run_at ? formatDateShort(schedule.next_run_at) : '-'}</td>
+                <td>{schedule.schedule?.upcoming_runs_at?.[0] ? formatDateShort(schedule.schedule.upcoming_runs_at[0]) : '-'}</td>
                 <td>
                   <button className="ghostButton compactButton" type="button" onClick={() => runSchedule(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
                     <Play size={14} /> {runningId === schedule.id ? 'Running...' : 'Run now'}
@@ -268,10 +269,10 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
           <article className="mobileResourceCard" key={schedule.id}>
             <span className="mobileAgentMain">
               <strong>{schedule.name}</strong>
-              <small className="monoText">{schedule.cron}</small>
+              <small className="monoText">{schedule.schedule?.expression ?? 'manual'}</small>
             </span>
             <span className="mobileAgentMeta">
-              <span>{schedule.next_run_at ? `Next ${formatDateShort(schedule.next_run_at)}` : 'No next run'}</span>
+              <span>{schedule.schedule?.upcoming_runs_at?.[0] ? `Next ${formatDateShort(schedule.schedule.upcoming_runs_at[0])}` : 'No next run'}</span>
               <StatusPill status={schedule.status} />
             </span>
             <button className="ghostButton compactButton" type="button" onClick={() => runSchedule(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
@@ -489,9 +490,9 @@ function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
 function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: ConsoleData; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState('');
   const [agentId, setAgentId] = useState(data.agents[0]?.id ?? '');
-  const [environmentId, setEnvironmentId] = useState(data.environments[0]?.id ?? '');
+  const [environmentId, setEnvironmentId] = useState(data.environments[0]?.id ?? 'env_default');
   const [cron, setCron] = useState('0 9 * * *');
-  const [payloadText, setPayloadText] = useState('{\n  "title": "Scheduled run"\n}');
+  const [prompt, setPrompt] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -503,9 +504,9 @@ function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: Cons
       await postJson<ScheduledDeployment>('/v1/scheduled-deployments', {
         name,
         agent_id: agentId,
-        environment_id: environmentId || undefined,
+        environment_id: environmentId || 'env_default',
         cron,
-        payload: parseJsonObject(payloadText),
+        initial_events: [{ type: 'user.message', content: [{ type: 'text', text: prompt }] }],
       });
       onSaved();
     } catch (err: any) {
@@ -531,9 +532,9 @@ function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: Cons
           </select>
         </label>
         <label>
-          <span>Environment</span>
-          <select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}>
-            <option value="">Default</option>
+          <span>Environment <RequiredMark /></span>
+          <select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)} required>
+            <option value="env_default">Default</option>
             {data.environments.map((environment) => <option value={environment.id} key={environment.id}>{environment.name}</option>)}
           </select>
         </label>
@@ -542,12 +543,12 @@ function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: Cons
           <input value={cron} onChange={(event) => setCron(event.target.value)} placeholder="0 9 * * *" required />
         </label>
         <label>
-          <span>Payload JSON</span>
-          <textarea value={payloadText} onChange={(event) => setPayloadText(event.target.value)} rows={5} spellCheck={false} />
+          <span>Prompt <RequiredMark /></span>
+          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} spellCheck={false} placeholder="The user message each scheduled run starts the session with" required />
         </label>
         <div className="modalActions">
           <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving || !name.trim() || !agentId || !cron.trim()}>{saving ? 'Creating...' : 'Create schedule'}</button>
+          <button className="primaryButton" type="submit" disabled={saving || !name.trim() || !agentId || !cron.trim() || !prompt.trim()}>{saving ? 'Creating...' : 'Create schedule'}</button>
         </div>
       </form>
     </Modal>

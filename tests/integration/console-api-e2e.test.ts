@@ -183,6 +183,7 @@ describe('Console/API no-port E2E flow', () => {
       environment_id: environment.body.id,
       cron: '0 * * * *',
       payload: { title: 'scheduled e2e' },
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'scheduled e2e' }] }],
     });
     expect(schedule.status).toBe(201);
 

@@ -11,6 +11,8 @@ export type SchedulerRunResult = {
   trigger_type: string;
   payload: string;
   error: string | null;
+  scheduled_at: string | null;
+  error_type: string | null;
   started_at: string;
   completed_at: string | null;
 };
@@ -45,7 +47,7 @@ export function rearmScheduledDeployments(deps: { db: Database }, opts: { now?: 
   const rows = deps.db.prepare(
     `SELECT *
      FROM scheduled_deployments
-     WHERE archived_at IS NULL AND status = 'active'`,
+     WHERE archived_at IS NULL AND status = 'active' AND cron IS NOT NULL`,
   ).all() as Array<RearmRow>;
   let updated = 0;
   for (const row of rows) {
@@ -138,7 +140,15 @@ export async function runDueScheduledDeployments(
   };
   const results: SchedulerRunResult[] = [];
   for (const schedule of rows) {
-    const result = runSchedule(db, sessionManager, schedule, 'scheduled', now);
+    const outcome = runSchedule(db, sessionManager, schedule, 'scheduled', now);
+    // A deployment whose agent is gone is archived rather than run: the
+    // published rule records no run for it, so there is no id to emit against.
+    // Its archive is still a lifecycle event a subscriber is owed.
+    if (outcome.archivedDeployment) {
+      await emit({ type: 'deployment.archived', subjectId: schedule.id });
+      continue;
+    }
+    const result = outcome.run!;
     // A scheduled run that materialized a session is a session creation like
     // any other: `session.created` names the session it produced, and the run
     // events name the run, which is what the published table uses to tie an
@@ -151,53 +161,259 @@ export async function runDueScheduledDeployments(
       type: result.status === 'created_session' ? 'deployment_run.succeeded' : 'deployment_run.failed',
       subjectId: result.id,
     });
+    if (outcome.pausedDeployment) {
+      await emit({ type: 'deployment.paused', subjectId: schedule.id });
+    }
     results.push(result);
   }
   return results;
 }
 
+/**
+ * What one trigger attempt produced.
+ *
+ * `run` is the recorded run row, or `null` when the published contract says no
+ * run is recorded at all — a deployment whose agent is archived (or gone) is
+ * itself archived, and a run for it would record a failure that can never be
+ * anything else. `pausedDeployment` reports that this attempt auto-paused the
+ * deployment under the unrecoverable-error rule; the caller publishes
+ * `deployment.paused` so the event follows the transition, not the route.
+ */
+export type ScheduleRunOutcome = {
+  run: SchedulerRunResult | null;
+  archivedDeployment?: boolean;
+  pausedDeployment?: boolean;
+};
+
+/**
+ * The run-error vocabulary the published run object reports.
+ *
+ * A failure the schedule can outlive — `session_rate_limited_error` — keeps the
+ * deployment active so the next fire retries. Everything else names a
+ * condition waiting on an operator (or an unknown one, which the contract
+ * treats the same way), so it pauses the deployment with `paused_reason:
+ * {type: 'error', error}` carrying the run's error.
+ */
+const RECOVERABLE_RUN_ERRORS = new Set(['session_rate_limited_error']);
+
+/**
+ * Classify a trigger failure into the published `error.type` vocabulary.
+ *
+ * The checks run in the order the published contract reads: the agent's
+ * absence archives the deployment upstream of any run, then the environment
+ * the session cannot start without, then the inputs the session's own
+ * admission would reject. Anything left — a budget refusal, an engine
+ * capability, a damaged definition — is `unknown_error` rather than a guessed
+ * category, and the stored message still says what actually failed.
+ */
+function classifyTriggerFailure(
+  db: Database,
+  schedule: ScheduleRow,
+): { type: string; message: string } | null {
+  if (!schedule.agent_id) {
+    return { type: 'session_creation_rejected_error', message: 'deployment has no agent to run' };
+  }
+  const initialEvents = parseJsonArray(schedule.initial_events);
+  if (initialEvents.length === 0) {
+    return {
+      type: 'session_creation_rejected_error',
+      message: 'deployment has no initial_events; update it before it can run',
+    };
+  }
+  if (schedule.environment_id) {
+    const env = db.prepare('SELECT id, archived_at FROM environments WHERE id = ?').get(schedule.environment_id) as { id: string; archived_at: string | null } | undefined;
+    if (!env) {
+      return { type: 'environment_not_found_error', message: `Environment not found: ${schedule.environment_id}` };
+    }
+    if (env.archived_at) {
+      return { type: 'environment_archived_error', message: `Environment ${schedule.environment_id} is archived` };
+    }
+  }
+  for (const vaultId of parseJsonArray(schedule.vault_ids)) {
+    const vault = db.prepare('SELECT id, archived_at FROM credential_vaults WHERE id = ?').get(String(vaultId)) as { id: string; archived_at: string | null } | undefined;
+    if (!vault) {
+      return { type: 'vault_not_found_error', message: `Credential vault not found: ${String(vaultId)}` };
+    }
+    if (vault.archived_at) {
+      return { type: 'vault_archived_error', message: `Credential vault ${String(vaultId)} is archived` };
+    }
+  }
+  for (const resource of parseJsonArray(schedule.resources)) {
+    if (!resource || typeof resource !== 'object') continue;
+    const record = resource as Record<string, unknown>;
+    if (record.type === 'file' && typeof record.file_id === 'string') {
+      const file = db.prepare('SELECT id, archived_at FROM files WHERE id = ?').get(record.file_id) as { id: string; archived_at: string | null } | undefined;
+      if (!file || file.archived_at) {
+        return { type: 'file_not_found_error', message: `File not found: ${record.file_id}` };
+      }
+    }
+    if (record.type === 'memory_store' && typeof record.memory_store_id === 'string') {
+      const store = db.prepare('SELECT id, archived_at FROM memory_stores WHERE id = ?').get(record.memory_store_id) as { id: string; archived_at: string | null } | undefined;
+      if (store?.archived_at) {
+        return { type: 'memory_store_archived_error', message: `Memory store ${record.memory_store_id} is archived` };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * The agent a deployment is bound to, or `null` when it is gone.
+ *
+ * "Gone" covers both a row that was never there and an archived one: the
+ * published rule auto-archives the deployment when its agent is archived, and
+ * a missing agent can never produce a run for the same reason, so the two
+ * share the archive rather than diverging into a run that only says "the row
+ * is missing".
+ */
+function deploymentAgentStillExists(db: Database, agentId: string | null): boolean {
+  if (!agentId) return false;
+  const row = db.prepare('SELECT id, status, archived_at FROM agents WHERE id = ?').get(agentId) as { id: string; status: string; archived_at: string | null } | undefined;
+  return !!row && row.status !== 'archived' && !row.archived_at;
+}
+
+/**
+ * Attempt one trigger of a deployment.
+ *
+ * The contract's three outcomes, in order:
+ *
+ * 1. The deployment's agent is gone — archived or deleted — so the deployment
+ *    itself is archived and no run is recorded. A run would only ever say
+ *    "the agent is missing", which the archived deployment already says.
+ * 2. Session creation failed. A run row records the classified `error.type`
+ *    and message, and unless the failure is one the next fire can outlive —
+ *    `session_rate_limited_error` — the deployment is paused with
+ *    `paused_reason: {type: 'error', error}`.
+ * 3. The session exists. A run row records it, and the deployment's
+ *    `last_run_at`/`next_run_at` advance. `last_run_at` only moves on timed
+ *    runs — the published schedule field reports the most recent *scheduled*
+ *    start, so a manual `run` must not overwrite it.
+ *
+ * The session is created through `createWithInitialEvents` with the
+ * deployment's stored configuration — the same entry point `POST /v1/sessions`
+ * uses — so a triggered session starts executing its `initial_events` rather
+ * than sitting idle, and its resources, vaults, budget, and pinned agent
+ * version are the ones the deployment declared.
+ */
 export function runSchedule(
   db: Database,
   sessionManager: SessionManager,
   schedule: ScheduleRow,
   triggerType: string,
   startedAtDate: Date = new Date(),
-): SchedulerRunResult {
-  const runId = `srun_${nanoid(18)}`;
+): ScheduleRunOutcome {
+  const runId = `drun_${nanoid(18)}`;
   const startedAt = startedAtDate.toISOString();
-  const payload = parseObject(schedule.payload);
   const timeZone = scheduleTimeZone(schedule);
-  const nextRun = nextCronRun(schedule.cron, startedAtDate, timeZone)?.toISOString() ?? null;
-  try {
-    const session = sessionManager.create({
-      agent: schedule.agent_id,
-      environmentId: schedule.environment_id ?? undefined,
-      title: typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : `Scheduled run: ${schedule.name}`,
-      metadata: {
-        scheduled_deployment_id: schedule.id,
-        scheduled_deployment_run_id: runId,
-        trigger_type: triggerType,
-      },
-    });
+  const nextRun = schedule.cron
+    ? nextCronRun(schedule.cron, startedAtDate, timeZone)?.toISOString() ?? null
+    : null;
+  // The cron instant this run answered. For a timed trigger it is the due
+  // `next_run_at` the pass matched on; for a manual run there is none.
+  const scheduledAt = triggerType === 'scheduled' ? (schedule.next_run_at ?? startedAt) : null;
+
+  if (!deploymentAgentStillExists(db, schedule.agent_id)) {
     db.prepare(
-      `INSERT INTO scheduled_deployment_runs (
-        id, schedule_id, session_id, status, trigger_type, payload, error, started_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(runId, schedule.id, session.id, 'created_session', triggerType, JSON.stringify(payload), null, startedAt, new Date().toISOString());
-    db.prepare(
-      'UPDATE scheduled_deployments SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
-    ).run(startedAt, nextRun, new Date().toISOString(), schedule.id);
-  } catch (err) {
-    db.prepare(
-      `INSERT INTO scheduled_deployment_runs (
-        id, schedule_id, session_id, status, trigger_type, payload, error, started_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(runId, schedule.id, null, 'failed', triggerType, JSON.stringify(payload), err instanceof Error ? err.message : String(err), startedAt, new Date().toISOString());
-    db.prepare(
-      'UPDATE scheduled_deployments SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
-    ).run(startedAt, nextRun, new Date().toISOString(), schedule.id);
+      `UPDATE scheduled_deployments
+       SET archived_at = COALESCE(archived_at, ?), updated_at = ?
+       WHERE id = ?`,
+    ).run(new Date().toISOString(), new Date().toISOString(), schedule.id);
+    return { run: null, archivedDeployment: true };
   }
-  return db.prepare('SELECT * FROM scheduled_deployment_runs WHERE id = ?').get(runId) as SchedulerRunResult;
+
+  const recordRun = (
+    sessionId: string | null,
+    failure: { type: string; message: string } | null,
+  ): SchedulerRunResult => {
+    db.prepare(
+      `INSERT INTO scheduled_deployment_runs (
+        id, schedule_id, session_id, status, trigger_type, payload, error,
+        scheduled_at, error_type, started_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      runId,
+      schedule.id,
+      sessionId,
+      failure ? 'failed' : 'created_session',
+      triggerType,
+      JSON.stringify(parseJsonArray(schedule.initial_events)),
+      failure?.message ?? null,
+      scheduledAt,
+      failure?.type ?? null,
+      startedAt,
+      new Date().toISOString(),
+    );
+    return db.prepare('SELECT * FROM scheduled_deployment_runs WHERE id = ?').get(runId) as SchedulerRunResult;
+  };
+
+  let sessionId: string | null = null;
+  let failure = classifyTriggerFailure(db, schedule);
+  if (!failure) {
+    try {
+      const session = sessionManager.createWithInitialEvents({
+        agent: schedule.agent_id,
+        ...(typeof schedule.agent_version === 'number' ? { agentVersion: schedule.agent_version } : {}),
+        environmentId: schedule.environment_id ?? undefined,
+        title: deploymentRunTitle(schedule),
+        resources: parseJsonArray(schedule.resources) as Array<Record<string, unknown>>,
+        vaultIds: parseJsonArray(schedule.vault_ids).map(String),
+        contextId: memoryScopeFromDeploymentResources(schedule.resources),
+        metadata: {
+          scheduled_deployment_id: schedule.id,
+          deployment_id: schedule.id,
+          scheduled_deployment_run_id: runId,
+          deployment_run_id: runId,
+          trigger_type: triggerType,
+        },
+        ...(schedule.budget ? { budget: parseObject(schedule.budget) as never } : {}),
+      }, parseJsonArray(schedule.initial_events) as never[]);
+      sessionId = session.id;
+    } catch (err) {
+      failure = { type: 'unknown_error', message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  const run = recordRun(sessionId, failure);
+  const pause = failure !== null && !RECOVERABLE_RUN_ERRORS.has(failure.type);
+  db.prepare(
+    `UPDATE scheduled_deployments
+     SET last_run_at = ?, next_run_at = ?, status = ?, paused_reason = ?, updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    triggerType === 'scheduled' ? startedAt : schedule.last_run_at ?? null,
+    nextRun,
+    pause ? 'paused' : schedule.status ?? 'active',
+    pause ? JSON.stringify({ type: 'error', error: { type: failure!.type, message: failure!.message } }) : null,
+    new Date().toISOString(),
+    schedule.id,
+  );
+  return { run, pausedDeployment: pause };
+}
+
+function parseJsonArray(value: unknown): unknown[] {
+  try {
+    const parsed = JSON.parse(typeof value === 'string' && value ? value : '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function deploymentRunTitle(schedule: ScheduleRow): string {
+  const payloadTitle = parseObject(schedule.payload).title;
+  return typeof payloadTitle === 'string' && payloadTitle.trim()
+    ? payloadTitle.trim()
+    : `Scheduled run: ${schedule.name}`;
+}
+
+function memoryScopeFromDeploymentResources(raw: unknown): string | undefined {
+  for (const resource of parseJsonArray(raw)) {
+    const record = resource as Record<string, unknown> | null;
+    if (record?.type === 'memory_store' && typeof record.memory_store_id === 'string') {
+      return record.memory_store_id;
+    }
+  }
+  return undefined;
 }
 
 function parseCron(cron: string): ParsedCron | null {
@@ -244,9 +460,17 @@ export type ScheduleRow = {
   id: string;
   name: string;
   agent_id: string;
+  agent_version?: number | null;
   environment_id: string | null;
-  cron: string;
+  cron: string | null;
   payload: string;
+  status?: string;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
+  initial_events?: string;
+  resources?: string;
+  vault_ids?: string;
+  budget?: string | null;
 };
 
 type ParsedCron = {

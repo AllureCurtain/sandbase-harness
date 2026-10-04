@@ -16,8 +16,9 @@
  * confirms them by listing the session's events.
  */
 
-import type { UserDefineOutcomeEvent, UserEvent } from '@/types/cma-protocol.js';
+import type { ContentBlock, UserDefineOutcomeEvent, UserEvent } from '@/types/cma-protocol.js';
 import { normalizeMessageContent } from './session-normalizers.js';
+import { normalizeSystemMessageContent, systemMessageContentError } from './system-message.js';
 import {
   DEFAULT_OUTCOME_MAX_ITERATIONS,
   MAX_OUTCOME_MAX_ITERATIONS,
@@ -25,6 +26,24 @@ import {
 
 /** Maximum number of events accepted in one creation call. */
 export const MAX_INITIAL_EVENTS = 50;
+
+/**
+ * A `system.message` event as the deployment contract allows it in
+ * `initial_events`. It is appended to the session's log as privileged context
+ * but is not a `UserEvent` — it never answers a tool call or a steer — so it
+ * stays outside that union.
+ */
+export interface InitialSystemMessageEvent {
+  type: 'system.message';
+  content: ContentBlock[];
+}
+
+/**
+ * The event set a deployment may send into a freshly created session. The
+ * published deployment contract adds `system.message` to the session API's
+ * `user.message` / `user.define_outcome` pair.
+ */
+export type DeploymentInitialEvent = UserEvent | InitialSystemMessageEvent;
 
 /**
  * The published `user.define_outcome` budget, owned by the outcome contract.
@@ -38,10 +57,11 @@ export {
 } from '@/core/outcomes/contract.js';
 
 const INITIAL_EVENT_TYPES = new Set(['user.message', 'user.define_outcome']);
+const DEPLOYMENT_EVENT_TYPES = new Set([...INITIAL_EVENT_TYPES, 'system.message']);
 
 export interface InitialEventsResult {
   ok: boolean;
-  events?: UserEvent[];
+  events?: DeploymentInitialEvent[];
   code?: string;
   message?: string;
 }
@@ -51,8 +71,16 @@ export interface InitialEventsResult {
  *
  * `undefined` and `[]` both mean "no initial events", so a caller that
  * normalizes the field unconditionally gets one consistent representation.
+ *
+ * Session creation accepts the two `user.*` types. A deployment's
+ * `initial_events` also allows `system.message`, which the caller enables with
+ * `allowSystemMessage`: it is appended as privileged context for the turns the
+ * user events start, and never starts a turn itself.
  */
-export function normalizeInitialEvents(value: unknown): InitialEventsResult {
+export function normalizeInitialEvents(
+  value: unknown,
+  opts: { allowSystemMessage?: boolean } = {},
+): InitialEventsResult {
   if (value === undefined || value === null) return { ok: true, events: [] };
   if (!Array.isArray(value)) {
     return {
@@ -70,7 +98,7 @@ export function normalizeInitialEvents(value: unknown): InitialEventsResult {
     };
   }
 
-  const events: UserEvent[] = [];
+  const events: DeploymentInitialEvent[] = [];
   for (const [index, raw] of value.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return {
@@ -80,12 +108,28 @@ export function normalizeInitialEvents(value: unknown): InitialEventsResult {
       };
     }
     const event = raw as Record<string, unknown>;
-    if (typeof event.type !== 'string' || !INITIAL_EVENT_TYPES.has(event.type)) {
+    const allowed = opts.allowSystemMessage ? DEPLOYMENT_EVENT_TYPES : INITIAL_EVENT_TYPES;
+    if (typeof event.type !== 'string' || !allowed.has(event.type)) {
       return {
         ok: false,
         code: 'invalid_initial_event_type',
-        message: `initial_events[${index}].type must be user.message or user.define_outcome (got "${String(event.type)}")`,
+        message: opts.allowSystemMessage
+          ? `initial_events[${index}].type must be user.message, user.define_outcome, or system.message (got "${String(event.type)}")`
+          : `initial_events[${index}].type must be user.message or user.define_outcome (got "${String(event.type)}")`,
       };
+    }
+
+    if (event.type === 'system.message') {
+      const content = normalizeSystemMessageContent(event.content);
+      if (!content) {
+        return {
+          ok: false,
+          code: 'invalid_initial_events',
+          message: `initial_events[${index}].${systemMessageContentError(event.content) ?? 'content must be a non-empty array of valid content blocks'}`,
+        };
+      }
+      events.push({ type: 'system.message', content });
+      continue;
     }
 
     if (event.type === 'user.define_outcome') {

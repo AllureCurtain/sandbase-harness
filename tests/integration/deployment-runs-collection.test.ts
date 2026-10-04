@@ -92,9 +92,33 @@ describe('Deployment runs collection', () => {
   const BASE = '/v1/deployment_runs';
 
   async function createDeployment(name: string, agentId: string) {
-    const created = await send('POST', '/v1/scheduled-deployments', { name, agent_id: agentId, cron: '0 3 * * *' });
+    const created = await send('POST', '/v1/scheduled-deployments', {
+      name,
+      agent_id: agentId,
+      environment_id: 'env_default',
+      cron: '0 3 * * *',
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+    });
     expect(created.status).toBe(201);
     return created.body.id as string;
+  }
+
+  /**
+   * A row as migration 052 leaves it: `initial_events` defaults to `[]` for
+   * pre-migration deployments, which is exactly the state the runner classifies
+   * as `session_creation_rejected_error`. The agent exists, so the failure
+   * lands on the admission check rather than the agent archive.
+   */
+  function insertLegacyDeployment(name: string) {
+    const id = `sched_${name}`;
+    // `next_run_at` stays null: a row already due would also fire on the next
+    // `run-due` another case issues, and this helper means to produce exactly
+    // the one manual run its caller asks for.
+    db.prepare(
+      `INSERT INTO scheduled_deployments (id, name, agent_id, cron, payload, status)
+       VALUES (?, ?, 'agent_sched', '0 3 * * *', '{}', 'active')`,
+    ).run(id, name);
+    return id;
   }
 
   /** A run that succeeded: the agent exists, so a session is created for real. */
@@ -103,16 +127,17 @@ describe('Deployment runs collection', () => {
       .run('2020-01-01T00:00:00.000Z', deploymentId);
     const due = await send('POST', '/v1/scheduled-deployments/run-due');
     expect(due.status).toBe(202);
-    const run = (due.body.data as any[]).find((entry) => entry.schedule_id === deploymentId);
-    expect(run?.status).toBe('created_session');
+    const run = (due.body.data as any[]).find((entry) => entry.deployment_id === deploymentId);
+    expect(run?.session_id).toBeTruthy();
     return run.id as string;
   }
 
-  /** A run that failed: no such agent, so session creation throws and is recorded. */
+  /** A run that failed: no initial events to admit, so creation is rejected and recorded. */
   async function makeFailedRun(deploymentId: string) {
     const run = await send('POST', `/v1/scheduled-deployments/${deploymentId}/run`, {});
     expect(run.status).toBe(201);
-    expect(run.body.status).toBe('failed');
+    expect(run.body.session_id).toBeNull();
+    expect(run.body.error?.type).toBe('session_creation_rejected_error');
     return run.body.id as string;
   }
 
@@ -131,7 +156,9 @@ describe('Deployment runs collection', () => {
     expect(run.deployment_id).toBe(deploymentId);
     expect(run.session_id).toBeTruthy();
     expect(run.error).toBeNull();
-    expect(run.trigger_context).toEqual({ type: 'schedule' });
+    // A timed run carries the cron instant it answered alongside its kind.
+    expect(run.trigger_context.type).toBe('schedule');
+    expect(run.trigger_context.scheduled_at).toBe('2020-01-01T00:00:00.000Z');
 
     // The agent identity comes from the session the run created, so it is the one
     // that ran — including a version the deployment itself does not carry.
@@ -146,19 +173,20 @@ describe('Deployment runs collection', () => {
     expect(run.created_at).toBe(stored.started_at);
   });
 
-  it('reports an error object on a failed run and the documented agent fallback', async () => {
-    const deploymentId = await createDeployment('failing', 'agent_missing');
+  it('reports a classified error object on a failed run and the documented agent fallback', async () => {
+    const deploymentId = insertLegacyDeployment('failing');
     const runId = await makeFailedRun(deploymentId);
 
     const read = await send('GET', `${BASE}/${runId}`);
     expect(read.status).toBe(200);
     expect(read.body.session_id).toBeNull();
-    expect(read.body.error.type).toBe('deployment_run_failed');
-    expect(read.body.error.message).toContain('Agent not found');
+    expect(read.body.error.type).toBe('session_creation_rejected_error');
+    expect(read.body.error.message).toContain('initial_events');
 
     // No session means no recorded version, so the projection says so rather than
-    // borrowing one: the id is the deployment's agent, the version is unknown.
-    expect(read.body.agent).toEqual({ type: 'agent', id: 'agent_missing', version: null });
+    // borrowing one: the id is the deployment's agent, the version is unknown on
+    // a legacy row that never pinned one.
+    expect(read.body.agent).toEqual({ type: 'agent', id: 'agent_sched', version: null });
     // A hand-triggered run carries the trigger the runtime recorded.
     expect(read.body.trigger_context).toEqual({ type: 'manual' });
   });
@@ -184,7 +212,7 @@ describe('Deployment runs collection', () => {
 
   it('filters by has_error in both directions', async () => {
     const good = await createDeployment('has-error-good', 'agent_sched');
-    const bad = await createDeployment('has-error-bad', 'agent_missing');
+    const bad = insertLegacyDeployment('has-error-bad');
     const goodRun = await makeSuccessfulRun(good);
     const badRun = await makeFailedRun(bad);
 
@@ -240,13 +268,9 @@ describe('Deployment runs collection', () => {
 
     expect(fromNested).toBeTruthy();
     expect(fromCollection).toBeTruthy();
-    expect(fromCollection.id).toBe(fromNested.id);
-    expect(fromCollection.session_id).toBe(fromNested.session_id);
-    expect(fromCollection.created_at).toBe(fromNested.started_at);
-    expect(fromCollection.deployment_id).toBe(fromNested.schedule_id);
-    // The error is the one field that changes representation, not meaning.
-    expect(fromNested.error).toBeNull();
-    expect(fromCollection.error).toBeNull();
+    // Both routes now serve the one published projection, so agreement is the
+    // whole object, not a field-by-field translation.
+    expect(fromCollection).toEqual(fromNested);
   });
 
   it('serves the collection at the legacy mirror with its own envelope', async () => {

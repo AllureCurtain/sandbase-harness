@@ -27,23 +27,6 @@ import { invalid, notFound, type OperationMountOptions } from './operation-helpe
 import { rejectUnexpectedQueryParams } from './query-params.js';
 
 /**
- * The `error.type` reported on a failed run.
- *
- * The published contract names causes (`environment_archived_error`,
- * `agent_archived_error`, `session_rate_limited_error`) and the published shape
- * requires a `type` beside the `message`. This runtime cannot supply one yet:
- * `sessionManager.create` throws bare `Error`s carrying free text
- * (`src/core/session/session-manager.ts:475`), so classifying a failure would mean
- * matching on message strings, which is a guess dressed as a taxonomy.
- *
- * So the **shape** is honoured and the vocabulary is not invented. One local type
- * says "this run failed and the runtime did not classify it", which is true, and
- * is distinguishable from any published value. Introducing the published types is
- * a change to the session-creation error path, not to this projection.
- */
-const DEPLOYMENT_RUN_ERROR_TYPE = 'deployment_run_failed';
-
-/**
  * The columns a run view needs, including the agent the run actually used.
  *
  * The agent is joined from the **session** the run created, when there is one, so
@@ -52,12 +35,13 @@ const DEPLOYMENT_RUN_ERROR_TYPE = 'deployment_run_failed';
  * record of the version it attempted, so it falls back to the deployment's current
  * `agent_id` with an explicit `version: null` — see `toDeploymentRun`.
  */
-const RUN_VIEW_SELECT = `
+export const RUN_VIEW_SELECT = `
   SELECT
     r.*,
     s.agent_id AS session_agent_id,
     s.agent_version AS session_agent_version,
-    d.agent_id AS deployment_agent_id
+    d.agent_id AS deployment_agent_id,
+    d.agent_version AS deployment_agent_version
   FROM scheduled_deployment_runs r
   LEFT JOIN sessions s ON s.id = r.session_id
   LEFT JOIN scheduled_deployments d ON d.id = r.schedule_id
@@ -71,14 +55,17 @@ interface DeploymentRunRow {
   trigger_type: string;
   payload: string;
   error: string | null;
+  scheduled_at: string | null;
+  error_type: string | null;
   started_at: string;
   completed_at: string | null;
 }
 
-type DeploymentRunViewRow = DeploymentRunRow & {
+export type DeploymentRunViewRow = DeploymentRunRow & {
   session_agent_id: string | null;
   session_agent_version: number | null;
   deployment_agent_id: string | null;
+  deployment_agent_version: number | null;
 };
 
 export function deploymentRunsRoutes(deps: ServerDeps, options: OperationMountOptions = {}) {
@@ -86,11 +73,15 @@ export function deploymentRunsRoutes(deps: ServerDeps, options: OperationMountOp
   const collections = collectionPager<{ id: string }>(options.pageShape ?? 'canonical');
 
   app.get('/', (c) => {
-    const rejected = rejectUnexpectedQueryParams(c, ['deployment_id', 'has_error']);
+    const rejected = rejectUnexpectedQueryParams(c, RUN_LIST_PARAMS);
     if (rejected) return rejected;
     const deploymentId = c.req.query('deployment_id');
     const hasError = parseHasError(c.req.query('has_error'));
     if (hasError === null) return invalid(c, 'has_error must be "true" or "false"');
+    const triggerType = c.req.query('trigger_type');
+    if (triggerType !== undefined && triggerType !== 'schedule' && triggerType !== 'manual') {
+      return invalid(c, 'trigger_type must be "schedule" or "manual"');
+    }
 
     // `deployment_id` is the published filter name; the column it selects on keeps
     // its local spelling. Which is the whole point of a projection.
@@ -102,6 +93,25 @@ export function deploymentRunsRoutes(deps: ServerDeps, options: OperationMountOp
     }
     if (hasError !== undefined) {
       conditions.push(hasError ? 'r.error IS NOT NULL' : 'r.error IS NULL');
+    }
+    if (triggerType !== undefined) {
+      // The stored vocabulary is `scheduled`; the published filter word is
+      // `schedule` — the same translation `trigger_context` performs on reads.
+      conditions.push('r.trigger_type = ?');
+      parameters.push(triggerType === 'schedule' ? 'scheduled' : triggerType);
+    }
+    const createdBounds: Array<[string, string]> = [
+      ['created_at[gt]', '>'],
+      ['created_at[gte]', '>='],
+      ['created_at[lt]', '<'],
+      ['created_at[lte]', '<='],
+    ];
+    for (const [param, operator] of createdBounds) {
+      const bound = c.req.query(param);
+      if (bound !== undefined) {
+        conditions.push(`r.started_at ${operator} ?`);
+        parameters.push(bound);
+      }
     }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -123,6 +133,21 @@ export function deploymentRunsRoutes(deps: ServerDeps, options: OperationMountOp
 }
 
 /**
+ * The published list-filter set, plus the local pagination trio.
+ */
+const RUN_LIST_PARAMS = [
+  'deployment_id',
+  'has_error',
+  'trigger_type',
+  'created_at[gt]',
+  'created_at[gte]',
+  'created_at[lt]',
+  'created_at[lte]',
+  'limit',
+  'page',
+] as const;
+
+/**
  * `true` / `false`, `undefined` when absent, and `null` when it is neither.
  *
  * A known parameter with an unusable value is refused by name rather than ignored,
@@ -140,30 +165,39 @@ function parseHasError(raw: string | undefined): boolean | undefined | null {
 /**
  * The published projection of one run.
  *
- * `trigger_context.scheduled_at` is deliberately **absent**: the runtime records
- * when a run started, not the instant its trigger was due, and it does not persist
- * the due instant on the run row. Reporting `started_at` there would answer a
- * question about the schedule with a fact about execution. The field is omitted so
- * a caller sees it missing rather than sees a value that means something else.
+ * `trigger_context` carries `scheduled_at` once it is recorded: the scheduler
+ * persists the due instant the pass matched on, so a schedule run reports the
+ * cron instant it answered rather than the wall-clock moment execution began.
+ * Rows written before that column existed report the trigger type alone.
+ *
+ * `error.type` is the classified vocabulary the scheduler writes
+ * (`environment_archived_error`, `vault_not_found_error`, …); rows recorded
+ * before classification existed carry `unknown_error`, which is the honest
+ * answer for "the runtime did not classify this".
+ *
+ * `agent` is the version that ran — read from the session when one exists —
+ * falling back to the deployment's pinned version for a run that failed before
+ * a session could record one.
  */
-function toDeploymentRun(row: DeploymentRunViewRow) {
-  const fromSession = row.session_agent_id !== null;
+export function toDeploymentRun(row: DeploymentRunViewRow) {
   const agentId = row.session_agent_id ?? row.deployment_agent_id;
+  const scheduled = row.trigger_type === 'scheduled';
   return {
     type: 'deployment_run',
     id: row.id,
     deployment_id: row.schedule_id,
-    trigger_context: { type: triggerContextType(row.trigger_type) },
+    trigger_context: scheduled
+      ? { type: 'schedule', ...(row.scheduled_at ? { scheduled_at: row.scheduled_at } : {}) }
+      : { type: triggerContextType(row.trigger_type) },
     session_id: row.session_id ?? null,
-    error: row.error ? { type: DEPLOYMENT_RUN_ERROR_TYPE, message: row.error } : null,
+    error: row.error
+      ? { type: row.error_type ?? 'unknown_error', message: row.error }
+      : null,
     agent: agentId
       ? {
         type: 'agent',
         id: agentId,
-        // Recorded only when a session exists to have recorded it. `null` is the
-        // honest answer for a run that failed before one was created; the id above
-        // is then the deployment's current agent rather than the attempted one.
-        version: fromSession ? row.session_agent_version ?? null : null,
+        version: row.session_agent_version ?? row.deployment_agent_version ?? null,
       }
       : null,
     created_at: row.started_at,

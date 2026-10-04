@@ -1268,7 +1268,10 @@ export class SessionManager {
    * same transaction covers the resource instances `create` attaches, so a
    * refused batch does not leave a session holding resources either.
    */
-  createWithInitialEvents(params: CreateSessionParams, events: UserEvent[]): Session {
+  createWithInitialEvents(
+    params: CreateSessionParams,
+    events: Array<UserEvent | { type: 'system.message'; content?: ContentBlock[] }>,
+  ): Session {
     // Admission assigns each declared outcome its `outc_` id once, so the
     // persisted event and the queued turn share it — `sendEvent` does the same
     // for live declarations.
@@ -1283,20 +1286,25 @@ export class SessionManager {
       // the row exists. Inside the transaction a throw discards the row and
       // every event appended before it, which is the property that matters.
       for (const event of admitted) {
-        this.assertSessionCanAcceptEvent(created.id, event);
+        this.assertSessionCanAcceptEvent(created.id, event as UserEvent);
       }
       for (const event of admitted) {
-        this.appendUserEventInTransaction(created.id, event);
+        this.appendUserEventInTransaction(created.id, event as UserEvent);
       }
       return created;
     });
 
-    // Post-commit: the log is durable, so the turn can now be queued.
-    if (admitted.length > 0 && this.executor) {
+    // Post-commit: the log is durable, so the turn can now be queued. A
+    // `system.message` is context for the turns the user events start — it is
+    // appended like every other event but never starts a turn itself, so a
+    // batch of only system messages creates an idle session rather than a
+    // turn with nothing to answer.
+    const turnEvents = admitted.filter((event) => event.type !== 'system.message');
+    if (turnEvents.length > 0 && this.executor) {
       this.updateStatus(session.id, 'running');
     }
-    for (const event of admitted) {
-      this.enqueueTurnForEvent(session.id, event);
+    for (const event of turnEvents) {
+      this.enqueueTurnForEvent(session.id, event as TurnTrigger);
     }
     return this.get(session.id) ?? session;
   }

@@ -83,7 +83,7 @@ describe('deployment_run lifecycle events', () => {
     db = new Database(join(tmpDir, 'test.db'));
     db.runMigrations();
     db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_default', 'local', '{}')`);
-    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_one', 'one', '{}')`);
+    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_one', 'one', '{"name":"one","model":"default"}')`);
 
     sessionManager = new SessionManager(db);
     const logStore = new InMemoryLogStore();
@@ -148,15 +148,21 @@ describe('deployment_run lifecycle events', () => {
    * A deployment that is already due, written directly.
    *
    * Going through `POST /v1/deployments` would arm `next_run_at` in the future, so
-   * the only way to have a genuinely due run is to write the row. An unknown
-   * `agentId` is what makes a run fail: `sessionManager.create` throws
-   * `Agent not found`, which is the real failure path, not a simulated one.
+   * the only way to have a genuinely due run is to write the row. `agentId` only
+   * appears in the auto-archive case: an agent that is gone archives the
+   * deployment without a run, so the failing cases below drive the runner's
+   * classified-failure path instead — an empty `initial_events`, which is the
+   * state migration 052 leaves every pre-existing row in.
    */
-  function insertDueDeployment(id: string, agentId = 'agent_one'): void {
+  const DUE_EVENTS = JSON.stringify([
+    { type: 'user.message', content: [{ type: 'text', text: 'run' }] },
+  ]);
+
+  function insertDueDeployment(id: string, agentId = 'agent_one', initialEvents = DUE_EVENTS): void {
     db.prepare(
-      `INSERT INTO scheduled_deployments (id, name, agent_id, cron, payload, status, next_run_at)
-       VALUES (?, ?, ?, '0 20 * * 5', '{}', 'active', '2020-01-01T00:00:00.000Z')`,
-    ).run(id, id, agentId);
+      `INSERT INTO scheduled_deployments (id, name, agent_id, cron, payload, status, next_run_at, initial_events)
+       VALUES (?, ?, ?, '0 20 * * 5', '{}', 'active', '2020-01-01T00:00:00.000Z', ?)`,
+    ).run(id, id, agentId, initialEvents);
   }
 
   async function runDue() {
@@ -198,7 +204,7 @@ describe('deployment_run lifecycle events', () => {
     expect(succeeded).toHaveLength(1);
 
     const runId = started[0].body.data.id as string;
-    expect(runId).toMatch(/^srun_/);
+    expect(runId).toMatch(/^drun_/);
     // The published rule: the outcome's id is the same id as the started event's.
     expect(succeeded[0].body.data.id).toBe(runId);
     // And it is the row's own id, so the id a receiver is given is the id it can
@@ -223,7 +229,7 @@ describe('deployment_run lifecycle events', () => {
     const got = receivedFor(webhookId, 'deployment_run.succeeded');
     expect(got).toHaveLength(1);
     expect(got[0].body.type).toBe('event');
-    expect(got[0].body.data.id).toMatch(/^srun_/);
+    expect(got[0].body.data.id).toMatch(/^drun_/);
     // Resolvability is measured in the receiver, at delivery time. A run published
     // before its row existed would read back as null here.
     expect(got[0].runAtDelivery).not.toBeNull();
@@ -253,8 +259,9 @@ describe('deployment_run lifecycle events', () => {
       'deployment_run.succeeded',
       'deployment_run.failed',
     ]);
-    // An agent that does not exist, so session creation genuinely throws.
-    insertDueDeployment('sched_bad_agent', 'agent_missing');
+    // No initial events to admit — the state a pre-migration row is in — so
+    // session creation is rejected and the run records the classified failure.
+    insertDueDeployment('sched_no_events', 'agent_one', '[]');
 
     await runDue();
 

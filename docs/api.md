@@ -2441,7 +2441,7 @@ credential `created` / `archived` / `deleted` triple, `memory_store.created` /
 The catalog names a subscription may list but nothing yet produces are
 `session.pending`, `session.running`, `session.idled`,
 `session.requires_action`, `session.thread_*`, `agent.deleted`,
-`vault.deleted`, `vault_credential.refresh_failed`, and `deployment.deleted` — each waits on a surface that does not exist yet.
+`vault_credential.refresh_failed`, and `deployment.deleted` — each waits on a surface that does not exist yet.
 
 A **timed** run publishes `deployment_run.started` and then exactly one of
 `deployment_run.succeeded` / `deployment_run.failed`; all three name the same run,
@@ -2453,14 +2453,18 @@ has been recorded rather than at the instant it begins, so a receiver that fetch
 the run it names finds it.
 
 Archiving a deployment publishes `deployment.archived` once the row is archived,
-so a receiver that resolves the reference sees `archived_at` set. A repeat archive
+so a receiver that resolves the reference sees `archived_at` set — and the
+published second cause is implemented too: a timed pass or manual run that finds
+the deployment's bound agent missing or archived archives the deployment and
+records **no run** for it. A repeat archive
 publishes nothing and answers `404` rather than succeeding quietly, which is how
 this runtime expresses the published no-op rule; archiving a webhook or an outcome
 publishes nothing, because no archived event exists for those resources.
 
 Creating a deployment publishes `deployment.created` once the row exists, so a
 receiver that resolves the reference finds it; a create refused for a missing
-name, a missing agent, a bad schedule, or an unknown time zone publishes nothing,
+name, a missing agent, a missing `environment_id`, absent or empty
+`initial_events`, a bad schedule, or an unknown time zone publishes nothing,
 because there is no id to name. A deployment created already paused publishes that
 event alone — a resource coming into existence paused has not moved from anything,
 so there is no transition for `deployment.paused` to report.
@@ -2610,9 +2614,25 @@ when it happened to restart.
 The cadence is read from either the flat `cron` and `timezone` fields or the
 canonical `schedule: { "type": "cron", "expression": ..., "timezone": ... }`
 object; both resolve to one expression and one zone, so a canonical client and a
-local one cannot disagree about what a deployment's cadence is. Both fields are
-echoed on every deployment response, and an update that changes the cadence
-re-arms `next_run_at` in the resolved zone unless the update supplies its own.
+local one cannot disagree about what a deployment's cadence is. Every deployment
+response carries the published shape — `type: "deployment"`, a `depl_` id, the
+agent as `{type, id, version}` pinned at create, `environment_id`,
+`initial_events`, `resources`, `vault_ids`, `budget`, `metadata` — and its
+`schedule` object echoes the cadence with `last_run_at` and `upcoming_runs_at`,
+the next three instants while the deployment is active. A deployment with no
+cadence reports `schedule: null` rather than inventing a cron. An update that
+changes the cadence re-arms `next_run_at` in the resolved zone unless the update
+supplies its own.
+
+Creating a deployment requires `name`, an agent reference (`agent` as the
+published object or the local `agent_id` alias), `environment_id`, and a
+non-empty `initial_events` list. The events are the same admission sessions use,
+plus the deployment-only `system.message` type, which seeds context without
+opening a turn. Each run hands the list to session creation, so a deployment
+fires the session template it was given rather than an empty prompt.
+
+An update answers on `POST /v1/deployments/{id}` (the published verb) and
+`PUT /v1/deployments/{id}`, which share one handler and one response.
 
 Every route below is served under **two** prefixes: `/v1/deployments*`, which is
 the path the published contract addresses a deployment at, and
@@ -2626,6 +2646,7 @@ is neither deprecated nor redirected.
 | `GET` | `/v1/deployments`, `/v1/scheduled-deployments` | List scheduled deployment plans. |
 | `POST` | `/v1/deployments`, `/v1/scheduled-deployments` | Create a scheduled deployment plan. |
 | `GET` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Retrieve a scheduled deployment plan. |
+| `POST` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Update a scheduled deployment plan (published verb; same handler as `PUT`). |
 | `PUT` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Update a scheduled deployment plan. |
 | `POST` | `/v1/deployments/{schedule_id}/pause`, `/v1/scheduled-deployments/{schedule_id}/pause` | Stop the schedule from producing timed runs. Recorded as `paused_reason: {"type": "manual"}`. |
 | `POST` | `/v1/deployments/{schedule_id}/unpause`, `/v1/scheduled-deployments/{schedule_id}/unpause` | Resume the schedule from the next scheduled instant, clearing `paused_reason`. |
@@ -2637,7 +2658,13 @@ is neither deprecated nor redirected.
 Pausing suppresses the timed path only. A paused deployment keeps its sessions
 running, still accepts a manual `run`, and reads `paused_reason` as
 `{"type": "manual"}` so an operator can tell an intentional pause apart from a
-deployment that was never paused. Resuming does **not** catch up the trigger
+deployment that was never paused. The runtime pauses a deployment itself when a
+trigger fails unrecoverably — the run records a classified `error.type` and
+`paused_reason` mirrors it as `{"type": "error", "error": {"type": ..., "message": ...}}`.
+A recoverable `session_rate_limited_error` records the failed run without
+pausing, and a missing or archived bound agent archives the deployment outright
+with no run recorded, which is the published asymmetry between the two failure
+outcomes. Resuming does **not** catch up the trigger
 instants that elapsed while it was paused: the schedule picks up at the next
 instant, so a deployment paused over a weekend does not fire every missed run at
 once. An archived deployment is a 404 on every route, including `run` — pause and
@@ -2652,7 +2679,7 @@ it.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/v1/deployment_runs` | List runs, newest first. `?deployment_id=` narrows to one deployment and `?has_error=true\|false` to failed or successful ones. |
+| `GET` | `/v1/deployment_runs` | List runs, newest first. `?deployment_id=` narrows to one deployment, `?has_error=true\|false` to failed or successful ones, `?trigger_type=schedule\|manual` to one trigger kind, and `?created_at[gt\|gte\|lt\|lte]=` bounds the window. |
 | `GET` | `/v1/deployment_runs/{deployment_run_id}` | Retrieve one run. |
 
 ```bash
@@ -2660,22 +2687,24 @@ curl "http://127.0.0.1:3000/v1/deployment_runs?deployment_id=$DEPLOYMENT_ID&has_
 curl "http://127.0.0.1:3000/v1/deployment_runs/$RUN_ID"
 ```
 
-A run carries the published field names: `deployment_id`, `trigger_context`,
-`session_id`, `error` as `{type, message}`, `agent` as `{type, id, version}`, and
-`created_at`. Three of those are projections of local storage rather than stored
-fields, and each is partial:
+A run carries the published field names and `drun_` ids: `deployment_id`,
+`trigger_context`, `session_id`, `error` as `{type, message}`, `agent` as
+`{type, id, version}`, and `created_at`:
 
-- `error.type` is the local `deployment_run_failed`. The published vocabulary
-  names causes (`environment_archived_error`, `agent_archived_error`,
-  `session_rate_limited_error`) and this runtime does not classify a failure —
-  session creation throws a free-text message — so the shape is honoured and the
-  cause is not invented.
-- `trigger_context.scheduled_at` is absent. The runtime records when a run
-  *started*, not the instant its trigger was *due*, and does not persist the due
-  instant on the run row.
+- `error.type` is the classified published vocabulary —
+  `environment_not_found_error`, `environment_archived_error`,
+  `vault_not_found_error`, `vault_archived_error`, `file_not_found_error`,
+  `memory_store_archived_error`, `session_creation_rejected_error`,
+  `session_rate_limited_error`, or `unknown_error` for a row written before
+  classification existed. `mcp_egress_blocked_error` has no producing path
+  because MCP egress is not gated by this runtime.
+- `trigger_context.scheduled_at` is recorded for a timed run: the scheduler
+  persists the due instant the pass matched, so a schedule run reports the cron
+  instant it answered rather than the wall-clock moment execution began. A
+  manual run carries `{type: "manual"}` only.
 - `agent` comes from the session the run created, so it is the agent that ran and
-  the version it ran as. A run that failed before a session existed reports
-  `version: null` and the deployment's current `agent_id`.
+  the version it ran as. A run that failed before a session existed reports the
+  deployment's current `agent_id` and its pinned `agent_version`.
 
 `has_error` with any value other than `true` or `false` is refused rather than
 ignored, so a filtered question is never answered with an unfiltered list. The
@@ -2685,22 +2714,23 @@ same routes also answer under `/v1/x/deployment_runs` with the older
 consumers.
 
 ```bash
-curl -X POST http://127.0.0.1:3000/v1/scheduled-deployments \
+curl -X POST http://127.0.0.1:3000/v1/deployments \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Morning smoke",
-    "agent_id": "agent_...",
+    "agent": { "type": "agent", "id": "agent_..." },
     "environment_id": "env_...",
-    "cron": "0 9 * * 1",
-    "timezone": "Asia/Tokyo",
-    "payload": {
-      "title": "Daily FDE smoke"
-    }
+    "initial_events": [
+      { "type": "user.message", "content": [{ "type": "text", "text": "Run the smoke checks and summarize." }] }
+    ],
+    "schedule": { "type": "cron", "expression": "0 9 * * 1", "timezone": "Asia/Tokyo" },
+    "metadata": { "title": "Daily FDE smoke" }
   }'
 ```
 
-Manual and due runs create a session with schedule metadata and store a
-`scheduled_deployment_run` record. A cadence is a standard five-field cron
+Manual and due runs create a session through the deployment's `initial_events`
+and store a `drun_` deployment-run record resolvable under
+`/v1/deployment_runs`. A cadence is a standard five-field cron
 expression using `*`, comma lists, ranges, and step values, and it is evaluated in
 the deployment's `timezone`.
 

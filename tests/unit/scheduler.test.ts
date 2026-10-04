@@ -31,8 +31,8 @@ describe('scheduled deployment runner', () => {
   it('runs due schedules and advances next_run_at', async () => {
     db.prepare(
       `INSERT INTO scheduled_deployments (
-        id, name, agent_id, environment_id, cron, payload, status, next_run_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, agent_id, environment_id, cron, payload, status, next_run_at, initial_events, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       'sched_due',
       'Due schedule',
@@ -42,6 +42,7 @@ describe('scheduled deployment runner', () => {
       JSON.stringify({ title: 'Due schedule session' }),
       'active',
       '2026-07-23T10:00:00.000Z',
+      JSON.stringify([{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }]),
       '2026-07-23T09:00:00.000Z',
       '2026-07-23T09:00:00.000Z',
     );
