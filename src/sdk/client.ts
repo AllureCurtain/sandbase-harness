@@ -1020,7 +1020,11 @@ class EnvironmentsResource {
     config: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }>): Promise<EnvironmentSummary> {
-    return this.client.request('PUT', `/v1/environments/${encodeURIComponent(id)}`, input);
+    return this.client.request('POST', `/v1/environments/${encodeURIComponent(id)}`, input);
+  }
+
+  delete(id: string): Promise<{ id: string; type: 'environment_deleted' }> {
+    return this.client.request('DELETE', `/v1/environments/${encodeURIComponent(id)}`);
   }
 
   archive(id: string): Promise<EnvironmentSummary> {

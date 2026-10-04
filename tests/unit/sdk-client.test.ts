@@ -185,7 +185,8 @@ describe('ManagedAgentsClient runtime management resources', () => {
       if (url.endsWith('/v1/environments') && init?.method === 'GET') return jsonResponse(cursorPage([]));
       if (url.endsWith('/v1/environments') && init?.method === 'POST') return jsonResponse(environment('env_docker'));
       if (url.endsWith('/v1/environments/env_docker') && init?.method === 'GET') return jsonResponse(environment('env_docker'));
-      if (url.endsWith('/v1/environments/env_docker') && init?.method === 'PUT') return jsonResponse(environment('env_docker'));
+      if (url.endsWith('/v1/environments/env_docker') && init?.method === 'POST') return jsonResponse(environment('env_docker'));
+      if (url.endsWith('/v1/environments/env_docker') && init?.method === 'DELETE') return jsonResponse({ id: 'env_docker', type: 'environment_deleted' });
       if (url.endsWith('/v1/environments/env_docker/archive') && init?.method === 'POST') return jsonResponse({ ...environment('env_docker'), status: 'archived' });
       if (url.endsWith('/v1/environments/env_docker/worker-keys') && init?.method === 'GET') return jsonResponse(cursorPage([]));
       throw new Error(`Unexpected request: ${url} ${init?.method}`);
@@ -198,16 +199,18 @@ describe('ManagedAgentsClient runtime management resources', () => {
     await client.environments.update('env_docker', { description: 'Updated' });
     await client.environments.workerKeys('env_docker');
     await client.environments.archive('env_docker');
+    await expect(client.environments.delete('env_docker')).resolves.toEqual({ id: 'env_docker', type: 'environment_deleted' });
 
     expect(fetchImpl).toHaveBeenNthCalledWith(2, 'http://localhost:3000/v1/environments', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ name: 'docker', hosting_type: 'local', sandbox_provider: 'docker', config: { timeout: 600 } }),
     }));
     expect(fetchImpl).toHaveBeenNthCalledWith(4, 'http://localhost:3000/v1/environments/env_docker', expect.objectContaining({
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify({ description: 'Updated' }),
     }));
     expect(fetchImpl).toHaveBeenNthCalledWith(6, 'http://localhost:3000/v1/environments/env_docker/archive', expect.objectContaining({ method: 'POST' }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(7, 'http://localhost:3000/v1/environments/env_docker', expect.objectContaining({ method: 'DELETE' }));
   });
 });
 

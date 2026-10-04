@@ -50,9 +50,26 @@ translation between the two spellings of the hosting axis live in
 `src/core/config/environment-network.ts`.
 
 - `POST /v1/environments`, `GET /v1/environments`,
-  `GET /v1/environments/{id}`, `PUT /v1/environments/{id}`, and
-  `POST /v1/environments/{id}/archive` are mounted; the full local surface,
-  including worker keys and work items, is in [`routes.md`](./routes.md).
+  `GET /v1/environments/{id}`, `POST /v1/environments/{id}`,
+  `DELETE /v1/environments/{id}`, and `POST /v1/environments/{id}/archive`
+  are mounted; `PUT /v1/environments/{id}` stays registered as the pre-official
+  spelling of the update and runs the same patch semantics. The full local
+  surface, including worker keys and work items, is in
+  [`routes.md`](./routes.md).
+- Update is a patch: `name`, `description`, `config`, and `metadata` each merge
+  independently, so an omitted field preserves the stored value.
+  `description: null` clears the description, and `metadata` merges key-by-key
+  with a `null` or empty-string value deleting its key — the published rule —
+  while a whole `metadata: null` leaves the bag alone. `config` merges against
+  the stored declaration through the same normalization create runs, so a
+  config repair is a field update, not a separate route.
+- `DELETE` removes the row physically and answers
+  `{id, type: "environment_deleted"}`; a later retrieve is a `404`. Two refusals
+  guard it: `env_default` is `environment_protected`, and any session that names
+  the environment — running or finished — is `environment_in_use`, because
+  `sessions.environment_id` is a hard foreign key and session history must keep
+  recording which environment it ran on. Worker keys the environment issued are
+  removed with it in the same transaction.
 - `config.type` and `config.hosting_type` are read as **one** declaration by
   `readDeclaredHostingType`. Either spelling names the same vocabulary
   (`local`, `docker`, `kubernetes`, `cloud`, `self_hosted`), either resolves
@@ -135,7 +152,7 @@ caller.
 | Workspace default seeding | `env_default` seeds the workspace `sandbox.provider` setting on a workspace that has no settings row. A `cloud` declaration there asks the workspace default to decide, which is what a seed is, so it seeds the same platform default a config that declares nothing does. An `env_default` declaring a hosting type this build cannot execute at all refuses that seeding rather than substituting `local`, so such a workspace does not start until the row is repaired — with an update, or in the database when the runtime is not running. |
 | Network policy enforcement | Normalized, stored, and returned, but not applied: no shipped provider reads it. A session whose environment declares `limited` with an empty `allowed_hosts` gets the same egress as an environment that declares `unrestricted`. |
 | `config.packages` | Recorded and reported in the published per-manager object shape — the local `{ manager, package }` array is folded into it — and marked `packages_enforced: false`. Nothing installs declared packages for any provider, so the published object shape and the local list are both inert configuration today. |
-| Published delete | Not mounted. `POST /v1/environments/{id}/archive` is the local lifecycle verb; archived environments are excluded from the listing rather than removed. |
+| Deletion guard | `DELETE` is mounted and physical, but refused while any session row references the environment — a finished session included — because `sessions.environment_id` is a hard foreign key and history keeps the environment it ran on. `env_default` is refused as `environment_protected`. `POST /v1/environments/{id}/archive` remains the lifecycle verb for an environment that should stop being offered without erasing its record. |
 | Environment listing | Serves its whole set rather than a window, and accepts no query parameter ([`pagination.md`](./pagination.md)). The route surface, with its verbs, is in [`routes.md`](./routes.md). |
 
 ## 5. Reason for the difference
@@ -219,6 +236,19 @@ caller.
   overlays the effective Settings V2 backend — a Docker workspace setting
   resolves the session's provider and image — and the workspace-default seed
   treats `cloud` like an undeclared row.
+- `tests/integration/environment-update-delete.test.ts` — the published update
+  and delete verbs: `POST`/`PUT` equivalence, `metadata` patch deletion on
+  `null` and `""`, `description` cleared on `null` and preserved when omitted,
+  update and delete `404`s on missing and archived rows, `env_default` refused
+  as `environment_protected`, active and finished session references refused as
+  `environment_in_use`, physical deletion returning
+  `{id, type: "environment_deleted"}` with worker keys removed, and retrieve
+  after delete answering `404`.
+- `tests/conformance/environment-update-delete.test.ts` — the pinned official
+  SDK driving `environments.update` and `environments.delete` over HTTP against
+  the real runtime: patch semantics through the typed client, the published
+  `environment_deleted` shape, retrieve-after-delete `404`, and the
+  `env_default` refusal surfacing as a `ConflictError`.
 - `tests/integration/api.test.ts` — the local environment surface: create, get,
   archive, the key-shaped response, and the session path that refuses an
   environment whose hosting type cannot execute.

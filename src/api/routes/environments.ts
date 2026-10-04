@@ -14,6 +14,8 @@ import {
   stringRecordField,
 } from './resource-utils.js';
 import { rejectUnexpectedQueryParams } from './query-params.js';
+import { isTerminal } from '@/core/session/state-machine.js';
+import type { SessionStatus } from '@/types/session.js';
 import { SHIPPED_SANDBOX_PROVIDER_TYPES } from '@/types/sandbox.js';
 import {
   DEFAULT_SANDBOX_PROVIDER,
@@ -94,7 +96,38 @@ export function environmentRoutes(deps: ServerDeps) {
     return row ? c.json(toApiEnvironment(row, deps)) : notFound(c, 'Environment not found');
   });
 
-  app.put('/environments/:id', async (c) => {
+  // `PUT` is the pre-official spelling of the published update route and stays
+  // as a deprecated alias: both methods run the same patch semantics.
+  app.put('/environments/:id', updateEnvironment);
+  app.post('/environments/:id', updateEnvironment);
+
+  app.delete('/environments/:id', (c) => {
+    const id = c.req.param('id');
+    const existing = deps.db.prepare('SELECT id FROM environments WHERE id = ?').get(id) as { id: string } | undefined;
+    if (!existing) return notFound(c, 'Environment not found');
+    if (id === 'env_default') {
+      return conflict(c, 'The workspace default environment cannot be deleted', 'environment_protected');
+    }
+    // `sessions.environment_id` is a hard foreign key, so history that names
+    // this Environment blocks the delete regardless of session status — a
+    // finished session still points at the row it ran on.
+    const referenced = deps.db.prepare('SELECT DISTINCT status FROM sessions WHERE environment_id = ?').all(id) as Array<{ status: SessionStatus }>;
+    if (referenced.some((row) => !isTerminal(row.status))) {
+      return conflict(c, 'Environment is in use by an active session', 'environment_in_use');
+    }
+    if (referenced.length > 0) {
+      return conflict(c, 'Environment is referenced by session history and cannot be deleted', 'environment_in_use');
+    }
+    deps.db.transaction(() => {
+      deps.db.prepare('DELETE FROM environment_worker_keys WHERE environment_id = ?').run(id);
+      deps.db.prepare('DELETE FROM environments WHERE id = ?').run(id);
+    });
+    return c.json({ id, type: 'environment_deleted' });
+  });
+
+  app.post('/environments/:id/archive', (c) => archiveResource(c, deps, 'environments', (row: EnvironmentRow) => toApiEnvironment(row, deps)));
+
+  async function updateEnvironment(c: any) {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
     const id = c.req.param('id');
@@ -121,20 +154,21 @@ export function environmentRoutes(deps: ServerDeps) {
     const config = normalized.config;
     const providerError = sandboxProviderError(config);
     if (providerError) return invalid(c, providerError.message, providerError.code);
+    if (body.value.metadata !== undefined && body.value.metadata !== null && !isPlainObject(body.value.metadata)) {
+      return invalid(c, 'metadata must be an object');
+    }
     deps.db.prepare(
       'UPDATE environments SET name = ?, description = ?, config = ?, metadata = ?, updated_at = datetime(\'now\') WHERE id = ?',
     ).run(
       name,
-      stringField(body.value.description) ?? existing.description ?? '',
+      descriptionPatch(body.value.description, existing.description),
       JSON.stringify(config),
-      JSON.stringify(body.value.metadata === undefined ? parseObject(existing.metadata) : stringRecordField(body.value.metadata)),
+      JSON.stringify(mergeMetadataPatch(existing.metadata, body.value.metadata)),
       id,
     );
     const row = deps.db.prepare('SELECT * FROM environments WHERE id = ? AND archived_at IS NULL').get(id) as unknown as EnvironmentRow;
     return c.json(toApiEnvironment(row, deps));
-  });
-
-  app.post('/environments/:id/archive', (c) => archiveResource(c, deps, 'environments', (row: EnvironmentRow) => toApiEnvironment(row, deps)));
+  }
 
   // --- Self-hosted worker keys (R9.14) -------------------------------------
   //
@@ -239,6 +273,32 @@ function parseLimit(value: string | undefined): number | undefined {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The published `description` patch: omitted preserves the stored value,
+ * `null` clears it, and an empty or whitespace-only string is stored as an
+ * empty string — which the read shape projects back to `null`.
+ */
+function descriptionPatch(incoming: unknown, stored: string | null): string {
+  if (incoming === undefined) return stored ?? '';
+  if (incoming === null) return '';
+  return stringField(incoming) ?? '';
+}
+
+/**
+ * Merge a `metadata` patch onto the stored bag. The published contract deletes
+ * a key on a `null` **or** empty-string value; an omitted or whole `null`
+ * field preserves the bag unchanged.
+ */
+function mergeMetadataPatch(stored: string | null | undefined, patch: unknown): Record<string, unknown> {
+  const merged = parseObject(stored);
+  if (patch === undefined || patch === null) return merged;
+  for (const [key, value] of Object.entries(objectField(patch))) {
+    if (value === null || value === '') delete merged[key];
+    else merged[key] = String(value);
+  }
+  return merged;
 }
 
 /** The environment id when it names a live (non-archived) environment. */
