@@ -938,6 +938,14 @@ the flag existed), and `model_usage`
 single request that is retried by the model middleware still produces exactly
 one pair.
 
+When the session's model resolves to an `anthropic` provider, each request
+also carries the platform's automatic prompt caching as explicit markers:
+`cache_control: { "type": "ephemeral" }` on the system prompt, the last tool
+definition, and the second-to-last message — the end of the previous turn,
+since the last message is the input that just changed. Three markers stay
+inside the four-breakpoint cap at the default five-minute TTL, and requests
+to any other provider type are sent unmarked.
+
 Approval-gated `tool_use` blocks include `requires_confirmation: true` and a
 `confirmation_group_id`. The corresponding `user.tool_confirmation` event
 stores its target and decision in event metadata. The session stays in

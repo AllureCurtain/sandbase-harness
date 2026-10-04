@@ -54,6 +54,8 @@ export interface StubModelRequest {
   stream?: boolean;
   messages?: ChatMessage[];
   tools?: ChatTool[];
+  /** Anthropic `/v1/messages` bodies carry a `system` block array instead. */
+  system?: unknown;
 }
 
 export interface StubModelServer {
@@ -122,7 +124,9 @@ export async function startStubModelServer(options: StubModelServerOptions = {})
   let calledTool: string | undefined;
 
   const server = createServer((req, res) => {
-    if (req.method !== 'POST' || !req.url?.endsWith('/chat/completions')) {
+    const isOpenAi = req.method === 'POST' && Boolean(req.url?.endsWith('/chat/completions'));
+    const isAnthropic = req.method === 'POST' && Boolean(req.url?.endsWith('/messages'));
+    if (!isOpenAi && !isAnthropic) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: `no stub route for ${req.method} ${req.url}` } }));
       return;
@@ -139,6 +143,13 @@ export async function startStubModelServer(options: StubModelServerOptions = {})
         const status = options.failStatus ?? 500;
         res.writeHead(status, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: { message: `scripted ${status}`, type: 'invalid_request_error' } }));
+        return;
+      }
+      // The Anthropic Messages route answers the fixed reply only — its job is
+      // recording what the provider was asked for (cache breakpoints, effort
+      // fields), not scripting a turn.
+      if (isAnthropic) {
+        respondAnthropic(res, options.replyTexts?.[requests.length] ?? STUB_REPLY_TEXT, request.model);
         return;
       }
       const scripted = options.replyTexts?.[requests.length];
@@ -299,6 +310,53 @@ function respond(
     },
   })}\n\n`);
   res.write('data: [DONE]\n\n');
+  res.end();
+}
+
+/**
+ * Minimal Anthropic Messages API stream: `message_start`, one text block,
+ * `message_delta` with the terminal stop reason, `message_stop`. Enough for
+ * `@ai-sdk/anthropic` to assemble a finished step; no tool calls.
+ */
+function respondAnthropic(res: ServerResponse, text: string, model?: string): void {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+  const frame = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  frame('message_start', {
+    type: 'message_start',
+    message: {
+      id: `msg_stub_${Math.random().toString(36).slice(2, 10)}`,
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: model ?? 'stub-model',
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 12, output_tokens: 1 },
+    },
+  });
+  frame('content_block_start', {
+    type: 'content_block_start',
+    index: 0,
+    content_block: { type: 'text', text: '' },
+  });
+  frame('content_block_delta', {
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'text_delta', text },
+  });
+  frame('content_block_stop', { type: 'content_block_stop', index: 0 });
+  frame('message_delta', {
+    type: 'message_delta',
+    delta: { stop_reason: 'end_turn', stop_sequence: null },
+    usage: { output_tokens: 7 },
+  });
+  frame('message_stop', { type: 'message_stop' });
   res.end();
 }
 
