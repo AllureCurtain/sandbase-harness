@@ -7,11 +7,6 @@ export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<{ pattern: RegExp; reaso
 ];
 
 export const PENDING_OFFICIAL_ROUTES = [
-  ['GET /v1/skills/:id/versions', 'Skill-version listing'],
-  ['POST /v1/skills/:id/versions', 'Skill-version upload'],
-  ['GET /v1/skills/:id/versions/:id', 'Skill-version retrieval'],
-  ['DELETE /v1/skills/:id/versions/:id', 'Skill-version deletion'],
-  ['GET /v1/skills/:id/versions/:id/content', 'Skill-version content'],
   ['GET /v1/sessions/:id/threads', 'Multi-agent thread listing'],
   ['GET /v1/sessions/:id/threads/:id', 'Multi-agent thread retrieval'],
   ['GET /v1/sessions/:id/threads/:id/events', 'Multi-agent thread events'],

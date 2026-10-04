@@ -372,6 +372,59 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('creates the skill_versions table on a fresh workspace and backfills existing skills', () => {
+    // Fresh: the table and its per-skill ordering index exist from the start.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'skill_versions')).toEqual(
+      expect.arrayContaining(['id', 'skill_id', 'seq', 'name', 'description', 'storage_path', 'created_at']),
+    );
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 53').get()).toEqual({
+      name: '053_skill_versions',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped before the table, holding a skill whose
+    // only version record is the `latest_version` pointer and a `versions` JSON
+    // blob. The upgrade back-fills that pointer as seq 1 rather than leaving the
+    // version routes to answer a skill that exists with no versions.
+    const upgradedPath = join(tmpDir, 'upgraded-skill-versions.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 51));
+    expect(columnsOf(upgraded, 'skill_versions')).toEqual([]);
+    upgraded.exec(`
+      INSERT INTO skills (id, name, description, instructions, latest_version, versions, storage_path, created_at, updated_at)
+      VALUES
+        ('skill_a', 'a', 'a-desc', 'a-instructions', '1700000000001',
+         '[{"id":"1700000000001","created_at":"2026-01-01T00:00:00.000Z","latest":true}]',
+         '/data/skills/skill_a', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+        ('skill_b', 'b', 'b-desc', 'b-instructions', NULL, '[]', NULL,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `);
+
+    upgraded.runMigrations();
+    const rows = upgraded.prepare(
+      'SELECT id, skill_id, seq, name, description, storage_path, created_at FROM skill_versions ORDER BY skill_id',
+    ).all() as Array<Record<string, unknown>>;
+    expect(rows).toEqual([
+      {
+        id: '1700000000001',
+        skill_id: 'skill_a',
+        seq: 1,
+        name: 'a',
+        description: 'a-desc',
+        storage_path: '/data/skills/skill_a',
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    // A skill with no recorded version produces no row: inventing one would be
+    // a version the operator never uploaded.
+    expect(
+      (upgraded.prepare('SELECT COUNT(*) AS c FROM skill_versions WHERE skill_id = ?').get('skill_b') as { c: number }).c,
+    ).toBe(0);
+    upgraded.close();
+  });
+
   it('transaction rolls back on error', () => {
     const db = new Database(dbPath);
     db.runMigrations();

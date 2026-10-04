@@ -132,7 +132,8 @@ Response:
   "id": "skill_b7dVwlt3PrkqThW8cS-AQ9pS",
   "created_at": "2026-07-12T00:00:00.000Z",
   "display_title": "code-review-assistant",
-  "latest_version": "1783852456290",
+  "latest_version": "skv_Zx9Qp2mRtVw7kBnLcYsA4dEf",
+  "latest_version_id": "skv_Zx9Qp2mRtVw7kBnLcYsA4dEf",
   "source": "custom",
   "type": "skill",
   "updated_at": "2026-07-12T00:00:00.000Z",
@@ -182,6 +183,56 @@ managed-agents reload
 
 When the agent runs, the runtime injects the referenced skill instructions into
 the system context.
+
+An agent reference may pin a specific version:
+
+```yaml
+skills:
+  - type: custom
+    skill_id: skill_b7dVwlt3PrkqThW8cS-AQ9pS
+    version: skv_Zx9Qp2mRtVw7kBnLcYsA4dEf
+```
+
+Without `version` (or with `version: latest`) the newest uploaded package is
+mounted. A pinned reference mounts that version's stored package; a pin that
+names a deleted or unknown version mounts no skill files at all.
+
+## Skill Versions
+
+Every upload that creates a skill also creates its first version, and each
+`POST /v1/skills/{skill_id}/versions` adds another with a fresh `skv_...` id.
+The skill's `latest_version` (and its `latest_version_id` alias) always points
+at the newest version.
+
+```bash
+# Upload a new version (same package format as POST /v1/skills)
+curl -X POST http://127.0.0.1:3000/v1/skills/SKILL_ID/versions \
+  -F "files=@code-review-assistant-v2.zip"
+
+# List versions, newest first
+curl http://127.0.0.1:3000/v1/skills/SKILL_ID/versions
+
+# Retrieve one version's metadata
+curl http://127.0.0.1:3000/v1/skills/SKILL_ID/versions/VERSION_ID
+
+# Download one version's package as a zip archive
+curl -OJ http://127.0.0.1:3000/v1/skills/SKILL_ID/versions/VERSION_ID/content
+
+# Delete one version
+curl -X DELETE http://127.0.0.1:3000/v1/skills/SKILL_ID/versions/VERSION_ID
+```
+
+Rules:
+
+- A version upload must keep the skill's frontmatter `name`; a package naming
+  a different skill is refused with `409`.
+- Deleting the latest version repoints `latest` at the newest survivor.
+- Deleting the only remaining version is refused with `409`; a skill always
+  keeps at least one version.
+- Deletion returns `{id, type: "skill_version_deleted"}` and removes the
+  version's stored package.
+- Built-in `anthropic` skills expose their version metadata read-only;
+  uploads, deletions, and content downloads are refused.
 
 ## Delete A Skill
 

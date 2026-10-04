@@ -151,6 +151,9 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     compactor: new ContextCompactor(),
     skills: options.skills,
     skillsDir: options.skillsDir,
+    // Version-pinned skill references resolve inside the managed upload tree;
+    // without a data directory no API-uploaded package exists to pin.
+    managedSkillsDir: options.dataDir ? join(options.dataDir, 'skills') : undefined,
     memory: options.memory,
     memoryRecords,
     memoryStoreName: options.memoryStoreName ?? ((storeId: string) => {

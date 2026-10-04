@@ -84,6 +84,13 @@ export interface ExecutorDeps {
   skills?: Skill[];
   /** Root directory containing explicit skill packages for Pi --skill flags. */
   skillsDir?: string;
+  /**
+   * Root under which API-uploaded skill versions are extracted
+   * (`<dataDir>/skills`). A skill reference pinning a version resolves that
+   * version's `storage_path` only when it stays inside this root; an embedder
+   * that supplies no managed skills root resolves no pinned packages.
+   */
+  managedSkillsDir?: string;
   /** Optional long-term memory provider, scoped by context_id (R9.16–18). */
   memory?: MemoryProvider;
   /** API-managed memory_records provider for mounted stores. */
@@ -484,10 +491,26 @@ export class DefaultSessionExecutor implements SessionExecutor {
   private skillDirsFor(agent: AgentDefinition): string[] {    const root = this.deps.skillsDir;
     if (!root) return [];
     const resolvedRoot = resolve(root);
+    const managedRoot = this.deps.managedSkillsDir ? resolve(this.deps.managedSkillsDir) : null;
     const byId = new Map((this.deps.skills ?? []).map((skill) => [skill.id, skill]));
     return (agent.skills ?? []).flatMap((reference) => {
       const skill = byId.get(reference.skill_id);
-      if (!skill?.file) return [];
+      if (!skill) return [];
+      // A reference naming a version pins that package: its stored directory
+      // wins over the skill's latest files, and a pin that resolves to
+      // nothing (deleted version, unmanaged storage) mounts nothing rather
+      // than silently falling back to the latest package the caller did not
+      // ask for.
+      if (reference.version && reference.version !== 'latest') {
+        const version = skill.versions.find((item) => item.id === reference.version);
+        if (version?.storage_path && managedRoot) {
+          const dir = resolve(version.storage_path);
+          if (dir !== managedRoot && !dir.startsWith(`${managedRoot}${sep}`)) return [];
+          return [dir];
+        }
+        if (!version || version.id !== skill.latest_version || !skill.file) return [];
+      }
+      if (!skill.file) return [];
       const file = resolve(resolvedRoot, skill.file);
       if (file !== resolvedRoot && !file.startsWith(`${resolvedRoot}${sep}`)) return [];
       return [dirname(file)];

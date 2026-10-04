@@ -17,6 +17,101 @@ type SkillRow = {
   updated_at: string | null;
 };
 
+export type SkillVersionRow = {
+  id: string;
+  skill_id: string;
+  seq: number;
+  name: string;
+  description: string;
+  storage_path: string;
+  created_at: string;
+};
+
+/** Durable version records for one skill, newest first. */
+export function listSkillVersions(db: Database, skillId: string): SkillVersionRow[] {
+  return db.prepare(`
+    SELECT id, skill_id, seq, name, description, storage_path, created_at
+    FROM skill_versions
+    WHERE skill_id = ?
+    ORDER BY seq DESC
+  `).all(skillId) as unknown as SkillVersionRow[];
+}
+
+export function getSkillVersion(db: Database, skillId: string, versionId: string): SkillVersionRow | undefined {
+  return db.prepare(`
+    SELECT id, skill_id, seq, name, description, storage_path, created_at
+    FROM skill_versions
+    WHERE skill_id = ? AND id = ?
+  `).get(skillId, versionId) as SkillVersionRow | undefined;
+}
+
+export function nextSkillVersionSeq(db: Database, skillId: string): number {
+  const row = db.prepare('SELECT MAX(seq) AS seq FROM skill_versions WHERE skill_id = ?').get(skillId) as
+    | { seq: number | null }
+    | undefined;
+  return (row?.seq ?? 0) + 1;
+}
+
+export function insertSkillVersion(db: Database, version: SkillVersionRow): void {
+  db.prepare(`
+    INSERT INTO skill_versions (id, skill_id, seq, name, description, storage_path, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    version.id,
+    version.skill_id,
+    version.seq,
+    version.name,
+    version.description,
+    version.storage_path,
+    version.created_at,
+  );
+}
+
+export function deleteSkillVersion(db: Database, skillId: string, versionId: string): void {
+  db.prepare('DELETE FROM skill_versions WHERE skill_id = ? AND id = ?').run(skillId, versionId);
+}
+
+/**
+ * Rewrite the skill's cached version list and latest pointer after a version
+ * upload or deletion. The `versions`/`latest_version` columns stay a
+ * projection of the `skill_versions` table rather than a second record of
+ * it, so every writer goes through this one update.
+ */
+export function updateSkillVersionCache(
+  db: Database,
+  skillId: string,
+  patch: {
+    latestVersion: string;
+    versions: SkillVersion[];
+    updatedAt: string;
+    description?: string;
+    instructions?: string;
+    frontmatter?: string;
+    file?: string;
+  },
+): void {
+  db.prepare(`
+    UPDATE skills
+    SET latest_version = ?,
+        versions = ?,
+        description = COALESCE(?, description),
+        instructions = COALESCE(?, instructions),
+        frontmatter = COALESCE(?, frontmatter),
+        file = COALESCE(?, file),
+        updated_at = ?
+    WHERE id = ?
+  `).run(
+    patch.latestVersion,
+    JSON.stringify(patch.versions),
+    patch.description ?? null,
+    patch.instructions ?? null,
+    patch.frontmatter ?? null,
+    patch.file ?? null,
+    patch.updatedAt,
+    skillId,
+  );
+}
+
 export function importSkillSeeds(db: Database, skills: Skill[]): void {
   for (const skill of skills) {
     const existing = db.prepare('SELECT id FROM skills WHERE id = ? OR (name = ? AND archived_at IS NULL)').get(
@@ -25,6 +120,18 @@ export function importSkillSeeds(db: Database, skills: Skill[]): void {
     );
     if (existing) continue;
     insertSkill(db, skill);
+    // Seeded skills get a version row too so the version routes answer the
+    // same way for every custom skill. Their package lives under the project
+    // skills directory, not the managed storage root, hence no storage_path.
+    insertSkillVersion(db, {
+      id: skill.latest_version ?? `${skill.id}-v1`,
+      skill_id: skill.id,
+      seq: 1,
+      name: skill.name,
+      description: skill.description,
+      storage_path: '',
+      created_at: skill.created_at ?? new Date().toISOString(),
+    });
   }
 }
 
@@ -61,7 +168,29 @@ export function loadCustomSkillsFromDb(db: Database): Skill[] {
     ORDER BY updated_at DESC, created_at DESC, name ASC
   `).all() as unknown as SkillRow[];
 
-  return rows.map(rowToSkill);
+  const versionMap = loadSkillVersionMap(db);
+  return rows.map((row) => rowToSkill(row, versionMap.get(row.id)));
+}
+
+/**
+ * Every stored version keyed by skill, loaded once rather than per skill row.
+ * The `skill_versions` table is the version record of truth; a skill without
+ * rows (imported before the table existed and never migrated) keeps its
+ * `versions` JSON as the fallback.
+ */
+function loadSkillVersionMap(db: Database): Map<string, SkillVersionRow[]> {
+  const rows = db.prepare(`
+    SELECT id, skill_id, seq, name, description, storage_path, created_at
+    FROM skill_versions
+    ORDER BY skill_id, seq DESC
+  `).all() as unknown as SkillVersionRow[];
+  const map = new Map<string, SkillVersionRow[]>();
+  for (const row of rows) {
+    const list = map.get(row.skill_id);
+    if (list) list.push(row);
+    else map.set(row.skill_id, [row]);
+  }
+  return map;
 }
 
 export function getSkillStoragePath(db: Database, id: string): string | null {
@@ -71,7 +200,7 @@ export function getSkillStoragePath(db: Database, id: string): string | null {
   return row?.storage_path ?? null;
 }
 
-function rowToSkill(row: SkillRow): Skill {
+function rowToSkill(row: SkillRow, versionRows?: SkillVersionRow[]): Skill {
   const frontmatter = parseObject(row.frontmatter);
   return {
     id: row.id,
@@ -85,7 +214,14 @@ function rowToSkill(row: SkillRow): Skill {
     file: row.file,
     source: row.source,
     latest_version: row.latest_version,
-    versions: parseVersions(row.versions),
+    versions: versionRows?.length
+      ? versionRows.map((version) => ({
+          id: version.id,
+          created_at: version.created_at,
+          latest: version.id === row.latest_version,
+          ...(version.storage_path ? { storage_path: version.storage_path } : {}),
+        }))
+      : parseVersions(row.versions),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

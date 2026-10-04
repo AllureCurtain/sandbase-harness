@@ -1,4 +1,4 @@
-import { inflateRawSync } from 'node:zlib';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { resolve, sep } from 'node:path';
 
 export type UploadedSkillFile = {
@@ -205,6 +205,65 @@ function extractZipEntries(zip: Buffer): UploadedSkillFile[] {
   }
 
   return entries;
+}
+
+/**
+ * Serialize entries as a stored-method zip archive — the inverse of
+ * `extractZipEntries`, so anything this produces is readable by the upload
+ * path. Entries are stored uncompressed: packages are already small (the
+ * upload ceiling is 8MB) and a stored archive keeps the encoder free of
+ * compression-state bugs. Timestamps are fixed to the DOS epoch minimum so
+ * the bytes are deterministic for identical content.
+ */
+export function buildSkillZip(entries: Array<{ path: string; content: Buffer }>): Buffer {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.path.replace(/\\/g, '/').replace(/^\/+/, ''), 'utf8');
+    const checksum = crc32(entry.content);
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4); // version needed
+    localHeader.writeUInt16LE(0x0800, 6); // UTF-8 flag
+    localHeader.writeUInt16LE(0, 8); // stored
+    localHeader.writeUInt16LE(0, 10); // mod time: 1980-01-01 00:00
+    localHeader.writeUInt16LE(0x21, 12); // mod date
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(entry.content.length, 18);
+    localHeader.writeUInt32LE(entry.content.length, 22);
+    localHeader.writeUInt16LE(name.length, 26);
+    localHeader.writeUInt16LE(0, 28); // extra length
+    localParts.push(localHeader, name, entry.content);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4); // version made by
+    centralHeader.writeUInt16LE(20, 6); // version needed
+    centralHeader.writeUInt16LE(0x0800, 8); // UTF-8 flag
+    centralHeader.writeUInt16LE(0, 10); // stored
+    centralHeader.writeUInt16LE(0, 12); // mod time
+    centralHeader.writeUInt16LE(0x21, 14); // mod date
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(entry.content.length, 20);
+    centralHeader.writeUInt32LE(entry.content.length, 24);
+    centralHeader.writeUInt16LE(name.length, 28);
+    // extra, comment, disk, internal attrs, external attrs: all zero
+    centralHeader.writeUInt32LE(offset, 42);
+    centralParts.push(centralHeader, name);
+
+    offset += localHeader.length + name.length + entry.content.length;
+  }
+
+  const central = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, central, end]);
 }
 
 function isIgnoredArchiveEntry(path: string): boolean {
