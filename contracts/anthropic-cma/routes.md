@@ -125,6 +125,7 @@ every row is mounted, and every mounted route has a row.
 | GET | `/v1/deployments` | `src/api/routes/deployments.ts` |
 | POST | `/v1/deployments` | `src/api/routes/deployments.ts` |
 | GET | `/v1/deployments/{id}` | `src/api/routes/deployments.ts` |
+| POST | `/v1/deployments/{id}` | `src/api/routes/deployments.ts` |
 | PUT | `/v1/deployments/{id}` | `src/api/routes/deployments.ts` |
 | POST | `/v1/deployments/{id}/archive` | `src/api/routes/deployments.ts` |
 | POST | `/v1/deployments/{id}/pause` | `src/api/routes/deployments.ts` |
@@ -137,6 +138,7 @@ every row is mounted, and every mounted route has a row.
 | GET | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
 | POST | `/v1/scheduled-deployments` | `src/api/routes/deployments.ts` |
 | GET | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
+| POST | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
 | PUT | `/v1/scheduled-deployments/{id}` | `src/api/routes/deployments.ts` |
 | POST | `/v1/scheduled-deployments/{id}/archive` | `src/api/routes/deployments.ts` |
 | POST | `/v1/scheduled-deployments/{id}/pause` | `src/api/routes/deployments.ts` |

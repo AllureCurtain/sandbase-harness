@@ -7,17 +7,29 @@ import { isValidTimeZone } from '@/core/operations/cron.js';
 import {
   archiveById,
   equalJsonObject,
+  equalJsonValue,
   invalid,
   notFound,
   now,
   objectField,
   parseObject,
   readObjectBody,
+  readOptionalObjectBody,
   stringField,
   type JsonObject,
   type OperationMountOptions,
 } from './operation-helpers.js';
+import { rejectUnexpectedQueryParams, parseIncludeArchived } from './query-params.js';
 import { publishOperationEvent, publishPauseTransition } from './operation-events.js';
+import {
+  normalizeAgentRef,
+  normalizeEnvironmentId,
+  normalizeResources,
+  normalizeVaultIds,
+} from './session-normalizers.js';
+import { normalizeInitialEvents } from './initial-events.js';
+import { parseSessionBudget, BUDGET_ERROR_CODES, type SessionBudget } from '@/core/session/session-budget.js';
+import { toDeploymentRun, RUN_VIEW_SELECT, type DeploymentRunViewRow } from './deployment-runs.js';
 
 /**
  * Scheduled deployments, addressed at two prefixes.
@@ -60,42 +72,84 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
   const collections = collectionPager<{ id: string }>(options.pageShape ?? 'canonical');
 
   app.get('/', (c) => {
-    const rows = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE archived_at IS NULL ORDER BY created_at DESC').all() as ScheduledDeploymentRow[];
-    return collections.json(c, rows.map(toScheduledDeployment));
+    const rejected = rejectUnexpectedQueryParams(c, DEPLOYMENT_LIST_PARAMS);
+    if (rejected) return rejected;
+    const includeArchived = parseIncludeArchived(c);
+    if (!includeArchived.ok) return includeArchived.response;
+    const status = c.req.query('status');
+    if (status !== undefined && status !== 'active' && status !== 'paused') {
+      return invalid(c, 'status must be "active" or "paused"');
+    }
+    const conditions: string[] = [];
+    const parameters: string[] = [];
+    if (!includeArchived.value) conditions.push('d.archived_at IS NULL');
+    if (status) {
+      conditions.push('d.status = ?');
+      parameters.push(status);
+    }
+    const agentId = c.req.query('agent_id');
+    if (agentId !== undefined) {
+      conditions.push('d.agent_id = ?');
+      parameters.push(agentId);
+    }
+    const createdGte = c.req.query('created_at[gte]');
+    if (createdGte !== undefined) {
+      conditions.push('d.created_at >= ?');
+      parameters.push(createdGte);
+    }
+    const createdLte = c.req.query('created_at[lte]');
+    if (createdLte !== undefined) {
+      conditions.push('d.created_at <= ?');
+      parameters.push(createdLte);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = deps.db.prepare(`${DEPLOYMENT_SELECT} ${where} ORDER BY d.created_at DESC`).all(...parameters) as DeploymentViewRow[];
+    return collections.json(c, rows.map(toApiDeployment));
   });
 
   app.post('/', async (c) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
-    const name = stringField(body.value.name);
-    const agentId = stringField(body.value.agent_id) ?? stringField(body.value.agent);
-    if (!name) return invalid(c, 'name is required');
-    if (!agentId) return invalid(c, 'agent_id is required');
-    const schedule = parseScheduleFields(body.value);
-    if (!schedule.ok) return invalid(c, schedule.message);
-    const status = normalizeScheduleStatus(body.value.status);
-    const id = `sched_${nanoid(18)}`;
+    const resolved = resolveDeploymentWrite(deps, body.value, null);
+    if (resolved instanceof Response) return resolved;
+    if (!resolved.name) return invalid(c, 'name is required');
+    if (!resolved.agent) return invalid(c, 'agent is required');
+    if (!resolved.environmentId) return invalid(c, 'environment_id is required');
+    if (!resolved.initialEvents || resolved.initialEvents.length === 0) {
+      return badRequest('initial_events is required', 'invalid_initial_events');
+    }
+    const id = `depl_${nanoid(18)}`;
     deps.db.prepare(`
       INSERT INTO scheduled_deployments (
-        id, name, agent_id, environment_id, cron, timezone, payload, status, paused_reason, next_run_at, metadata, created_at, updated_at
+        id, name, description, agent_id, agent_version, environment_id, cron, timezone,
+        payload, status, paused_reason, next_run_at,
+        initial_events, resources, vault_ids, budget, metadata, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
-      name,
-      agentId,
-      stringField(body.value.environment_id) ?? null,
-      schedule.expression,
-      schedule.timezone,
+      resolved.name!,
+      resolved.description ?? null,
+      resolved.agent!.id,
+      resolved.agent!.version,
+      resolved.environmentId!,
+      resolved.cron ?? null,
+      resolved.timezone ?? 'UTC',
       JSON.stringify(objectField(body.value.payload)),
-      status,
-      pauseReasonFor(status),
-      stringField(body.value.next_run_at) ?? nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null,
-      JSON.stringify(objectField(body.value.metadata)),
+      resolved.status,
+      pauseReasonFor(resolved.status),
+      resolved.nextRunAt ?? null,
+      JSON.stringify(resolved.initialEvents),
+      JSON.stringify(resolved.resources ?? []),
+      JSON.stringify(resolved.vaultIds ?? []),
+      resolved.budget === undefined ? null : JSON.stringify(resolved.budget),
+      // The published metadata bag is string-valued; normalize on the way in so
+      // a create and a later merge-patch agree on what is stored.
+      JSON.stringify(mergeMetadataPatch(null, body.value.metadata ?? {})),
       now(),
       now(),
     );
-    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    const row = deploymentRow(deps, id)!;
     // Published after the row exists, so a receiver that follows the reference
     // immediately finds the deployment rather than a 404. A create that failed
     // validation returned above this point and publishes nothing, for the same
@@ -110,7 +164,7 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       type: 'deployment.created',
       subjectId: id,
     });
-    return c.json(toScheduledDeployment(row), 201);
+    return c.json(toApiDeployment(row), 201);
   });
 
   app.post('/run-due', async (c) => {
@@ -120,86 +174,73 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
       // the other door onto `runSchedule` and deliberately reports nothing.
       onEvent: (event) => publishOperationEvent(deps, event),
     });
-    return collections.json(c, runs.map(toScheduledDeploymentRun), 202);
+    return collections.json(c, runs.map((run) => deploymentRunById(deps, run.id)!).map(toDeploymentRun), 202);
   });
 
   app.get('/:id', (c) => {
-    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as ScheduledDeploymentRow | undefined;
-    return row ? c.json(toScheduledDeployment(row)) : notFound(c, 'Scheduled deployment not found');
+    // Retrieve reports an archived deployment: the published object carries
+    // `archived_at` beside its pause state, so hiding the row would leave
+    // `include_archived` list entries that cannot be fetched.
+    const row = deps.db.prepare(`${DEPLOYMENT_SELECT} WHERE d.id = ?`).get(c.req.param('id')) as DeploymentViewRow | undefined;
+    return row ? c.json(toApiDeployment(row)) : notFound(c, 'Deployment not found');
   });
 
-  app.put('/:id', async (c) => {
+  const updateDeployment = async (c: any) => {
     const body = await readObjectBody(c);
     if (!body.ok) return body.response;
     const id = c.req.param('id');
-    const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
-    if (!existing) return notFound(c, 'Scheduled deployment not found');
-    const storedTimeZone = existing.timezone || 'UTC';
-    const schedule = parseScheduleFields({
-      cron: body.value.cron ?? existing.cron,
-      timezone: body.value.timezone ?? storedTimeZone,
-      schedule: body.value.schedule,
-    });
-    if (!schedule.ok) return invalid(c, schedule.message);
-    // An update that moves the cadence re-arms the next run in the resolved zone
-    // unless the caller supplied one, so changing only the timezone moves the
-    // schedule instead of leaving it at the instant the previous zone produced.
-    const cadenceChanged = schedule.expression !== existing.cron || schedule.timezone !== storedTimeZone;
-    const computedNextRunAt = nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null;
-    const nextRunAt = body.value.next_run_at === undefined
-      ? (cadenceChanged ? computedNextRunAt : existing.next_run_at)
-      : stringField(body.value.next_run_at) ?? computedNextRunAt;
-    const status = normalizeScheduleStatus(body.value.status ?? existing.status);
-    // Every value the write below uses is resolved first, so the same values can
-    // decide whether anything changed. Reading them twice is how a comparison
-    // comes to describe a different write than the one that happened.
-    const nextName = stringField(body.value.name) ?? existing.name;
-    const nextAgentId = stringField(body.value.agent_id) ?? stringField(body.value.agent) ?? existing.agent_id;
-    const nextEnvironmentId = body.value.environment_id === undefined ? existing.environment_id : stringField(body.value.environment_id) ?? null;
-    const nextPayload = body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload);
-    const nextMetadata = body.value.metadata === undefined ? parseObject(existing.metadata) : objectField(body.value.metadata);
+    const existing = deps.db.prepare(`${DEPLOYMENT_SELECT} WHERE d.id = ? AND d.archived_at IS NULL`).get(id) as DeploymentViewRow | undefined;
+    if (!existing) return notFound(c, 'Deployment not found');
+    const resolved = resolveDeploymentWrite(deps, body.value, existing);
+    if (resolved instanceof Response) return resolved;
     deps.db.prepare(`
       UPDATE scheduled_deployments
-      SET name = ?, agent_id = ?, environment_id = ?, cron = ?, timezone = ?, payload = ?, status = ?,
-          paused_reason = ?, next_run_at = ?, metadata = ?, updated_at = ?
+      SET name = ?, description = ?, agent_id = ?, agent_version = ?, environment_id = ?,
+          cron = ?, timezone = ?, payload = ?, status = ?, paused_reason = ?, next_run_at = ?,
+          initial_events = ?, resources = ?, vault_ids = ?, budget = ?, metadata = ?, updated_at = ?
       WHERE id = ?
     `).run(
-      nextName,
-      nextAgentId,
-      nextEnvironmentId,
-      schedule.expression,
-      schedule.timezone,
-      JSON.stringify(nextPayload),
-      status,
-      pauseReasonFor(status),
-      nextRunAt,
-      JSON.stringify(nextMetadata),
+      resolved.name ?? existing.name,
+      resolved.description === undefined ? existing.description : resolved.description,
+      resolved.agent?.id ?? existing.agent_id,
+      resolved.agent === undefined ? existing.agent_version : resolved.agent.version,
+      resolved.environmentId === undefined ? existing.environment_id : resolved.environmentId,
+      resolved.cron === undefined ? existing.cron : resolved.cron,
+      resolved.timezone ?? existing.timezone ?? 'UTC',
+      JSON.stringify(body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload)),
+      resolved.status,
+      resolved.pausedReason === undefined ? existing.paused_reason : resolved.pausedReason,
+      resolved.nextRunAt === undefined ? existing.next_run_at : resolved.nextRunAt,
+      JSON.stringify(resolved.initialEvents ?? parseJsonArray(existing.initial_events)),
+      JSON.stringify(resolved.resources ?? parseJsonArray(existing.resources)),
+      JSON.stringify(resolved.vaultIds ?? parseJsonArray(existing.vault_ids)),
+      resolved.budget === undefined ? existing.budget : resolved.budget === null ? null : JSON.stringify(resolved.budget),
+      JSON.stringify(resolved.metadata ?? parseObject(existing.metadata)),
       now(),
       id,
     );
-    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
-    // This route can change two different things, and each is reported by its own
-    // event. The fields below are compared against the row that was read before
-    // the write, and the comparison is structural because the stored `payload` and
-    // `metadata` are serializations: a text comparison would report a change for
-    // the same object re-sent with its keys in another order.
-    //
-    // `status` and `paused_reason` are deliberately absent. They belong to the
-    // pause transition, which has dedicated events, and which the two pause routes
-    // also perform — if this event covered them, a `POST /{id}/pause` would have to
-    // publish `deployment.updated` too, contradicting the published design of a
-    // dedicated event for that transition. `updated_at` is absent because it moves
-    // on every write by construction, so counting it would make the published
-    // no-op rule unreachable.
+    const row = deploymentRow(deps, id)!;
+    // Every comparison below is structural because the stored columns are
+    // serializations: a text comparison would report a change for the same
+    // object re-sent with its keys in another order. `status` and
+    // `paused_reason` are deliberately absent — they belong to the pause
+    // transition, which has dedicated events — and `updated_at` moves on every
+    // write by construction.
     const fieldsChanged = (
-      nextName !== existing.name
-      || nextAgentId !== existing.agent_id
-      || nextEnvironmentId !== (existing.environment_id ?? null)
-      || schedule.expression !== existing.cron
-      || schedule.timezone !== storedTimeZone
-      || nextRunAt !== (existing.next_run_at ?? null)
-      || !equalJsonObject(existing.payload, nextPayload)
-      || !equalJsonObject(existing.metadata, nextMetadata)
+      (resolved.name ?? existing.name) !== existing.name
+      || (resolved.description === undefined ? existing.description : resolved.description) !== existing.description
+      || (resolved.agent?.id ?? existing.agent_id) !== existing.agent_id
+      || (resolved.agent === undefined ? existing.agent_version : resolved.agent.version) !== existing.agent_version
+      || (resolved.environmentId === undefined ? existing.environment_id : resolved.environmentId) !== existing.environment_id
+      || (resolved.cron === undefined ? existing.cron : resolved.cron) !== existing.cron
+      || (resolved.timezone ?? existing.timezone ?? 'UTC') !== (existing.timezone || 'UTC')
+      || (resolved.nextRunAt === undefined ? existing.next_run_at : resolved.nextRunAt) !== existing.next_run_at
+      || !equalJsonValue(parseJsonArray(existing.initial_events), resolved.initialEvents ?? parseJsonArray(existing.initial_events))
+      || !equalJsonValue(parseJsonArray(existing.resources), resolved.resources ?? parseJsonArray(existing.resources))
+      || !equalJsonValue(parseJsonArray(existing.vault_ids), resolved.vaultIds ?? parseJsonArray(existing.vault_ids))
+      || (resolved.budget === undefined ? existing.budget : resolved.budget === null ? null : JSON.stringify(resolved.budget)) !== existing.budget
+      || !equalJsonObject(existing.metadata, resolved.metadata ?? parseObject(existing.metadata))
+      || !equalJsonObject(existing.payload, body.value.payload === undefined ? parseObject(existing.payload) : objectField(body.value.payload))
     );
     if (fieldsChanged) {
       await publishOperationEvent(deps, {
@@ -207,41 +248,45 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
         subjectId: id,
       });
     }
-    // A `PUT` can change the pause state through its `status` field, which is a
-    // third door onto the same state. Publishing from here is what keeps the
-    // event tied to the transition rather than to the route that caused it.
-    await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), status);
-    return c.json(toScheduledDeployment(row));
-  });
+    // The update can change the pause state through its `status` field, which
+    // is a third door onto the same state. Publishing from here is what keeps
+    // the event tied to the transition rather than to the route that caused it.
+    await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), resolved.status);
+    return c.json(toApiDeployment(row));
+  };
+  // `POST` is the published update verb; `PUT` remains mounted as the local
+  // alias it has always been, running the identical handler.
+  app.post('/:id', updateDeployment);
+  app.put('/:id', updateDeployment);
 
   app.post('/:id/pause', async (c) => {
     const id = c.req.param('id');
-    const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
-    if (!existing) return notFound(c, 'Scheduled deployment not found');
+    const existing = deps.db.prepare('SELECT id, status FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as { id: string; status: string } | undefined;
+    if (!existing) return notFound(c, 'Deployment not found');
     // Idempotent: pausing a paused deployment re-records the same reason rather
     // than erroring, because the caller's intent is already satisfied and a 409
     // would make a retried request fail for no reason.
     deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, updated_at = ? WHERE id = ?')
       .run('paused', pauseReasonFor('paused'), now(), id);
-    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    const row = deploymentRow(deps, id)!;
     await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), 'paused');
-    return c.json(toScheduledDeployment(row));
+    return c.json(toApiDeployment(row));
   });
 
   app.post('/:id/unpause', async (c) => {
     const id = c.req.param('id');
     const existing = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(id) as ScheduledDeploymentRow | undefined;
-    if (!existing) return notFound(c, 'Scheduled deployment not found');
+    if (!existing) return notFound(c, 'Deployment not found');
     const resumeAt = nextRunAfterResume(existing);
     deps.db.prepare('UPDATE scheduled_deployments SET status = ?, paused_reason = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
       .run('active', null, resumeAt, now(), id);
-    const row = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ?').get(id) as ScheduledDeploymentRow;
+    const row = deploymentRow(deps, id)!;
     await publishPauseTransition(deps, id, normalizeScheduleStatus(existing.status), 'active');
-    return c.json(toScheduledDeployment(row));
+    return c.json(toApiDeployment(row));
   });
 
   app.post('/:id/archive', async (c) => {
-    const outcome = archiveById(c, deps, 'scheduled_deployments', toScheduledDeployment, 'Scheduled deployment not found');
+    const outcome = archiveById(c, deps, 'scheduled_deployments', toApiDeployment, 'Deployment not found');
     // Published only when the archive actually happened. A repeat archive is a
     // 404 from the shared guard, not a second archive, so it publishes nothing —
     // which is the rule the published table states for the sibling resource
@@ -260,16 +305,16 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
 
   app.get('/:id/runs', (c) => {
     const schedule = deps.db.prepare('SELECT id FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id'));
-    if (!schedule) return notFound(c, 'Scheduled deployment not found');
-    const rows = deps.db.prepare('SELECT * FROM scheduled_deployment_runs WHERE schedule_id = ? ORDER BY started_at DESC').all(c.req.param('id')) as ScheduledDeploymentRunRow[];
-    return collections.json(c, rows.map(toScheduledDeploymentRun));
+    if (!schedule) return notFound(c, 'Deployment not found');
+    const rows = deps.db.prepare(`${RUN_VIEW_SELECT} WHERE r.schedule_id = ? ORDER BY r.started_at DESC`).all(c.req.param('id')) as unknown as DeploymentRunViewRow[];
+    return collections.json(c, rows.map(toDeploymentRun));
   });
 
   app.post('/:id/run', async (c) => {
-    const body = await readObjectBody(c);
+    const body = await readOptionalObjectBody(c);
     if (!body.ok) return body.response;
-    const schedule = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as ScheduledDeploymentRow | undefined;
-    if (!schedule) return notFound(c, 'Scheduled deployment not found');
+    const schedule = deps.db.prepare('SELECT * FROM scheduled_deployments WHERE id = ? AND archived_at IS NULL').get(c.req.param('id')) as ScheduleRow | undefined;
+    if (!schedule) return notFound(c, 'Deployment not found');
     // A paused deployment is still runnable by hand. The published contract says
     // so outright — "暂停期间仍允许通过 `run` 端点进行手动运行" (`定时部署.md:490`) —
     // because pause suppresses the *scheduler*, not the endpoint. This route used
@@ -282,17 +327,25 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     // is not `paused` to `active`. So the only status it could ever have seen
     // besides `active` is the one the contract says must be allowed, and an
     // `=== 'archived'` check here would be dead code asserting nothing.
-    const payload = {
-      ...parseObject(schedule.payload),
-      ...objectField(body.value.payload),
-    };
-    const manualSchedule = {
-      ...schedule,
-      payload: JSON.stringify(payload),
-    };
     try {
-      const row = runSchedule(deps.db, deps.sessionManager, manualSchedule, stringField(body.value.trigger_type) ?? 'manual');
-      return c.json(toScheduledDeploymentRun(row), 201);
+      const outcome = runSchedule(
+        deps.db,
+        deps.sessionManager,
+        schedule as never,
+        stringField(body.value.trigger_type) ?? 'manual',
+      );
+      // A manual trigger can still trip the two deployment-level transitions:
+      // an agent that no longer exists archives the deployment, and an
+      // unrecoverable creation failure pauses it. `deployment_run.*` events
+      // stay silent here by contract — only the timed path raises them.
+      if (outcome.archivedDeployment) {
+        await publishOperationEvent(deps, { type: 'deployment.archived', subjectId: schedule.id });
+        return c.json({ error: { type: 'conflict', message: 'Deployment was archived: its agent no longer exists' } }, 409);
+      }
+      if (outcome.pausedDeployment) {
+        await publishOperationEvent(deps, { type: 'deployment.paused', subjectId: schedule.id });
+      }
+      return c.json(toDeploymentRun(deploymentRunById(deps, outcome.run!.id)!), 201);
     } catch (err: any) {
       return c.json({ error: { type: 'internal_error', message: err?.message ?? String(err) } }, 500);
     }
@@ -301,29 +354,299 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
   return app;
 }
 
-function toScheduledDeployment(row: ScheduledDeploymentRow) {
+/**
+ * Query parameters `GET /v1/deployments` accepts: the published filter set
+ * plus the local pagination trio.
+ */
+const DEPLOYMENT_LIST_PARAMS = [
+  'agent_id',
+  'created_at[gte]',
+  'created_at[lte]',
+  'include_archived',
+  'status',
+  'limit',
+  'page',
+] as const;
+
+/**
+ * The deployment read view: the stored row plus the agent's current version,
+ * so a deployment written before `agent_version` existed still projects the
+ * concrete version the published `agent` reference requires.
+ */
+const DEPLOYMENT_SELECT = `
+  SELECT d.*, a.version AS resolved_agent_version
+  FROM scheduled_deployments d
+  LEFT JOIN agents a ON a.id = d.agent_id
+`;
+
+type DeploymentViewRow = ScheduledDeploymentRow & { resolved_agent_version: number | null };
+
+function deploymentRow(deps: ServerDeps, id: string): DeploymentViewRow | undefined {
+  return deps.db.prepare(`${DEPLOYMENT_SELECT} WHERE d.id = ?`).get(id) as DeploymentViewRow | undefined;
+}
+
+function deploymentRunById(deps: ServerDeps, id: string): DeploymentRunViewRow | undefined {
+  return deps.db.prepare(`${RUN_VIEW_SELECT} WHERE r.id = ?`).get(id) as DeploymentRunViewRow | undefined;
+}
+
+/**
+ * The published deployment object.
+ *
+ * `agent.version` is the version the deployment pins — resolved at create —
+ * falling back to the agent's current version for rows that predate pinning.
+ * `schedule` is the published `cron` object: `upcoming_runs_at` lists the next
+ * three fire instants while the deployment lives and is empty once archived,
+ * and `last_run_at` is the most recent *scheduled* start, which manual runs
+ * deliberately do not move. A deployment with no schedule is manual-only and
+ * reports `schedule: null`.
+ */
+function toApiDeployment(row: DeploymentViewRow) {
+  const archived = row.archived_at !== null;
   return {
     id: row.id,
-    type: 'scheduled_deployment',
+    type: 'deployment',
     name: row.name,
-    agent_id: row.agent_id,
+    description: row.description || null,
+    agent: {
+      type: 'agent',
+      id: row.agent_id,
+      version: row.agent_version ?? row.resolved_agent_version ?? null,
+    },
     environment_id: row.environment_id ?? null,
-    cron: row.cron,
-    timezone: row.timezone || 'UTC',
-    payload: parseObject(row.payload),
-    status: row.archived_at ? 'archived' : row.status,
-    // Read as null when nothing recorded a reason, rather than as an empty object
-    // or as `manual`. A row written before M042 is paused with no recorded reason,
-    // and reporting `manual` for it would claim the operator's intent was observed
-    // when it was not.
-    paused_reason: row.paused_reason ? parseObject(row.paused_reason) : null,
-    last_run_at: row.last_run_at ?? null,
-    next_run_at: row.next_run_at ?? null,
+    initial_events: parseJsonArray(row.initial_events),
+    resources: parseJsonArray(row.resources),
+    vault_ids: parseJsonArray(row.vault_ids).map(String),
+    budget: row.budget ? parseObject(row.budget) : null,
     metadata: parseObject(row.metadata),
+    schedule: row.cron
+      ? {
+        type: 'cron',
+        expression: row.cron,
+        timezone: row.timezone || 'UTC',
+        last_run_at: row.last_run_at ?? null,
+        upcoming_runs_at: archived ? [] : upcomingRunsAt(row.cron, row.timezone || 'UTC'),
+      }
+      : null,
+    // The pause axis and the archive axis are independent in the published
+    // shape: an archived deployment keeps reporting whether it was paused.
+    status: normalizeScheduleStatus(row.status),
+    paused_reason: row.paused_reason ? parseObject(row.paused_reason) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     archived_at: row.archived_at ?? null,
   };
+}
+
+/** The next `count` fire instants of a cron expression, in its zone. */
+function upcomingRunsAt(cron: string, timezone: string, count = 3): string[] {
+  const runs: string[] = [];
+  let after = new Date();
+  for (let index = 0; index < count; index += 1) {
+    const next = nextCronRun(cron, after, timezone);
+    if (!next) break;
+    runs.push(next.toISOString());
+    after = new Date(next.getTime() + 1000);
+  }
+  return runs;
+}
+
+/**
+ * Resolve every writable field of a deployment create/update into one shape,
+ * or a `Response` when the request cannot be honoured.
+ *
+ * The same resolver serves both routes so the two cannot disagree about what
+ * a field means. `existing` distinguishes them: `null` is a create, where
+ * omitted required fields surface as `undefined` for the caller to refuse;
+ * a row is an update, where omission preserves.
+ */
+function resolveDeploymentWrite(
+  deps: ServerDeps,
+  value: Record<string, unknown>,
+  existing: DeploymentViewRow | null,
+): DeploymentWrite | Response {
+  const out: DeploymentWrite = { status: 'active' };
+
+  const name = stringField(value.name);
+  if (value.name !== undefined && !name) return badRequest('name must be a non-empty string');
+  if (name) out.name = name;
+
+  if (value.agent !== undefined || value.agent_id !== undefined) {
+    const agentRef = normalizeAgentRef(value.agent ?? value.agent_id);
+    if (!agentRef.ok) return badRequest(agentRef.message, agentRef.code);
+    if (agentRef.ref.kind === 'overrides') {
+      return badRequest('agent overrides are not supported on a deployment', 'invalid_agent_ref');
+    }
+    const agentRow = deps.db.prepare('SELECT id, version, status, archived_at FROM agents WHERE id = ?').get(agentRef.ref.id) as { id: string; version: number; status: string; archived_at: string | null } | undefined;
+    if (!agentRow || agentRow.status === 'archived' || agentRow.archived_at) {
+      return badRequest(`Agent not found: ${agentRef.ref.id}`, 'agent_not_found');
+    }
+    if (agentRef.ref.kind === 'pinned') {
+      const pinned = deps.db.prepare('SELECT 1 FROM agent_versions WHERE agent_id = ? AND version = ?').get(agentRef.ref.id, agentRef.ref.version);
+      // An agent that was never republished keeps its first version on the
+      // `agents` row rather than in `agent_versions` — the same fallback the
+      // session runner applies when it resolves a pinned snapshot.
+      if (!pinned && agentRow.version !== agentRef.ref.version) {
+        return badRequest(`Agent ${agentRef.ref.id} has no version ${agentRef.ref.version}`, 'agent_not_found');
+      }
+    }
+    out.agent = {
+      id: agentRef.ref.id,
+      version: agentRef.ref.kind === 'pinned' ? agentRef.ref.version! : agentRow.version,
+    };
+  }
+
+  if (value.environment_id !== undefined) {
+    if (value.environment_id === null) return badRequest('environment_id cannot be cleared');
+    const environment = normalizeEnvironmentId(deps, value.environment_id);
+    if (!environment.ok) return badRequest(environment.message);
+    out.environmentId = environment.value;
+  }
+
+  if (value.initial_events !== undefined) {
+    if (value.initial_events === null) return badRequest('initial_events cannot be cleared', 'invalid_initial_events');
+    const initialEvents = normalizeInitialEvents(value.initial_events, { allowSystemMessage: true });
+    if (!initialEvents.ok) return badRequest(initialEvents.message ?? 'initial_events is invalid', initialEvents.code ?? 'invalid_initial_events');
+    if (initialEvents.events!.length === 0) {
+      return badRequest('initial_events must contain at least one event', 'invalid_initial_events');
+    }
+    out.initialEvents = initialEvents.events!;
+  }
+
+  if (value.resources !== undefined) {
+    if (value.resources === null) {
+      out.resources = [];
+    } else {
+      const resources = normalizeResources(deps, value.resources);
+      if (!resources.ok) return badRequest(resources.message);
+      out.resources = resources.value;
+    }
+  }
+
+  if (value.vault_ids !== undefined) {
+    if (value.vault_ids === null) {
+      out.vaultIds = [];
+    } else {
+      const vaultIds = normalizeVaultIds(deps, value.vault_ids);
+      if (!vaultIds.ok) return badRequest(vaultIds.message);
+      out.vaultIds = vaultIds.value;
+    }
+  }
+
+  if (value.budget !== undefined) {
+    const budget = parseSessionBudget(value.budget);
+    if (!budget.ok) return badRequest(budget.message ?? 'budget is invalid', budget.code ?? BUDGET_ERROR_CODES.invalidShape);
+    out.budget = budget.remove ? null : budget.budget ?? null;
+  }
+
+  if (value.description !== undefined) {
+    out.description = descriptionPatch(value.description, existing?.description ?? null);
+  }
+
+  if (value.metadata !== undefined && value.metadata !== null) {
+    out.metadata = mergeMetadataPatch(existing?.metadata, value.metadata);
+  }
+
+  // The cadence resolves from the published `schedule` object or the legacy
+  // flat `cron`/`timezone` pair. `schedule: null` reverts to manual-only.
+  if (value.schedule !== undefined || value.cron !== undefined || value.timezone !== undefined) {
+    if (value.schedule === null) {
+      out.cron = null;
+      out.timezone = existing?.timezone ?? 'UTC';
+      out.nextRunAt = null;
+    } else {
+      const schedule = parseScheduleFields({
+        cron: value.cron ?? existing?.cron,
+        timezone: value.timezone ?? existing?.timezone ?? 'UTC',
+        schedule: value.schedule,
+      });
+      if (!schedule.ok) return badRequest(schedule.message);
+      out.cron = schedule.expression;
+      out.timezone = schedule.timezone;
+      const cadenceChanged = schedule.expression !== existing?.cron || schedule.timezone !== (existing?.timezone || 'UTC');
+      out.nextRunAt = existing === null || cadenceChanged
+        ? nextCronRun(schedule.expression, new Date(), schedule.timezone)?.toISOString() ?? null
+        : existing.next_run_at;
+    }
+  }
+
+  // `next_run_at` stays caller-settable as a local extension.
+  if (value.next_run_at !== undefined) {
+    const explicit = stringField(value.next_run_at);
+    if (explicit) out.nextRunAt = explicit;
+  }
+
+  if (value.status !== undefined) {
+    out.status = normalizeScheduleStatus(value.status);
+    out.pausedReason = pauseReasonFor(out.status);
+  } else {
+    out.status = existing ? normalizeScheduleStatus(existing.status) : 'active';
+    if (value.schedule !== undefined || value.cron !== undefined) {
+      // Keep the stored paused_reason in step with a status the caller did not
+      // touch: an active deployment never carries a stale reason.
+      out.pausedReason = out.status === 'paused' ? existing!.paused_reason : null;
+    }
+  }
+
+  return out;
+}
+
+function badRequest(message: string, code?: string): Response {
+  return new Response(JSON.stringify({ error: { type: 'invalid_request_error', ...(code ? { code } : {}), message } }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+type DeploymentWrite = {
+  name?: string;
+  description?: string | null;
+  agent?: { id: string; version: number | null };
+  environmentId?: string;
+  initialEvents?: unknown[];
+  resources?: Array<Record<string, unknown>>;
+  vaultIds?: string[];
+  budget?: SessionBudget | null;
+  metadata?: Record<string, unknown>;
+  cron?: string | null;
+  timezone?: string;
+  nextRunAt?: string | null;
+  status: 'active' | 'paused';
+  pausedReason?: string | null;
+};
+
+type ScheduledDeploymentRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  agent_id: string;
+  agent_version: number | null;
+  environment_id: string | null;
+  cron: string | null;
+  timezone: string;
+  payload: string;
+  status: string;
+  paused_reason: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  initial_events: string;
+  resources: string;
+  vault_ids: string;
+  budget: string | null;
+  metadata: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+type ScheduleRow = ScheduledDeploymentRow;
+
+function parseJsonArray(value: string | null | undefined): unknown[] {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -335,11 +658,10 @@ function toScheduledDeployment(row: ScheduledDeploymentRow) {
  * carries a stale one. The same reasoning that put the parked-wait timestamp
  * beside the parked call rather than in a second place.
  *
- * `manual` is the only reason this runtime records. The contract's other kind —
+ * `manual` is the only reason the routes record. The contract's other kind —
  * an automatic pause after a non-recoverable trigger failure, whose `error.type`
- * is copied from the failed run — belongs with the run-failure taxonomy, so a
- * caller can currently distinguish "paused by a person" from "not paused" but not
- * yet "paused by the runtime" from "paused by a person".
+ * is copied from the failed run — is written by the scheduler, which owns the
+ * run-failure taxonomy.
  */
 function pauseReasonFor(status: 'active' | 'paused'): string | null {
   return status === 'paused' ? JSON.stringify({ type: 'manual' }) : null;
@@ -361,28 +683,15 @@ function pauseReasonFor(status: 'active' | 'paused'): string | null {
  *
  * The stored value is parsed rather than compared as a string, because
  * `next_run_at` is caller-supplied and need not carry the same precision or
- * form as `new Date().toISOString()`.
+ * form as `new Date().toISOString()`. A manual-only deployment has no cadence
+ * to resume, so it stays unarmed.
  */
 function nextRunAfterResume(row: ScheduledDeploymentRow): string | null {
+  if (!row.cron) return null;
   const stored = row.next_run_at;
   const storedMs = stored ? Date.parse(stored) : Number.NaN;
   if (Number.isFinite(storedMs) && storedMs > Date.now()) return stored;
   return nextCronRun(row.cron, new Date(), row.timezone || 'UTC')?.toISOString() ?? null;
-}
-
-function toScheduledDeploymentRun(row: ScheduledDeploymentRunRow) {
-  return {
-    id: row.id,
-    type: 'scheduled_deployment_run',
-    schedule_id: row.schedule_id,
-    session_id: row.session_id ?? null,
-    status: row.status,
-    trigger_type: row.trigger_type,
-    payload: parseObject(row.payload),
-    error: row.error ?? null,
-    started_at: row.started_at,
-    completed_at: row.completed_at ?? null,
-  };
 }
 
 function looksLikeCron(value: string) {
@@ -424,32 +733,33 @@ function normalizeScheduleStatus(value: unknown): 'active' | 'paused' {
   return value === 'paused' ? 'paused' : 'active';
 }
 
-type ScheduledDeploymentRow = {
-  id: string;
-  name: string;
-  agent_id: string;
-  environment_id: string | null;
-  cron: string;
-  timezone: string;
-  payload: string;
-  status: string;
-  paused_reason: string | null;
-  last_run_at: string | null;
-  next_run_at: string | null;
-  metadata: string;
-  created_at: string;
-  updated_at: string;
-  archived_at: string | null;
-};
+/**
+ * The published `description` patch: omitted preserves the stored value,
+ * `null` clears it, and an empty or whitespace-only string is stored as an
+ * empty string — which the read shape projects back to `null`.
+ */
+function descriptionPatch(incoming: unknown, stored: string | null): string {
+  if (incoming === undefined) return stored ?? '';
+  if (incoming === null) return '';
+  return stringField(incoming) ?? '';
+}
 
-type ScheduledDeploymentRunRow = {
-  id: string;
-  schedule_id: string;
-  session_id: string | null;
-  status: string;
-  trigger_type: string;
-  payload: string;
-  error: string | null;
-  started_at: string;
-  completed_at: string | null;
-};
+/**
+ * Merge a `metadata` patch onto the stored bag. The published contract deletes
+ * a key on a `null` **or** empty-string value; an omitted or whole `null`
+ * field preserves the bag unchanged.
+ */
+function mergeMetadataPatch(stored: string | null | undefined, patch: unknown): Record<string, unknown> {
+  const merged = parseObject(stored ?? null);
+  if (patch === undefined || patch === null) return merged;
+  for (const [key, value] of Object.entries(objectField(patch))) {
+    if (value === null || value === '') delete merged[key];
+    else merged[key] = String(value);
+  }
+  return merged;
+}
+
+// The helpers below keep their unused-import suppressions close: `JsonObject`
+// is part of the operation-helper vocabulary this file shares even where the
+// current routes do not need the alias.
+export type { JsonObject };

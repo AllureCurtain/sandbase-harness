@@ -1,361 +1,827 @@
 [
-  {
-    "id": "schedules-list",
-    "group": "Scheduled deployments",
-    "title": "List scheduled deployments",
-    "method": "GET",
-    "path": "/v1/scheduled-deployments",
-    "summary": "List scheduled deployment plans. Archived plans are excluded.",
-    "response": [
-      {
-        "name": "data",
-        "type": "ScheduledDeployment[]",
-        "description": "Schedules with cron expression, status, and next_run_at."
-      }
-    ]
-  },
-  {
-    "id": "schedules-create",
-    "group": "Scheduled deployments",
-    "title": "Create scheduled deployment",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments",
-    "summary": "Create a cron schedule that starts a session for an agent.",
-    "parameters": [
-      {
-        "name": "name",
-        "type": "string",
-        "required": true,
-        "description": "Human-readable schedule name."
-      },
-      {
-        "name": "agent_id",
-        "type": "string",
-        "required": true,
-        "description": "Agent to deploy. `agent` is accepted as an alias."
-      },
-      {
-        "name": "cron",
-        "type": "string",
-        "required": true,
-        "description": "Five-field cron expression."
-      },
-      {
-        "name": "environment_id",
-        "type": "string",
-        "description": "Environment the scheduled session runs in."
-      },
-      {
-        "name": "payload",
-        "type": "object",
-        "description": "Message payload passed to the scheduled session."
-      },
-      {
-        "name": "status",
-        "type": "active | paused",
-        "description": "Initial schedule state. Defaults to `active`."
-      },
-      {
-        "name": "next_run_at",
-        "type": "string",
-        "description": "Override for the computed next run time."
-      },
-      {
-        "name": "metadata",
-        "type": "object",
-        "description": "Opaque tags."
-      }
-    ],
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Server-generated sched_... identifier."
-      },
-      {
-        "name": "agent_id",
-        "type": "string",
-        "description": "Agent deployed by this schedule."
-      },
-      {
-        "name": "cron",
-        "type": "string",
-        "description": "Stored cron expression."
-      },
-      {
-        "name": "status",
-        "type": "active | paused",
-        "description": "Current schedule state."
-      },
-      {
-        "name": "paused_reason",
-        "type": "object | null",
-        "description": "Why the schedule is paused, or null when it is not. Currently always `{\"type\": \"manual\"}` when paused."
-      },
-      {
-        "name": "next_run_at",
-        "type": "string",
-        "description": "Computed next run time, or null when the cron expression has no future match."
-      }
-    ]
-  },
-  {
-    "id": "schedules-get",
-    "group": "Scheduled deployments",
-    "title": "Get scheduled deployment",
-    "method": "GET",
-    "path": "/v1/scheduled-deployments/{schedule_id}",
-    "summary": "Retrieve a scheduled deployment plan. Archived plans are treated as missing.",
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Schedule identifier."
-      },
-      {
-        "name": "name",
-        "type": "string",
-        "description": "Human-readable schedule name."
-      },
-      {
-        "name": "cron",
-        "type": "string",
-        "description": "Stored cron expression."
-      },
-      {
-        "name": "status",
-        "type": "active | paused",
-        "description": "Current schedule state."
-      },
-      {
-        "name": "paused_reason",
-        "type": "object | null",
-        "description": "Why the schedule is paused, or null when it is not."
-      }
-    ]
-  },
-  {
-    "id": "schedules-update",
-    "group": "Scheduled deployments",
-    "title": "Update scheduled deployment",
-    "method": "PUT",
-    "path": "/v1/scheduled-deployments/{schedule_id}",
-    "summary": "Update a scheduled deployment plan. Omitted fields keep their stored value.",
-    "parameters": [
-      {
-        "name": "name",
-        "type": "string",
-        "description": "Human-readable schedule name."
-      },
-      {
-        "name": "agent_id",
-        "type": "string",
-        "description": "Agent to deploy. `agent` is accepted as an alias."
-      },
-      {
-        "name": "environment_id",
-        "type": "string",
-        "description": "Environment the scheduled session runs in."
-      },
-      {
-        "name": "cron",
-        "type": "string",
-        "description": "Five-field cron expression."
-      },
-      {
-        "name": "payload",
-        "type": "object",
-        "description": "Replacement message payload."
-      },
-      {
-        "name": "status",
-        "type": "active | paused",
-        "description": "Pause or resume the schedule."
-      },
-      {
-        "name": "next_run_at",
-        "type": "string",
-        "description": "Override for the next run time. An explicit null recomputes it from the cron expression."
-      },
-      {
-        "name": "metadata",
-        "type": "object",
-        "description": "Replacement opaque tags."
-      }
-    ],
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Schedule identifier."
-      },
-      {
-        "name": "cron",
-        "type": "string",
-        "description": "Stored cron expression after the update."
-      },
-      {
-        "name": "next_run_at",
-        "type": "string",
-        "description": "Next run time after the update."
-      },
-      {
-        "name": "updated_at",
-        "type": "string",
-        "description": "ISO 8601 update timestamp."
-      }
-    ]
-  },
-  {
-    "id": "schedules-pause",
-    "group": "Scheduled deployments",
-    "title": "Pause scheduled deployment",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments/{schedule_id}/pause",
-    "summary": "Stop the schedule from producing timed runs. Sessions already running keep running, and a manual run is still allowed.",
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Schedule identifier."
-      },
-      {
-        "name": "status",
-        "type": "paused",
-        "description": "Schedule state after pausing."
-      },
-      {
-        "name": "paused_reason",
-        "type": "object",
-        "description": "`{\"type\": \"manual\"}`. Tells an intentional pause apart from an automatic one."
-      }
-    ]
-  },
-  {
-    "id": "schedules-unpause",
-    "group": "Scheduled deployments",
-    "title": "Unpause scheduled deployment",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments/{schedule_id}/unpause",
-    "summary": "Resume the schedule from the next scheduled instant. Triggers missed while paused are not caught up.",
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Schedule identifier."
-      },
-      {
-        "name": "status",
-        "type": "active",
-        "description": "Schedule state after unpausing."
-      },
-      {
-        "name": "paused_reason",
-        "type": "null",
-        "description": "Cleared, so a resumed schedule never reads as paused with a reason."
-      },
-      {
-        "name": "next_run_at",
-        "type": "string",
-        "description": "The next scheduled instant. Recomputed forward when the stored one had already passed."
-      }
-    ]
-  },
-  {
-    "id": "schedules-archive",
-    "group": "Scheduled deployments",
-    "title": "Archive scheduled deployment",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments/{schedule_id}/archive",
-    "summary": "Archive a scheduled deployment plan so it stops producing runs.",
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Archived schedule identifier."
-      },
-      {
-        "name": "status",
-        "type": "archived",
-        "description": "Schedule state after archiving."
-      },
-      {
-        "name": "archived_at",
-        "type": "string",
-        "description": "ISO 8601 archive timestamp."
-      }
-    ]
-  },
-  {
-    "id": "schedules-runs",
-    "group": "Scheduled deployments",
-    "title": "List schedule runs",
-    "method": "GET",
-    "path": "/v1/scheduled-deployments/{schedule_id}/runs",
-    "summary": "List run records for a schedule, including the session each run created.",
-    "response": [
-      {
-        "name": "data",
-        "type": "ScheduledDeploymentRun[]",
-        "description": "Run records, newest first."
-      }
-    ]
-  },
-  {
-    "id": "schedules-run",
-    "group": "Scheduled deployments",
-    "title": "Run scheduled deployment now",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments/{schedule_id}/run",
-    "summary": "Manually trigger a schedule and create a session. A paused schedule can still be run by hand; only an archived one is gone.",
-    "parameters": [
-      {
-        "name": "payload",
-        "type": "object",
-        "description": "Overrides merged into the stored schedule payload for this run."
-      },
-      {
-        "name": "trigger_type",
-        "type": "string",
-        "description": "Run trigger label. Defaults to `manual`."
-      }
-    ],
-    "response": [
-      {
-        "name": "id",
-        "type": "string",
-        "description": "Run record identifier."
-      },
-      {
-        "name": "session_id",
-        "type": "string",
-        "description": "Session created by this run."
-      },
-      {
-        "name": "status",
-        "type": "string",
-        "description": "Run outcome state."
-      },
-      {
-        "name": "trigger_type",
-        "type": "string",
-        "description": "Trigger label recorded for this run."
-      }
-    ]
-  },
-  {
-    "id": "schedules-run-due",
-    "group": "Scheduled deployments",
-    "title": "Run due scheduled deployments",
-    "method": "POST",
-    "path": "/v1/scheduled-deployments/run-due",
-    "summary": "Run every active schedule whose next_run_at has arrived.",
-    "response": [
-      {
-        "name": "data",
-        "type": "ScheduledDeploymentRun[]",
-        "description": "Run records created by this pass."
-      }
-    ]
-  }
+ {
+  "id": "schedules-list",
+  "group": "Scheduled deployments",
+  "title": "List deployments",
+  "method": "GET",
+  "path": "/v1/scheduled-deployments",
+  "summary": "List deployments newest first. Archived rows are excluded unless `include_archived=true` is passed.",
+  "parameters": [
+   {
+    "name": "agent_id",
+    "type": "string",
+    "description": "Only deployments bound to this agent."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Only deployments in this state."
+   },
+   {
+    "name": "include_archived",
+    "type": "true | false",
+    "description": "`true` also returns archived deployments."
+   },
+   {
+    "name": "created_at[gt|gte|lt|lte]",
+    "type": "string",
+    "description": "ISO 8601 bounds on creation time."
+   }
+  ],
+  "response": [
+   {
+    "name": "data",
+    "type": "Deployment[]",
+    "description": "Deployments in the published shape: `type`, `id`, `name`, `description`, `agent`, `environment_id`, `initial_events`, `resources`, `vault_ids`, `schedule`, `status`, `paused_reason`, `metadata`, timestamps, `archived_at`."
+   }
+  ]
+ },
+ {
+  "id": "schedules-create",
+  "group": "Scheduled deployments",
+  "title": "Create deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments",
+  "summary": "Create a deployment that starts a session for an agent, optionally on a cron schedule.",
+  "parameters": [
+   {
+    "name": "name",
+    "type": "string",
+    "required": true,
+    "description": "Human-readable deployment name."
+   },
+   {
+    "name": "agent",
+    "type": "string | object",
+    "required": true,
+    "description": "Agent to deploy: an id for the current version, or `{type:\"agent\", id, version}` to pin. `agent_id` is accepted as a legacy alias."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "required": true,
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "required": true,
+    "description": "Events sent to each session on creation. `user.message`, `user.define_outcome`, and `system.message` are accepted; `user.tool_confirmation` is refused. At least one event is required."
+   },
+   {
+    "name": "schedule",
+    "type": "object",
+    "description": "`{type:\"cron\", expression, timezone}` for a recurring deployment. Omitted, the deployment only runs by hand. `schedule: null` on update removes the cadence."
+   },
+   {
+    "name": "cron",
+    "type": "string",
+    "description": "Legacy flat alias for `schedule.expression`."
+   },
+   {
+    "name": "timezone",
+    "type": "string",
+    "description": "Legacy flat alias for `schedule.timezone`. Defaults to `UTC`."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Initial state. Defaults to `active`."
+   },
+   {
+    "name": "next_run_at",
+    "type": "string",
+    "description": "Local extension: override for the computed next run time."
+   }
+  ],
+  "response": [
+   {
+    "name": "id",
+    "type": "string",
+    "description": "Server-generated `depl_...` identifier."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create time."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Current pause state. An archived deployment still reports its pause state beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{type:\"manual\"}` when paused by hand, `{type:\"error\", error}` when the runner paused it after a failed scheduled run."
+   }
+  ]
+ },
+ {
+  "id": "schedules-get",
+  "group": "Scheduled deployments",
+  "title": "Get deployment",
+  "method": "GET",
+  "path": "/v1/scheduled-deployments/{deployment_id}",
+  "summary": "Retrieve one deployment, including an archived one.",
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-update",
+  "group": "Scheduled deployments",
+  "title": "Update deployment",
+  "method": "PUT",
+  "path": "/v1/scheduled-deployments/{deployment_id}",
+  "summary": "Deprecated alias of the published POST update. Partial update: omitted fields keep their values, `metadata` merges by key (`null`/\"\" deletes a key), `description: null` clears, and `initial_events`, `resources`, `vault_ids`, `schedule`, and `budget` replace wholesale.",
+  "parameters": [
+   {
+    "name": "name",
+    "type": "string",
+    "description": "New name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "New description, or null to clear."
+   },
+   {
+    "name": "agent",
+    "type": "string | object",
+    "description": "Rebind to another agent or pin a version."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "Replacement event list; cannot be emptied or cleared."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "Replacement cadence, or null to make the deployment manual-only."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state. `paused` records `{type:\"manual\"}` as the reason."
+   },
+   {
+    "name": "next_run_at",
+    "type": "string",
+    "description": "Local extension: override the computed next run time."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "Merge patch: `null`/\"\" deletes a key."
+   }
+  ],
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-update-post",
+  "group": "Scheduled deployments",
+  "title": "Update deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/{deployment_id}",
+  "summary": "Published update verb. Same partial-update semantics as the PUT alias: omitted fields keep their values, `metadata` merges by key, `description: null` clears, `schedule: null` removes the cadence.",
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-pause",
+  "group": "Scheduled deployments",
+  "title": "Pause deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/{deployment_id}/pause",
+  "summary": "Suppress scheduled runs until unpaused. Idempotent; records `paused_reason` `{type:\"manual\"}`.",
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-unpause",
+  "group": "Scheduled deployments",
+  "title": "Unpause deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/{deployment_id}/unpause",
+  "summary": "Resume scheduled runs. A missed instant is not caught up; the next run is the next cron instant.",
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-archive",
+  "group": "Scheduled deployments",
+  "title": "Archive deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/{deployment_id}/archive",
+  "summary": "Archive the deployment. It stays retrievable with `archived_at` set and keeps reporting its pause `status`.",
+  "response": [
+   {
+    "name": "type",
+    "type": "\"deployment\"",
+    "description": "The published object type."
+   },
+   {
+    "name": "id",
+    "type": "string",
+    "description": "`depl_...` identifier."
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "description": "Deployment name."
+   },
+   {
+    "name": "description",
+    "type": "string | null",
+    "description": "Optional description."
+   },
+   {
+    "name": "agent",
+    "type": "object",
+    "description": "`{type:\"agent\", id, version}` — the version pinned at create."
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "description": "Environment each deployed session runs in."
+   },
+   {
+    "name": "initial_events",
+    "type": "array",
+    "description": "The events each run sends to its session on creation."
+   },
+   {
+    "name": "resources",
+    "type": "array",
+    "description": "File and memory-store resources mounted into each session."
+   },
+   {
+    "name": "vault_ids",
+    "type": "array",
+    "description": "Credential vault ids available to each session."
+   },
+   {
+    "name": "budget",
+    "type": "object | null",
+    "description": "Session budget applied to each run."
+   },
+   {
+    "name": "metadata",
+    "type": "object",
+    "description": "String-valued key pairs."
+   },
+   {
+    "name": "schedule",
+    "type": "object | null",
+    "description": "`{type:\"cron\", expression, timezone, last_run_at, upcoming_runs_at}` — the next three scheduled instants — or null for a manual-only deployment."
+   },
+   {
+    "name": "status",
+    "type": "active | paused",
+    "description": "Pause state, reported beside `archived_at`."
+   },
+   {
+    "name": "paused_reason",
+    "type": "object | null",
+    "description": "`{\"type\":\"manual\"}` or `{\"type\":\"error\",\"error\":{\"type\",\"message\"}}` mirroring a failed run."
+   },
+   {
+    "name": "created_at",
+    "type": "string",
+    "description": "Creation timestamp."
+   },
+   {
+    "name": "updated_at",
+    "type": "string",
+    "description": "Last update timestamp."
+   },
+   {
+    "name": "archived_at",
+    "type": "string | null",
+    "description": "Set once archived; the row then 404s on write routes."
+   }
+  ]
+ },
+ {
+  "id": "schedules-runs",
+  "group": "Scheduled deployments",
+  "title": "List deployment runs",
+  "method": "GET",
+  "path": "/v1/scheduled-deployments/{deployment_id}/runs",
+  "summary": "List the deployment's recorded runs, newest first, in the published deployment-run shape.",
+  "response": [
+   {
+    "name": "data",
+    "type": "DeploymentRun[]",
+    "description": "Runs for this deployment, newest first, in the published run shape."
+   }
+  ]
+ },
+ {
+  "id": "schedules-run",
+  "group": "Scheduled deployments",
+  "title": "Run deployment",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/{deployment_id}/run",
+  "summary": "Trigger the deployment immediately. Allowed while paused; creates the session from the deployment’s `initial_events` and records the run. Does not publish `deployment_run.*` webhook events — those belong to the timed path.",
+  "response": [
+   {
+    "name": "id",
+    "type": "string",
+    "description": "Run identifier, `drun_...`."
+   },
+   {
+    "name": "trigger_context",
+    "type": "object",
+    "description": "`{type:\"manual\"}` for a hand-triggered run."
+   },
+   {
+    "name": "session_id",
+    "type": "string | null",
+    "description": "Session the run created, or null when creation was rejected."
+   },
+   {
+    "name": "error",
+    "type": "object | null",
+    "description": "Classified `{type, message}` — e.g. `session_creation_rejected_error`, `environment_archived_error` — on a failed run."
+   }
+  ]
+ },
+ {
+  "id": "schedules-run-due",
+  "group": "Scheduled deployments",
+  "title": "Run due deployments",
+  "method": "POST",
+  "path": "/v1/scheduled-deployments/run-due",
+  "summary": "Local extension: trigger every active deployment whose next run has arrived. Emits `deployment_run.started` and `deployment_run.succeeded`/`failed`, and `session.created` for each session it creates.",
+  "response": [
+   {
+    "name": "data",
+    "type": "DeploymentRun[]",
+    "description": "202. The run records this pass produced for due deployments, newest first. A deployment archived because its agent is gone produces no run."
+   }
+  ]
+ }
 ]

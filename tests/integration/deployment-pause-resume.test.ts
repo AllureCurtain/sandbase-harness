@@ -44,6 +44,9 @@ describe('Deployment pause and resume', () => {
     db.prepare(
       "INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')",
     ).run();
+    db.prepare(
+      "INSERT INTO agents (id, name, definition) VALUES ('agent_a', 'a', '{\"name\":\"a\",\"model\":\"default\"}')",
+    ).run();
     app = createServer({
       db,
       sessionManager: new SessionManager(db),
@@ -69,7 +72,13 @@ describe('Deployment pause and resume', () => {
     return { status: res.status, body: text ? JSON.parse(text) as Record<string, any> : undefined };
   }
 
-  const definition = { name: 'nightly', agent_id: 'agent_a', cron: '0 3 * * *' };
+  const definition = {
+    name: 'nightly',
+    agent_id: 'agent_a',
+    environment_id: 'env_a',
+    cron: '0 3 * * *',
+    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+  };
   const BASE = '/v1/scheduled-deployments';
 
   async function createDeployment(server: ReturnType<typeof createServer>, extra: Record<string, unknown> = {}) {
@@ -137,7 +146,7 @@ describe('Deployment pause and resume', () => {
     // Not refused. Before this change this call was a 400 and left no run record,
     // which is exactly what the contract says must not happen.
     expect(run.status).toBe(201);
-    expect(run.body?.trigger_type).toBe('manual');
+    expect(run.body?.trigger_context).toEqual({ type: 'manual' });
     expect(runRows(id)).toHaveLength(1);
     expect(runRows(id)[0].trigger_type).toBe('manual');
   });
@@ -166,8 +175,11 @@ describe('Deployment pause and resume', () => {
 
     const resumed = await send(server, 'POST', `${BASE}/${id}/unpause`);
     expect(resumed.body?.status).toBe('active');
-    const nextRunAt = resumed.body?.next_run_at as string;
-    expect(Date.parse(nextRunAt)).toBeGreaterThan(Date.now());
+    // The published shape surfaces the schedule's upcoming instants rather than
+    // the stored `next_run_at`; the rearm still lands in the future.
+    const upcoming = resumed.body?.schedule?.upcoming_runs_at as string[];
+    expect(Array.isArray(upcoming)).toBe(true);
+    expect(Date.parse(upcoming[0])).toBeGreaterThan(Date.now());
 
     // The consequence, not just the field: nothing fires for the missed instant.
     const due = await send(server, 'POST', `${BASE}/run-due`);
@@ -183,9 +195,13 @@ describe('Deployment pause and resume', () => {
     setNextRunInPast(id, future);
 
     // Already the next scheduled instant, so recomputing would only discard it —
-    // and for a caller-set `next_run_at` it would discard their choice.
+    // and for a caller-set `next_run_at` it would discard their choice. The
+    // published shape does not surface `next_run_at`, so the assertion is on the
+    // stored row the scheduler actually reads.
     const resumed = await send(server, 'POST', `${BASE}/${id}/unpause`);
-    expect(resumed.body?.next_run_at).toBe(future);
+    expect(resumed.body?.status).toBe('active');
+    const stored = db!.prepare('SELECT next_run_at FROM scheduled_deployments WHERE id = ?').get(id) as { next_run_at: string };
+    expect(stored.next_run_at).toBe(future);
   });
 
   it('is idempotent and refuses an archived or unknown deployment', async () => {
@@ -208,11 +224,16 @@ describe('Deployment pause and resume', () => {
     await send(server, 'POST', `${BASE}/${id}/archive`);
     expect((await send(server, 'POST', `${BASE}/${id}/pause`)).status).toBe(404);
     expect((await send(server, 'POST', `${BASE}/${id}/unpause`)).status).toBe(404);
-    // A body is required, and only then: `readObjectBody` runs before the lookup,
-    // so a bodyless request is a 400 in its own right and would not tell an absent
-    // deployment apart from a malformed request.
+    // The run body is optional — the published request carries no required
+    // fields and the SDK sends none — so a bodyless call reaches the lookup and
+    // answers the same 404, while a body that is present but not JSON is still
+    // refused as malformed before the lookup runs.
     expect((await send(server, 'POST', `${BASE}/${id}/run`, {})).status).toBe(404);
-    expect((await send(server, 'POST', `${BASE}/${id}/run`)).status).toBe(400);
+    expect((await send(server, 'POST', `${BASE}/${id}/run`)).status).toBe(404);
+    const malformed = await server.request(`${BASE}/${id}/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json{',
+    });
+    expect(malformed.status).toBe(400);
   });
 
   it('serves the lifecycle at the published prefix too', async () => {

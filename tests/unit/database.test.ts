@@ -157,6 +157,61 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('rebuilds scheduled_deployments into the published shape and keeps old rows readable', () => {
+    // Fresh: the published columns exist as soon as migrations run, and `cron`
+    // is nullable so a manual-only deployment can be stored.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    const columns = columnsOf(fresh, 'scheduled_deployments');
+    for (const column of ['description', 'agent_version', 'initial_events', 'resources', 'vault_ids', 'budget']) {
+      expect(columns).toContain(column);
+    }
+    const cronColumn = fresh.prepare(`PRAGMA table_info(scheduled_deployments)`).all()
+      .find((column: any) => column.name === 'cron') as { notnull: number };
+    expect(cronColumn.notnull).toBe(0);
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 52').get()).toEqual({
+      name: '052_deployment_official_shape',
+    });
+    fresh.close();
+
+    // Existing: a pre-052 workspace holding one deployment with the legacy
+    // `payload.title`. The upgrade must keep the row readable — the title moves
+    // into `metadata`, `initial_events` lands empty (which is what later makes
+    // its run a classified failure), and the pause state survives untouched.
+    const upgradedPath = join(tmpDir, 'upgraded-052.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 51));
+    expect(columnsOf(upgraded, 'scheduled_deployments')).not.toContain('initial_events');
+    upgraded.exec(`
+      INSERT INTO scheduled_deployments (id, name, agent_id, cron, payload, status, metadata)
+      VALUES ('sched_old', 'old', 'agent_o', '0 3 * * *', '{"title":"nightly title"}', 'paused', '{"keep":"yes"}')
+    `);
+    upgraded.exec(`
+      INSERT INTO scheduled_deployment_runs (id, schedule_id, session_id, status, trigger_type)
+      VALUES ('sdr_old', 'sched_old', NULL, 'failed', 'scheduled')
+    `);
+
+    upgraded.runMigrations();
+    const row = upgraded.prepare(
+      'SELECT agent_version, initial_events, resources, vault_ids, budget, metadata, status FROM scheduled_deployments WHERE id = ?',
+    ).get('sched_old') as Record<string, unknown>;
+    expect(row.status).toBe('paused');
+    expect(row.agent_version).toBeNull();
+    expect(row.initial_events).toBe('[]');
+    expect(row.resources).toBe('[]');
+    expect(row.vault_ids).toBe('[]');
+    expect(row.budget).toBeNull();
+    expect(JSON.parse(row.metadata as string)).toEqual({ keep: 'yes', title: 'nightly title' });
+    // The run history gained the published columns and the row survived.
+    const run = upgraded.prepare(
+      'SELECT id, scheduled_at, error_type FROM scheduled_deployment_runs WHERE id = ?',
+    ).get('sdr_old') as Record<string, unknown>;
+    expect(run.id).toBe('sdr_old');
+    expect(run.scheduled_at).toBeNull();
+    expect(run.error_type).toBeNull();
+    upgraded.close();
+  });
+
   it('adds the work-item stop marker to a fresh workspace and to an existing one', () => {
     // Fresh: the column exists as soon as migrations run.
     const fresh = new Database(dbPath);

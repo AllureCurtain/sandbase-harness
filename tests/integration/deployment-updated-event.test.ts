@@ -129,7 +129,15 @@ describe('deployment.updated', () => {
     const res = await app.request('/v1/deployments', {
       method: 'POST',
       headers: CMA_HEADERS,
-      body: JSON.stringify({ name, agent_id: 'agent_one', cron: '0 20 * * 5', payload: { a: 1 }, metadata: { m: 1 }, ...extra }),
+      body: JSON.stringify({
+        name,
+        agent_id: 'agent_one',
+        environment_id: 'env_default',
+        cron: '0 20 * * 5',
+        initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+        metadata: { m: 1 },
+        ...extra,
+      }),
     });
     expect(res.status).toBe(201);
     return (await res.json()).id;
@@ -194,42 +202,57 @@ describe('deployment.updated', () => {
     await fieldCase('rerun', { next_run_at: '2030-01-01T00:00:00.000Z' });
   });
 
-  it('publishes when payload changes, and not when it is re-sent', async () => {
-    await fieldCase('repayload', { payload: { a: 2 } });
+  it('publishes when initial_events changes, and not when it is re-sent', async () => {
+    await fieldCase('reevents', {
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'changed' }] }],
+    });
   });
 
   it('publishes when metadata changes, and not when it is re-sent', async () => {
     await fieldCase('remeta', { metadata: { m: 2 } });
   });
 
-  it('does not publish for the same payload content sent in a different key order', async () => {
+  it('does not publish for the same metadata content sent in a different key order', async () => {
     const webhookId = await subscribe();
-    const id = await createDeployment('keyorder', { payload: { alpha: 1, beta: 2 } });
+    const id = await createDeployment('keyorder', { metadata: { alpha: '1', beta: '2' } });
 
     // Same content, keys the other way round. The stored value is a
     // serialization, and the caller does not know which order it was written in,
     // so treating this as a change would report an update that did not happen.
-    const res = await put(`/v1/deployments/${id}`, { payload: { beta: 2, alpha: 1 } });
+    const res = await put(`/v1/deployments/${id}`, { metadata: { beta: '2', alpha: '1' } });
     expect(res.status).toBe(200);
-    expect(res.body.payload).toEqual({ alpha: 1, beta: 2 });
+    expect(res.body.metadata).toEqual({ alpha: '1', beta: '2' });
     expect(receivedFor(webhookId, 'deployment.updated')).toHaveLength(0);
   });
 
-  it('does not publish for the same nested payload content sent in a different key order', async () => {
+  it('does not publish for the same initial_events content sent in a different key order', async () => {
     const webhookId = await subscribe();
-    const id = await createDeployment('nested', { payload: { outer: { x: 1, y: 2 }, list: [1, 2] } });
+    const id = await createDeployment('nested', {
+      initial_events: [
+        { type: 'user.message', content: [{ type: 'text', text: 'a' }] },
+        { type: 'system.message', content: [{ type: 'text', text: 'ctx' }] },
+      ],
+    });
 
-    const res = await put(`/v1/deployments/${id}`, { payload: { list: [1, 2], outer: { y: 2, x: 1 } } });
+    // `metadata` is a string-keyed bag, so the nested-structure comparison the
+    // old `payload` cases pinned moves to `initial_events`: same events, object
+    // keys written the other way round inside them.
+    const res = await put(`/v1/deployments/${id}`, {
+      initial_events: [
+        { content: [{ text: 'a', type: 'text' }], type: 'user.message' },
+        { content: [{ text: 'ctx', type: 'text' }], type: 'system.message' },
+      ],
+    });
     expect(res.status).toBe(200);
     expect(receivedFor(webhookId, 'deployment.updated')).toHaveLength(0);
   });
 
-  it('publishes for a payload whose content actually differs', async () => {
+  it('publishes for metadata whose content actually differs', async () => {
     const webhookId = await subscribe();
-    const id = await createDeployment('realchange', { payload: { alpha: 1, beta: 2 } });
+    const id = await createDeployment('realchange', { metadata: { alpha: '1', beta: '2' } });
 
     // The neighbour of the key-order case: the same keys, one value different.
-    const res = await put(`/v1/deployments/${id}`, { payload: { alpha: 1, beta: 3 } });
+    const res = await put(`/v1/deployments/${id}`, { metadata: { alpha: '1', beta: '3' } });
     expect(res.status).toBe(200);
     expect(receivedFor(webhookId, 'deployment.updated')).toHaveLength(1);
   });
@@ -244,10 +267,11 @@ describe('deployment.updated', () => {
     // every write, so an implementation counting it as a change publishes here.
     const res = await put(`/v1/deployments/${id}`, {
       name: current.name,
-      agent_id: current.agent_id,
-      cron: current.cron,
-      timezone: current.timezone,
-      payload: current.payload,
+      agent: current.agent,
+      environment_id: current.environment_id,
+      cron: current.schedule.expression,
+      timezone: current.schedule.timezone,
+      initial_events: current.initial_events,
       metadata: current.metadata,
     });
     expect(res.status).toBe(200);

@@ -1152,6 +1152,77 @@ CREATE INDEX idx_credential_audit_vault_created
   ON credential_audit_events(vault_id, created_at DESC);
 `;
 
+/**
+ * The published deployment object.
+ *
+ * A deployment binds a pinned agent version, an environment, session
+ * resources, vaults, a budget, and `initial_events` to a schedule that is
+ * optional in the published contract (a deployment without one is manual-only).
+ * The local table predates that shape: `cron` is `NOT NULL`, and the request
+ * that used to carry everything else is a single `payload` bag whose only
+ * surviving field is `title`.
+ *
+ * The rebuild makes `cron` nullable and adds the columns the shape needs.
+ * `payload` is kept — old rows still carry it and the column is cheap — but
+ * its `title` is copied into `metadata.title` where a key does not already
+ * shadow it, because `metadata` is the bag the published object reads back.
+ * Rows written before this migration keep `initial_events` empty; the
+ * scheduler records a `session_creation_rejected_error` run for them rather
+ * than guessing at a payload that never existed.
+ *
+ * `scheduled_deployment_runs` gains `scheduled_at` — the cron instant the run
+ * answered — and `error_type`, the classified failure vocabulary the published
+ * run object reports. Both stay null on pre-migration rows, which the run
+ * projection reads as an absent `scheduled_at` and `unknown_error`.
+ */
+const M052_DEPLOYMENT_OFFICIAL_SHAPE = `
+CREATE TABLE scheduled_deployments_next (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  agent_id TEXT NOT NULL,
+  agent_version INTEGER,
+  environment_id TEXT,
+  cron TEXT,
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'active',
+  paused_reason TEXT,
+  last_run_at TEXT,
+  next_run_at TEXT,
+  initial_events TEXT NOT NULL DEFAULT '[]',
+  resources TEXT NOT NULL DEFAULT '[]',
+  vault_ids TEXT NOT NULL DEFAULT '[]',
+  budget TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  archived_at TEXT
+);
+INSERT INTO scheduled_deployments_next
+  (id, name, description, agent_id, agent_version, environment_id, cron, timezone,
+   payload, status, paused_reason, last_run_at, next_run_at,
+   initial_events, resources, vault_ids, budget, metadata, created_at, updated_at, archived_at)
+  SELECT
+    id, name, NULL, agent_id, NULL, environment_id, cron, timezone,
+    payload, status, paused_reason, last_run_at, next_run_at,
+    '[]', '[]', '[]', NULL,
+    CASE
+      WHEN json_extract(payload, '$.title') IS NOT NULL
+        AND json_extract(metadata, '$.title') IS NULL
+      THEN json_set(metadata, '$.title', json_extract(payload, '$.title'))
+      ELSE metadata
+    END,
+    created_at, updated_at, archived_at
+  FROM scheduled_deployments;
+DROP TABLE scheduled_deployments;
+ALTER TABLE scheduled_deployments_next RENAME TO scheduled_deployments;
+CREATE INDEX idx_scheduled_deployments_status_created ON scheduled_deployments(status, created_at DESC);
+CREATE INDEX idx_scheduled_deployments_agent ON scheduled_deployments(agent_id, created_at DESC);
+ALTER TABLE scheduled_deployment_runs ADD COLUMN scheduled_at TEXT;
+ALTER TABLE scheduled_deployment_runs ADD COLUMN error_type TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1204,4 +1275,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 49, name: '049_session_archived_at', sql: M049_SESSION_ARCHIVED_AT },
   { version: 50, name: '050_memory_version_redaction', sql: M050_MEMORY_VERSION_REDACTION },
   { version: 51, name: '051_credential_audit_events_drop_fks', sql: M051_CREDENTIAL_AUDIT_EVENTS_DROP_FKS },
+  { version: 52, name: '052_deployment_official_shape', sql: M052_DEPLOYMENT_OFFICIAL_SHAPE },
 ];

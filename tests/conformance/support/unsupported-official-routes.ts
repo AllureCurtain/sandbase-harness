@@ -7,7 +7,6 @@ export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<{ pattern: RegExp; reaso
 ];
 
 export const PENDING_OFFICIAL_ROUTES = [
-  ['POST /v1/deployments/:id', 'Official deployment update method'],
   ['GET /v1/skills/:id/versions', 'Skill-version listing'],
   ['POST /v1/skills/:id/versions', 'Skill-version upload'],
   ['GET /v1/skills/:id/versions/:id', 'Skill-version retrieval'],

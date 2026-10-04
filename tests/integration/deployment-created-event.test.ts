@@ -133,7 +133,15 @@ describe('deployment.created', () => {
   }
 
   async function create(body: Record<string, unknown>, path = '/v1/deployments') {
-    const res = await app.request(path, { method: 'POST', headers: CMA_HEADERS, body: JSON.stringify(body) });
+    // The published create requires `environment_id` and a non-empty
+    // `initial_events`; the cases below exercise field-level refusals, so the
+    // helper supplies the unrelated required fields and lets each case override.
+    const payload = {
+      environment_id: 'env_default',
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+      ...body,
+    };
+    const res = await app.request(path, { method: 'POST', headers: CMA_HEADERS, body: JSON.stringify(payload) });
     return { status: res.status, body: await res.json() };
   }
 
@@ -146,7 +154,7 @@ describe('deployment.created', () => {
 
     const res = await create({ name: 'created-one', agent_id: 'agent_one', cron: '0 20 * * 5' });
     expect(res.status).toBe(201);
-    expect(res.body.type).toBe('scheduled_deployment');
+    expect(res.body.type).toBe('deployment');
 
     const got = receivedFor(webhookId, 'deployment.created');
     expect(got).toHaveLength(1);

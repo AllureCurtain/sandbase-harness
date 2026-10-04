@@ -127,7 +127,13 @@ describe('Deployment pause events at every door', () => {
     const res = await app.request('/v1/deployments', {
       method: 'POST',
       headers: CMA_HEADERS,
-      body: JSON.stringify({ name, agent_id: 'agent_one', cron: '0 20 * * 5' }),
+      body: JSON.stringify({
+        name,
+        agent_id: 'agent_one',
+        environment_id: 'env_default',
+        cron: '0 20 * * 5',
+        initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+      }),
     });
     expect(res.status).toBe(201);
     return (await res.json()).id;

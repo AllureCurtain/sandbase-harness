@@ -54,10 +54,11 @@ describe('Deployment paths, published and local', () => {
     db.prepare(
       "INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')",
     ).run();
-    // A deployment stores `agent_id` as a plain column with no foreign key, so
-    // these routes need no agent row. The only route that would need a real agent
-    // is a *successful* `run`, which creates a session; the run asserted here is
-    // the refusal case, which returns before any of that.
+    // A deployment pins its agent at create, and a `run` creates the session
+    // from it — so the agent row has to exist for these routes to exercise.
+    db.prepare(
+      "INSERT INTO agents (id, name, definition) VALUES ('agent_a', 'a', '{\"name\":\"a\",\"model\":\"default\"}')",
+    ).run();
     app = createServer({
       db,
       sessionManager: new SessionManager(db),
@@ -83,7 +84,13 @@ describe('Deployment paths, published and local', () => {
     return { status: res.status, body: text ? JSON.parse(text) as Record<string, any> : undefined };
   }
 
-  const definition = { name: 'nightly', agent_id: 'agent_a', cron: '0 3 * * *' };
+  const definition = {
+    name: 'nightly',
+    agent_id: 'agent_a',
+    environment_id: 'env_a',
+    cron: '0 3 * * *',
+    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+  };
 
   it('creates a deployment at the published path and reads it back at both', async () => {
     const server = setUp();
@@ -128,12 +135,19 @@ describe('Deployment paths, published and local', () => {
 
     const archived = await send(server, 'POST', `${PUBLISHED}/${id}/archive`);
     expect(archived.status).toBe(200);
-    expect(archived.body?.status).toBe('archived');
+    // The published shape reports `active` beside `archived_at` — the archive
+    // axis is the timestamp, not the pause status.
+    expect(archived.body?.status).toBe('active');
+    expect(archived.body?.archived_at).not.toBeNull();
 
-    // Archived hides it from both spellings and 404s on both, so the alias did
-    // not create a second lifecycle.
-    expect((await send(server, 'GET', `${PUBLISHED}/${id}`)).status).toBe(404);
-    expect((await send(server, 'GET', `${CANONICAL}/${id}`)).status).toBe(404);
+    // An archived deployment is still retrievable at both spellings — the
+    // published shape carries `archived_at` for a reader to see — while the
+    // default list keeps it out.
+    const readPublished = await send(server, 'GET', `${PUBLISHED}/${id}`);
+    const readCanonical = await send(server, 'GET', `${CANONICAL}/${id}`);
+    expect(readPublished.status).toBe(200);
+    expect(readCanonical.status).toBe(200);
+    expect(readPublished.body?.archived_at).not.toBeNull();
     const published = await send(server, 'GET', PUBLISHED);
     expect(published.body!.data).toEqual([]);
   });
@@ -159,10 +173,14 @@ describe('Deployment paths, published and local', () => {
     // The run ids differ because these are two runs, so the parity assertion is on
     // the fields that describe the decision rather than on the whole body.
     expect(viaPublished.body).toMatchObject({
-      schedule_id: id,
-      trigger_type: 'manual',
-      status: viaCanonical.body!.status,
+      type: 'deployment_run',
+      deployment_id: id,
+      trigger_context: { type: 'manual' },
     });
+    expect(viaCanonical.body).toMatchObject({ deployment_id: id, trigger_context: { type: 'manual' } });
+    // Both runs created a session; the sessions differ because the runs do.
+    expect(viaPublished.body!.session_id).toBeTruthy();
+    expect(viaCanonical.body!.session_id).toBeTruthy();
     expect(
       db!.prepare('SELECT COUNT(*) AS n FROM scheduled_deployment_runs WHERE schedule_id = ?').get(id),
     ).toEqual({ n: 2 });

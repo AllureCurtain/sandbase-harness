@@ -314,15 +314,22 @@ export type Webhook = {
 
 export type ScheduledDeployment = {
   id: string;
-  type: 'scheduled_deployment';
+  type: 'deployment';
   name: string;
-  agent_id: string;
+  description: string | null;
+  agent: { type: 'agent'; id: string; version: number | null };
   environment_id: string | null;
-  cron: string;
-  payload: Record<string, unknown>;
+  initial_events: unknown[];
+  resources: unknown[];
+  vault_ids: string[];
+  schedule: {
+    type: 'cron';
+    expression: string;
+    timezone: string;
+    upcoming_runs_at: string[];
+  } | null;
   status: string;
-  last_run_at: string | null;
-  next_run_at: string | null;
+  paused_reason: { type: string; error?: { type: string; message: string } } | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;

@@ -69,7 +69,9 @@ describe('operations collection envelope', () => {
     const schedule = await post('/v1/scheduled-deployments', {
       name: 'nightly',
       agent_id: 'agent_ops',
+      environment_id: 'env_default',
       cron: '0 3 * * *',
+      initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
     });
     expect(schedule.res.status).toBe(201);
     const outcome = await post('/v1/outcomes', { name: 'passes', objective: 'the tests pass' });

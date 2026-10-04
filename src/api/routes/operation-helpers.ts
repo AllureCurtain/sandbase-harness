@@ -83,6 +83,28 @@ export async function readObjectBody(c: any): Promise<{ ok: true; value: JsonObj
   return { ok: true, value: body as JsonObject };
 }
 
+/**
+ * `readObjectBody` for a route whose body is optional.
+ *
+ * The published run request carries no required fields and the SDK sends it
+ * without a body at all, so an absent body reads as `{}` — a route that demands
+ * a JSON object here would refuse the SDK's own call. A body that is present
+ * but not a JSON object is still refused: "optional" is not "anything goes".
+ */
+export async function readOptionalObjectBody(c: any): Promise<{ ok: true; value: JsonObject } | { ok: false; response: Response }> {
+  const raw = await c.req.raw.text();
+  if (!raw.trim()) return { ok: true, value: {} };
+  try {
+    const body = JSON.parse(raw);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return { ok: false, response: invalid(c, 'Request body must be a JSON object') };
+    }
+    return { ok: true, value: body as JsonObject };
+  } catch {
+    return { ok: false, response: invalid(c, 'Request body must be JSON') };
+  }
+}
+
 export function invalid(c: any, message: string) {
   return c.json({ error: { type: 'invalid_request_error', message } }, 400);
 }
