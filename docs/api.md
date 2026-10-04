@@ -1502,7 +1502,7 @@ client can settle the finished turn before it observes the idle transition:
     "input_tokens": 5000,
     "output_tokens": 3200,
     "active_seconds": 12.5,
-    "list_cost": 7,
+    "list_cost": { "amount": "7", "currency": "USD" },
     "budget": { "type": "limit", "max_list_cost": { "amount": "500", "currency": "USD" } },
     "server_tool_use": { "web_search_requests": 0, "web_fetch_requests": 0 }
   }
@@ -1520,7 +1520,7 @@ present, because the runtime holds a true value for each:
 | --- | --- |
 | `input_tokens`, `output_tokens` | Reported from the session's aggregate token counters. |
 | `active_seconds` | Reported. Single-threaded session, so "at least one thread running" is the sum of the turn intervals. |
-| `list_cost` | Accumulated list cost in whole cents, priced from the operator's cost profile. Omitted when any model the session used has no list price. |
+| `list_cost` | Accumulated list cost as a published monetary amount — `{amount, currency: "USD"}` with `amount` the whole-cent total as a string — priced from the operator's cost profile. Omitted when any model the session used has no list price. |
 | `budget` | The session's budget, or `null` when it has none. |
 | `server_tool_use` | Reported. Both counters are zero: no built-in web tool exists to count. |
 

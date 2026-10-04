@@ -70,8 +70,9 @@ session-budget: partial
   `budget_reached` — no `user.message` is appended, the context is rebuilt
   from the event log, and a Pi session is not re-entered because the trigger
   has no Pi transport.
-- `session.usage` now carries `list_cost` (whole cents, priced from the profile),
-  `budget` (the value, or `null`), and `server_tool_use`.
+- `session.usage` now carries `list_cost` in the published wire form
+  (`{amount: "<whole cents>", currency: "USD"}`), `budget` (the value, or
+  `null`), and `server_tool_use`.
 - `POST /v1/sessions/{id}` moves the budget through `SessionManager.updateSession`
   (`updateBudget` is the budget-only spelling). An object replaces the ceiling,
   `null` removes it, and the move is allowed in any non-terminal state; the raise

@@ -60,6 +60,7 @@ import type {
 import type {
   ContentBlock,
   SessionBudget,
+  MonetaryAmount,
   SessionErrorRetryStatus,
   UserEvent,
 } from '@/types/cma-protocol.js';
@@ -376,7 +377,7 @@ export class SessionManager {
     input_tokens: number;
     output_tokens: number;
     active_seconds: number;
-    list_cost?: number;
+    list_cost?: MonetaryAmount;
     budget: SessionBudget | null;
     server_tool_use: { web_search_requests: number; web_fetch_requests: number };
   } {
@@ -388,7 +389,7 @@ export class SessionManager {
     input_tokens: number;
     output_tokens: number;
     active_seconds: number;
-    list_cost?: number;
+    list_cost?: MonetaryAmount;
     budget: SessionBudget | null;
     server_tool_use: { web_search_requests: number; web_fetch_requests: number };
   } {
@@ -401,7 +402,7 @@ export class SessionManager {
 
     return {
       ...snapshot,
-      ...(spend.meterable ? { list_cost: spend.cents } : {}),
+      ...(spend.meterable ? { list_cost: { amount: String(spend.cents), currency: 'USD' as const } } : {}),
       budget: session?.budget ?? null,
       // Genuinely zero, not unknown: this runtime has no built-in web tool, so
       // there is no request it could have failed to count.
@@ -1711,19 +1712,14 @@ export class SessionManager {
 
   /**
    * Append and broadcast the `session.usage` snapshot for the session's current
-   * aggregate. Cost, budget, and server-tool counters are omitted rather than
-   * reported as zero: this runtime has no truthful value for them, and a `0`
-   * would read as "supported, currently zero".
+   * aggregate — the same documented payload {@link buildUsagePayload} answers:
+   * token counters, activity time, `list_cost` when it can be priced in full,
+   * the budget echo, and the server-tool counters.
    */
   private appendUsageSnapshot(sessionId: string, events: SessionEvent[]): void {
-    const session = this.get(sessionId);
-    const usage = buildSessionUsageSnapshot(events, {
-      tokensIn: session?.usage?.tokensIn,
-      tokensOut: session?.usage?.tokensOut,
-    });
     const usageEvent = this.eventLogger.append(sessionId, {
       type: 'session.usage',
-      metadata: { usage },
+      metadata: { usage: this.usagePayloadFor(sessionId, events) },
     });
     this.broadcast(sessionId, usageEvent);
   }

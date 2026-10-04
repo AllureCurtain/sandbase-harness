@@ -188,7 +188,7 @@ describe('session budget over HTTP', () => {
 
     recordCents(body.id, 7);
     const usage = sessionManager.buildUsagePayload(body.id);
-    expect(usage.list_cost).toBe(7);
+    expect(usage.list_cost).toEqual({ amount: '7', currency: 'USD' });
     expect(usage.budget).toEqual(PRICED_BUDGET);
   });
 

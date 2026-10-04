@@ -1,7 +1,7 @@
 import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
 import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { ApiSessionStatus, Session, SessionEvent, SessionLoopEngine, SessionStatus } from '@/types/session.js';
-import type { SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
+import type { MonetaryAmount, SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
 import { projectSessionError, type SessionErrorPayload } from '@/core/session/session-error.js';
 import { STATUS_PROJECTION } from '@/core/session/session-lifecycle.js';
 import { isTerminal } from '@/core/session/state-machine.js';
@@ -336,7 +336,7 @@ export interface ApiEvent {
     input_tokens: number;
     output_tokens: number;
     active_seconds: number;
-    list_cost?: number;
+    list_cost?: MonetaryAmount;
     budget?: SessionBudget | null;
     server_tool_use?: {
       web_search_requests: number;
