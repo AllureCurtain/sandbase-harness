@@ -1122,6 +1122,36 @@ CREATE UNIQUE INDEX idx_memory_versions_unique
   ON memory_versions(store_id, memory_id, version);
 `;
 
+/**
+ * Credential deletion became a physical delete (`DELETE /vaults/{id}` and
+ * `DELETE /vaults/{id}/credentials/{cid}`), but the audit trail must survive
+ * it — the audit table is an operator trail, not part of the resource. The
+ * two foreign keys it carried would turn every physical delete into a
+ * constraint violation, so the table is rebuilt without them. Rows and both
+ * indexes are preserved.
+ */
+const M051_CREDENTIAL_AUDIT_EVENTS_DROP_FKS = `
+CREATE TABLE credential_audit_events_next (
+  id TEXT PRIMARY KEY,
+  vault_id TEXT NOT NULL,
+  credential_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT 'system',
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO credential_audit_events_next
+  (id, vault_id, credential_id, action, actor, metadata, created_at)
+  SELECT id, vault_id, credential_id, action, actor, metadata, created_at
+  FROM credential_audit_events;
+DROP TABLE credential_audit_events;
+ALTER TABLE credential_audit_events_next RENAME TO credential_audit_events;
+CREATE INDEX idx_credential_audit_credential_created
+  ON credential_audit_events(credential_id, created_at DESC);
+CREATE INDEX idx_credential_audit_vault_created
+  ON credential_audit_events(vault_id, created_at DESC);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1173,4 +1203,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 48, name: '048_work_item_status_vocabulary', sql: M048_WORK_ITEM_STATUS_VOCABULARY },
   { version: 49, name: '049_session_archived_at', sql: M049_SESSION_ARCHIVED_AT },
   { version: 50, name: '050_memory_version_redaction', sql: M050_MEMORY_VERSION_REDACTION },
+  { version: 51, name: '051_credential_audit_events_drop_fks', sql: M051_CREDENTIAL_AUDIT_EVENTS_DROP_FKS },
 ];
