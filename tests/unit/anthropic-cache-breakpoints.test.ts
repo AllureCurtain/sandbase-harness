@@ -20,7 +20,7 @@ function cacheControls(value: unknown): unknown[] {
 
 describe('applyAnthropicCacheBreakpoints', () => {
   it('marks the system prompt, the last tool, and the second-to-last message', () => {
-    const messages = [
+    const messages: Array<{ role: string; content: string; providerOptions?: Record<string, any> }> = [
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
       { role: 'user', content: 'next' },
@@ -77,7 +77,7 @@ describe('applyAnthropicCacheBreakpoints', () => {
   });
 
   it('merges into providerOptions the message already carries', () => {
-    const messages = [
+    const messages: Array<{ role: string; content: string; providerOptions?: Record<string, any> }> = [
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'b', providerOptions: { anthropic: { thinking: 'x' }, other: { keep: 1 } } },
       { role: 'user', content: 'c' },
