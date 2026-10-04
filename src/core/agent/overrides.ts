@@ -23,13 +23,11 @@
  *
  * A `model` override replaces the whole model object, so the agent's own
  * `effort` is not inherited. An `effort` inside the override is refused rather
- * than accepted and ignored, for the same reason it is retained on a definition:
- * the provider model is resolved from the agent's model id, so a level set on a
- * session has no path into a request. What a provider does see is the
- * deployment's own `reasoning_effort` model setting, which is operator-level and
- * applies to a model rather than to one session. The canonical definition keeps
- * the value the published request shape carries, and it is where the published
- * contract puts the field, so there is nothing to preserve on this path.
+ * than accepted and ignored: the published contract states that an effort level
+ * set on a session override does not take effect, so the session would run at
+ * the model's default regardless of the value sent. The canonical definition
+ * keeps the value the published request shape carries — it is where the field
+ * reaches the provider request — so there is nothing to preserve on this path.
  */
 
 import { z } from 'zod';
@@ -123,7 +121,7 @@ export function parseAgentOverrides(value: Record<string, unknown>): ParsedOverr
       if (profile.value.effort) {
         return fail(
           'model.effort',
-          'model.effort cannot be set by an agent override: the provider model is resolved from the agent\'s model id, so a level set here would reach no request. The agent definition is where the field is retained and returned; set it there instead.',
+          'model.effort cannot be set by an agent override: the published contract gives a session-level override no effort effect, so accepting one would promise execution it cannot have. The agent definition is where the field is retained, returned, and executed; set it there instead.',
         );
       }
       overrides.model = {
@@ -275,7 +273,7 @@ export function isAgentOverrideError(error: unknown): error is Error & { code: s
     // Model-profile refusals are override refusals too: they come out of the
     // same parse and are answered with the same 400.
     || code.startsWith('invalid_model')
-    || code === 'unsupported_model_field';
+    || code.startsWith('unsupported_model_');
 }
 
 function readList<T>(

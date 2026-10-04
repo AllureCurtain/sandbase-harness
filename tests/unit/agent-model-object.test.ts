@@ -150,22 +150,21 @@ describe('describeModelFieldProfile', () => {
     expect(geo.reason).toBeTruthy();
   });
 
-  it('records effort as accepted-but-no-effect rather than as executed', () => {
-    // The distinction the matrix and the contract have to agree on: the value is
-    // accepted and echoed, and no provider request changes because of it.
+  it('records effort as capability-gated rather than universally executed', () => {
+    // The value reaches Anthropic requests on models whose capability entry
+    // lists the level; admission refuses a level a listed model cannot take.
     const effort = describeModelFieldProfile().find((entry) => entry.field === 'effort');
     expect(effort?.status).toBe('partial');
     if (effort?.status !== 'partial') throw new Error(`expected partial, got ${effort?.status}`);
-    expect(effort.reason).toContain('accepted-but-no-effect');
+    expect(effort.reason).toContain('providerOptions.anthropic.effort');
   });
 
-  it('records the local speed extension as a local value, not a canonical one', () => {
+  it('records speed as capability-gated with the local extension named', () => {
     const speed = describeModelFieldProfile().find((entry) => entry.field === 'speed');
-    expect(speed?.status).toBe('supported');
-    // `local` is only present on the supported variant that carries an
-    // extension note, so the union must be narrowed before reading it.
-    if (speed?.status !== 'supported') throw new Error(`expected supported, got ${speed?.status}`);
-    expect(speed.local).toContain('extended');
+    expect(speed?.status).toBe('partial');
+    if (speed?.status !== 'partial') throw new Error(`expected partial, got ${speed?.status}`);
+    expect(speed.reason).toContain('fast mode');
+    expect(speed.reason).toContain('extended');
   });
 });
 

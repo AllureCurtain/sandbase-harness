@@ -518,14 +518,17 @@ A custom tool is declared as an independent `tools[]` entry carrying `type: "cus
 | Field | Accepted values | Behaviour |
 | --- | --- | --- |
 | `id` | non-empty string | Required. |
-| `speed` | `standard` \| `fast` \| `extended` | Optional; defaults to `standard`. `extended` is a local extension, not a published value. |
-| `effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max`, or `{ "type": <level> }` | Optional. Parsed, validated, stored in the agent's model profile, and returned by every read — the agent read, the version listing, and a session's frozen snapshot. It does not change the provider request: the model is resolved from the id, so the level has no path into a request (accepted-but-no-effect). A deployment's own `reasoning_effort` model setting is what a provider that accepts one sees, and it is operator-level rather than per agent. |
+| `speed` | `standard` \| `fast` \| `extended` | Optional; defaults to `standard`. On the Anthropic provider, `fast` is executed when the model supports it — the request carries `speed: "fast"` and the `fast-mode-2026-02-01` beta; `fast` on a listed model that cannot take it is refused with `unsupported_model_speed` naming the supported set, and `standard`/`extended` produce no wire field (`extended` is a local extension, not a published value). A model id the capability table does not know is accepted and sends nothing. |
+| `effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max`, or `{ "type": <level> }` | Optional. Parsed, validated, stored in the agent's model profile, and returned by every read — the agent read, the version listing, and a session's frozen snapshot. On the Anthropic provider the level reaches the request as `output_config.effort`, gated per level by the model capability table (e.g. Sonnet 4.6 takes `max` but not `xhigh`; Haiku 4.5 takes no effort): a listed model refused its level fails with `unsupported_model_effort`, and an unknown vocabulary value is `invalid_model_effort`. A model the table does not know, and every non-Anthropic provider, accepts the field and sends nothing. A deployment's own `reasoning_effort` model setting is separate and operator-level. |
 | `inference_geo` | `us` \| `global` | Refused with `unsupported_model_field`. A local runtime has no inference-geography control, so honouring the pin is not possible. |
 
 An unrecognized key is also refused with `unsupported_model_field`, and the error
 lists every known field so the request can be corrected. A malformed `speed`
 or `effort` is refused with its own stable code and the accepted value set
-rather than being silently defaulted.
+rather than being silently defaulted. On the Anthropic provider a model the
+capability table marks as adaptive-thinking also receives
+`thinking: {type: "adaptive", display: "omitted"}` automatically — there is no
+caller-facing thinking field because the published model object defines none.
 
 A read returns the stored profile as `model_config` — `id`, `speed`, and
 `effort` when one was set. It is omitted for the ordinary case (the local
@@ -934,7 +937,9 @@ completes or fails. The end event carries the published fields
 request failed, `false` when it completed, `null` on events persisted before
 the flag existed), and `model_usage`
 (`{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`
-— `input_tokens` counts the uncached share only, matching `session.usage`). A
+— `input_tokens` counts the uncached share only, matching `session.usage`; the
+published `speed` field appears on the end event when the request actually ran
+in fast mode). A
 single request that is retried by the model middleware still produces exactly
 one pair.
 

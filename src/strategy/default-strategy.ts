@@ -24,6 +24,8 @@ import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
 import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 import { resolvedModelIdOf } from '@/model/registry.js';
+import { anthropicCallOptions } from '@/model/anthropic-options.js';
+import type { ModelEffortLevel } from '@/core/agent/model-object.js';
 import { applyAnthropicCacheBreakpoints } from '@/strategy/anthropic-cache-breakpoints.js';
 import { splitModelRequestUsage } from './model-usage.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
@@ -226,6 +228,20 @@ export class DefaultStrategy implements AgentStrategy {
     // single pair instead of gaining a span per HTTP attempt. A failed request
     // reaches `onError` with this id still set and closes `is_error: true`.
     let inFlightRequestStart: SessionEvent | undefined;
+    // Agent-level `model.effort`/`model.speed` land on the request here, gated
+    // by the capability table so an option is only sent to a model that takes
+    // it — unknown ids get nothing rather than a request the provider rejects.
+    // `requestSpeed` doubles as the `model_usage.speed` the paired end span
+    // publishes: it is the tier the request ran under, not merely the one
+    // configured.
+    const anthropicOptions = typeof model === 'object' && model.provider === 'anthropic.messages'
+      ? anthropicCallOptions({
+          modelId: modelUsed,
+          effort: config.modelOptions?.effort as ModelEffortLevel | undefined,
+          speed: config.modelOptions?.speed,
+        })
+      : undefined;
+    const requestSpeed = anthropicOptions?.anthropic.speed;
     const closeRequestSpan = (isError: boolean): void => {
       // Clear before appending: a failed append must not invite a second end.
       const start = inFlightRequestStart;
@@ -237,6 +253,7 @@ export class DefaultStrategy implements AgentStrategy {
         parentEventId: start.id,
         isError,
         durationMs: Date.now() - startTime,
+        ...(requestSpeed ? { speed: requestSpeed } : {}),
       });
       broadcast(spanEvent);
     };
@@ -308,6 +325,7 @@ export class DefaultStrategy implements AgentStrategy {
         ],
         temperature: config.temperature,
         maxOutputTokens: config.maxTokens,
+        providerOptions: anthropicOptions,
         abortSignal,
         // The span opens when the SDK prepares the step's request, not when the
         // answer lands, so a request that never completes still has a start to
@@ -355,6 +373,7 @@ export class DefaultStrategy implements AgentStrategy {
             durationMs: Date.now() - startTime,
             parentEventId: startId,
             isError: false,
+            ...(requestSpeed ? { speed: requestSpeed } : {}),
           });
           broadcast(spanEvent);
           // Persist the aggregate once per model request. The same usage is

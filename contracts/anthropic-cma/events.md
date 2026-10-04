@@ -67,7 +67,9 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   `is_error` (the `events.is_error` column — `true`/`false`, or `null` on rows
   persisted before the column existed), and `model_usage`, projected from the
   row's own usage columns so the `input_tokens` value is the uncached share,
-  matching `session.usage`. One `prepareStep`→`onStepFinish` cycle is one
+  matching `session.usage`; `model_usage.speed` is projected when the request
+  actually ran in fast mode (the `events.speed` column — `null` on rows
+  persisted before it). One `prepareStep`→`onStepFinish` cycle is one
   request: a request the model middleware retries produces exactly one pair.
   The local extension fields (`model_used`, `tokens_in`, `tokens_out`,
   `stop_reason`, `duration_ms`, `parent_event_id`) still project beside the
@@ -148,7 +150,7 @@ lifecycle, structured `session.error`, and usage-before-idle ordering.
 | Local event types | SandBase emits extension event types under `/v1/x` that are not part of the canonical domain set. |
 | `session.updated` fields | `session.updated` is emitted when `POST /v1/sessions/{id}` changes the agent snapshot, metadata, title, or budget; the event carries only the changed fields, and a no-op update appends nothing. |
 | Outcome span vocabulary | `span.outcome_evaluation_*` is the local spelling for the outcome evaluation spans. The three-event shape and the verdict vocabulary are a SandBase profile: they are recorded here rather than presented as a verified upstream enumeration. |
-| Model-request span extension fields | `span.model_request_end` additionally projects the local `model_used`, `tokens_in`, `tokens_out`, `stop_reason`, `duration_ms`, and `parent_event_id` fields the published shape does not define, and `span.model_request_start` projects `model_used`. Rows persisted before the pair existed report `model_request_start_id: null` and `is_error: null`, and rows persisted before the cache-bucket columns existed report zeroed `model_usage` cache fields — the read values the published `boolean | null` shape allows rather than invented ones. `model_usage.speed` stays absent until a fast-mode option exists. |
+| Model-request span extension fields | `span.model_request_end` additionally projects the local `model_used`, `tokens_in`, `tokens_out`, `stop_reason`, `duration_ms`, and `parent_event_id` fields the published shape does not define, and `span.model_request_start` projects `model_used`. Rows persisted before the pair existed report `model_request_start_id: null` and `is_error: null`, and rows persisted before the cache-bucket columns existed report zeroed `model_usage` cache fields — the read values the published `boolean | null` shape allows rather than invented ones. `model_usage.speed` reports the request's effective speed and appears only when a request actually ran fast — an agent profile asking for `fast` on a model that cannot take it never reaches a request. |
 | Outcome progression | The grader's own reasoning is not published while an evaluation runs. `span.outcome_evaluation_ongoing` marks that the evaluation is in flight and carries no content, because a partial verdict derived from nothing would be a claim about the deliverable that the runtime cannot support. |
 
 ## 5. Reason for the difference

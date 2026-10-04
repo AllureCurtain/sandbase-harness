@@ -56,6 +56,14 @@ export interface StubModelRequest {
   tools?: ChatTool[];
   /** Anthropic `/v1/messages` bodies carry a `system` block array instead. */
   system?: unknown;
+  /** Anthropic request fields: effort lands under `output_config`, thinking and
+   *  the speed tier are top-level. Present only when the runtime sends them. */
+  output_config?: { effort?: string };
+  thinking?: unknown;
+  speed?: string;
+  /** HTTP headers the request carried — not part of the body; populated by the
+   *  stub so beta headers like `anthropic-beta` are assertable. */
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 export interface StubModelServer {
@@ -133,6 +141,7 @@ export async function startStubModelServer(options: StubModelServerOptions = {})
     }
     void readJson(req).then((body) => {
       const request = body as StubModelRequest;
+      request.headers = req.headers;
       requests.push(request);
       if (options.holdRequests?.includes(requests.length)) {
         res.writeHead(200, { 'content-type': 'text/event-stream' });

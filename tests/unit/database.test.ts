@@ -547,6 +547,39 @@ describe('Database migrations', () => {
     legacy.close();
   });
 
+  it('adds the speed column to events (057)', () => {
+    // Fresh: the column exists and the migration is recorded.
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'events')).toEqual(expect.arrayContaining(['speed']));
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 57').get()).toEqual({
+      name: '057_model_request_speed',
+    });
+    fresh.close();
+
+    // Existing: a workspace that stopped at 056 with a span end already in
+    // the log. The upgrade adds the column and the row reads as NULL — the
+    // projection only emits `model_usage.speed` for a stored value, so a
+    // pre-option request publishes no speed rather than a guessed standard.
+    const legacyPath = join(tmpDir, 'legacy-speed.db');
+    const legacy = new Database(legacyPath);
+    legacy.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 56));
+    expect(columnsOf(legacy, 'events')).not.toContain('speed');
+    legacy.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_s', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_s', 's', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id)
+      VALUES ('sess_s', 'agent_s', 's', 'env_s');
+      INSERT INTO events (id, session_id, seq, type, model_used, tokens_in, tokens_out)
+      VALUES ('sevt_speed', 'sess_s', 1, 'span.model_request_end', 'm', 1000, 4)
+    `);
+    legacy.runMigrations();
+    expect(
+      legacy.prepare('SELECT speed FROM events WHERE id = ?').get('sevt_speed'),
+    ).toEqual({ speed: null });
+    legacy.close();
+  });
+
   it('transaction rolls back on error', () => {
     const db = new Database(dbPath);
     db.runMigrations();
