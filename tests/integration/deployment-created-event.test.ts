@@ -102,7 +102,7 @@ describe('deployment.created', () => {
         const raw = Buffer.concat(chunks).toString('utf8');
         const body = raw ? JSON.parse(raw) : null;
         received.push({ body, headers: req.headers });
-        if (body?.event === 'deployment.created' && typeof body?.data?.id === 'string') {
+        if (body?.data?.type === 'deployment.created' && typeof body?.data?.id === 'string') {
           const row = db.prepare('SELECT id FROM scheduled_deployments WHERE id = ?').get(body.data.id);
           resolvableAtDelivery.push(Boolean(row));
         }
@@ -138,7 +138,7 @@ describe('deployment.created', () => {
   }
 
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter((item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
   }
 
   it('publishes deployment.created with a reference to the new deployment', async () => {
@@ -150,7 +150,7 @@ describe('deployment.created', () => {
 
     const got = receivedFor(webhookId, 'deployment.created');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data).toEqual({ type: 'deployment', id: res.body.id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.created', id: res.body.id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
     // The signature header set is the one the dispatcher emits, so this path did
     // not bypass signing.
     expect(got[0].headers['webhook-signature']).toBeDefined();
@@ -252,7 +252,7 @@ describe('deployment.created', () => {
     // special case, and `*` reaches it too.
     expect(receivedFor(wildcard, 'deployment.created')).toHaveLength(1);
     expect(receivedFor(star, 'deployment.created')).toHaveLength(1);
-    const everything = received.filter((item) => item.body?.webhook_id === unrelated);
+    const everything = received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === unrelated);
     expect(everything).toEqual([]);
   });
 

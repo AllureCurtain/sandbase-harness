@@ -145,7 +145,7 @@ describe('Deployment pause events at every door', () => {
 
   /** Events the receiver took for one subscription, which is what makes a case independent. */
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter((item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
   }
 
   it('publishes deployment.paused when an update sets the status, the third door', async () => {
@@ -161,7 +161,7 @@ describe('Deployment pause events at every door', () => {
 
     const got = receivedFor(webhookId, 'deployment.paused');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.paused', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
     // A subscriber that asked only for the pause names must not receive the
     // unpause one for the same call.
     expect(receivedFor(webhookId, 'deployment.unpaused')).toHaveLength(0);
@@ -179,7 +179,7 @@ describe('Deployment pause events at every door', () => {
 
     const got = receivedFor(webhookId, 'deployment.unpaused');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.unpaused', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
   });
 
   it('publishes nothing when an update re-sends the status the deployment already has', async () => {
@@ -287,7 +287,7 @@ describe('Deployment pause events at every door', () => {
 
     expect(receivedFor(webhookId, 'deployment.paused')).toHaveLength(1);
     expect(receivedFor(webhookId, 'deployment.unpaused')).toHaveLength(1);
-    const everyEvent = received.filter((item) => item.body?.webhook_id === webhookId);
+    const everyEvent = received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
     expect(everyEvent).toHaveLength(2);
   });
 });

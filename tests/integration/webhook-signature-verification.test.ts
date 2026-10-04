@@ -4,8 +4,8 @@
  * `webhook-signature.ts:93-99` says verification exists because "a signature
  * format that is only ever produced is not testable: the round trip is the
  * assertion that the format is correct." But `verifyWebhookDelivery` calls
- * `signWebhookDelivery`, and `webhook-endpoint-secret.test.ts:138` compares
- * `signPayload` against `signPayload`. Both are **self-consistency** checks: if
+ * `signWebhookDelivery`, and `webhook-endpoint-secret.test.ts` recomputes with
+ * the same helper. Both are **self-consistency** checks: if
  * the signed content lost its delivery id, or the HMAC key became the printable
  * secret string instead of its decoded bytes, signer and verifier would move
  * together and every existing assertion would stay green.

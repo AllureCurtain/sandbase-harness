@@ -110,7 +110,7 @@ describe('deployment.archived', () => {
         const raw = Buffer.concat(chunks).toString('utf8');
         const body = raw ? JSON.parse(raw) : null;
         received.push({ body, headers: req.headers });
-        if (body?.event === 'deployment.archived' && typeof body?.data?.id === 'string') {
+        if (body?.data?.type === 'deployment.archived' && typeof body?.data?.id === 'string') {
           const row = db.prepare('SELECT archived_at FROM scheduled_deployments WHERE id = ?').get(body.data.id) as { archived_at: string | null } | undefined;
           archivedAtDelivery.push(Boolean(row?.archived_at));
         }
@@ -156,7 +156,7 @@ describe('deployment.archived', () => {
   }
 
   function receivedFor(webhookId: string, event: string): Received[] {
-    return received.filter((item) => item.body?.event === event && item.body?.webhook_id === webhookId);
+    return received.filter((item) => item.body?.data?.type === event && item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId);
   }
 
   it('publishes deployment.archived with a reference to the archived deployment', async () => {
@@ -170,7 +170,7 @@ describe('deployment.archived', () => {
 
     const got = receivedFor(webhookId, 'deployment.archived');
     expect(got).toHaveLength(1);
-    expect(got[0].body.data).toEqual({ type: 'deployment', id });
+    expect(got[0].body.data).toEqual({ type: 'deployment.archived', id, organization_id: 'org_local', workspace_id: 'wrkspc_local' });
     // The signature header set is the one the dispatcher emits, so this path did
     // not bypass signing.
     expect(got[0].headers['webhook-signature']).toBeDefined();
@@ -232,7 +232,7 @@ describe('deployment.archived', () => {
     // case, and `*` reaches it too.
     expect(receivedFor(wildcard, 'deployment.archived')).toHaveLength(1);
     expect(receivedFor(star, 'deployment.archived')).toHaveLength(1);
-    expect(received.filter((item) => item.body?.webhook_id === unrelated)).toEqual([]);
+    expect(received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === unrelated)).toEqual([]);
   });
 
   it('completes the archive even when the subscriber cannot be reached', async () => {
@@ -291,6 +291,6 @@ describe('deployment.archived', () => {
     expect(deliveries).toEqual([]);
     // The subscription created for this case received nothing either, so the
     // silence is not an artefact of the delivery query.
-    expect(received.filter((item) => item.body?.webhook_id === webhookId && item.body?.event === 'webhook.archived')).toEqual([]);
+    expect(received.filter((item) => item.headers?.['x-sandbase-webhook-endpoint-id'] === webhookId && item.body?.data?.type === 'webhook.archived')).toEqual([]);
   });
 });
