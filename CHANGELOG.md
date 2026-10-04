@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- A tool call the model SDK refused before execution — an input failing the tool's schema validation is the observed case — now persists a paired `agent.tool_result` carrying `is_error: true` instead of leaving an orphan `agent.tool_use` that looked forever parked. The SDK feeds its `tool-error` output back to the model itself; the runtime was simply not recording it, which made retry loops invisible in the event log and on the stream.
+
 ### Breaking
 
 - `usage.input_tokens` on the session object and on `session.usage` events now reports only the uncached share of input, matching the published semantic. Prompt-cache reads and writes are reported separately under the new `cache_read_input_tokens` and `cache_creation` fields and are priced at their own rates — a cache read is no longer billed as a full-rate input token. Every recorded session predates prompt caching, so its reported input was already entirely uncached and no stored total changes.
