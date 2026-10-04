@@ -84,7 +84,13 @@ describe('Webhook delivery signatures, recomputed off the wire', () => {
     const created = await app.request('/v1/deployments', {
       method: 'POST',
       headers: CMA_HEADERS,
-      body: JSON.stringify({ name: 'signature-check', agent_id: 'agent_one', cron: '0 20 * * 5' }),
+      body: JSON.stringify({
+        name: 'signature-check',
+        agent_id: 'agent_one',
+        environment_id: 'env_default',
+        cron: '0 20 * * 5',
+        initial_events: [{ type: 'user.message', content: [{ type: 'text', text: 'run' }] }],
+      }),
     });
     expect(created.status).toBe(201);
     const deploymentId = ((await created.json()) as { id: string }).id;
