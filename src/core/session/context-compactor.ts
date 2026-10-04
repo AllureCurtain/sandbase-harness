@@ -20,6 +20,7 @@
 import { generateText, type LanguageModel } from 'ai';
 import type { SessionEvent } from '@/types/session.js';
 import type { Message } from './events-to-messages.js';
+import { anthropicModelCapabilities } from '@/model/anthropic-capabilities.js';
 
 /** Fire compaction when estimated tokens exceed this fraction of the window. */
 const DEFAULT_TRIGGER_FRACTION = 0.8;
@@ -84,12 +85,31 @@ export class ContextCompactor {
   constructor(private readonly config: CompactorConfig = {}) {}
 
   /**
+   * The context window a model gets: an explicit `contextWindowTokens` config
+   * wins, then the capability table's per-model value, then the conservative
+   * default a model the table does not know keeps.
+   */
+  contextWindowFor(modelId?: string): number {
+    return this.config.contextWindowTokens
+      ?? (modelId ? anthropicModelCapabilities(modelId)?.contextWindow : undefined)
+      ?? DEFAULT_CONTEXT_WINDOW;
+  }
+
+  /**
    * Should compaction fire for the given projected messages?
    */
   shouldCompact(messages: Message[], contextWindowTokens?: number): boolean {
+    return this.shouldCompactTokens(estimateMessagesTokens(messages), contextWindowTokens);
+  }
+
+  /**
+   * Same trigger against an already-measured token count — the caller supplies
+   * it when a provider reports real usage rather than the chars/4 estimate.
+   */
+  shouldCompactTokens(tokens: number, contextWindowTokens?: number): boolean {
     const window = contextWindowTokens ?? this.config.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW;
     const fraction = this.config.triggerFraction ?? DEFAULT_TRIGGER_FRACTION;
-    return estimateMessagesTokens(messages) > window * fraction;
+    return tokens > window * fraction;
   }
 
   /**
@@ -130,8 +150,9 @@ export class ContextCompactor {
     events: SessionEvent[],
     priorBoundary: CompactionBoundaryInput | null,
     model: LanguageModel,
+    contextWindowTokens?: number,
   ): Promise<CompactionResult | null> {
-    const window = this.config.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW;
+    const window = contextWindowTokens ?? this.config.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW;
     const scope = priorBoundary
       ? events.filter((e) => e.seq > priorBoundary.eventSeqBefore)
       : events;
@@ -144,7 +165,7 @@ export class ContextCompactor {
     const lastGroup = groups[groups.length - 1];
     if (lastGroup.tokens > window) return null;
 
-    const budget = this.preserveBudget();
+    const budget = this.preserveBudget(window);
     let keptTokens = lastGroup.tokens;
     let startIdx = groups.length - 1;
     for (let i = groups.length - 2; i >= 0; i--) {

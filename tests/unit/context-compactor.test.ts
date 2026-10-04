@@ -221,6 +221,34 @@ describe('ContextCompactor', () => {
     });
   });
 
+  describe('contextWindowFor', () => {
+    it('returns the capability-table window for a known model id', () => {
+      const c = new ContextCompactor();
+      expect(c.contextWindowFor('claude-opus-4-5-20251101')).toBe(200_000);
+    });
+
+    it('falls back to the default for ids the table does not know', () => {
+      const c = new ContextCompactor();
+      expect(c.contextWindowFor('claude-future-9000')).toBe(128_000);
+      expect(c.contextWindowFor(undefined)).toBe(128_000);
+      expect(c.contextWindowFor('openai:gpt-x')).toBe(128_000);
+    });
+
+    it('lets an explicit config win over the capability table', () => {
+      const c = new ContextCompactor({ contextWindowTokens: 50_000 });
+      expect(c.contextWindowFor('claude-opus-4-5')).toBe(50_000);
+    });
+  });
+
+  describe('shouldCompactTokens', () => {
+    it('triggers on a measured token count instead of an estimate', () => {
+      const c = new ContextCompactor({ contextWindowTokens: 1000, triggerFraction: 0.8 });
+      expect(c.shouldCompactTokens(800)).toBe(false);
+      expect(c.shouldCompactTokens(801)).toBe(true);
+      expect(c.shouldCompactTokens(900, 2000)).toBe(false);
+    });
+  });
+
   describe('estimateMessagesTokens', () => {
     it('is roughly chars/4', () => {
       const msg = userMsg('x'.repeat(400));

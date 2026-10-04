@@ -1,6 +1,6 @@
 import { eventsToMessages } from './events-to-messages.js';
 import type { EventLogger } from './event-logger.js';
-import type { ContextCompactor } from './context-compactor.js';
+import { estimateEventTokens, type ContextCompactor } from './context-compactor.js';
 import type { CompactionStore } from './compaction-store.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
@@ -156,14 +156,29 @@ export class ContextBuilder {
     const events = this.deps.eventLogger.getEvents(session.id);
     const prior = this.compactionBoundary(session.id);
     const projected = eventsToMessages(events, prior);
-    if (!this.deps.compactor.shouldCompact(projected)) return;
+    const modelId = typeof model === 'object' && model !== null && 'modelId' in model
+      ? String((model as { modelId: unknown }).modelId)
+      : undefined;
+    const window = this.deps.compactor.contextWindowFor(modelId);
+    // Anthropic reports real usage on every request end, so its context size
+    // is measured — the last request's input total plus an estimate for what
+    // landed after it — instead of estimating the whole projection by chars/4.
+    // Other providers keep the estimate; a request that never ended has no
+    // measurement to trust.
+    const measured = (typeof model === 'object' && model !== null
+      && (model as { provider?: unknown }).provider === 'anthropic.messages')
+      ? measuredContextTokens(events, prior?.eventSeqBefore)
+      : undefined;
+    if (measured !== undefined
+      ? !this.deps.compactor.shouldCompactTokens(measured, window)
+      : !this.deps.compactor.shouldCompact(projected, window)) return;
 
     try {
       if (!this.deps.compactionStore) {
         // An embedder without boundary persistence keeps the legacy behavior:
         // the summary rides on the event and the tail is lost, same as before
         // this store existed.
-        const legacy = await this.deps.compactor.compact(events, null, model as any);
+        const legacy = await this.deps.compactor.compact(events, null, model as any, window);
         if (legacy) {
           const boundary = this.deps.eventLogger.append(session.id, {
             type: 'agent.thread_context_compacted',
@@ -173,7 +188,7 @@ export class ContextBuilder {
         }
         return;
       }
-      const result = await this.deps.compactor.compact(events, prior ?? null, model as any);
+      const result = await this.deps.compactor.compact(events, prior ?? null, model as any, window);
       if (result) {
         const notification = this.deps.eventLogger.append(session.id, {
           type: 'agent.thread_context_compacted',
@@ -252,4 +267,35 @@ export class ContextBuilder {
       ? `${systemPrompt}\n\n# Mounted Memory Stores\n\n${sections.join('\n\n')}`
       : systemPrompt;
   }
+}
+
+/**
+ * Current context size measured from real usage rather than estimated: the
+ * last `span.model_request_end` reports what the model actually received
+ * (`tokens_in + cache_read + cache_write`), and only the events appended
+ * after it need the chars/4 estimate. Returns undefined when no completed
+ * request exists to anchor on — the first turn must not count empty — or when
+ * the last request predates the compaction boundary: its usage counted
+ * history the boundary already summarized, so it can no longer stand in for
+ * the current context.
+ */
+function measuredContextTokens(
+  events: SessionEvent[],
+  boundarySeq: number | undefined,
+): number | undefined {
+  let lastRequestEnd: SessionEvent | undefined;
+  for (const event of events) {
+    if (event.type === 'span.model_request_end') lastRequestEnd = event;
+  }
+  if (!lastRequestEnd) return undefined;
+  if (boundarySeq !== undefined && lastRequestEnd.seq <= boundarySeq) {
+    return undefined;
+  }
+  let tokens = (lastRequestEnd.tokensIn ?? 0)
+    + (lastRequestEnd.cacheReadTokens ?? 0)
+    + (lastRequestEnd.cacheWriteTokens ?? 0);
+  for (const event of events) {
+    if (event.seq > lastRequestEnd.seq) tokens += estimateEventTokens(event);
+  }
+  return tokens;
 }
