@@ -25,6 +25,23 @@ export const common = {
     open: "打开",
     clearSearch: "清除搜索",
   },
+  configDrawer: {
+    title: "配置预览",
+    copy: "复制配置",
+    hide: "收起预览",
+    wrap: "自动换行",
+    unwrap: "不换行",
+    pasteTitle: "粘贴配置——回填到表单",
+    pastePlaceholder: "粘贴 YAML 或 JSON 定义…",
+    pasteFill: "解析并回填",
+    equivalentRequest: "等效 API 请求",
+  },
+  check: {
+    title: "提交前检查",
+    allGood: "全部通过",
+    toFix: "{{n}} 项待修复",
+    fix: "修复",
+  },
   list: {
     search: "搜索",
     actions: "操作",

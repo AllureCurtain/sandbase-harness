@@ -1,7 +1,11 @@
 import { Box, Check, ChevronDown, Copy, FlaskConical, Lock, MessageSquare, Monitor, MoreVertical, Pencil, Play, Plus, Server, Sparkles, Zap } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { postJson } from '../../api';
-import { EmptyState, FilterSelect, MetricCard, StatusPill, Toolbar } from '../Common';
+import { EmptyState as LegacyEmptyState, FilterSelect, MetricCard, StatusPill, Toolbar } from '../Common';
+import { EmptyState, PageBody, PageHeader, StatusDot, type Tone } from '../console-ui';
+import { CopyableId, ListToolbar, listSummary, NameCell, SearchField } from '../list-ui';
+import { ConsoleSelect } from '../console-select';
 import { copyText, formatDate, formatDateShort, formatUsage, shortId } from '../../lib/format';
 import { diffAgentVersions, type AgentFieldDiff } from '../../lib/agentVersionDiff';
 import { useAgentVersions } from '../../useAgentVersions';
@@ -11,8 +15,21 @@ import {
   type RuntimeCapability,
 } from '../../useRuntimeCapabilities';
 import type { Agent, AgentTab, AgentToolset, ConsoleData, McpToolset, Session, ToolPermission } from '../../types';
+import './agents.css';
+
+function agentTone(agent: Agent): Tone {
+  if (agent.archived_at) return 'neutral';
+  return agent.status === 'active' ? 'ok' : 'pending';
+}
+
+function agentStatusLabel(agent: Agent): string {
+  return agent.archived_at ? 'archived' : agent.status;
+}
 
 export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; onNewAgent: () => void; onOpenAgent: (agent: Agent) => void }) {
+  const { t } = useTranslation('agents');
+  const { t: tPages } = useTranslation('pages');
+  const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('active');
   const agents = data.agents.filter((agent) => {
@@ -22,81 +39,90 @@ export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; o
     return matchesStatus && matchesQuery;
   });
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Agents</h1>
-          <p>Create and manage autonomous agents.</p>
-        </div>
-        <button className="primaryButton" type="button" onClick={onNewAgent}>
-          <Plus size={18} />
-          Create agent
-        </button>
-      </div>
-      <Toolbar
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search by name or exact ID"
+    <section className="page-section console-page agents-list-page" aria-labelledby="agents-heading">
+      <PageHeader
+        headingId="agents-heading"
+        title={tPages('agents.title')}
+        help={tPages('agents.description')}
         actions={(
-          <>
-            <FilterSelect
-              label="Status"
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: 'active', label: 'Active' },
-                { value: 'all', label: 'All' },
-                { value: 'archived', label: 'Archived' },
-              ]}
-            />
-          </>
+          <button className="button primary" type="button" onClick={onNewAgent}>
+            <Plus size={15} aria-hidden="true" />
+            {tPages('agents.newAgent')}
+          </button>
         )}
       />
-      <div className="tablePanel agentsTablePanel">
-        <table className="agentTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Model</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Last updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agents.map((agent) => (
-              <tr key={agent.id} className="clickableRow" onClick={() => onOpenAgent(agent)}>
-                <td className="monoCell">{shortId(agent.id)}</td>
-                <td>
-                  <strong>{agent.name}</strong>
-                  <span>{agent.description || agent.id}</span>
-                </td>
-                <td>{agent.model}</td>
-                <td><StatusPill status={agent.status} /></td>
-                <td>{formatDate(agent.created_at)}</td>
-                <td>{formatDate(agent.updated_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {agents.length === 0 ? <EmptyState icon={<Monitor size={22} />} title="No agents" /> : null}
-      </div>
-      <div className="mobileAgentList">
-        {agents.map((agent) => (
-          <button className="mobileAgentCard" type="button" key={agent.id} onClick={() => onOpenAgent(agent)}>
-            <span className="mobileAgentMain">
-              <strong>{agent.name}</strong>
-              <small className="monoText">{agent.id}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <span>{agent.model}</span>
-              <StatusPill status={agent.status} />
-            </span>
-          </button>
-        ))}
-        {agents.length === 0 ? <EmptyState icon={<Monitor size={22} />} title="No agents" /> : null}
-      </div>
+      <PageBody>
+        <ListToolbar
+          label={t('view.filterLabel')}
+          summary={listSummary(tCommon, agents.length, data.agents.length, { locale: i18n.resolvedLanguage })}
+        >
+          <SearchField value={query} onChange={setQuery} placeholder={t('view.searchPlaceholder')} label={t('view.filterLabel')} />
+          <ConsoleSelect
+            label={t('view.status')}
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'active', label: t('view.statusOptions.active') },
+              { value: 'all', label: t('view.statusOptions.all') },
+              { value: 'archived', label: t('view.statusOptions.archived') },
+            ]}
+          />
+        </ListToolbar>
+        {agents.length ? (
+          <div className="table-frame agents-table-frame">
+            <table className="data-table" aria-label={tPages('agents.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('view.columns.agent')}</th>
+                  <th scope="col">{t('view.columns.model')}</th>
+                  <th scope="col">{t('view.columns.status')}</th>
+                  <th scope="col">{t('view.columns.created')}</th>
+                  <th scope="col">{t('view.columns.updated')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((agent) => (
+                  <tr key={agent.id} className="clickable-row" onClick={() => onOpenAgent(agent)}>
+                    <th scope="row">
+                      <NameCell
+                        name={agent.name}
+                        id={agent.id}
+                        fallback={t('list.untitled')}
+                        onOpen={() => onOpenAgent(agent)}
+                        openLabel={t('view.open', { name: agent.name })}
+                      />
+                    </th>
+                    <td><code title={agent.model}>{agent.model}</code></td>
+                    <td><StatusDot tone={agentTone(agent)} label={agentStatusLabel(agent)} /></td>
+                    <td>{formatDate(agent.created_at)}</td>
+                    <td>{formatDate(agent.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Monitor}
+            title={data.agents.length && (query || status !== 'all') ? t('list.noMatch') : t('list.noAgents')}
+            action={query ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button> : null}
+          />
+        )}
+        <div className="agent-card-list">
+          {agents.map((agent) => (
+            <div className="agent-card" key={agent.id}>
+              <button className="agent-card-open" type="button" onClick={() => onOpenAgent(agent)} aria-label={t('view.open', { name: agent.name })}>
+                <strong>{agent.name}</strong>
+                <span className="agent-card-meta">
+                  <code>{agent.model}</code>
+                  <StatusDot tone={agentTone(agent)} label={agentStatusLabel(agent)} />
+                </span>
+              </button>
+              <CopyableId id={agent.id} compact />
+            </div>
+          ))}
+        </div>
+      </PageBody>
     </section>
   );
 }
@@ -193,7 +219,7 @@ export function AgentDetail({
         />
       ) : null}
       {tab === 'sessions' ? <AgentSessionsTab sessions={agentSessions} onOpenSession={onOpenSession} /> : null}
-      {tab === 'deployments' ? <EmptyState icon={<Server size={22} />} title="Deployments are not configured for this local runtime" /> : null}
+      {tab === 'deployments' ? <LegacyEmptyState icon={<Server size={22} />} title="Deployments are not configured for this local runtime" /> : null}
       {tab === 'observability' ? (
         <AgentObservability sessions={agentSessions} tokenIn={tokenIn} tokenOut={tokenOut} />
       ) : null}
@@ -375,7 +401,7 @@ function AgentSessionsTab({ sessions, onOpenSession }: { sessions: Session[]; on
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 ? <EmptyState icon={<MessageSquare size={22} />} title="No sessions" /> : null}
+        {filtered.length === 0 ? <LegacyEmptyState icon={<MessageSquare size={22} />} title="No sessions" /> : null}
       </div>
     </div>
   );

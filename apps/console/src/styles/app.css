@@ -5,7 +5,8 @@
  * 3. the legacy stylesheet (src/styles.css), retiring page by page as surfaces
  *    migrate onto the ported grammar;
  * 4. the ported OAC base + grammar (style.css, console.css) and the component
- *    system in Beautiful UI's vocabulary (system.css);
+ *    system in Beautiful UI's vocabulary (system.css), plus this console's own
+ *    semantic layer for workflow surfaces (sandbase.css);
  * 5. Tailwind utilities last, generated only for the vendored components.
  */
 @import "tailwindcss/theme.css" layer(theme);
@@ -20,6 +21,7 @@
 @import "./style.css";
 @import "./console.css";
 @import "./system.css";
+@import "./sandbase.css";
 @import "tailwindcss/utilities.css" source(none);
 /* Utilities are generated only for the vendored components (coss ui on
  * @base-ui/react) and their thin console wrappers. The console's own markup

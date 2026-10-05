@@ -2,7 +2,7 @@
  * SandBase local changes, kept small so a re-port diffs cleanly:
  * - no `min-width: 960px` on body: this console keeps a ~390px mobile rail;
  * - token alias paths updated to src/styles/foundation.css;
- * - SandBase dialog sizes appended at the bottom of system.css. */
+ * - SandBase-owned semantic rules live in styles/sandbase.css. */
 :root {
   color: var(--fg);
   background: var(--surface);

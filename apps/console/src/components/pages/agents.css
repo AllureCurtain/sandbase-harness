@@ -1,0 +1,67 @@
+/* Agents list — page-local rules the shared grammar does not name. */
+
+/* Narrow screens swap the framed table for a card list: one tap target per
+ * agent with the same name/ID/status facts. */
+.agent-card-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-card {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.agent-card:hover {
+  background: var(--hover);
+}
+
+/* The open affordance is a real button; the copy-id control stays a sibling
+ * so no interactive element nests inside another. */
+.agent-card-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-card-open > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-card-meta > code {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .agents-table-frame {
+    display: none;
+  }
+
+  .agent-card-list {
+    display: flex;
+  }
+}

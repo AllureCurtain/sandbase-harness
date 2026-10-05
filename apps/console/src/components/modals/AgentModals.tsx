@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { Plus, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { postJson, putJson } from '../../api';
 import { sendsModelConfig } from '../../lib/agentModelConfig';
 import { validateAgentDraft } from '../../lib/agentVersionDiff';
@@ -8,6 +9,7 @@ import { useRuntimeCapabilities } from '../../useRuntimeCapabilities';
 import { ConfigPreviewDrawer, DrawerToggle, type ConfigFormat } from '../ConfigDrawer';
 import { CheckCard, FieldRow, KvRowEditor, RadioCardGroup, SectionCard, kvRowsFromObject, type CheckItem, type KvRow } from '../kit';
 import { Modal } from '../Modal';
+import { ConsoleSelect } from '../console-select';
 import type { Agent, AgentToolset, BuiltinToolset, ConsoleData, McpToolset, SkillRef, Template } from '../../types';
 
 /**
@@ -33,11 +35,7 @@ type McpRow = { id: string; name: string; url: string; rest: Record<string, unkn
 const BUILTIN_NAMES = ['bash', 'edit', 'read', 'write', 'glob', 'grep', 'web_fetch', 'web_search'] as const;
 const SPEED_OPTIONS = ['standard', 'fast', 'extended'] as const;
 const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-const PERMISSION_OPTIONS = [
-  { value: 'always_ask', label: 'Ask each time' },
-  { value: 'always_allow', label: 'Always allow' },
-  { value: 'never_allow', label: 'Never allow' },
-] as const;
+const PERMISSION_VALUES = ['always_ask', 'always_allow', 'never_allow'] as const;
 
 let mcpRowSeq = 0;
 
@@ -113,6 +111,7 @@ function AgentDefinitionForm({
   data: ConsoleData;
   idPrefix: string;
 }) {
+  const { t } = useTranslation('agents');
   const { capabilities } = useRuntimeCapabilities();
   const builtin = builtinToolsetOf(draft.tools);
   const builtinConfigs = builtin?.configs ?? {};
@@ -170,77 +169,80 @@ function AgentDefinitionForm({
 
   return (
     <>
-      <SectionCard n={2} title="Basics">
-        <FieldRow label="Name" required error={draft.name.trim() ? undefined : 'A name is required.'}>
+      <SectionCard n={2} title={t('modal.basics.title')}>
+        <FieldRow label={t('modal.basics.name')} required error={draft.name.trim() ? undefined : t('modal.basics.nameRequired')}>
           <input
             id={`${idPrefix}-name`}
             value={draft.name}
             onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            placeholder="research-assistant"
+            placeholder={t('modal.basics.namePlaceholder')}
           />
         </FieldRow>
-        <FieldRow label="Description" optional="optional">
+        <FieldRow label={t('modal.basics.description')} optional={t('modal.basics.optional')}>
           <input
             value={draft.description ?? ''}
             onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            placeholder="What this agent is for"
+            placeholder={t('modal.basics.descriptionPlaceholder')}
           />
         </FieldRow>
         <div className="fieldGrid">
           <FieldRow
-            label="Model"
+            label={t('modal.basics.model')}
             required
-            error={draft.model.trim() ? undefined : 'Pick a model.'}
-            helper={model?.api_key_state === 'missing_env' ? 'This model’s API key is not configured — runs will fail until it is.' : undefined}
+            error={draft.model.trim() ? undefined : t('modal.basics.modelRequired')}
+            helper={model?.api_key_state === 'missing_env' ? t('modal.basics.modelMissingKey') : undefined}
           >
-            <select
-              id={`${idPrefix}-model`}
+            <ConsoleSelect
+              label={t('modal.basics.model')}
               value={draft.model}
-              onChange={(event) => setDraft({ ...draft, model: event.target.value })}
-            >
-              {!model ? <option value={draft.model}>{draft.model || 'Select a model'}</option> : null}
-              {(data.runtime?.models ?? []).map((item) => (
-                <option key={item.name} value={item.name}>
-                  {item.name}{item.api_key_state === 'missing_env' ? ' — no API key' : ''}{item.is_default ? ' (default)' : ''}
-                </option>
-              ))}
-            </select>
+              placeholder={t('modal.basics.modelSelect')}
+              onChange={(value) => setDraft({ ...draft, model: value })}
+              options={[
+                ...(model ? [] : [{ value: draft.model, label: draft.model || t('modal.basics.modelSelect') }]),
+                ...(data.runtime?.models ?? []).map((item) => ({
+                  value: item.name,
+                  label: `${item.name}${item.api_key_state === 'missing_env' ? ` — ${t('modal.basics.modelNoKey')}` : ''}${item.is_default ? ` (${t('modal.basics.modelDefault')})` : ''}`,
+                })),
+              ]}
+            />
           </FieldRow>
-          <FieldRow label="Speed" optional="model profile">
-            <select
+          <FieldRow label={t('modal.basics.speed')} optional={t('modal.basics.speedOptional')}>
+            <ConsoleSelect
+              label={t('modal.basics.speed')}
               value={draft.model_config?.speed ?? 'standard'}
-              onChange={(event) => setDraft({ ...draft, model_config: { ...(draft.model_config ?? {}), speed: event.target.value } })}
-            >
-              {SPEED_OPTIONS.map((speed) => <option key={speed} value={speed}>{speed}</option>)}
-            </select>
+              onChange={(value) => setDraft({ ...draft, model_config: { ...(draft.model_config ?? {}), speed: value } })}
+              options={SPEED_OPTIONS.map((speed) => ({ value: speed, label: speed }))}
+            />
           </FieldRow>
-          <FieldRow label="Reasoning effort" optional="model profile">
-            <select
+          <FieldRow label={t('modal.basics.effort')} optional={t('modal.basics.speedOptional')}>
+            <ConsoleSelect
+              label={t('modal.basics.effort')}
               value={draft.model_config?.effort ?? ''}
-              onChange={(event) => {
+              onChange={(value) => {
                 const next = { ...(draft.model_config ?? { speed: 'standard' }) };
-                if (event.target.value) next.effort = event.target.value;
+                if (value) next.effort = value;
                 else delete next.effort;
                 setDraft({ ...draft, model_config: next });
               }}
-            >
-              <option value="">Not set</option>
-              {EFFORT_OPTIONS.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
-            </select>
+              options={[
+                { value: '', label: t('modal.basics.effortNotSet') },
+                ...EFFORT_OPTIONS.map((effort) => ({ value: effort, label: effort })),
+              ]}
+            />
           </FieldRow>
         </div>
-        <FieldRow label="System prompt" required error={draft.system.trim() ? undefined : 'The agent needs instructions.'}>
+        <FieldRow label={t('modal.basics.system')} required error={draft.system.trim() ? undefined : t('modal.basics.systemRequired')}>
           <textarea
             id={`${idPrefix}-system`}
             value={draft.system}
             onChange={(event) => setDraft({ ...draft, system: event.target.value })}
-            placeholder="You are a general-purpose agent that…"
+            placeholder={t('modal.basics.systemPlaceholder')}
           />
         </FieldRow>
       </SectionCard>
 
-      <SectionCard n={3} title="Tools" hint="Built-in tools the agent may call. Disabled tools are written as enabled: false.">
-        <div className="toolChipGrid" role="group" aria-label="Built-in tools">
+      <SectionCard n={3} title={t('modal.tools.title')} hint={t('modal.tools.hint')}>
+        <div className="toolChipGrid" role="group" aria-label={t('modal.tools.groupLabel')}>
           {toolNames.map((name) => {
             const enabled = builtinConfigs[name]?.enabled !== false;
             const capability = capabilityById.get(name);
@@ -251,42 +253,42 @@ function AgentDefinitionForm({
                 type="button"
                 className={`toolChip${enabled ? ' selected' : ''}`}
                 disabled={unavailable}
-                title={unavailable ? capability?.reason ?? 'Unavailable on this runtime' : undefined}
+                title={unavailable ? capability?.reason ?? t('modal.tools.unavailableTitle') : undefined}
                 onClick={() => toggleTool(name)}
               >
                 {name}
-                {unavailable ? <small>unavailable</small> : null}
+                {unavailable ? <small>{t('modal.tools.unavailable')}</small> : null}
               </button>
             );
           })}
         </div>
-        <FieldRow label="Default permission" helper="Applied to tools without their own policy. Per-tool policies can still be set in the YAML view.">
-          <select
+        <FieldRow label={t('modal.tools.defaultPermission')} helper={t('modal.tools.defaultPermissionHelper')}>
+          <ConsoleSelect
+            label={t('modal.tools.defaultPermission')}
             value={builtin?.default_config?.permission_policy?.type ?? 'always_ask'}
-            onChange={(event) => setDefaultPermission(event.target.value)}
-          >
-            {PERMISSION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+            onChange={setDefaultPermission}
+            options={PERMISSION_VALUES.map((value) => ({ value, label: t(`modal.tools.permissionOptions.${value}`) }))}
+          />
         </FieldRow>
       </SectionCard>
 
-      <SectionCard n={4} title="Integrations">
-        <FieldRow label="MCP servers" optional="remote tool servers" helper="Each server also grants an mcp_toolset entry so its tools are reachable.">
+      <SectionCard n={4} title={t('modal.integrations.title')}>
+        <FieldRow label={t('modal.integrations.mcpServers')} optional={t('modal.integrations.mcpOptional')} helper={t('modal.integrations.mcpHelper')}>
           <div className="kvEditor">
             {mcpRows.map((row) => (
               <div className="kvEditorRow" key={row.id}>
                 <input
                   value={row.name}
-                  placeholder="server name"
+                  placeholder={t('modal.integrations.mcpName')}
                   onChange={(event) => patchMcpRow(row.id, { name: event.target.value })}
                 />
                 <input
                   className="monoInput"
                   value={row.url}
-                  placeholder="https://mcp.example.com"
+                  placeholder={t('modal.integrations.mcpUrl')}
                   onChange={(event) => patchMcpRow(row.id, { url: event.target.value })}
                 />
-                <button className="iconButton quiet" type="button" aria-label="Remove server"
+                <button className="iconButton quiet" type="button" aria-label={t('modal.integrations.mcpRemove')}
                   onClick={() => setMcpRows(mcpRows.filter((candidate) => candidate.id !== row.id))}>
                   <Trash2 size={16} />
                 </button>
@@ -294,12 +296,12 @@ function AgentDefinitionForm({
             ))}
             <button className="addRowButton" type="button"
               onClick={() => setMcpRows([...mcpRows, { id: `mcp_${++mcpRowSeq}`, name: '', url: '', rest: {}, origName: '' }])}>
-              <Plus size={13} /> Add MCP server
+              <Plus size={13} /> {t('modal.integrations.mcpAdd')}
             </button>
           </div>
         </FieldRow>
-        <FieldRow label="Skills" optional={`${skillIds.size} selected`}>
-          <div className="toolChipGrid" role="group" aria-label="Skills">
+        <FieldRow label={t('modal.integrations.skills')} optional={t('modal.integrations.skillsSelected', { n: skillIds.size })}>
+          <div className="toolChipGrid" role="group" aria-label={t('modal.integrations.skillsGroupLabel')}>
             {data.skills.map((skill) => (
               <button
                 key={skill.id}
@@ -317,18 +319,18 @@ function AgentDefinitionForm({
                 key={skill.skill_id}
                 type="button"
                 className="toolChip selected"
-                title="Referenced skill not in the local library — click to remove"
+                title={t('modal.integrations.skillNotInLibrary')}
                 onClick={() => toggleSkill(skill.skill_id, skill.type)}
               >
                 {skill.skill_id}
               </button>
             ))}
-            {!data.skills.length && !extraSkillRefs.length ? <span className="fieldHelper">No skills in the library yet.</span> : null}
+            {!data.skills.length && !extraSkillRefs.length ? <span className="fieldHelper">{t('modal.integrations.skillsEmpty')}</span> : null}
           </div>
         </FieldRow>
         <details className="advancedFold">
-          <summary>Metadata</summary>
-          <KvRowEditor rows={metadataRows} onChange={setMetadataRows} addLabel="Add metadata" />
+          <summary>{t('modal.integrations.metadata')}</summary>
+          <KvRowEditor rows={metadataRows} onChange={setMetadataRows} addLabel={t('modal.integrations.metadataAdd')} />
         </details>
       </SectionCard>
     </>
@@ -336,6 +338,7 @@ function AgentDefinitionForm({
 }
 
 function useAgentDraftChecks(draft: AgentDraft, mcpRows: McpRow[], metadataRows: KvRow[], idPrefix: string): CheckItem[] {
+  const { t } = useTranslation('agents');
   return useMemo(() => {
     const duplicateKeys = new Set<string>();
     const seen = new Set<string>();
@@ -345,14 +348,14 @@ function useAgentDraftChecks(draft: AgentDraft, mcpRows: McpRow[], metadataRows:
     }
     const emptyMcp = mcpRows.filter((row) => !row.name.trim() || !row.url.trim());
     const items: CheckItem[] = [
-      { label: 'Name', value: draft.name.trim() || 'missing', state: draft.name.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-name` },
-      { label: 'Model', value: draft.model.trim() || 'missing', state: draft.model.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-model` },
-      { label: 'System prompt', value: draft.system.trim() ? `${draft.system.trim().length} chars` : 'missing', state: draft.system.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-system` },
-      { label: 'MCP servers', value: `${mcpRows.length}`, state: emptyMcp.length ? 'blocking' : 'ok', },
-      { label: 'Metadata', value: duplicateKeys.size ? `duplicate keys: ${[...duplicateKeys].join(', ')}` : `${metadataRows.filter((row) => row.key.trim()).length} entries`, state: duplicateKeys.size ? 'blocking' : 'ok' },
+      { label: t('modal.check.name'), value: draft.name.trim() || t('modal.check.missing'), state: draft.name.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-name` },
+      { label: t('modal.check.model'), value: draft.model.trim() || t('modal.check.missing'), state: draft.model.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-model` },
+      { label: t('modal.check.system'), value: draft.system.trim() ? t('modal.check.systemChars', { n: draft.system.trim().length }) : t('modal.check.missing'), state: draft.system.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-system` },
+      { label: t('modal.check.mcpServers'), value: `${mcpRows.length}`, state: emptyMcp.length ? 'blocking' : 'ok', },
+      { label: t('modal.check.metadata'), value: duplicateKeys.size ? t('modal.check.metadataDuplicates', { keys: [...duplicateKeys].join(', ') }) : t('modal.check.metadataEntries', { n: metadataRows.filter((row) => row.key.trim()).length }), state: duplicateKeys.size ? 'blocking' : 'ok' },
     ];
     return items;
-  }, [draft, mcpRows, metadataRows, idPrefix]);
+  }, [draft, mcpRows, metadataRows, idPrefix, t]);
 }
 
 function serializeDraft(value: unknown, format: ConfigFormat): string {
@@ -373,6 +376,8 @@ function parseDraftText(text: string): AgentDraft {
 const drawerFitsViewport = () => typeof window === 'undefined' || window.matchMedia('(min-width: 1020px)').matches;
 
 export function AgentModal({ template, data, onClose, onSaved }: { template?: Template; data: ConsoleData; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('agents');
+  const { t: tCommon } = useTranslation();
   const initialTemplate = template ?? data.templates[0];
   const [draft, setDraft] = useState<AgentDraft>(() => (initialTemplate?.agent as AgentDraft) ?? defaultAgentDraft(data));
   const [selected, setSelected] = useState<Template | undefined>(initialTemplate);
@@ -428,12 +433,12 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
   };
 
   return (
-    <Modal title="Create agent" subtitle="Fill the form — the config preview stays in sync." onClose={onClose} size="workflow">
+    <Modal title={t('modal.createTitle')} subtitle={t('modal.createSubtitle')} onClose={onClose} size="workflow">
       <form className="modalWorkflow" onSubmit={submit}>
         <div className="modalSplit">
           <div className="modalFormCol">
             {error ? <div className="banner error inlineBanner">{error}</div> : null}
-            <SectionCard n={1} title="Starting point" hint="Picking a template replaces the whole draft below.">
+            <SectionCard n={1} title={t('modal.startingPoint.title')} hint={t('modal.startingPoint.hint')}>
               <RadioCardGroup
                 value={selected?.id ?? ''}
                 onChange={chooseTemplate}
@@ -455,7 +460,7 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
               data={data}
               idPrefix="create-agent"
             />
-            <SectionCard n={5} title="Before you create">
+            <SectionCard n={5} title={t('modal.check.section')}>
               <CheckCard items={checks} />
             </SectionCard>
           </div>
@@ -474,14 +479,14 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
         <div className="modalActionsBar">
           <DrawerToggle open={drawerOpen} onToggle={() => setDrawerOpen(!drawerOpen)} />
           <span className="spacer" />
-          <button className="secondaryButton" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="button outline" type="button" onClick={onClose} disabled={saving}>{tCommon('actions.cancel')}</button>
           <button
-            className="primaryButton"
+            className="button primary"
             type="submit"
             disabled={saving || blocked}
-            title={blocked ? 'Fix the items marked in the pre-submit check first' : undefined}
+            title={blocked ? t('modal.blockedTitle') : undefined}
           >
-            {saving ? 'Creating…' : 'Create agent'}
+            {saving ? t('modal.creating') : t('modal.create')}
           </button>
         </div>
       </form>
@@ -490,6 +495,8 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
 }
 
 export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: { agent: Agent; initialDraft?: Agent; data: ConsoleData; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('agents');
+  const { t: tCommon } = useTranslation();
   const source = agentDraftFromApi(initialDraft ?? agent);
   const [draft, setDraft] = useState<AgentDraft>(source);
   const [mcpRows, setMcpRows] = useState<McpRow[]>(() => mcpRowsFromDraft(source));
@@ -534,8 +541,8 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
 
   return (
     <Modal
-      title="Edit agent"
-      subtitle={initialDraft ? `Draft restored from v${initialDraft.version} — saving records it as a new version.` : `Saving creates version ${agent.version + 1}.`}
+      title={t('modal.editTitle')}
+      subtitle={initialDraft ? t('modal.editSubtitleRestored', { version: initialDraft.version }) : t('modal.editSubtitle', { version: agent.version + 1 })}
       onClose={onClose}
       size="workflow"
     >
@@ -570,14 +577,14 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
         <div className="modalActionsBar">
           <DrawerToggle open={drawerOpen} onToggle={() => setDrawerOpen(!drawerOpen)} />
           <span className="spacer" />
-          <button className="secondaryButton" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="button outline" type="button" onClick={onClose} disabled={saving}>{tCommon('actions.cancel')}</button>
           <button
-            className="primaryButton"
+            className="button primary"
             type="submit"
             disabled={saving || blocked}
-            title={blocked ? 'Fix the items marked in the pre-submit check first' : undefined}
+            title={blocked ? t('modal.blockedTitle') : undefined}
           >
-            {saving ? 'Saving…' : 'Save new version'}
+            {saving ? t('modal.saving') : t('modal.save')}
           </button>
         </div>
       </form>

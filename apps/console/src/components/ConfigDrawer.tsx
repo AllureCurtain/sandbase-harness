@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Copy, PanelRightClose } from 'lucide-react';
+import { Copy, PanelRightClose, WrapText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { copyText } from '../lib/format';
 import { EquivalentRequestPanel } from './EquivalentRequestPanel';
+import { SegmentedControl } from './console-ui';
 
 export type ConfigFormat = 'yaml' | 'json';
 
@@ -34,48 +36,62 @@ export function ConfigPreviewDrawer({
   parseError?: string;
   onCollapse?: () => void;
 }) {
+  const { t } = useTranslation();
   const [pasteText, setPasteText] = useState('');
+  const [wrap, setWrap] = useState(false);
   return (
     <aside className="configDrawer">
       <div className="configDrawerHead">
-        <strong>Config preview</strong>
+        <strong>{t('configDrawer.title')}</strong>
         <div className="configDrawerActions">
-          <div className="segment compactSegment">
-            <button type="button" className={format === 'yaml' ? 'active' : ''} onClick={() => onFormat('yaml')}>YAML</button>
-            <button type="button" className={format === 'json' ? 'active' : ''} onClick={() => onFormat('json')}>JSON</button>
-          </div>
-          <button className="iconButton quiet" type="button" title="Copy config" aria-label="Copy config"
+          <SegmentedControl
+            label={t('configDrawer.title')}
+            value={format}
+            options={[
+              { value: 'yaml', label: 'YAML' },
+              { value: 'json', label: 'JSON' },
+            ]}
+            onChange={onFormat}
+          />
+          <button className={`iconButton quiet${wrap ? ' active' : ''}`} type="button"
+            title={wrap ? t('configDrawer.unwrap') : t('configDrawer.wrap')}
+            aria-label={wrap ? t('configDrawer.unwrap') : t('configDrawer.wrap')}
+            aria-pressed={wrap}
+            onClick={() => setWrap((current) => !current)}>
+            <WrapText size={15} />
+          </button>
+          <button className="iconButton quiet" type="button" title={t('configDrawer.copy')} aria-label={t('configDrawer.copy')}
             onClick={() => void copyText(text)}>
             <Copy size={15} />
           </button>
           {onCollapse ? (
-            <button className="iconButton quiet" type="button" title="Hide preview" aria-label="Hide preview"
+            <button className="iconButton quiet" type="button" title={t('configDrawer.hide')} aria-label={t('configDrawer.hide')}
               onClick={onCollapse}>
               <PanelRightClose size={15} />
             </button>
           ) : null}
         </div>
       </div>
-      <pre className="configDrawerView">{text}</pre>
+      <pre className={wrap ? 'configDrawerView wrapped' : 'configDrawerView'}>{text}</pre>
       {onParse ? (
         <details className="configDrawerPaste">
-          <summary>Paste a config — fill the form from it</summary>
+          <summary>{t('configDrawer.pasteTitle')}</summary>
           <textarea
             value={pasteText}
             onChange={(event) => setPasteText(event.target.value)}
-            placeholder="Paste a YAML or JSON definition…"
+            placeholder={t('configDrawer.pastePlaceholder')}
             spellCheck={false}
           />
-          <button className="secondaryButton" type="button" disabled={!pasteText.trim()}
+          <button className="button outline" type="button" disabled={!pasteText.trim()}
             onClick={() => onParse(pasteText)}>
-            Parse &amp; fill form
+            {t('configDrawer.pasteFill')}
           </button>
           {parseError ? <span className="fieldError" role="alert">{parseError}</span> : null}
         </details>
       ) : null}
       {request ? (
         <details className="configDrawerRequest">
-          <summary>Equivalent API request</summary>
+          <summary>{t('configDrawer.equivalentRequest')}</summary>
           <EquivalentRequestPanel request={request} bare />
         </details>
       ) : null}
@@ -85,9 +101,10 @@ export function ConfigPreviewDrawer({
 
 /** Toggle that lives in a modal's action bar when the drawer is collapsible. */
 export function DrawerToggle({ open, onToggle, children }: { open: boolean; onToggle: () => void; children?: ReactNode }) {
+  const { t } = useTranslation();
   return (
-    <button className="ghostButton compactButton" type="button" aria-pressed={open} onClick={onToggle}>
-      {children ?? 'Config preview'} {open ? '▾' : '▸'}
+    <button className="button outline compactButton" type="button" aria-pressed={open} onClick={onToggle}>
+      {children ?? t('configDrawer.title')} {open ? '▾' : '▸'}
     </button>
   );
 }

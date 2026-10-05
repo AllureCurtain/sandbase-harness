@@ -25,6 +25,23 @@ export const common = {
     open: "Open",
     clearSearch: "Clear search",
   },
+  configDrawer: {
+    title: "Config preview",
+    copy: "Copy config",
+    hide: "Hide preview",
+    wrap: "Wrap lines",
+    unwrap: "No wrap",
+    pasteTitle: "Paste a config — fill the form from it",
+    pastePlaceholder: "Paste a YAML or JSON definition…",
+    pasteFill: "Parse & fill form",
+    equivalentRequest: "Equivalent API request",
+  },
+  check: {
+    title: "Pre-submit check",
+    allGood: "All good",
+    toFix: "{{n}} to fix",
+    fix: "Fix",
+  },
   list: {
     search: "Search",
     actions: "Actions",

@@ -645,10 +645,10 @@ describe('Console page static coverage', () => {
     const data = populatedConsoleData();
     const agentsHtml = renderToString(React.createElement(Agents, { data, onNewAgent: () => {}, onOpenAgent: () => {} }));
     expect(agentsHtml).toContain('Review Agent');
-    expect(agentsHtml).toContain('class="stack"');
-    expect(agentsHtml).toContain('class="pageIntro"');
-    expect(agentsHtml).toContain('agentsTablePanel');
-    expect(agentsHtml).toContain('mobileAgentCard');
+    expect(agentsHtml).toContain('console-page-header');
+    expect(agentsHtml).toContain('list-toolbar');
+    expect(agentsHtml).toContain('data-table');
+    expect(agentsHtml).toContain('agent-card');
     expect(agentsHtml).not.toContain('mobileResourceCard');
 
     const sessionsHtml = renderToString(React.createElement(Sessions, { data, onNewSession: () => {}, onOpenSession: () => {} }));
