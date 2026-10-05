@@ -2,7 +2,7 @@ import { Plus, Send, Target } from 'lucide-react';
 import { type FormEvent, useRef, useState } from 'react';
 import { deleteJson, postJson } from '../../api';
 import { StatusPill } from '../Common';
-import { Modal } from '../Modal';
+import { ConfirmDeleteModal } from '../DangerZone';
 import { DefineOutcomeModal, SessionSettingsModal } from '../modals/SessionModals';
 import { SessionComposer } from '../session/SessionComposer';
 import { SessionHero } from '../session/SessionHero';
@@ -88,6 +88,20 @@ export function SessionDetail({
     ? lastIdleEvent.stop_reason?.type
     : undefined;
 
+  // The usage receipt rides the latest `session.usage` snapshot; the session
+  // row's own usage totals are the fallback while no snapshot has landed.
+  const usageEvent = [...events].reverse().find((event) => event.type === 'session.usage' && event.usage);
+  const usageReceipt = usageEvent?.usage
+    ? {
+        inputTokens: usageEvent.usage.input_tokens ?? 0,
+        outputTokens: usageEvent.usage.output_tokens ?? 0,
+        costAmount: usageEvent.usage.list_cost?.amount,
+        costCurrency: usageEvent.usage.list_cost?.currency,
+      }
+    : session.usage
+      ? { inputTokens: session.usage.input_tokens, outputTokens: session.usage.output_tokens }
+      : undefined;
+
   const sendMessage = async (event?: FormEvent) => {
     event?.preventDefault();
     const content = messageDraft.trim();
@@ -171,15 +185,9 @@ export function SessionDetail({
   };
 
   const deleteSession = async () => {
-    try {
-      await deleteJson(`/v1/sessions/${encodeURIComponent(session.id)}`);
-      setDeleteConfirmOpen(false);
-      onBack();
-      onRefresh();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-      setDeleteConfirmOpen(false);
-    }
+    await deleteJson(`/v1/sessions/${encodeURIComponent(session.id)}`);
+    onBack();
+    onRefresh();
   };
 
   const composer = (
@@ -204,6 +212,7 @@ export function SessionDetail({
         displayStatus={displayStatus}
         agent={agent}
         environmentName={environment?.name}
+        usage={usageReceipt}
         onBack={onBack}
         onOpenAgent={onOpenAgent}
         onSettings={() => setSettingsOpen(true)}
@@ -278,21 +287,14 @@ export function SessionDetail({
       ) : null}
 
       {deleteConfirmOpen ? (
-        <Modal
+        <ConfirmDeleteModal
           title="Delete session"
-          subtitle={`${session.title || session.id} (${shortId(session.id)})`}
+          subject={`${session.title || session.id} (${shortId(session.id)})`}
+          consequence="This permanently deletes the session, its event history, and files it generated. The agent, environment, skills, vaults, and uploaded files are not affected."
+          confirmLabel="Delete session"
           onClose={() => setDeleteConfirmOpen(false)}
-        >
-          <p className="modalBody">
-            This permanently deletes the session, its event history, and files
-            the session generated. The agent, environment, skills, vaults, and
-            uploaded files are not affected.
-          </p>
-          <div className="modalActions">
-            <button className="secondaryButton" type="button" onClick={() => setDeleteConfirmOpen(false)}>Cancel</button>
-            <button className="dangerButton" type="button" onClick={() => void deleteSession()}>Delete session</button>
-          </div>
-        </Modal>
+          onConfirm={deleteSession}
+        />
       ) : null}
     </section>
   );

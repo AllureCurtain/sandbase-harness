@@ -1,21 +1,30 @@
-import { Archive, ChevronDown, Clock, Cloud, Monitor, Settings, Square, Target, Trash2 } from 'lucide-react';
+import { Archive, ChevronDown, Clock, Cloud, Monitor, PauseCircle, Settings, Square, Target, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { ResourceBadge, StatusPill } from '../Common';
 import { formatDuration, relativeDate, shortId } from '../../lib/format';
 import type { Agent, Session } from '../../types';
 import type { SessionDisplayStatus } from './conversation';
 
+export type SessionUsageReceipt = {
+  inputTokens: number;
+  outputTokens: number;
+  /** List cost amount in cents, when the runtime reports one. */
+  costAmount?: string;
+  costCurrency?: string;
+};
+
 /**
  * The session header: breadcrumb, title/status pill, agent and environment
  * badges, and the Actions menu (settings, define outcome, interrupt, archive,
- * delete). Action handlers live on the page; this component only owns whether
- * the menu is open.
+ * delete). While a turn is live the run-state strip below keeps the one
+ * action that matters — Interrupt — resident instead of buried in the menu.
  */
 export function SessionHero({
   session,
   displayStatus,
   agent,
   environmentName,
+  usage,
   onBack,
   onOpenAgent,
   onSettings,
@@ -28,6 +37,7 @@ export function SessionHero({
   displayStatus: SessionDisplayStatus;
   agent: Agent | undefined;
   environmentName?: string;
+  usage?: SessionUsageReceipt;
   onBack: () => void;
   onOpenAgent: (agent: Agent) => void;
   onSettings: () => void;
@@ -81,6 +91,64 @@ export function SessionHero({
           </div>
         </div>
       </div>
+
+      <RunStateStrip displayStatus={displayStatus} usage={usage} onInterrupt={onInterrupt} />
     </>
   );
+}
+
+/**
+ * The live-run readout: what the session is doing right now, what it has
+ * cost so far, and — while it is doing something — the always-visible
+ * Interrupt. An idle, finished session renders nothing here.
+ */
+function RunStateStrip({
+  displayStatus,
+  usage,
+  onInterrupt,
+}: {
+  displayStatus: SessionDisplayStatus;
+  usage?: SessionUsageReceipt;
+  onInterrupt: () => void;
+}) {
+  const live = displayStatus === 'running' || displayStatus === 'awaiting_action' || displayStatus === 'rescheduling';
+  const receipt = usage ? formatUsageReceipt(usage) : '';
+  if (!live && !receipt) return null;
+  return (
+    <div className="runStateStrip" role="status">
+      {live ? (
+        <span className="runStatePill">
+          {displayStatus === 'awaiting_action' ? (
+            <><PauseCircle size={15} /> Needs approval</>
+          ) : displayStatus === 'rescheduling' ? (
+            <><Clock size={15} /> Rescheduling</>
+          ) : (
+            <><span className="runDot" aria-hidden="true" /> Running</>
+          )}
+        </span>
+      ) : null}
+      {receipt ? <span className="costReceipt">{receipt}</span> : null}
+      <span className="spacer" />
+      {live ? (
+        <button className="dangerButton compactButton" type="button" onClick={onInterrupt}>
+          <Square size={13} /> Interrupt
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function formatUsageReceipt(usage: SessionUsageReceipt): string {
+  const parts = [`${formatTokenCount(usage.inputTokens)} in`, `${formatTokenCount(usage.outputTokens)} out`];
+  if (usage.costAmount !== undefined) {
+    const usd = Number(usage.costAmount) / 100;
+    if (Number.isFinite(usd)) parts.push(`$${usd.toFixed(2)}`);
+  }
+  return parts.join(' · ');
+}
+
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
+  return String(count);
 }

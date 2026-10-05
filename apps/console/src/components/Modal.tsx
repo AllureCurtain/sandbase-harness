@@ -12,7 +12,7 @@ export function Modal({
   subtitle?: string;
   children: ReactNode;
   onClose: () => void;
-  size?: 'default' | 'medium' | 'wide';
+  size?: 'default' | 'medium' | 'wide' | 'workflow';
 }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

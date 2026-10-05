@@ -28,7 +28,7 @@ export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; o
           <h1>Agents</h1>
           <p>Create and manage autonomous agents.</p>
         </div>
-        <button className="darkButton" type="button" onClick={onNewAgent}>
+        <button className="primaryButton" type="button" onClick={onNewAgent}>
           <Plus size={18} />
           Create agent
         </button>
@@ -39,7 +39,6 @@ export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; o
         placeholder="Search by name or exact ID"
         actions={(
           <>
-            <FilterSelect label="Created" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All time' }]} />
             <FilterSelect
               label="Status"
               value={status}
@@ -57,7 +56,6 @@ export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; o
         <table className="agentTable">
           <thead>
             <tr>
-              <th className="selectCol"><input type="checkbox" aria-label="Select all agents" /></th>
               <th>ID</th>
               <th>Name</th>
               <th>Model</th>
@@ -69,7 +67,6 @@ export function Agents({ data, onNewAgent, onOpenAgent }: { data: ConsoleData; o
           <tbody>
             {agents.map((agent) => (
               <tr key={agent.id} className="clickableRow" onClick={() => onOpenAgent(agent)}>
-                <td className="selectCol" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${agent.name}`} /></td>
                 <td className="monoCell">{shortId(agent.id)}</td>
                 <td>
                   <strong>{agent.name}</strong>
@@ -347,9 +344,6 @@ function AgentSessionsTab({ sessions, onOpenSession }: { sessions: Session[]; on
         placeholder="Search by session ID"
         actions={(
           <>
-            <FilterSelect label="Created" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All time' }]} />
-            <FilterSelect label="Version" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All' }]} />
-            <FilterSelect label="Deployment" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All' }]} />
             <FilterSelect
               label="Status"
               value={status}
@@ -367,11 +361,10 @@ function AgentSessionsTab({ sessions, onOpenSession }: { sessions: Session[]; on
       />
       <div className="tablePanel">
         <table>
-          <thead><tr><th className="selectCol"><input type="checkbox" aria-label="Select sessions" /></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Tokens in / out</th><th>Created</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Tokens in / out</th><th>Created</th></tr></thead>
           <tbody>
             {filtered.map((session) => (
               <tr key={session.id} className="clickableRow" onClick={() => onOpenSession(session)}>
-                <td className="selectCol" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${session.id}`} /></td>
                 <td className="monoCell">{shortId(session.id)}</td>
                 <td>{session.title || '-'}</td>
                 <td><StatusPill status={session.status} /></td>

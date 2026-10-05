@@ -4,10 +4,12 @@ import { clearStoredApiKey, deleteJson, getStoredApiKey, postJson, setStoredApiK
 import { copyText, formatDateShort, relativeDate, truncateMiddle } from '../../../lib/format';
 import type { ApiKey, ApiKeyCreateResponse, ConsoleData } from '../../../types';
 import { EmptyState, RequiredMark, ResourceBadge, StatusPill, SummaryStrip } from '../../Common';
+import { ConfirmDeleteModal } from '../../DangerZone';
 import { Modal } from '../../Modal';
 
 export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefresh: () => void }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<ApiKey | null>(null);
   const [storedKey, setStoredKey] = useState(() => getStoredApiKey());
   const activeKeys = data.apiKeys.filter((key) => key.status === 'active');
   const managedKeys = data.apiKeys.filter((key) => key.source === 'managed');
@@ -24,8 +26,6 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
   };
 
   const deleteKey = async (key: ApiKey) => {
-    if (key.source !== 'managed') return;
-    if (!window.confirm(`Delete API key "${key.name}"? This cannot be undone.`)) return;
     await deleteJson(`/v1/api-keys/${encodeURIComponent(key.id)}`);
     onRefresh();
   };
@@ -76,7 +76,7 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
                     <Copy size={16} />
                   </button>
                   {key.source === 'managed' ? (
-                    <button className="iconButton danger" type="button" title="Delete API key" onClick={() => void deleteKey(key)}>
+                    <button className="iconButton danger" type="button" title="Delete API key" onClick={() => setDeletingKey(key)}>
                       <Trash2 size={16} />
                     </button>
                   ) : null}
@@ -116,6 +116,16 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
             setStoredKey(secret);
             onRefresh();
           }}
+        />
+      ) : null}
+      {deletingKey ? (
+        <ConfirmDeleteModal
+          title="Delete API key"
+          subject={deletingKey.name}
+          consequence="This permanently deletes the key. Requests authenticating with this token are refused once it is gone."
+          confirmLabel="Delete API key"
+          onClose={() => setDeletingKey(null)}
+          onConfirm={() => deleteKey(deletingKey)}
         />
       ) : null}
     </section>
