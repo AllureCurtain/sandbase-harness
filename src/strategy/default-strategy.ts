@@ -22,6 +22,7 @@ import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
 import { resolveMcpServerName } from '@/core/mcp/mcp-manager.js';
+import { toolErrorText } from '@/core/tool-result-error.js';
 import { MODEL_AUTH_FAILED_CODE, MODEL_NOT_FOUND_CODE } from '@/model/errors.js';
 import { resolvedModelIdOf } from '@/model/registry.js';
 import { anthropicCallOptions } from '@/model/anthropic-options.js';
@@ -194,6 +195,14 @@ export class DefaultStrategy implements AgentStrategy {
     const customTools = new Set(customToolNames ?? []);
     const confirmableToolCallIds = new Set<string>();
     const customToolCallIds = new Set<string>();
+    // Calls whose `execute` returned a ToolResultError marker. The wrapper in
+    // `toAiTool` unwraps the marker back to its message so the model-visible
+    // text is unchanged; the id recorded here flags the emitted tool_result.
+    const failedToolResultCallIds = new Set<string>();
+    // SDK `tool-error` stream parts keyed by call id. Neither `step.toolCalls`
+    // nor `step.toolResults` retains the real error for a call that threw or
+    // failed input validation, so the paired error result below reads it here.
+    const toolStreamErrors = new Map<string, unknown>();
     const pendingConfirmationCalls: Array<{
       toolCallId: string;
       toolName: string;
@@ -285,7 +294,7 @@ export class DefaultStrategy implements AgentStrategy {
       const lockedCustomTools = createAiSdkExecutionLock(customToolDefinitions);
       const aiTools: Record<string, any> = {};
       for (const [name, tool] of Object.entries(tools)) {
-        aiTools[name] = toAiTool(lockedConfirmationTools[name] ?? lockedCustomTools[name] ?? tool);
+        aiTools[name] = toAiTool(lockedConfirmationTools[name] ?? lockedCustomTools[name] ?? tool, failedToolResultCallIds);
       }
       const guard = createAiSdkV4ExecutionGuard({
         schemas: Object.fromEntries(
@@ -507,6 +516,14 @@ export class DefaultStrategy implements AgentStrategy {
               const raw = typeof toolResult.output === 'string'
                 ? toolResult.output
                 : JSON.stringify(toolResult.output);
+              // A refused or failed execution is flagged at two layers that
+              // must agree: the `is_error` content block is the wire shape, the
+              // event-level `isError` is the persisted column consumers query.
+              // Sources: our own ToolResultError marker (the wrapper recorded
+              // the id) and the MCP protocol's `isError` result field.
+              const isToolError =
+                failedToolResultCallIds.has(toolResult.toolCallId) ||
+                (isMcp && (toolResult.output as { isError?: boolean } | undefined)?.isError === true);
               // Oversize results go through the shared overflow contract: the
               // full text is written into the sandbox and the model keeps a
               // short preview plus the path it can read back from. Slicing
@@ -519,7 +536,9 @@ export class DefaultStrategy implements AgentStrategy {
                   type: 'tool_result',
                   tool_use_id: toolResult.toolCallId,
                   content: overflow.preview,
+                  ...(isToolError ? { is_error: true } : {}),
                 }] as ContentBlock[],
+                ...(isToolError ? { isError: true } : {}),
                 modelUsed,
                 stopReason,
                 // The path is recorded only when a file was actually written, so
@@ -549,10 +568,15 @@ export class DefaultStrategy implements AgentStrategy {
               if (resultIds.has(toolCall.toolCallId)) continue;
               if (customTools.has(toolCall.toolName) || confirmTools.has(toolCall.toolName)) continue;
               const isMcp = toolCall.toolName.startsWith('mcp_');
-              const error = (toolCall as { error?: unknown }).error;
+              // The SDK's `tool-error` stream part carries the real failure —
+              // a thrown execute error or the input-validation message — while
+              // `toolCall.error` covers the invalid-call path. Prefer the
+              // stream part; both beat a generic placeholder.
+              const streamError = toolStreamErrors.get(toolCall.toolCallId);
+              const error = streamError ?? (toolCall as { error?: unknown }).error;
               const message = error instanceof Error
                 ? error.message
-                : typeof error === 'string'
+                : typeof error === 'string' && error.length > 0
                   ? error
                   : 'Tool call produced no result.';
               const toolErrorEvent = eventLog.append(session.id, {
@@ -621,6 +645,12 @@ export class DefaultStrategy implements AgentStrategy {
             broadcast(transientEvent(session.id, 'agent.message_stream_end', { message_id: messageId }));
             streaming = false;
           }
+        } else if (part.type === 'tool-error') {
+          // A `tool-error` part never lands in `step.toolResults`, so this map
+          // is the only place the paired error result can read the real cause.
+          // Parts for a step stream before its finish-step, which means the
+          // map is already populated when onStepFinish runs for that step.
+          toolStreamErrors.set(part.toolCallId, (part as { error?: unknown }).error);
         } else if (part.type === 'error') {
           // AI SDK v4 surfaces model/provider errors as an `error` stream part
           // rather than always throwing. Capture it so the turn fails properly
@@ -767,15 +797,35 @@ function modelStopReason(value: unknown): string | undefined {
   return undefined;
 }
 
-function toAiTool(tool: any): any {
+function toAiTool(tool: any, failedToolResultCallIds?: Set<string>): any {
   if (!tool || typeof tool !== 'object') return tool;
-  if (tool.inputSchema) return tool;
-  if (!tool.parameters || typeof tool.parameters !== 'object') return tool;
+  const converted = tool.inputSchema
+    ? tool
+    : tool.parameters && typeof tool.parameters === 'object'
+      ? (() => {
+          const { parameters, ...rest } = tool;
+          return {
+            ...rest,
+            inputSchema: isAiSdkSchema(parameters) ? parameters : jsonSchema(parameters),
+          };
+        })()
+      : tool;
 
-  const { parameters, ...rest } = tool;
+  // A ToolResultError return is the tool layer's way of saying "this text is a
+  // refusal or failure". Unwrap it here — never inside execute — so the SDK
+  // sees the same plain string the model always received, while the emitted
+  // tool_result can be flagged is_error without string-sniffing content.
+  const execute = converted.execute;
+  if (typeof execute !== 'function' || !failedToolResultCallIds) return converted;
   return {
-    ...rest,
-    inputSchema: isAiSdkSchema(parameters) ? parameters : jsonSchema(parameters),
+    ...converted,
+    execute: async (input: unknown, options?: { toolCallId?: string }) => {
+      const output = await execute(input, options);
+      const errText = toolErrorText(output);
+      if (errText === undefined) return output;
+      if (options?.toolCallId) failedToolResultCallIds.add(options.toolCallId);
+      return errText;
+    },
   };
 }
 

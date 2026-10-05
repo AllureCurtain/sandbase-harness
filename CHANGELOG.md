@@ -5,6 +5,7 @@
 ### Fixed
 
 - A tool call the model SDK refused before execution — an input failing the tool's schema validation is the observed case — now persists a paired `agent.tool_result` carrying `is_error: true` instead of leaving an orphan `agent.tool_use` that looked forever parked. The SDK feeds its `tool-error` output back to the model itself; the runtime was simply not recording it, which made retry loops invisible in the event log and on the stream.
+- A `tool_result` produced by a refused or failed tool execution now carries `is_error: true` in its content block and the row's `is_error` column. Tool errors used to be persisted as unmarked `Error: ...` text, so a memory-mount refusal, a missing file, a non-zero shell exit, or a refused `web_fetch` was indistinguishable from a success without string-matching the content. The model sees the same text as before — only the persisted event gains the flag — and an MCP result the server marked `isError` is flagged the same way.
 
 ### Breaking
 

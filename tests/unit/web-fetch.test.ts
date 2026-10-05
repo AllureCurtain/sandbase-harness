@@ -8,6 +8,7 @@ import {
   extractHtmlText,
   hostPolicyRefusal,
 } from '@/core/web/web-fetch.js';
+import { toolErrorText, ToolResultError } from '@/core/tool-result-error.js';
 import type { WebToolPolicy } from '@/core/agent/web-tool-policy.js';
 
 /**
@@ -101,7 +102,7 @@ function testTool(options: {
   maxResponseBytes?: number;
   maxRedirects?: number;
 }) {
-  return createWebFetchTool({
+  const tool = createWebFetchTool({
     policy: options.policy,
     redact: options.redact,
     overrides: {
@@ -115,6 +116,16 @@ function testTool(options: {
       maxRedirects: options.maxRedirects,
     },
   });
+  const execute = tool.execute!;
+  // Unwrap the ToolResultError marker the way the strategy does, so assertions
+  // read the same text the model sees. Marker identity is asserted once below.
+  return {
+    ...tool,
+    execute: async (input: unknown) => {
+      const out = await execute(input);
+      return toolErrorText(out) ?? out;
+    },
+  };
 }
 
 function url(path: string): string {
@@ -330,6 +341,13 @@ describe('WebFetch resource limits', () => {
     const tool = testTool({ policy: { mode: 'allowed', domains: ['nowhere.test'] } });
     const result = await tool.execute({ url: url('/page') });
     expect(result.startsWith('Error: WebFetch ')).toBe(true);
+  });
+
+  it('marks a refusal with ToolResultError so the event can carry is_error', async () => {
+    const tool = createWebFetchTool({ policy: { mode: 'allowed', domains: ['nowhere.test'] } });
+    const result = await tool.execute!({ url: 'http://public.example/page' });
+    expect(result).toBeInstanceOf(ToolResultError);
+    expect((result as ToolResultError).message).toContain('allowed_domains');
   });
 });
 

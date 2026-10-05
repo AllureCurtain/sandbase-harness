@@ -29,9 +29,9 @@
  *    model, and the result passes through the session's credential redactor,
  *    so a secret echoed by the page still cannot reach the event log.
  *
- * Failures return an `Error: ...` result string — the same shape every other
- * built-in tool uses — so the model sees a real tool error rather than a fake
- * success, and the strategy persists it as a normal `agent.tool_result`.
+ * Failures return a `ToolResultError` carrying an `Error: ...` string — the
+ * model sees the same real tool error it always did, and the strategy unwraps
+ * the marker so the persisted `agent.tool_result` is flagged `is_error`.
  *
  * `WebFetchOverrides` exists for tests: a suite that stands up a local HTTP
  * server needs `webfetch.test` to resolve to 127.0.0.1. The override surface
@@ -46,6 +46,7 @@ import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 import type { WebToolPolicy } from '@/core/agent/web-tool-policy.js';
+import { toolError } from '@/core/tool-result-error.js';
 import { isBlockedInternalHostname, isPrivateAddress } from './address-policy.js';
 
 export const WEB_FETCH_TIMEOUT_MS = 30_000;
@@ -144,7 +145,7 @@ export function createWebFetchTool(options: WebFetchToolOptions) {
         const message = err instanceof WebFetchRefusal
           ? err.message
           : `unexpected failure: ${err instanceof Error ? err.message : String(err)}`;
-        return String(redact(`Error: WebFetch ${message}`));
+        return toolError(String(redact(`Error: WebFetch ${message}`)));
       }
     },
   };

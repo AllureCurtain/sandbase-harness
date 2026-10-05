@@ -8,6 +8,7 @@ import { memoryContentHash } from '@/core/memory/semantics.js';
 import { normalizeMemoryRecordPath } from '@/core/memory/mount-adapter.js';
 import { collectGrepHits, editOnce, mountProviderUnavailable, mountRelativePath, refuseBashOnMemoryMount, type SessionMemoryMount } from './memory-mount-tools.js';
 import { McpManager, type McpServerStatus } from '@/core/mcp/mcp-manager.js';
+import { toolError, toolErrorText } from '@/core/tool-result-error.js';
 import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orchestrator/agent-orchestrator.js';
 import type { EventLogger } from './event-logger.js';
 import type { DelegationService } from './delegation-service.js';
@@ -194,7 +195,13 @@ export class ToolResolver {
       if (tool?.execute) {
         try {
           const out = await tool.execute(pendingUse.input);
-          resultText = typeof out === 'string' ? out : JSON.stringify(out);
+          const errText = toolErrorText(out);
+          if (errText !== undefined) {
+            resultText = errText;
+            isError = true;
+          } else {
+            resultText = typeof out === 'string' ? out : JSON.stringify(out);
+          }
         } catch (err) {
           resultText = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
           isError = true;
@@ -259,12 +266,12 @@ export class ToolResolver {
     const readMounted = (path: string) => {
       const binding = mounted(path);
       if (!binding) return undefined;
-      if (!mount) return mountError(binding);
+      if (!mount) return toolError(mountError(binding));
       const relative = mountRelativePath(path, binding);
       const checked = normalizeMemoryRecordPath(relative);
-      if (!checked.ok) return `Error: ${checked.error.message}`;
+      if (!checked.ok) return toolError(`Error: ${checked.error.message}`);
       const result = mount.adapter.read(binding.storeId, checked.value);
-      return result.ok ? result.value.content : `Error: ${result.error.message}`;
+      return result.ok ? result.value.content : toolError(`Error: ${result.error.message}`);
     };
 
     if (enabledTools.has('bash')) {
@@ -273,14 +280,14 @@ export class ToolResolver {
         parameters: { type: 'object', properties: { command: { type: 'string', description: 'Shell command to execute' } }, required: ['command'] },
         execute: async ({ command }: { command: string }) => {
           const refusal = refuseBashOnMemoryMount(command, bindings);
-          if (refusal) return refusal;
+          if (refusal) return toolError(refusal);
           // A shell command declares no target host, so only a credential the
           // policy admits without one reaches the environment.
           const result = await sandbox.execute(
             command,
             credentials && Object.keys(credentials.env).length > 0 ? { env: credentials.env } : undefined,
           );
-          return result.exitCode === 0 ? result.stdout : `Error (exit ${result.exitCode}): ${result.stderr}`;
+          return result.exitCode === 0 ? result.stdout : toolError(`Error (exit ${result.exitCode}): ${result.stderr}`);
         },
       };
     }
@@ -292,7 +299,7 @@ export class ToolResolver {
         execute: async ({ path }: { path: string }) => {
           const mountedContent = readMounted(path);
           if (mountedContent !== undefined) return mountedContent;
-          try { return await sandbox.readFile(path); } catch (err: any) { return `Error: ${err.message}`; }
+          try { return await sandbox.readFile(path); } catch (err: any) { return toolError(`Error: ${err.message}`); }
         },
       };
     }
@@ -314,14 +321,14 @@ export class ToolResolver {
           if (binding) {
             const relative = mountRelativePath(path, binding);
             const checked = normalizeMemoryRecordPath(relative);
-            if (!checked.ok) return `Error: ${checked.error.message}`;
-            if (binding.access === 'read_only') return `Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`;
-            if (!mount) return mountError(binding);
+            if (!checked.ok) return toolError(`Error: ${checked.error.message}`);
+            if (binding.access === 'read_only') return toolError(`Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`);
+            if (!mount) return toolError(mountError(binding));
             const result = mount.adapter.upsert(binding.storeId, checked.value, content, {
               sessionId: mount.sessionId,
               preconditionSha256: precondition_sha256,
             });
-            return result.ok ? `Written ${content.length} bytes to ${path} (version ${result.value.version})` : `Error: ${result.error.message}`;
+            return result.ok ? `Written ${content.length} bytes to ${path} (version ${result.value.version})` : toolError(`Error: ${result.error.message}`);
           }
           await sandbox.writeFile(path, content);
           return `Written ${content.length} bytes to ${path}`;
@@ -338,26 +345,26 @@ export class ToolResolver {
           if (binding) {
             const relative = mountRelativePath(path, binding);
             const checked = normalizeMemoryRecordPath(relative);
-            if (!checked.ok) return `Error: ${checked.error.message}`;
-            if (binding.access === 'read_only') return `Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`;
-            if (!mount) return mountError(binding);
+            if (!checked.ok) return toolError(`Error: ${checked.error.message}`);
+            if (binding.access === 'read_only') return toolError(`Error: ${binding.mountPath} is a read-only memory mount; writes to it are not permitted.`);
+            if (!mount) return toolError(mountError(binding));
             const current = mount.adapter.read(binding.storeId, checked.value);
-            if (!current.ok) return `Error: ${current.error.message}`;
+            if (!current.ok) return toolError(`Error: ${current.error.message}`);
             const edited = editOnce(current.value.content, old_string, new_string, path);
-            if (!edited.ok) return edited.message;
+            if (!edited.ok) return toolError(edited.message ?? `Error: unable to edit ${path}`);
             const result = mount.adapter.update(binding.storeId, mountRelativePath(path, binding), edited.value, {
               sessionId: mount.sessionId,
               preconditionSha256: memoryContentHash(current.value.content),
             });
-            return result.ok ? `Edited ${path} (version ${result.value.version})` : `Error: ${result.error.message}`;
+            return result.ok ? `Edited ${path} (version ${result.value.version})` : toolError(`Error: ${result.error.message}`);
           }
           try {
             const current = await sandbox.readFile(path);
             const edited = editOnce(current, old_string, new_string, path);
-            if (!edited.ok) return edited.message;
+            if (!edited.ok) return toolError(edited.message ?? `Error: unable to edit ${path}`);
             await sandbox.writeFile(path, edited.value);
             return `Edited ${path}`;
-          } catch (err: any) { return `Error: ${err.message}`; }
+          } catch (err: any) { return toolError(`Error: ${err.message}`); }
         },
       };
     }
@@ -369,9 +376,9 @@ export class ToolResolver {
         execute: async ({ pattern, path }: { pattern: string; path?: string }) => {
           const binding = path ? mounted(path) : undefined;
           if (binding) {
-            if (!mount) return mountError(binding);
+            if (!mount) return toolError(mountError(binding));
             const result = mount.adapter.list(binding.storeId);
-            if (!result.ok) return `Error: ${result.error.message}`;
+            if (!result.ok) return toolError(`Error: ${result.error.message}`);
             const relativeScope = mountRelativePath(path!, binding);
             const files = result.value
               .filter((file) => relativeScope === '/' || file.path === relativeScope || file.path.startsWith(`${relativeScope.replace(/\/$/, '')}/`))
@@ -393,9 +400,9 @@ export class ToolResolver {
         execute: async ({ query, path }: { query: string; path?: string }) => {
           const binding = path ? mounted(path) : undefined;
           if (binding) {
-            if (!mount) return mountError(binding);
+            if (!mount) return toolError(mountError(binding));
             const result = mount.adapter.list(binding.storeId);
-            if (!result.ok) return `Error: ${result.error.message}`;
+            if (!result.ok) return toolError(`Error: ${result.error.message}`);
             const scope = mountRelativePath(path!, binding);
             const hits: string[] = [];
             for (const file of result.value) {
@@ -419,14 +426,20 @@ export class ToolResolver {
     }
 
     // Everything a tool hands back is scrubbed in one place, so a tool added
-    // later cannot forget a secret it happened to echo.
+    // later cannot forget a secret it happened to echo. A ToolResultError is
+    // scrubbed on its message and re-wrapped so the is_error flag survives.
     if (credentials) {
       for (const [name, tool] of Object.entries(tools)) {
         const execute = tool?.execute;
         if (typeof execute !== 'function') continue;
         tools[name] = {
           ...tool,
-          execute: async (input: unknown) => credentials.redactor(await execute(input)),
+          execute: async (input: unknown) => {
+            const out = await execute(input);
+            const errText = toolErrorText(out);
+            if (errText !== undefined) return toolError(String(credentials.redactor(errText)));
+            return credentials.redactor(out);
+          },
         };
       }
     }
