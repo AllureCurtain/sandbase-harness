@@ -97,13 +97,18 @@ describe('path-addressed memory mounts', () => {
     expect(current.ok && current.value.content).toBe('first');
   });
 
-  it('fails closed for archive and shell indirection', async () => {
+  it('fails closed for archive while leaving bash usable under a read_write mount', async () => {
     const id = store('Archived');
     const h = tools([{ type: 'memory_store', memory_store_id: id, mount_path: RW }], ['read', 'bash']);
     await h.tools.write?.({ path: `${RW}/x.md`, content: 'x' });
     db.prepare("UPDATE memory_stores SET archived_at = datetime('now') WHERE id = ?").run(id);
     expect(await h.tools.read.execute({ path: `${RW}/x.md` })).toContain('unavailable');
-    expect(await h.tools.bash.execute({ command: 'echo x > "$MEMORY_ROOT/notes.md"' })).toContain('shell access is disabled');
+    // A shell command never persists into memory_records whether or not it
+    // names the mount, so neither form is refused on a read_write mount —
+    // matching the self-hosted "changes through bash are never synced" rule.
+    expect(await h.tools.bash.execute({ command: 'echo x > "$MEMORY_ROOT/notes.md"' })).toBe('workspace-ok');
+    expect(await h.tools.bash.execute({ command: `cat ${RW}/x.md` })).toBe('workspace-ok');
+    expect(h.sandbox.commands).toHaveLength(2);
   });
 
   it('routes the legacy missing mount path through the store-name fallback', () => {
@@ -155,7 +160,10 @@ describe('path-addressed memory mounts', () => {
     expect(await h.tools.edit.execute({ path: `${RO}/x.md`, old_string: 'a', new_string: 'b' })).toContain('read-only');
     expect(await h.tools.bash.execute({ command: `echo x > ${RO}/x.md` })).toContain('read-only');
     expect(await h.tools.bash.execute({ command: 'echo x > //mnt/memory/ro/x.md' })).toContain('read-only');
-    expect(h.sandbox.commands).toHaveLength(0);
+    // Only commands naming a read_only mount path are refused; unrelated
+    // commands run even while the store is attached.
+    expect(await h.tools.bash.execute({ command: 'echo hello' })).toBe('workspace-ok');
+    expect(h.sandbox.commands).toEqual(['echo hello']);
     expect(await h.tools.write.execute({ path: `${RO}/../escape.md`, content: 'x' })).toContain('invalid');
     expect(h.sandbox.writes).toHaveLength(0);
 

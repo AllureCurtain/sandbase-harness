@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Attaching a memory store no longer disables the `bash` tool. The published contract leaves a `read_write` mount unguarded and refuses only shell commands that name a path inside a `read_only` mount — the tool layer now enforces exactly that instead of refusing every command while a mount is attached. Shell commands can never persist into `memory_records` regardless, so a session can compute and persist memories at once.
 - A tool call the model SDK refused before execution — an input failing the tool's schema validation is the observed case — now persists a paired `agent.tool_result` carrying `is_error: true` instead of leaving an orphan `agent.tool_use` that looked forever parked. The SDK feeds its `tool-error` output back to the model itself; the runtime was simply not recording it, which made retry loops invisible in the event log and on the stream.
 
 ### Breaking

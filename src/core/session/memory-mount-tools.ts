@@ -13,13 +13,10 @@ export function mountProviderUnavailable(mountPath: string): string {
 export function refuseBashOnMemoryMount(command: string, mounts: readonly MemoryBinding[]): string | undefined {
   if (mounts.length === 0) return undefined;
   const named = mounts.filter((mount) => commandNamesPath(command, mount.mountPath));
-  const target = named.length > 0
-    ? named.reduce((best, mount) => mount.mountPath.length > best.mountPath.length ? mount : best)
-    : mounts[0];
-  if (!memoryBindingIsWritable(target)) {
-    return `Error: ${target.mountPath} is a read-only memory mount; shell access is refused for mounted memory paths.`;
-  }
-  return `Error: shell access is disabled while memory mounts are attached because command changes cannot be persisted back to memory_records. Use file tools under ${target.mountPath}.`;
+  if (named.length === 0) return undefined;
+  const target = named.reduce((best, mount) => mount.mountPath.length > best.mountPath.length ? mount : best);
+  if (memoryBindingIsWritable(target)) return undefined;
+  return `Error: ${target.mountPath} is a read-only memory mount; shell access is refused for mounted memory paths.`;
 }
 
 export function mountRelativePath(path: string, binding: MemoryBinding): string {
