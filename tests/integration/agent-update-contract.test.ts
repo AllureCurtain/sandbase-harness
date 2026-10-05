@@ -140,6 +140,10 @@ describe('PUT /v1/agents/:id partial update', () => {
     const got = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
     expect(got.body.system).toBe('New system.');
     expect(got.body.tools).toHaveLength(2);
+    // The local max_turns extension is echoed on every projection — update
+    // response, read, and the create response that seeded the row.
+    expect(got.body.max_turns).toBe(12);
+    expect(updated.body.max_turns).toBe(12);
   });
 
   it('updates description alone and model alone without touching the rest', async () => {
@@ -152,8 +156,9 @@ describe('PUT /v1/agents/:id partial update', () => {
     expect(described.res.status).toBe(200);
     expect(described.body.description).toBe('Only the description changed.');
     expect(described.body.system).toBe('Original system.');
-    // max_turns is a local-only field that never appears in the CMA agent
-    // shape; preservation is observable on the stored definition.
+    // max_turns is a local extension field: preserved on the stored
+    // definition and echoed on every agent projection.
+    expect(described.body.max_turns).toBe(12);
     expect(JSON.parse(storedRow(ctx, agent.id).definition).max_turns).toBe(12);
 
     const modeled = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {

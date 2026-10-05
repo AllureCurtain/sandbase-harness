@@ -218,6 +218,13 @@ export interface ApiAgent {
    * never appear here today.
    */
   multiagent: null;
+  /**
+   * Local extension: the server-side turn cap the definition carries. The
+   * published contract has no `max_turns` on the agent object — the published
+   * model counts turns client-side — so the field is absent when unset rather
+   * than reported as a null a reader might mistake for "unlimited".
+   */
+  max_turns?: number;
   created_at: string | null;
   updated_at: string | null;
   archived_at: string | null;
@@ -519,6 +526,7 @@ export function toApiAgent(
     status: dates?.status ?? (dates?.archivedAt ? 'archived' : 'active'),
     version: dates?.version ?? 1,
     multiagent: null,
+    ...(agent.max_turns !== undefined ? { max_turns: agent.max_turns } : {}),
     created_at: dates?.createdAt ?? null,
     updated_at: dates?.updatedAt ?? null,
     archived_at: dates?.archivedAt ?? null,
