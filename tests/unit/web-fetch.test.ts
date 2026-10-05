@@ -116,14 +116,14 @@ function testTool(options: {
       maxRedirects: options.maxRedirects,
     },
   });
-  const execute = tool.execute!;
+  const execute = tool.execute! as (input: { url?: unknown }) => Promise<unknown>;
   // Unwrap the ToolResultError marker the way the strategy does, so assertions
   // read the same text the model sees. Marker identity is asserted once below.
   return {
     ...tool,
-    execute: async (input: unknown) => {
+    execute: async (input: { url?: unknown }) => {
       const out = await execute(input);
-      return toolErrorText(out) ?? out;
+      return (toolErrorText(out) ?? out) as string;
     },
   };
 }
