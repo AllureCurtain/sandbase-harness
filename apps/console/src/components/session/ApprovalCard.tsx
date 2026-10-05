@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatToolValue } from './eventRenderers';
 import { eventTime, type ConversationEntry } from './conversation';
 
@@ -23,6 +24,7 @@ export function ConversationToolCard({
   onConfirm: (toolUseId: string, result: 'allow' | 'deny') => void;
   onSubmitResult: (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => void;
 }) {
+  const { t } = useTranslation('sessions');
   const awaitingResult = Boolean(
     entry.awaitingResult && entry.toolUseId && !confirmedToolIds.has(entry.toolUseId),
   );
@@ -58,46 +60,46 @@ export function ConversationToolCard({
             <span className="conversationToolName">{entry.toolName}</span>
           </span>
           <span className={`conversationToolStatus ${entry.status}`}>
-            {entry.status === 'running' ? 'Running' : entry.status === 'awaiting' ? 'Waiting' : entry.status === 'failed' ? 'Failed' : 'Completed'}
+            {entry.status === 'running' ? t('detail.approval.statusRunning') : entry.status === 'awaiting' ? t('detail.approval.statusWaiting') : entry.status === 'failed' ? t('detail.approval.statusFailed') : t('detail.approval.statusCompleted')}
           </span>
           <time>{eventTime(entry.event)}</time>
         </summary>
         <div className="conversationToolDetails">
           <div className="conversationToolField">
-            <span>Tool</span>
+            <span>{t('detail.approval.tool')}</span>
             <code>{entry.toolName}</code>
           </div>
           <div className="conversationToolField">
-            <span>Tool use ID</span>
-            <code>{entry.toolUseId ?? 'Unknown'}</code>
+            <span>{t('detail.approval.toolUseId')}</span>
+            <code>{entry.toolUseId ?? t('detail.approval.unknownToolUseId')}</code>
           </div>
           <div className="conversationToolField">
-            <span>Parameters</span>
+            <span>{t('detail.approval.parameters')}</span>
             <pre className="conversationToolValue conversationToolParameters">{formatToolValue(entry.input)}</pre>
           </div>
           <div className="conversationToolField">
-            <span>Result</span>
-            <pre className="conversationToolValue conversationToolResult">{entry.result || 'No result yet.'}</pre>
+            <span>{t('detail.approval.result')}</span>
+            <pre className="conversationToolValue conversationToolResult">{entry.result || t('detail.approval.noResult')}</pre>
           </div>
         </div>
         {entry.awaitingConfirmation && entry.toolUseId ? (
           <div className="conversationToolApproval">
-            <span>Waiting for your approval</span>
+            <span>{t('detail.approval.waitingApproval')}</span>
             <button
               type="button"
-              className="secondaryButton"
+              className="button secondary"
               disabled={confirmingToolIds.has(entry.toolUseId)}
               onClick={() => onConfirm(entry.toolUseId!, 'deny')}
             >
-              {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Deny'}
+              {confirmingToolIds.has(entry.toolUseId) ? t('detail.approval.submitting') : t('detail.approval.deny')}
             </button>
             <button
               type="button"
-              className="primaryButton"
+              className="button primary"
               disabled={confirmingToolIds.has(entry.toolUseId)}
               onClick={() => onConfirm(entry.toolUseId!, 'allow')}
             >
-              {confirmingToolIds.has(entry.toolUseId) ? 'Submitting…' : 'Allow'}
+              {confirmingToolIds.has(entry.toolUseId) ? t('detail.approval.submitting') : t('detail.approval.allow')}
             </button>
           </div>
         ) : null}
@@ -124,6 +126,7 @@ export function CustomToolResultForm({
   submitting: boolean;
   onSubmit: (text: string, isError: boolean) => void;
 }) {
+  const { t } = useTranslation('sessions');
   const [text, setText] = useState('');
   const [isError, setIsError] = useState(false);
   return (
@@ -134,11 +137,11 @@ export function CustomToolResultForm({
         onSubmit(text, isError);
       }}
     >
-      <span>Waiting for this tool's result</span>
+      <span>{t('detail.approval.waitingResult')}</span>
       <textarea
         className="conversationToolResultInput"
         rows={3}
-        placeholder="Tool result…"
+        placeholder={t('detail.approval.resultPlaceholder')}
         value={text}
         disabled={submitting}
         onChange={(event) => setText(event.target.value)}
@@ -150,10 +153,10 @@ export function CustomToolResultForm({
           disabled={submitting}
           onChange={(event) => setIsError(event.target.checked)}
         />
-        Mark as error
+        {t('detail.approval.isError')}
       </label>
-      <button type="submit" className="primaryButton" disabled={submitting || text.trim() === ''}>
-        {submitting ? 'Submitting…' : 'Submit result'}
+      <button type="submit" className="button primary" disabled={submitting || text.trim() === ''}>
+        {submitting ? t('detail.approval.submitting') : t('detail.approval.submit')}
       </button>
     </form>
   );

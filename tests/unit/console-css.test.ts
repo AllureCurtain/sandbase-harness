@@ -3,6 +3,15 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const css = readFileSync(join(process.cwd(), 'apps/console/src/styles.css'), 'utf8');
+// Session surfaces migrated onto the ported token system; their rules live
+// in the page-local stylesheet, not the legacy stylesheet.
+const sessionsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/sessions.css'), 'utf8');
+
+function sessionRuleFor(selector: string): string {
+  const match = sessionsCss.match(rulePattern(selector));
+  expect(match, `Missing session CSS rule for ${selector}`).toBeTruthy();
+  return match?.[2] ?? '';
+}
 
 describe('Console CSS contracts', () => {
   it('keeps Settings as a responsive two-pane layout that collapses on narrow screens', () => {
@@ -32,17 +41,17 @@ describe('Console CSS contracts', () => {
   it('keeps session conversations bounded while the transcript owns vertical scrolling', () => {
     expect(ruleFor('.shell')).toContain('height: 100%');
     expect(ruleFor('.mainSessionDetail')).toContain('overflow: hidden');
-    expect(ruleFor('.sessionDetail')).toContain('height: 100%');
-    expect(ruleFor('.conversationList')).toContain('overflow-y: auto');
-    expect(ruleFor('.sessionComposer')).toContain('border-top: 1px solid var(--border-subtle)');
-    expect(ruleFor('.conversationJumpLatest')).toContain('position: absolute');
+    expect(sessionRuleFor('.sessionDetail')).toContain('height: 100%');
+    expect(sessionRuleFor('.conversationList')).toContain('overflow-y: auto');
+    expect(sessionRuleFor('.sessionComposer')).toContain('border-top: 1px solid var(--line-soft)');
+    expect(sessionRuleFor('.conversationJumpLatest')).toContain('position: absolute');
   });
 
   it('keeps tool cards transparent and gives the expanded details a readable light surface', () => {
-    expect(ruleFor('.conversationToolCard')).toContain('background: transparent');
-    expect(ruleFor('.conversationToolCard summary:hover')).toContain('box-shadow: 0 4px 12px');
-    expect(ruleFor('.conversationToolDetails')).toContain('border-left: 1px solid var(--border-subtle)');
-    expect(ruleFor('.conversationToolResult')).toContain('font-family: var(--font-sans)');
+    expect(sessionRuleFor('.conversationToolCard')).toContain('background: transparent');
+    expect(sessionRuleFor('.conversationToolCard summary:hover')).toContain('box-shadow: 0 4px 12px');
+    expect(sessionRuleFor('.conversationToolDetails')).toContain('border-left: 1px solid var(--line-soft)');
+    expect(sessionRuleFor('.conversationToolResult')).toContain('font-family: var(--font-console)');
   });
 
   it('keeps credential vault choices compact and horizontally aligned', () => {

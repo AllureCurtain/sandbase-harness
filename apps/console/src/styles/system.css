@@ -51,6 +51,11 @@
 }
 
 html[data-theme="dark"] {
+  /* styles.css still declares `--surface` on `:root` after foundation.css;
+   * equal specificity plus later order would freeze it white in dark mode
+   * for any migrated rule that reads var(--surface). Re-assert the dark
+   * value here until the legacy stylesheet is retired. */
+  --surface: #17191e;
   --accent: var(--ink);
   --accent-ink: var(--ink);
   --accent-tint: color-mix(in oklch, var(--ink) 16%, transparent);

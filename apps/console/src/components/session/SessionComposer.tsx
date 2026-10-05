@@ -1,5 +1,6 @@
 import { Plus, Send } from 'lucide-react';
 import type { FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SessionDisplayStatus } from './conversation';
 
 /**
@@ -31,14 +32,15 @@ export function SessionComposer({
   onNewSession: () => void;
   onAdjustBudget: () => void;
 }) {
+  const { t } = useTranslation('sessions');
   if (displayStatus === 'terminated' || displayStatus === 'archived') {
     return (
       <div className="sessionComposerClosed" role="note">
         <span>
-          This session is {displayStatus} and cannot receive new messages. Start a new session to continue.
+          {t('detail.composer.closed', { status: displayStatus })}
         </span>
-        <button className="secondaryButton" type="button" onClick={onNewSession}>
-          <Plus size={16} />New session
+        <button className="button secondary" type="button" onClick={onNewSession}>
+          <Plus size={16} />{t('detail.composer.newSession')}
         </button>
       </div>
     );
@@ -47,13 +49,13 @@ export function SessionComposer({
     <form className="sessionComposer" onSubmit={(event) => onSend(event)}>
       {displayStatus === 'idle' && idleStopReason === 'retries_exhausted' ? (
         <div className="sessionComposerHint" role="note">
-          Retries were exhausted for the last turn. The conversation is kept — send a message to continue.
+          {t('detail.composer.retriesExhausted')}
         </div>
       ) : null}
       {displayStatus === 'idle' && idleStopReason === 'budget_reached' ? (
         <div className="sessionComposerHint" role="note">
-          This session stopped at its budget ceiling.
-          <button className="textButton" type="button" onClick={onAdjustBudget}>Adjust budget</button>
+          {t('detail.composer.budgetReached')}
+          <button className="linkButton" type="button" onClick={onAdjustBudget}>{t('detail.composer.adjustBudget')}</button>
         </div>
       ) : null}
       <textarea
@@ -65,13 +67,13 @@ export function SessionComposer({
             onSend();
           }
         }}
-        placeholder="Message this session..."
-        aria-label="Message this session"
+        placeholder={t('detail.composer.placeholder')}
+        aria-label={t('detail.composer.placeholder')}
         disabled={sendingMessage}
       />
-      <button className="primaryButton" type="submit" disabled={!canSendMessage}>
+      <button className="button primary" type="submit" disabled={!canSendMessage}>
         <Send size={16} />
-        {sendingMessage ? 'Sending...' : 'Send'}
+        {sendingMessage ? t('detail.composer.sending') : t('detail.composer.send')}
       </button>
       {messageError ? <div className="sessionComposerError">{messageError}</div> : null}
     </form>

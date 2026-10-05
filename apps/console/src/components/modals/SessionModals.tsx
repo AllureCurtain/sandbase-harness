@@ -1,7 +1,9 @@
 import { ChevronDown, Plus, Shield, Trash2 } from 'lucide-react';
 import { type Dispatch, type FormEvent, type SetStateAction, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { postJson } from '../../api';
 import { RequiredMark } from '../Common';
+import { ConsoleSelect } from '../console-select';
 import { EquivalentRequestPanel } from '../EquivalentRequestPanel';
 import { KvRowEditor, kvRowsFromObject, type KvRow } from '../kit';
 import { Modal } from '../Modal';
@@ -23,6 +25,8 @@ export function SessionModal({
   onSaved: () => void;
   onNavigate: (view: ViewId) => void;
 }) {
+  const { t } = useTranslation('sessions');
+  const { t: tCommon } = useTranslation();
   const [agent, setAgent] = useState(initialAgentId ?? '');
   const [environment, setEnvironment] = useState('');
   const [title, setTitle] = useState('');
@@ -74,35 +78,35 @@ export function SessionModal({
   };
 
   return (
-    <Modal title="Create session" subtitle="Set up an instance of your agent in its environment." onClose={onClose} size="medium">
+    <Modal title={t('modal.createTitle')} subtitle={t('modal.createSubtitle')} onClose={onClose} size="medium">
       <form className="sessionForm sessionCreateForm" onSubmit={submit}>
         {error ? <div className="banner error">{error}</div> : null}
         <div className="sessionCreateMain">
             <section className="sessionSectionCard">
               <div className="sessionSectionHeader">
                 <span className="sessionSectionNumber">1</span>
-                <div><h3>Session details</h3><p>Choose the agent and environment for this run.</p></div>
+                <div><h3>{t('modal.details.title')}</h3><p>{t('modal.details.hint')}</p></div>
               </div>
               <label className="sessionField">
-                <span>Title <small className="optionalPill">Optional</small></span>
-                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Name this run" />
+                <span>{t('modal.details.sessionTitle')} <small className="optionalPill">{t('modal.details.optional')}</small></span>
+                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t('modal.details.titlePlaceholder')} />
               </label>
               <div className="sessionPickerGrid">
                 <ResourcePicker
-                  label="Agent"
-                  placeholder="Select an agent"
-                  searchPlaceholder="Search agents by name or exact ID"
-                  manageLabel="Manage agents"
+                  label={t('modal.details.agent')}
+                  placeholder={t('modal.details.agentPlaceholder')}
+                  searchPlaceholder={t('modal.details.agentSearch')}
+                  manageLabel={t('modal.details.agentManage')}
                   onManage={() => onNavigate('agents')}
                   value={agent}
                   onValue={setAgent}
                   options={data.agents.map((item) => ({ id: item.id, title: item.name, subtitle: formatDateShort(item.created_at) }))}
                 />
                 <ResourcePicker
-                  label="Environment"
-                  placeholder="Select an environment"
-                  searchPlaceholder="Search environments by name or exact ID"
-                  manageLabel="Manage environments"
+                  label={t('modal.details.environment')}
+                  placeholder={t('modal.details.environmentPlaceholder')}
+                  searchPlaceholder={t('modal.details.environmentSearch')}
+                  manageLabel={t('modal.details.environmentManage')}
                   onManage={() => onNavigate('environments')}
                   value={environment}
                   onValue={setEnvironment}
@@ -114,15 +118,15 @@ export function SessionModal({
             <section className="sessionSectionCard">
               <div className="sessionSectionHeader">
                 <span className="sessionSectionNumber">2</span>
-                <div><h3>Credential access</h3><p>Attach only the vaults this session needs.</p></div>
+                <div><h3>{t('modal.credentials.title')}</h3><p>{t('modal.credentials.hint')}</p></div>
               </div>
               <MultiResourcePicker
-                label="Credential vaults"
-                searchPlaceholder="Search vaults by name or exact ID"
-                placeholder="Select one or more vaults"
-                manageLabel="Manage credential vaults"
+                label={t('modal.credentials.label')}
+                searchPlaceholder={t('modal.credentials.search')}
+                placeholder={t('modal.credentials.placeholder')}
+                manageLabel={t('modal.credentials.manage')}
                 onManage={() => onNavigate('credential-vaults')}
-                options={data.vaults.map((vault) => ({ id: vault.id, title: vault.name, subtitle: `Added ${formatDateShort(vault.created_at)}`, icon: <Shield size={16} /> }))}
+                options={data.vaults.map((vault) => ({ id: vault.id, title: vault.name, subtitle: t('modal.credentials.addedAt', { time: formatDateShort(vault.created_at) }), icon: <Shield size={16} /> }))}
                 selected={vaultIds}
                 onToggle={(id, checked) => toggleSet(id, checked, setVaultIds)}
               />
@@ -131,7 +135,7 @@ export function SessionModal({
             <section className="sessionSectionCard">
               <div className="sessionSectionHeader">
                 <span className="sessionSectionNumber">3</span>
-                <div><h3>Resources</h3><p>Mount files, repositories, or memory stores into the session.</p></div>
+                <div><h3>{t('modal.resources.title')}</h3><p>{t('modal.resources.hint')}</p></div>
               </div>
               {resources.map((resource, index) => (
                 <SessionResourceEditor
@@ -144,14 +148,14 @@ export function SessionModal({
                 />
               ))}
               <div className="menuWrap resourceAddWrap">
-                <button className="secondaryButton resourceAddButton" type="button" onClick={() => setResourceMenuOpen((open) => !open)}>
-                  <Plus size={18} /> Add resource <ChevronDown size={16} />
+                <button className="button secondary resourceAddButton" type="button" onClick={() => setResourceMenuOpen((open) => !open)}>
+                  <Plus size={18} /> {t('modal.resources.add')} <ChevronDown size={16} />
                 </button>
                 {resourceMenuOpen ? (
                   <div className="resourceMenu">
-                    <button type="button" onClick={() => addResource('github_repository')}>GitHub repository</button>
-                    <button type="button" onClick={() => addResource('file')}>File</button>
-                    <button type="button" onClick={() => addResource('memory_store')}>Memory store</button>
+                    <button type="button" onClick={() => addResource('github_repository')}>{t('modal.resources.repository')}</button>
+                    <button type="button" onClick={() => addResource('file')}>{t('modal.resources.file')}</button>
+                    <button type="button" onClick={() => addResource('memory_store')}>{t('modal.resources.memoryStore')}</button>
                   </div>
                 ) : null}
               </div>
@@ -159,18 +163,18 @@ export function SessionModal({
         </div>
 
         <details className="requestFold">
-          <summary>Equivalent API request</summary>
+          <summary>{tCommon('configDrawer.equivalentRequest')}</summary>
           <EquivalentRequestPanel request={createRequest} bare />
         </details>
 
         <div className="modalActions stickyActions">
           <button
-            className="primaryButton"
+            className="button primary"
             type="submit"
             disabled={saving || !agent || !environment}
-            title={!agent || !environment ? 'Pick an agent and an environment first' : undefined}
+            title={!agent || !environment ? t('modal.pickFirst') : undefined}
           >
-            {saving ? 'Creating…' : 'Create session'}
+            {saving ? t('modal.creating') : t('modal.create')}
           </button>
         </div>
       </form>
@@ -191,24 +195,25 @@ function SessionResourceEditor({
   onRemove: () => void;
   onNavigate: (view: ViewId) => void;
 }) {
+  const { t } = useTranslation('sessions');
   if (resource.type === 'file') {
     return (
       <div className="resourceEditor">
-        <ResourceEditorHeader title="File" onRemove={onRemove} />
+        <ResourceEditorHeader title={t('modal.resources.file')} onRemove={onRemove} />
         <ResourcePicker
-          label="File"
-          placeholder="Select an uploaded file"
-          searchPlaceholder="Search files by name or exact ID"
-          manageLabel="Manage files"
+          label={t('modal.resources.fileLabel')}
+          placeholder={t('modal.resources.filePlaceholder')}
+          searchPlaceholder={t('modal.resources.fileSearch')}
+          manageLabel={t('modal.resources.fileManage')}
           onManage={() => onNavigate('files')}
           value={resource.file_id}
           onValue={(file_id) => onChange({ ...resource, file_id })}
           options={data.files.map((file) => ({ id: file.id, title: file.name, subtitle: formatDateShort(file.created_at) }))}
         />
         <label>
-          Mount path <RequiredMark />
+          {t('modal.resources.mountPath')} <RequiredMark />
           <input value={resource.mount_path} onChange={(event) => onChange({ ...resource, mount_path: event.target.value })} placeholder="/uploads/myfile.txt" required />
-          <small>Must start with /uploads/</small>
+          <small>{t('modal.resources.mountHelper')}</small>
         </label>
       </div>
     );
@@ -217,27 +222,32 @@ function SessionResourceEditor({
   if (resource.type === 'github_repository') {
     return (
       <div className="resourceEditor">
-        <ResourceEditorHeader title="GitHub repository" onRemove={onRemove} />
+        <ResourceEditorHeader title={t('modal.resources.repository')} onRemove={onRemove} />
         <label>
-          URL <RequiredMark />
-          <input value={resource.url} onChange={(event) => onChange({ ...resource, url: event.target.value })} placeholder="https://github.com/owner/repo" required />
+          {t('modal.resources.repoUrl')} <RequiredMark />
+          <input value={resource.url} onChange={(event) => onChange({ ...resource, url: event.target.value })} placeholder={t('modal.resources.repoUrlPlaceholder')} required />
         </label>
         <label>
-          Authorization token <RequiredMark />
-          <input type="password" autoComplete="off" value={resource.authorization_token} onChange={(event) => onChange({ ...resource, authorization_token: event.target.value })} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required />
-          <small>Stored encrypted and never returned by the API. For credentials the agent should use directly, prefer attaching a credential vault above.</small>
+          {t('modal.resources.repoToken')} <RequiredMark />
+          <input type="password" autoComplete="off" value={resource.authorization_token} onChange={(event) => onChange({ ...resource, authorization_token: event.target.value })} placeholder={t('modal.resources.repoTokenPlaceholder')} required />
+          <small>{t('modal.resources.repoTokenHelper')}</small>
         </label>
         <label className="shortField">
-          Checkout
-          <select value={resource.checkout.mode} onChange={(event) => onChange({ ...resource, checkout: { ...resource.checkout, mode: event.target.value as 'default' | 'branch' | 'commit' } })}>
-            <option value="default">Default branch</option>
-            <option value="branch">Branch</option>
-            <option value="commit">Commit SHA</option>
-          </select>
+          {t('modal.resources.checkout')}
+          <ConsoleSelect
+            label={t('modal.resources.checkout')}
+            value={resource.checkout.mode}
+            onChange={(mode) => onChange({ ...resource, checkout: { ...resource.checkout, mode: mode as 'default' | 'branch' | 'commit' } })}
+            options={[
+              { value: 'default', label: t('modal.resources.checkoutDefault') },
+              { value: 'branch', label: t('modal.resources.checkoutBranch') },
+              { value: 'commit', label: t('modal.resources.checkoutCommit') },
+            ]}
+          />
         </label>
         {resource.checkout.mode === 'branch' ? (
           <label className="shortField">
-            Branch name <RequiredMark />
+            {t('modal.resources.branchName')} <RequiredMark />
             <input
               value={resource.checkout.value}
               onChange={(event) => onChange({ ...resource, checkout: { ...resource.checkout, value: event.target.value } })}
@@ -248,21 +258,21 @@ function SessionResourceEditor({
         ) : null}
         {resource.checkout.mode === 'commit' ? (
           <label className="shortField">
-            Commit SHA <RequiredMark />
+            {t('modal.resources.commitSha')} <RequiredMark />
             <input
               value={resource.checkout.value}
               onChange={(event) => onChange({ ...resource, checkout: { ...resource.checkout, value: event.target.value } })}
               placeholder="9fca646b4a4ce9cdd3e1e8b3cd20e7b7c5e4b0c3"
               pattern="[0-9a-fA-F]{7,40}"
-              title="A commit SHA is 7 to 40 hexadecimal characters."
+              title={t('modal.resources.shaTitle')}
               required
             />
-            <small>7–40 hexadecimal characters</small>
+            <small>{t('modal.resources.shaHint')}</small>
           </label>
         ) : null}
         <label>
-          Mount path
-          <input value={resource.mount_path} onChange={(event) => onChange({ ...resource, mount_path: event.target.value })} placeholder="/workspace/repo-name (default)" />
+          {t('modal.resources.mountPath')}
+          <input value={resource.mount_path} onChange={(event) => onChange({ ...resource, mount_path: event.target.value })} placeholder={t('modal.resources.mountDefault')} />
         </label>
       </div>
     );
@@ -270,37 +280,43 @@ function SessionResourceEditor({
 
   return (
     <div className="resourceEditor">
-      <ResourceEditorHeader title="Memory store" onRemove={onRemove} />
+      <ResourceEditorHeader title={t('modal.resources.memoryStore')} onRemove={onRemove} />
       <ResourcePicker
-        label="Memory store"
-        placeholder="Select a memory store"
-        searchPlaceholder="Search memory stores by name or exact ID"
-        manageLabel="Manage memory stores"
+        label={t('modal.resources.storeLabel')}
+        placeholder={t('modal.resources.storePlaceholder')}
+        searchPlaceholder={t('modal.resources.storeSearch')}
+        manageLabel={t('modal.resources.storeManage')}
         onManage={() => onNavigate('memory-stores')}
         value={resource.memory_store_id}
         onValue={(memory_store_id) => onChange({ ...resource, memory_store_id })}
         options={data.memoryStores.map((store) => ({ id: store.id, title: store.name, subtitle: formatDateShort(store.created_at) }))}
       />
       <label>
-        Access
-        <select value={resource.access} onChange={(event) => onChange({ ...resource, access: event.target.value as 'read_write' | 'read_only' })}>
-          <option value="read_write">Read & write</option>
-          <option value="read_only">Read only</option>
-        </select>
+        {t('modal.resources.access')}
+        <ConsoleSelect
+          label={t('modal.resources.access')}
+          value={resource.access}
+          onChange={(access) => onChange({ ...resource, access: access as 'read_write' | 'read_only' })}
+          options={[
+            { value: 'read_write', label: t('modal.resources.accessRw') },
+            { value: 'read_only', label: t('modal.resources.accessRo') },
+          ]}
+        />
       </label>
       <label>
-        Instructions (optional)
-        <textarea value={resource.instructions} onChange={(event) => onChange({ ...resource, instructions: event.target.value })} placeholder="Tell the agent what this store contains and when to use it." />
+        {t('modal.resources.instructions')}
+        <textarea value={resource.instructions} onChange={(event) => onChange({ ...resource, instructions: event.target.value })} placeholder={t('modal.resources.instructionsPlaceholder')} />
       </label>
     </div>
   );
 }
 
 function ResourceEditorHeader({ title, onRemove }: { title: string; onRemove: () => void }) {
+  const { t } = useTranslation('sessions');
   return (
     <div className="resourceEditorHeader">
       <strong>{title}</strong>
-      <button className="iconButton quiet" type="button" onClick={onRemove} aria-label={`Remove ${title}`}>
+      <button className="iconButton quiet" type="button" onClick={onRemove} aria-label={t('modal.resources.remove', { title })}>
         <Trash2 size={19} />
       </button>
     </div>
@@ -369,6 +385,8 @@ export function SessionSettingsModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation('sessions');
+  const { t: tCommon } = useTranslation();
   const [title, setTitle] = useState(session.title ?? '');
   const [metadataRows, setMetadataRows] = useState<KvRow[]>(() => kvRowsFromObject(session.metadata));
   const currentBudgetUsd = session.budget
@@ -386,7 +404,7 @@ export function SessionSettingsModal({
     try {
       return { ok: true, value: JSON.parse(trimmed) };
     } catch {
-      setError(`${label} is not valid JSON.`);
+      setError(t('modal.errors.jsonInvalid', { label }));
       return { ok: false };
     }
   };
@@ -407,7 +425,7 @@ export function SessionSettingsModal({
         const key = row.key.trim();
         if (!key) continue;
         if (seenKeys.has(key)) {
-          setError(`Metadata key "${key}" is listed twice.`);
+          setError(t('modal.errors.metadataDuplicate', { key }));
           invalid = true;
           break;
         }
@@ -435,7 +453,7 @@ export function SessionSettingsModal({
       } else {
         const usd = Number(budgetUsd);
         if (!Number.isFinite(usd) || usd < 0) {
-          setError('Budget must be a non-negative USD amount.');
+          setError(t('modal.errors.budgetInvalid'));
           return;
         }
         body.budget = {
@@ -446,10 +464,10 @@ export function SessionSettingsModal({
     }
 
     const agentPatch: Record<string, unknown> = {};
-    const tools = parseJsonField(toolsText, 'Tools');
+    const tools = parseJsonField(toolsText, t('modal.errors.tools'));
     if (!tools.ok) return;
     if (tools.value !== undefined) agentPatch.tools = tools.value;
-    const mcp = parseJsonField(mcpText, 'MCP servers');
+    const mcp = parseJsonField(mcpText, t('modal.errors.mcp'));
     if (!mcp.ok) return;
     if (mcp.value !== undefined) agentPatch.mcp_servers = mcp.value;
     if (Object.keys(agentPatch).length > 0) body.agent = agentPatch;
@@ -470,37 +488,37 @@ export function SessionSettingsModal({
   };
 
   return (
-    <Modal title="Session settings" subtitle={`${session.title || session.id}`} onClose={onClose} size="medium">
+    <Modal title={t('modal.settings.title')} subtitle={`${session.title || session.id}`} onClose={onClose} size="medium">
       <form className="sessionForm" onSubmit={submit}>
         {error ? <div className="banner error">{error}</div> : null}
         <label className="sessionField">
-          <span>Title</span>
+          <span>{t('modal.settings.fieldTitle')}</span>
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Name this session"
+            placeholder={t('modal.settings.titlePlaceholder')}
           />
         </label>
         <label className="sessionField">
-          <span>Metadata <small className="optionalPill">a removed key is deleted; JSON values parse as JSON</small></span>
-          <KvRowEditor rows={metadataRows} onChange={setMetadataRows} addLabel="Add metadata" />
+          <span>{t('modal.settings.metadata')} <small className="optionalPill">{t('modal.settings.metadataOptional')}</small></span>
+          <KvRowEditor rows={metadataRows} onChange={setMetadataRows} addLabel={t('modal.settings.metadataAdd')} />
         </label>
         <label className="sessionField">
-          <span>Budget <small className="optionalPill">USD; empty removes the ceiling</small></span>
+          <span>{t('modal.settings.budget')} <small className="optionalPill">{t('modal.settings.budgetOptional')}</small></span>
           <input
             value={budgetUsd}
             onChange={(event) => setBudgetUsd(event.target.value)}
-            placeholder={session.budget ? currentBudgetUsd : 'No budget'}
+            placeholder={session.budget ? currentBudgetUsd : t('modal.settings.noBudget')}
             inputMode="decimal"
           />
         </label>
         {!idle ? (
-          <p className="banner">Tools and MCP servers can only change while the session is idle — send an interrupt and wait for it to settle first.</p>
+          <p className="banner">{t('modal.settings.idleBanner')}</p>
         ) : null}
         <details className="advancedFold">
-          <summary>Advanced overrides — tools and MCP servers (JSON)</summary>
+          <summary>{t('modal.settings.advanced')}</summary>
           <label className="sessionField">
-            <span>Tools override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
+            <span>{t('modal.settings.toolsOverride')} <small className="optionalPill">{t('modal.settings.toolsOptional')}</small></span>
             <textarea
               value={toolsText}
               onChange={(event) => setToolsText(event.target.value)}
@@ -510,7 +528,7 @@ export function SessionSettingsModal({
             />
           </label>
           <label className="sessionField">
-            <span>MCP servers override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
+            <span>{t('modal.settings.mcpOverride')} <small className="optionalPill">{t('modal.settings.mcpOptional')}</small></span>
             <textarea
               value={mcpText}
               onChange={(event) => setMcpText(event.target.value)}
@@ -521,8 +539,8 @@ export function SessionSettingsModal({
           </label>
         </details>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="button secondary" type="button" onClick={onClose}>{tCommon('actions.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving}>{saving ? t('modal.settings.saving') : t('modal.settings.save')}</button>
         </div>
       </form>
     </Modal>
@@ -540,6 +558,8 @@ export function DefineOutcomeModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation('sessions');
+  const { t: tCommon } = useTranslation();
   const [description, setDescription] = useState('');
   const [rubricMode, setRubricMode] = useState<'text' | 'file'>('text');
   const [rubricText, setRubricText] = useState('');
@@ -552,7 +572,7 @@ export function DefineOutcomeModal({
     event.preventDefault();
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
-      setError('Description is required.');
+      setError(t('modal.outcome.errorDescription'));
       return;
     }
     // The published contract requires a rubric: inline text or a reference to
@@ -560,13 +580,13 @@ export function DefineOutcomeModal({
     let rubric: Record<string, unknown>;
     if (rubricMode === 'file') {
       if (!rubricFileId) {
-        setError('Choose an uploaded file for the rubric.');
+        setError(t('modal.outcome.errorRubricFile'));
         return;
       }
       rubric = { type: 'file', file_id: rubricFileId };
     } else {
       if (!rubricText.trim()) {
-        setError('Rubric text is required.');
+        setError(t('modal.outcome.errorRubricText'));
         return;
       }
       rubric = { type: 'text', content: rubricText.trim() };
@@ -575,7 +595,7 @@ export function DefineOutcomeModal({
     if (maxIterations.trim()) {
       const parsed = Number(maxIterations);
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 20) {
-        setError('Max iterations must be an integer between 1 and 20.');
+        setError(t('modal.outcome.errorMaxIterations'));
         return;
       }
       max = parsed;
@@ -600,53 +620,55 @@ export function DefineOutcomeModal({
   };
 
   return (
-    <Modal title="Define outcome" subtitle={session.title || session.id} onClose={onClose} size="medium">
+    <Modal title={t('modal.outcome.title')} subtitle={session.title || session.id} onClose={onClose} size="medium">
       <form className="sessionForm" onSubmit={submit}>
         {error ? <div className="banner error">{error}</div> : null}
         <p className="modalBody">
-          Sends a <code>user.define_outcome</code> event: the agent works toward the
-          description and a grader scores each iteration against the rubric.
+          {t('modal.outcome.body')}
         </p>
         <label className="sessionField">
-          <span>Description <RequiredMark /></span>
+          <span>{t('modal.outcome.description')} <RequiredMark /></span>
           <textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={3}
-            placeholder="What a successful session looks like"
+            placeholder={t('modal.outcome.descriptionPlaceholder')}
           />
         </label>
         <label className="sessionField">
-          <span>Rubric <RequiredMark /></span>
+          <span>{t('modal.outcome.rubric')} <RequiredMark /></span>
           <div className="segment compactSegment">
-            <button type="button" className={rubricMode === 'text' ? 'active' : ''} onClick={() => setRubricMode('text')}>Text</button>
-            <button type="button" className={rubricMode === 'file' ? 'active' : ''} onClick={() => setRubricMode('file')}>File</button>
+            <button type="button" className={rubricMode === 'text' ? 'active' : ''} onClick={() => setRubricMode('text')}>{t('modal.outcome.rubricModeText')}</button>
+            <button type="button" className={rubricMode === 'file' ? 'active' : ''} onClick={() => setRubricMode('file')}>{t('modal.outcome.rubricModeFile')}</button>
           </div>
         </label>
         {rubricMode === 'text' ? (
           <label className="sessionField">
-            <span>Rubric text</span>
+            <span>{t('modal.outcome.rubricText')}</span>
             <textarea
               value={rubricText}
               onChange={(event) => setRubricText(event.target.value)}
               rows={4}
               spellCheck={false}
-              placeholder="Criteria the grader scores against"
+              placeholder={t('modal.outcome.rubricTextPlaceholder')}
             />
           </label>
         ) : (
           <label className="sessionField">
-            <span>Rubric file</span>
-            <select value={rubricFileId} onChange={(event) => setRubricFileId(event.target.value)}>
-              <option value="">Choose an uploaded file…</option>
-              {data.files.map((file) => (
-                <option key={file.id} value={file.id}>{file.name}</option>
-              ))}
-            </select>
+            <span>{t('modal.outcome.rubricFile')}</span>
+            <ConsoleSelect
+              label={t('modal.outcome.rubricFile')}
+              value={rubricFileId}
+              onChange={setRubricFileId}
+              options={[
+                { value: '', label: t('modal.outcome.chooseFile') },
+                ...data.files.map((file) => ({ value: file.id, label: file.name })),
+              ]}
+            />
           </label>
         )}
         <label className="sessionField">
-          <span>Max iterations <small className="optionalPill">1-20; empty uses the default of 3</small></span>
+          <span>{t('modal.outcome.maxIterations')} <small className="optionalPill">{t('modal.outcome.maxIterationsOptional')}</small></span>
           <input
             value={maxIterations}
             onChange={(event) => setMaxIterations(event.target.value)}
@@ -655,8 +677,8 @@ export function DefineOutcomeModal({
           />
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving}>{saving ? 'Defining…' : 'Define outcome'}</button>
+          <button className="button secondary" type="button" onClick={onClose}>{tCommon('actions.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving}>{saving ? t('modal.outcome.defining') : t('modal.outcome.define')}</button>
         </div>
       </form>
     </Modal>

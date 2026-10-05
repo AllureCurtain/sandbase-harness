@@ -653,10 +653,10 @@ describe('Console page static coverage', () => {
 
     const sessionsHtml = renderToString(React.createElement(Sessions, { data, onNewSession: () => {}, onOpenSession: () => {} }));
     expect(sessionsHtml).toContain('Dashboard pass');
-    expect(sessionsHtml).toContain('class="stack"');
-    expect(sessionsHtml).toContain('class="pageIntro"');
-    expect(sessionsHtml).toContain('sessionsTablePanel');
-    expect(sessionsHtml).toContain('mobileAgentCard');
+    expect(sessionsHtml).toContain('console-page-header');
+    expect(sessionsHtml).toContain('list-toolbar');
+    expect(sessionsHtml).toContain('data-table');
+    expect(sessionsHtml).toContain('session-card');
 
     const environmentsHtml = renderToString(React.createElement(Environments, { data, onNew: () => {}, onOpenEnvironment: () => {} }));
     expect(environmentsHtml).toContain('Local sandbox');

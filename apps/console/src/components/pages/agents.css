@@ -65,3 +65,9 @@
     display: flex;
   }
 }
+
+/* Embedded sessions list inside the agent detail page. */
+.sessionActivity {
+  min-height: 260px;
+  padding: 22px;
+}

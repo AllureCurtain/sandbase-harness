@@ -1,5 +1,6 @@
 import { Plus, Send, Target } from 'lucide-react';
 import { type FormEvent, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { deleteJson, postJson } from '../../api';
 import { StatusPill } from '../Common';
 import { ConfirmDeleteModal } from '../DangerZone';
@@ -40,6 +41,7 @@ export function SessionDetail({
   onOpenAgent: (agent: Agent) => void;
   onNewSession: (agentId?: string) => void;
 }) {
+  const { t } = useTranslation('sessions');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [defineOutcomeOpen, setDefineOutcomeOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -223,7 +225,7 @@ export function SessionDetail({
       />
 
       {(session.outcome_evaluations ?? []).length > 0 ? (
-        <div className="outcomeStrip" aria-label="Outcome evaluations">
+        <div className="outcomeStrip" aria-label={t('detail.outcome.evaluations')}>
           {(session.outcome_evaluations ?? []).map((evaluation) => (
             <div key={evaluation.outcome_id} className="outcomeCard">
               <div className="outcomeCardHead">
@@ -232,7 +234,7 @@ export function SessionDetail({
                 <StatusPill status={evaluation.result} />
               </div>
               <div className="outcomeCardMeta">
-                <span>iteration {evaluation.iteration}</span>
+                <span>{t('detail.outcome.iteration', { n: evaluation.iteration })}</span>
                 {evaluation.completed_at ? <span>{relativeDate(evaluation.completed_at)}</span> : null}
               </div>
               {evaluation.explanation ? <p className="outcomeExplanation">{evaluation.explanation}</p> : null}
@@ -288,10 +290,10 @@ export function SessionDetail({
 
       {deleteConfirmOpen ? (
         <ConfirmDeleteModal
-          title="Delete session"
+          title={t('detail.deleteTitle')}
           subject={`${session.title || session.id} (${shortId(session.id)})`}
-          consequence="This permanently deletes the session, its event history, and files it generated. The agent, environment, skills, vaults, and uploaded files are not affected."
-          confirmLabel="Delete session"
+          consequence={t('detail.deleteConsequence')}
+          confirmLabel={t('detail.deleteConfirm')}
           onClose={() => setDeleteConfirmOpen(false)}
           onConfirm={deleteSession}
         />
