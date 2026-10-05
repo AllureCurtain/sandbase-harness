@@ -40,7 +40,11 @@ const PI_AGENT = {
   name: 'pi-agent',
   model: 'gpt-pi-selected',
   system: '# System',
-  tools: [{ type: 'agent_toolset_20260401', configs: [{ name: 'read' }, { name: 'grep' }] }],
+  tools: [{
+    type: 'agent_toolset_20260401',
+    default_config: { enabled: false },
+    configs: [{ name: 'read', enabled: true }, { name: 'grep', enabled: true }],
+  }],
 } as unknown as AgentDefinition;
 
 /**
@@ -506,7 +510,11 @@ describe('PiStrategy tool gate', () => {
     system: '# System',
     tools: [{
       type: 'agent_toolset_20260401',
-      configs: [{ name: 'read' }, { name: 'bash', permission_policy: { type: 'always_ask' } }],
+      default_config: { enabled: false },
+      configs: [
+        { name: 'read', enabled: true },
+        { name: 'bash', enabled: true, permission_policy: { type: 'always_ask' } },
+      ],
     }],
   } as unknown as AgentDefinition;
 

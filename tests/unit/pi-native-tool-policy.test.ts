@@ -35,13 +35,17 @@ describe('Pi native tool vocabulary', () => {
 });
 
 describe('compilePiNativeToolPolicy', () => {
-  it('allows exactly the enabled tools and claims no exclusion it did not send', () => {
+  it('allows the Pi-native share of the enabled tools and claims no exclusion it did not send', () => {
+    // Including the toolset enables every built-in; `configs` only reconfigure
+    // or disable. Of the published set, Pi has native names for bash, edit,
+    // read, write and grep — glob, web_fetch and web_search are engine-coverage
+    // gaps that simply never reach the model.
     const plan = compilePiNativeToolPolicy(agentWithTools([
       { type: 'agent_toolset_20260401', configs: [{ name: 'read' }, { name: 'grep' }] },
     ]));
 
-    expect(plan.allow).toEqual(['read', 'grep']);
-    expect(plan.argv).toEqual(['--tools', 'read,grep']);
+    expect(plan.allow).toEqual(['bash', 'edit', 'read', 'write', 'grep']);
+    expect(plan.argv).toEqual(['--tools', 'bash,edit,read,write,grep']);
     // A tool the definition never mentions is enforced by `--tools` being an
     // allowlist, so naming it in `--exclude-tools` would misdescribe the argv.
     expect(plan.denied).toEqual([]);
@@ -60,9 +64,9 @@ describe('compilePiNativeToolPolicy', () => {
       },
     ]));
 
-    expect(plan.allow).toEqual(['read']);
+    expect(plan.allow).toEqual(['edit', 'read', 'grep']);
     expect(plan.denied).toEqual(['bash', 'write']);
-    expect(plan.argv).toEqual(['--tools', 'read', '--exclude-tools', 'bash,write']);
+    expect(plan.argv).toEqual(['--tools', 'edit,read,grep', '--exclude-tools', 'bash,write']);
   });
 
   it('honours a toolset-level default, not only per-tool entries', () => {
@@ -74,20 +78,37 @@ describe('compilePiNativeToolPolicy', () => {
       },
     ]));
 
-    // `write` is never mentioned and `bash` inherits the disabled default: the
-    // allowlist is what the agent's effective policy says, not a default set.
+    // `default_config.enabled: false` empties the implicit set, so `write`
+    // and `bash` stay off: the allowlist is what the agent's effective policy
+    // says, not a default set.
     expect(plan.allow).toEqual(['read']);
     expect(plan.argv).toEqual(['--tools', 'read']);
   });
 
   it('asks Pi for no built-in tools at all when the policy enables none', () => {
     const plan = compilePiNativeToolPolicy(agentWithTools([
-      { type: 'agent_toolset_20260401', configs: [{ name: 'bash', permission_policy: { type: 'never_allow' } }] },
+      { type: 'agent_toolset_20260401', default_config: { enabled: false } },
     ]));
 
     expect(plan.exposeNoTools).toBe(true);
     expect(plan.allow).toEqual([]);
     expect(plan.argv).toEqual(['--no-builtin-tools']);
+  });
+
+  it('refuses a declared tool Pi cannot run, but not an implicit one', () => {
+    // `glob` is enabled implicitly by the bare toolset and Pi has no glob —
+    // an engine-coverage gap, tolerated because the allowlist never offers it.
+    const implicit = compilePiNativeToolPolicy(agentWithTools([
+      { type: 'agent_toolset_20260401' },
+    ]));
+    expect(implicit.allow).toEqual(['bash', 'edit', 'read', 'write', 'grep']);
+
+    // The same tool named in `configs` is declared policy: dropping it would
+    // lie about what the agent may do, so it refuses instead.
+    const declared = agentWithTools([
+      { type: 'agent_toolset_20260401', configs: [{ name: 'glob' }] },
+    ]);
+    expect(() => compilePiNativeToolPolicy(declared)).toThrow(/glob/);
   });
 });
 
@@ -115,7 +136,7 @@ describe('fail-closed refusals', () => {
       { type: 'agent_toolset_20260401', configs: [{ name: 'read' }] },
     ]));
 
-    expect(plan.allow).toEqual(['read']);
+    expect(plan.allow).toEqual(['bash', 'edit', 'read', 'write', 'grep']);
   });
 
   it('reports a gated tool as gated, and admits the agent that declares it', () => {
@@ -134,8 +155,8 @@ describe('fail-closed refusals', () => {
     expect(plan.gate).toEqual(['bash']);
     // Gated is not denied: `bash` stays in the allowlist and is decided per call,
     // so it must not appear in `--exclude-tools` either.
-    expect(plan.allow).toEqual(['read', 'bash']);
-    expect(plan.argv).toEqual(['--tools', 'read,bash']);
+    expect(plan.allow).toEqual(['bash', 'edit', 'read', 'write', 'grep']);
+    expect(plan.argv).toEqual(['--tools', 'bash,edit,read,write,grep']);
   });
 
   it('returns the plan from admission for an agent that needs no gate', () => {
@@ -143,7 +164,7 @@ describe('fail-closed refusals', () => {
       { type: 'agent_toolset_20260401', configs: [{ name: 'grep' }] },
     ]));
 
-    expect(plan.argv).toEqual(['--tools', 'grep']);
+    expect(plan.argv).toEqual(['--tools', 'bash,edit,read,write,grep']);
   });
 });
 
@@ -175,6 +196,6 @@ describe('the tool policy one launch uses', () => {
     // the ones the child is told about.
     expect(compilePiNativeToolPolicy(definition).denied).toEqual(['bash', 'write']);
     expect(assertPiAgentCanExecute(definition).argv)
-      .toEqual(['--tools', 'read', '--exclude-tools', 'bash,write']);
+      .toEqual(['--tools', 'edit,read,grep', '--exclude-tools', 'bash,write']);
   });
 });

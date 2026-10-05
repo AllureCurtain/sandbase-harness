@@ -43,7 +43,9 @@ function store(name: string): string {
 }
 
 function agentWithTools(names: string[]): AgentDefinition {
-  return { name: 'mount-agent', model: 'm', system: 'base', tools: [{ type: 'agent_toolset_20260401', configs: names.map((name) => ({ name, enabled: true })) }] } as unknown as AgentDefinition;
+  // A bare toolset now enables every built-in; opting in to only `names`
+  // requires the default-off base with explicit enables on top.
+  return { name: 'mount-agent', model: 'm', system: 'base', tools: [{ type: 'agent_toolset_20260401', default_config: { enabled: false }, configs: names.map((name) => ({ name, enabled: true })) }] } as unknown as AgentDefinition;
 }
 
 function session(resources: Array<Record<string, unknown>>): Session {

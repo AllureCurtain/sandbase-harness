@@ -27,7 +27,7 @@
  * gate rather than refused for declaring one.
  */
 
-import { getEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
+import { getEnabledToolNames, getExplicitlyEnabledToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import { isPiNativeTool } from '@/strategy/pi/native-tools.js';
 
@@ -92,15 +92,24 @@ export function compilePiNativeToolPolicy(agent: AgentDefinition): PiNativeToolP
   assertNoEnabledMcpToolset(agent);
 
   const enabled = getEnabledToolNames(agent);
+  const explicit = new Set(getExplicitlyEnabledToolNames(agent));
   const gated = new Set(getToolsRequiringConfirmation(agent));
 
   const allow: string[] = [];
   const gate: string[] = [];
   for (const name of enabled) {
     if (!isPiNativeTool(name)) {
-      throw new PiToolPolicyUnsupportedError(
-        `Pi 0.84.4 has no native tool "${name}"; enforcing the declared policy would require silently dropping it`,
-      );
+      // A tool the caller named is declared policy — refuse rather than drop.
+      // An implicitly enabled tool Pi lacks is an engine-coverage gap, the
+      // same way an implicitly enabled web_search is inert on the default
+      // engine: the allowlist never exposes it, so nothing is offered that Pi
+      // cannot run.
+      if (explicit.has(name)) {
+        throw new PiToolPolicyUnsupportedError(
+          `Pi 0.84.4 has no native tool "${name}"; enforcing the declared policy would require silently dropping it`,
+        );
+      }
+      continue;
     }
     allow.push(name);
     if (gated.has(name)) gate.push(name);
