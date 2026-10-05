@@ -673,20 +673,17 @@ describe('Console page static coverage', () => {
 
     const webhooksHtml = renderToString(React.createElement(WebhooksPage, { data, onRefresh: () => {} }));
     expect(webhooksHtml).toContain('UI events');
-    expect(webhooksHtml).toContain('operationTablePanel');
-    expect(webhooksHtml).toContain('mobileResourceList');
+    expect(webhooksHtml).toContain('webhooks-table-frame');
     expect(webhooksHtml).toContain('mobileResourceList');
 
     const schedulesHtml = renderToString(React.createElement(ScheduledDeploymentsPage, { data, onRefresh: () => {} }));
     expect(schedulesHtml).toContain('Nightly review');
-    expect(schedulesHtml).toContain('operationTablePanel');
-    expect(schedulesHtml).toContain('mobileResourceList');
+    expect(schedulesHtml).toContain('schedules-table-frame');
     expect(schedulesHtml).toContain('mobileResourceList');
 
     const outcomesHtml = renderToString(React.createElement(OutcomesPage, { data, onRefresh: () => {} }));
     expect(outcomesHtml).toContain('Polished UI');
-    expect(outcomesHtml).toContain('operationTablePanel');
-    expect(outcomesHtml).toContain('mobileResourceList');
+    expect(outcomesHtml).toContain('outcomes-table-frame');
     expect(outcomesHtml).toContain('mobileResourceList');
   });
 

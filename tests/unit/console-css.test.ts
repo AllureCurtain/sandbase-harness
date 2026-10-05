@@ -9,6 +9,9 @@ const sessionsCss = readFileSync(join(process.cwd(), 'apps/console/src/component
 // Resource surfaces (environments, credential vaults, memory stores) migrated
 // onto the ported token system; their rules live in the page-local stylesheet.
 const resourcesCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/resources.css'), 'utf8');
+// Operations surfaces (webhooks, scheduled deployments, outcomes) migrated the
+// same way; their rules live in the page-local stylesheet.
+const operationsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/operations.css'), 'utf8');
 
 function sessionRuleFor(selector: string): string {
   const match = sessionsCss.match(rulePattern(selector));
@@ -19,6 +22,12 @@ function sessionRuleFor(selector: string): string {
 function resourceRuleFor(selector: string): string {
   const match = resourcesCss.match(rulePattern(selector));
   expect(match, `Missing resource CSS rule for ${selector}`).toBeTruthy();
+  return match?.[2] ?? '';
+}
+
+function operationsRuleFor(selector: string): string {
+  const match = operationsCss.match(rulePattern(selector));
+  expect(match, `Missing operations CSS rule for ${selector}`).toBeTruthy();
   return match?.[2] ?? '';
 }
 
@@ -79,6 +88,17 @@ describe('Console CSS contracts', () => {
     expect(resourceRuleFor('.credentialTypeOption.selected')).toContain('background: var(--accent-tint)');
     expect(resourceRuleFor('.secretField input')).toContain('padding-right: 44px');
     expect(resourceRuleFor('.secretToggle')).toContain('height: 34px');
+  });
+
+  it('keeps operations expansion rows readable and hides operations tables on narrow screens', () => {
+    expect(operationsRuleFor('.expansionRow td')).toContain('background: var(--inset)');
+    expect(operationsRuleFor('.deliveriesTable th')).toContain('border-bottom: 1px solid var(--line-soft)');
+    expect(operationsRuleFor('.webhookEventOptions')).toContain('display: grid');
+    const mobile = operationsCss.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.webhooks-table-frame[^{]*\{([^}]*)\}/);
+    expect(mobile, 'Missing operations mobile table-hide rule').toBeTruthy();
+    expect(mobile?.[1]).toContain('display: none');
+    expect(css).not.toContain('.webhookEventPicker');
+    expect(css).not.toContain('.deliveriesTable');
   });
 });
 function ruleFor(selector: string): string {
