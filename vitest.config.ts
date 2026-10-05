@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['tests/unit/console/i18n.setup.ts'],
     include: ['tests/**/*.{test,spec,prop}.{ts,tsx}'],
     // tests/e2e is Playwright, not vitest — the `.spec.ts` suffix would match
     // the include above and run the browser scenario under the wrong runner.
