@@ -11,6 +11,7 @@ import { resolveMemoryBindings } from '@/core/memory/bindings.js';
 import { ToolResolver } from '@/core/session/tool-resolver.js';
 import { ContextBuilder } from '@/core/session/context-builder.js';
 import { normalizeResources } from '@/api/routes/session-normalizers.js';
+import { toolErrorText, ToolResultError } from '@/core/tool-result-error.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
 import type { Session } from '@/types/session.js';
@@ -74,7 +75,18 @@ function tools(resources: Array<Record<string, unknown>>, names: string[], sessi
   const resolver = new ToolResolver({ delegationService: { buildDelegationTools: () => ({}) } as never, memoryMount: adapter });
   const sb = sandbox();
   const bindings = resolveMemoryBindings(resources);
-  return { adapter, sandbox: sb, tools: resolver.buildSandboxTools(agentWithTools(names), sb, bindings, { adapter, sessionId }) };
+  const built = resolver.buildSandboxTools(agentWithTools(names), sb, bindings, { adapter, sessionId });
+  // Unwrap ToolResultError the way the strategy does: assertions read the same
+  // text the model sees, and the marker identity is asserted explicitly below.
+  for (const tool of Object.values(built)) {
+    const execute = (tool as { execute?: (input: unknown) => Promise<unknown> }).execute;
+    if (typeof execute !== 'function') continue;
+    (tool as { execute: (input: unknown) => Promise<unknown> }).execute = async (input: unknown) => {
+      const out = await execute(input);
+      return toolErrorText(out) ?? out;
+    };
+  }
+  return { adapter, sandbox: sb, tools: built };
 }
 
 describe('path-addressed memory mounts', () => {
@@ -170,7 +182,11 @@ describe('path-addressed memory mounts', () => {
     const noProvider = new ToolResolver({ delegationService: { buildDelegationTools: () => ({}) } as never });
     const sb = sandbox();
     const noProviderTools = noProvider.buildSandboxTools(agentWithTools(['write']), sb, resolveMemoryBindings([{ type: 'memory_store', memory_store_id: id, mount_path: RW } as any]));
-    expect(await noProviderTools.write.execute({ path: `${RW}/x.md`, content: 'x' })).toContain('no memory store provider');
+    const refused = await noProviderTools.write.execute({ path: `${RW}/x.md`, content: 'x' });
+    // A refusal is a ToolResultError so the emitted tool_result is is_error;
+    // the unwrapped text is what the model reads.
+    expect(refused).toBeInstanceOf(ToolResultError);
+    expect((refused as ToolResultError).message).toContain('no memory store provider');
     expect(sb.writes).toHaveLength(0);
   });
 

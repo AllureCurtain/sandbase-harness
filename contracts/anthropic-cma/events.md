@@ -62,7 +62,12 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   call before execution — an input that failed schema validation — the paired
   `agent.tool_result` carries `is_error: true` in its content block and the
   row's `is_error` column, so the log never holds a use that looks parked
-  forever.
+  forever. The same `is_error` marking applies to a result the tool itself
+  reported as a failure or refusal — a read of a missing file, a write against
+  a read-only mount, a web fetch the policy refused, a shell command that
+  exited non-zero — and to an MCP result the server flagged `isError`, so
+  consumers never have to string-match the content to tell failure from
+  success.
 - `session.usage` is emitted before the session goes idle, so a client reading
   the stream observes usage before the terminal status.
 - Every model request is bracketed by a `span.model_request_start` /
