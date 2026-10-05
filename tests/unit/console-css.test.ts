@@ -6,10 +6,19 @@ const css = readFileSync(join(process.cwd(), 'apps/console/src/styles.css'), 'ut
 // Session surfaces migrated onto the ported token system; their rules live
 // in the page-local stylesheet, not the legacy stylesheet.
 const sessionsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/sessions.css'), 'utf8');
+// Resource surfaces (environments, credential vaults, memory stores) migrated
+// onto the ported token system; their rules live in the page-local stylesheet.
+const resourcesCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/resources.css'), 'utf8');
 
 function sessionRuleFor(selector: string): string {
   const match = sessionsCss.match(rulePattern(selector));
   expect(match, `Missing session CSS rule for ${selector}`).toBeTruthy();
+  return match?.[2] ?? '';
+}
+
+function resourceRuleFor(selector: string): string {
+  const match = resourcesCss.match(rulePattern(selector));
+  expect(match, `Missing resource CSS rule for ${selector}`).toBeTruthy();
   return match?.[2] ?? '';
 }
 
@@ -66,10 +75,10 @@ describe('Console CSS contracts', () => {
   });
 
   it('keeps credential forms readable and protects secret fields', () => {
-    expect(ruleFor('.credentialTypeGrid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(ruleFor('.credentialTypeOption.selected')).toContain('background: var(--accent-soft)');
-    expect(ruleFor('.secretField input')).toContain('padding-right: 44px');
-    expect(ruleFor('.secretToggle')).toContain('height: 34px');
+    expect(resourceRuleFor('.credentialTypeGrid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(resourceRuleFor('.credentialTypeOption.selected')).toContain('background: var(--accent-tint)');
+    expect(resourceRuleFor('.secretField input')).toContain('padding-right: 44px');
+    expect(resourceRuleFor('.secretToggle')).toContain('height: 34px');
   });
 });
 function ruleFor(selector: string): string {

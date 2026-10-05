@@ -1,0 +1,818 @@
+/**
+ * Resource surfaces (environments, credential vaults, memory stores).
+ * Migrated from styles.css onto the OpenAgentCore token system:
+ * legacy light-only tokens are remapped to --ink/--fg/--line/--inset/--hover
+ * and the --red/--orange/--green semantic ramp so these rules follow the theme.
+ */
+
+.inlineChip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-card);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.actionsCol {
+  width: 56px;
+  text-align: right;
+}
+
+.environmentDetail {
+  padding: 34px 40px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.resourceHero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.mutedIcon {
+  color: var(--fg-muted);
+}
+
+.environmentBody {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  max-width: 1160px;
+}
+
+.environmentSection {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.environmentSection > p,
+.setupCard > p,
+.setupStep p {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.readonlyFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 36px;
+}
+
+.readonlyField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.readonlyField strong {
+  color: var(--fg-muted);
+}
+
+.readonlyTable {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.readonlyTable table th {
+  font-size: 14px;
+}
+
+.selfHostedGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.setupCard {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.setupHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setupStep {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  position: relative;
+}
+
+.setupStep > span {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--inset);
+  color: var(--fg-muted);
+  display: grid;
+  place-items: center;
+  font-weight: 760;
+}
+
+.setupStep strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.setupStep pre {
+  margin-top: 12px;
+  max-height: none;
+  background: var(--inset);
+  color: var(--fg);
+  border-radius: var(--radius-card);
+  white-space: pre-wrap;
+}
+
+.editingEnvironment .resourceHero {
+  align-items: center;
+}
+
+.editingEnvironment .environmentBody {
+  gap: 18px;
+}
+
+.editingEnvironment .environmentSection {
+  padding: 20px;
+}
+
+.editHero {
+  margin-bottom: 4px;
+}
+
+.editTitleGroup {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 380px) auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.titleInput {
+  min-height: 42px;
+  font-size: 22px;
+  font-weight: 780;
+}
+
+.environmentExecutionSection {
+  gap: 18px;
+}
+
+.environmentNestedGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.4fr) minmax(180px, 0.8fr) minmax(160px, 0.6fr);
+  gap: 14px;
+}
+
+.subtleNotice {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--inset);
+  color: var(--fg-muted);
+  padding: 12px 14px;
+  line-height: 1.45;
+}
+
+.editableListSection {
+  gap: 18px;
+}
+
+.editableRow {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 12px;
+}
+
+.editableRow.metadataRow {
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) 42px;
+}
+
+.editableRow input,
+.editableRow select {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.environmentCreateForm {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 20px;
+}
+
+.pickerSearch {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0 14px;
+  color: var(--fg-muted);
+}
+
+.pickerSearch input {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.pickerSearch input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.wideDetailStack {
+  max-width: 100%;
+}
+
+.authCell strong,
+.authCell small {
+  display: block;
+}
+
+.authCell small {
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.rowMenu {
+  top: 38px;
+  right: 0;
+  width: 190px;
+}
+
+.vaultCreateForm,
+.memoryCreateForm,
+.credentialForm,
+.addMemoryForm {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+}
+
+.warningNotice {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, var(--orange) 42%, var(--line));
+  border-radius: var(--radius-card);
+  background: var(--orange-tint);
+  color: var(--fg);
+  padding: 14px;
+  line-height: 1.45;
+}
+
+.warningNotice svg {
+  margin-top: 2px;
+  color: var(--orange);
+}
+
+.warningNotice a {
+  color: var(--accent);
+  text-underline-offset: 4px;
+}
+
+.credentialTypeField {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.resourceTruthStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.resourceTruthStrip > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+
+.resourceTruthStrip span {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.resourceTruthStrip strong {
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 560;
+  line-height: 1.5;
+}
+
+.credentialTypeField legend {
+  margin-bottom: 10px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.credentialTypeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.credentialTypeOption {
+  min-width: 0;
+  min-height: 86px;
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px !important;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 11px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px !important;
+  font-weight: 560 !important;
+}
+
+.credentialTypeOption:hover {
+  border-color: var(--line-strong);
+  background: var(--inset);
+}
+
+.credentialTypeOption.selected {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.credentialTypeOption input {
+  width: 16px;
+  height: 16px;
+  min-height: auto;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.credentialTypeOption > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.credentialTypeOption strong {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.credentialTypeOption small {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.secretField {
+  position: relative;
+  display: block;
+}
+
+.secretField input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.secretToggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+.secretToggle:hover {
+  background: var(--inset);
+  color: var(--fg);
+}
+
+.secretToggle:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 1px;
+}
+
+.credentialGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.credentialSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.credentialSection h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.credentialSection p {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.credentialSegment {
+  width: fit-content;
+  min-width: 220px;
+}
+
+.credentialSegment button {
+  min-height: 38px;
+  font-size: 16px;
+}
+
+.acknowledgement {
+  line-height: 1.35;
+}
+
+.mcpRegistryPanel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.registrySearch {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+}
+
+.registryList {
+  max-height: 310px;
+  overflow: auto;
+}
+
+.registryList button {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.registryList button:hover {
+  background: var(--inset);
+}
+
+.registryList button:last-child {
+  border-bottom: 0;
+}
+
+.registryList strong,
+.registryList small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registryList small {
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.registryIcon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-weight: 760;
+}
+
+.registrySelectionMark {
+  color: transparent;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.registryEmpty {
+  margin: 0;
+  padding: 14px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.compactField {
+  padding: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.addMemoryForm textarea {
+  min-height: 310px;
+}
+
+.memoryStoreDetail {
+  gap: 26px;
+}
+
+.memoryBrowser {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.memoryTree {
+  border-right: 1px solid var(--line-soft);
+  background: var(--surface);
+  overflow: auto;
+  padding: 12px;
+}
+
+.memoryFolder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memoryFolderTitle {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 18px 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: var(--fg-muted);
+  padding: 0 8px;
+}
+
+.memoryFolderTitle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memoryNode {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--fg);
+  padding: 0 8px 0 34px;
+  text-align: left;
+}
+
+.memoryNode span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memoryNode small {
+  color: var(--fg-muted);
+  font-weight: 680;
+}
+
+.memoryContent {
+  min-width: 0;
+  background: var(--surface);
+  overflow: auto;
+}
+
+.memoryContentHeader {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.memoryContentHeader h2 {
+  font-size: 20px;
+}
+
+.memoryContentHeader p {
+  margin-top: 6px;
+  color: var(--fg-muted);
+}
+
+.memoryPreview {
+  max-height: none;
+  min-height: 480px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 16px;
+  white-space: pre-wrap;
+}
+
+.memoryEditor {
+  width: 100%;
+  min-height: 480px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  resize: vertical;
+  font-size: 16px;
+  line-height: 1.55;
+  padding: 18px;
+}
+
+.memoryEditor:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.memoryContentHeader {
+  min-height: 64px;
+}
+
+.memoryContentHeader h2 {
+  font-size: 18px;
+}
+
+.memoryPreview,
+.memoryEditor {
+  font-size: 14px;
+}
+
+@media (max-width: 1080px) {
+.selfHostedGrid {
+    grid-template-columns: 1fr;
+  }
+.memoryBrowser {
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+.resourceHero,
+  .editHero,
+  .editTitleGroup,
+  .readonlyFields,
+  .editableRow,
+  .editableRow.metadataRow {
+    grid-template-columns: 1fr;
+  }
+.editTitleGroup {
+    width: 100%;
+  }
+.titleInput {
+    width: 100%;
+    font-size: 22px;
+  }
+.setupStep {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+.memoryBrowser,
+  .credentialGrid,
+  .credentialTypeGrid,
+  .resourceTruthStrip {
+    grid-template-columns: 1fr;
+  }
+.memoryTree {
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+    max-height: 260px;
+  }
+.memoryContentHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.hostingSummary {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  background: var(--inset);
+}
+
+.hostingSummary p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+.advancedSection {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+}
+
+.advancedSection summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--fg-muted);
+}
+
+.advancedSection[open] summary {
+  margin-bottom: 10px;
+}
+
+.memoryVersions {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+/* Compact fact grid inside resource modals (vault / credential detail rows). */
+.mobileResourceCard {
+  width: 100%;
+  min-height: 104px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+}
+
+.mobileResourceCard:hover {
+  background: var(--inset);
+}
+
+.modalFactGrid {
+  margin-top: 4px;
+}
+
+.modalFactGrid .readonlyField span {
+  font-size: 13px;
+}
+
+/* Below ~760px the resource tables collapse to the shared mobileResourceList
+   card rail, so the new grammar table-frames hide at the same breakpoint the
+   legacy panels used. */
+@media (max-width: 760px) {
+  .environments-table-frame,
+  .credentials-table-frame,
+  .memory-table-frame,
+  .credential-table-frame {
+    display: none;
+  }
+}

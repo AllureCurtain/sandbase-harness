@@ -660,10 +660,10 @@ describe('Console page static coverage', () => {
 
     const environmentsHtml = renderToString(React.createElement(Environments, { data, onNew: () => {}, onOpenEnvironment: () => {} }));
     expect(environmentsHtml).toContain('Local sandbox');
-    expect(environmentsHtml).toContain('class="stack"');
-    expect(environmentsHtml).toContain('class="pageIntro"');
-    expect(environmentsHtml).toContain('environmentsTablePanel');
-    expect(environmentsHtml).toContain('mobileResourceList');
+    expect(environmentsHtml).toContain('console-page-header');
+    expect(environmentsHtml).toContain('list-toolbar');
+    expect(environmentsHtml).toContain('data-table');
+    expect(environmentsHtml).toContain('environments-table-frame');
     expect(environmentsHtml).toContain('mobileResourceList');
 
     const filesHtml = renderToString(React.createElement(Files, { data, onRefresh: () => {} }));
@@ -837,7 +837,7 @@ describe('Console page static coverage', () => {
       data,
       onNew: () => {},
       onOpenVault: () => {},
-    }))).toContain('<th>Credentials</th>');
+    }))).toContain('scope="col">Credentials');
     const html = renderToString(React.createElement(CredentialVaultDetail, {
       vault: data.vaults[0],
       onBack: () => {},
@@ -846,7 +846,7 @@ describe('Console page static coverage', () => {
     }));
     expect(html).toContain('Runtime token');
     expect(html).toContain('Last used');
-    expect(html).toContain('credentialTablePanel');
+    expect(html).toContain('credential-table-frame');
     expect(html).toContain('mobileResourceList');
   });
 

@@ -158,8 +158,8 @@ describe('AgentEditModal draft restore', () => {
     );
     expect(html).toContain('Draft restored from v1');
     expect(html).toContain('Legacy prompt');
-    expect(html).toContain('Preview &amp; validate');
-    expect(html).toContain('Ready to save');
+    expect(html).toContain('Config preview');
+    expect(html).toContain('All good');
   });
 
   it('shows validation issues and blocks an invalid draft', () => {
@@ -168,7 +168,7 @@ describe('AgentEditModal draft restore', () => {
     const html = renderToString(
       React.createElement(AgentEditModal, { agent, initialDraft: draft, onClose: () => {}, onSaved: () => {} }),
     );
-    expect(html).toContain('system prompt is required.');
+    expect(html).toContain('The agent needs instructions.');
     expect(html).toContain('disabled');
   });
 });

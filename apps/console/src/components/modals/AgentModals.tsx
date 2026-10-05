@@ -108,7 +108,7 @@ function AgentDefinitionForm({
   setMcpRows: (rows: McpRow[]) => void;
   metadataRows: KvRow[];
   setMetadataRows: (rows: KvRow[]) => void;
-  data: ConsoleData;
+  data?: ConsoleData;
   idPrefix: string;
 }) {
   const { t } = useTranslation('agents');
@@ -162,10 +162,10 @@ function AgentDefinitionForm({
       setDraft({ ...draft, skills: [...(draft.skills ?? []), { type: source, skill_id }] });
     }
   };
-  const listedSkillIds = new Set(data.skills.map((skill) => skill.id));
+  const listedSkillIds = new Set((data?.skills ?? []).map((skill) => skill.id));
   const extraSkillRefs = (draft.skills ?? []).filter((skill) => !listedSkillIds.has(skill.skill_id));
 
-  const model = data.runtime?.models.find((item) => item.name === draft.model);
+  const model = data?.runtime?.models.find((item) => item.name === draft.model);
 
   return (
     <>
@@ -199,7 +199,7 @@ function AgentDefinitionForm({
               onChange={(value) => setDraft({ ...draft, model: value })}
               options={[
                 ...(model ? [] : [{ value: draft.model, label: draft.model || t('modal.basics.modelSelect') }]),
-                ...(data.runtime?.models ?? []).map((item) => ({
+                ...(data?.runtime?.models ?? []).map((item) => ({
                   value: item.name,
                   label: `${item.name}${item.api_key_state === 'missing_env' ? ` — ${t('modal.basics.modelNoKey')}` : ''}${item.is_default ? ` (${t('modal.basics.modelDefault')})` : ''}`,
                 })),
@@ -302,7 +302,7 @@ function AgentDefinitionForm({
         </FieldRow>
         <FieldRow label={t('modal.integrations.skills')} optional={t('modal.integrations.skillsSelected', { n: skillIds.size })}>
           <div className="toolChipGrid" role="group" aria-label={t('modal.integrations.skillsGroupLabel')}>
-            {data.skills.map((skill) => (
+            {(data?.skills ?? []).map((skill) => (
               <button
                 key={skill.id}
                 type="button"
@@ -325,7 +325,7 @@ function AgentDefinitionForm({
                 {skill.skill_id}
               </button>
             ))}
-            {!data.skills.length && !extraSkillRefs.length ? <span className="fieldHelper">{t('modal.integrations.skillsEmpty')}</span> : null}
+            {!data?.skills?.length && !extraSkillRefs.length ? <span className="fieldHelper">{t('modal.integrations.skillsEmpty')}</span> : null}
           </div>
         </FieldRow>
         <details className="advancedFold">
@@ -494,7 +494,7 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
   );
 }
 
-export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: { agent: Agent; initialDraft?: Agent; data: ConsoleData; onClose: () => void; onSaved: () => void }) {
+export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: { agent: Agent; initialDraft?: Agent; data?: ConsoleData; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation('agents');
   const { t: tCommon } = useTranslation();
   const source = agentDraftFromApi(initialDraft ?? agent);
