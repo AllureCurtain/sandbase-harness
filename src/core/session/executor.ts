@@ -380,6 +380,14 @@ export class DefaultSessionExecutor implements SessionExecutor {
       broadcast, // real SSE broadcast wired from SessionManager
       config: {
         maxSteps: agent.max_turns ?? this.deps.defaultMaxSteps ?? 25,
+        // The in-loop guard needs the same window the compactor resolves —
+        // configured override → capability table → default — so a turn that
+        // outgrows the provider mid-flight gets trimmed, not rejected.
+        contextWindowTokens: this.deps.compactor?.contextWindowFor(
+          typeof model === 'object' && model !== null && 'modelId' in model
+            ? String((model as { modelId: unknown }).modelId)
+            : agent.model,
+        ),
         temperature: agent.temperature ?? 0.7,
         confirmTools,
         onRequiresAction: options?.onRequiresAction,

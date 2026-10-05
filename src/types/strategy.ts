@@ -110,6 +110,14 @@ export interface AgentStrategyConfig {
    * `types/` takes no dependency on `core/`.
    */
   modelOptions?: { effort?: string; speed?: string };
+  /**
+   * Resolved context window for the session's model (same source as the
+   * durable compactor: configured override → capability table → 128k default).
+   * When set, the strategy trims stale tool outputs inside a turn so a single
+   * turn's accumulated tool results cannot assemble a request past the
+   * provider's limit before the next turn's compaction check runs.
+   */
+  contextWindowTokens?: number;
 }
 
 // ============================================================

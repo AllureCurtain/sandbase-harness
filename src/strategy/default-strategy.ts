@@ -17,7 +17,7 @@
 import { nanoid } from 'nanoid';
 import { jsonSchema, stepCountIs, streamText } from 'ai';
 import { createAiSdkExecutionLock, type JsonSchemaLike } from 'prefix-safe-json';
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, ModelMessage } from 'ai';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { ContentBlock } from '@/types/cma-protocol.js';
@@ -28,6 +28,10 @@ import { resolvedModelIdOf } from '@/model/registry.js';
 import { anthropicCallOptions } from '@/model/anthropic-options.js';
 import type { ModelEffortLevel } from '@/core/agent/model-object.js';
 import { applyAnthropicCacheBreakpoints } from '@/strategy/anthropic-cache-breakpoints.js';
+import {
+  estimateModelMessagesTokens,
+  trimInFlightToolResults,
+} from '@/strategy/in-loop-context.js';
 import { splitModelRequestUsage } from './model-usage.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
 
@@ -357,7 +361,7 @@ export class DefaultStrategy implements AgentStrategy {
         // The span opens when the SDK prepares the step's request, not when the
         // answer lands, so a request that never completes still has a start to
         // pair with — `onError` below closes it `is_error: true`.
-        prepareStep: () => {
+        prepareStep: (options: { messages: ModelMessage[] }) => {
           // A start left over at this point means the previous step errored
           // without tripping `onError`; close it rather than leaking a start
           // with no end.
@@ -368,6 +372,21 @@ export class DefaultStrategy implements AgentStrategy {
           });
           broadcast(inFlightRequestStart);
           mintedMessageIds.push(`sevt_${nanoid(16)}`);
+
+          // The turn-level compactor only runs before a turn starts. A long
+          // tool loop can assemble a request over the provider's window
+          // before the next turn's check ever runs — when the outgoing
+          // estimate crosses the trigger (the same 80% the compactor uses),
+          // replace stale tool outputs with a placeholder so the request
+          // still fits. The event log keeps the untrimmed payloads; only the
+          // in-flight projection is rewritten.
+          const contextWindow = context.config.contextWindowTokens;
+          if (contextWindow !== undefined
+            && estimateModelMessagesTokens(options.messages) > contextWindow * 0.8) {
+            const trimmed = trimInFlightToolResults(options.messages, contextWindow * 0.7);
+            if (trimmed) return { messages: trimmed };
+          }
+          return undefined;
         },
         onError: () => {
           closeRequestSpan(true);
