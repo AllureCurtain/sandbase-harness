@@ -2630,10 +2630,16 @@ runtime's own value.
 once. While the window it opens is open, every delivery carries both signatures in
 `webhook-signature`, newest first, so a receiver can install the new value and keep
 verifying with the old one until every deployment has moved;
-`POST /v1/webhooks/{webhook_id}/retire-secret` closes the window and leaves only
-the current secret signing. Nothing closes it automatically, because only the
-operator knows when the last receiver has moved. A second rotation replaces the
-window rather than adding to it.
+`POST /v1/webhooks/{webhook_id}/retire-secret` closes the window early and leaves
+only the current secret signing; the window also closes on its own after the
+rotation window runs out. The published contract names no duration, so the length
+is a local parameter: **24 hours** by default, settable per deployment with
+`MANAGED_AGENTS_WEBHOOK_ROTATION_WINDOW_SECONDS` (whole seconds, `1` to
+`2592000`), and the resolved value is recorded at startup as
+`webhook_rotation_window`. Expiry drops the previous secret from the row — a
+delivery signs with the current secret alone — while a window opened before the
+timestamp column existed has no recorded start and never auto-expires. A second
+rotation replaces the window rather than adding to it.
 
 The legacy `X-Managed-Agents-Signature` header is no longer sent: the Standard
 Webhooks set above is the whole signature story, and a receiver still verifying

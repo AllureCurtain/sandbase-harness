@@ -23,6 +23,16 @@
 
 ### Changed
 
+- Webhook rotation windows now close on their own: a rotation stamps the
+  moment it opened, and once the window has been open for the deployment's
+  duration the previous secret is retired — dropped from the row, enforced
+  where a signature is produced and swept on the retry tick. The published
+  contract names no duration, so it is a local parameter: 24 hours by
+  default, settable with `MANAGED_AGENTS_WEBHOOK_ROTATION_WINDOW_SECONDS`
+  and recorded at startup as `webhook_rotation_window`. `retire-secret`
+  remains the manual early close, and a window opened before this change
+  has no recorded start, so it keeps manual-only retirement rather than
+  expiring on a clock nobody chose.
 - The webhook subscription catalog no longer admits event names that can
   never fire: `session.thread_created`, `session.thread_idled`,
   `session.thread_terminated`, and `agent.deleted` are refused at create and

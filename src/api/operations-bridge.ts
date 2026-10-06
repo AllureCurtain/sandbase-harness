@@ -17,6 +17,7 @@ import type { SessionManager } from '@/core/session/session-manager.js';
 import type { Logger } from '@/core/observability/logger.js';
 import {
   dispatchWebhookEvent,
+  resolveWebhookRotationWindow,
   resolveWebhookSustainedFailureWindow,
   retryDueWebhookDeliveries,
   sessionEventWebhookId,
@@ -54,6 +55,13 @@ export type OperationsBridgeOptions = {
    * deployment switch, which is what a caller that starts the timers on its own gets.
    */
   sustainedFailureWindowSeconds?: number;
+  /**
+   * The rotation window `composeOperations` resolved and recorded, carried down
+   * so the deliveries use the value the record names. Unset reads the
+   * deployment switch, which is what a caller that starts the timers on its own
+   * gets.
+   */
+  rotationWindowSeconds?: number;
 };
 
 /** The runtime's legacy webhook signing secret. Derived per workspace, not hardcoded. */
@@ -78,6 +86,7 @@ export function createWebhookEventListener(opts: {
   dataDir?: string;
   fetchImpl?: typeof fetch;
   sustainedFailureWindowSeconds?: number;
+  rotationWindowSeconds?: number;
 }): (event: SessionEvent) => void {
   // The published `session.budget_reached` fires at most once per budget value.
   // The set lives with the listener because the dedup window it guards is the
@@ -121,6 +130,7 @@ export function createWebhookEventListener(opts: {
           dataDir: opts.dataDir,
           fetchImpl: opts.fetchImpl,
           sustainedFailureWindowSeconds: opts.sustainedFailureWindowSeconds,
+          rotationWindowSeconds: opts.rotationWindowSeconds,
         },
       ).catch(() => {
         // dispatchWebhookEvent records failed attempts as delivery rows; a
@@ -165,12 +175,20 @@ export function composeOperations(opts: OperationsBridgeOptions): ComposeOperati
     window_seconds: window.seconds,
     source: window.source,
   });
+  // The rotation window is the same kind of deployment-level policy: the
+  // record is the change trail for `MANAGED_AGENTS_WEBHOOK_ROTATION_WINDOW_SECONDS`.
+  const rotationWindow = resolveWebhookRotationWindow();
+  opts.logger?.info('webhook_rotation_window', {
+    window_seconds: rotationWindow.seconds,
+    source: rotationWindow.source,
+  });
   const listener = createWebhookEventListener({
     db: opts.db,
     webhookSecret: opts.webhookSecret,
     dataDir: opts.dataDir,
     fetchImpl: opts.fetchImpl,
     sustainedFailureWindowSeconds: window.seconds,
+    rotationWindowSeconds: rotationWindow.seconds,
   });
   opts.sessionManager.setBroadcastListener(listener);
   // Re-arm before the timers start. A deployment whose `next_run_at` passed
@@ -181,6 +199,7 @@ export function composeOperations(opts: OperationsBridgeOptions): ComposeOperati
   const stopOperationsTimers = startOperationsTimers({
     ...opts,
     sustainedFailureWindowSeconds: window.seconds,
+    rotationWindowSeconds: rotationWindow.seconds,
   });
   return { stopOperationsTimers, listener };
 }
@@ -194,12 +213,14 @@ export function startOperationsTimers(opts: OperationsBridgeOptions): () => void
   const intervalMs = opts.intervalMs ?? 60_000;
   // Resolved once, when the timers start, so a tick cannot half-apply an edited switch.
   const windowSeconds = opts.sustainedFailureWindowSeconds ?? resolveWebhookSustainedFailureWindow().seconds;
+  const rotationSeconds = opts.rotationWindowSeconds ?? resolveWebhookRotationWindow().seconds;
   const timer = setInterval(() => {
     void retryDueWebhookDeliveries(opts.db, {
       secret: opts.webhookSecret,
       dataDir: opts.dataDir,
       fetchImpl: opts.fetchImpl,
       sustainedFailureWindowSeconds: windowSeconds,
+      rotationWindowSeconds: rotationSeconds,
     }).catch(() => undefined);
     try {
       void runDueScheduledDeployments(opts.db, opts.sessionManager, {
@@ -209,6 +230,7 @@ export function startOperationsTimers(opts: OperationsBridgeOptions): () => void
             dataDir: opts.dataDir,
             fetchImpl: opts.fetchImpl,
             sustainedFailureWindowSeconds: windowSeconds,
+            rotationWindowSeconds: rotationSeconds,
           });
         },
       }).catch(() => undefined);

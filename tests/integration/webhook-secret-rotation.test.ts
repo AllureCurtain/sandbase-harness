@@ -4,7 +4,8 @@
  * The published scheme expresses a rotation window as a space-separated
  * `webhook-signature` list. These assertions create a subscription through the
  * published route, rotate it, and check that a delivery carries both the new and
- * the previous signature until the window is retired — and that neither secret
+ * the previous signature until the window closes — by `retire-secret`, or by
+ * the window's configured duration running out — and that neither secret
  * comes back from a read.
  */
 
@@ -15,7 +16,10 @@ import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
 import { createServer } from '@/api/server.js';
-import { dispatchWebhookEvent } from '@/core/operations/webhook-dispatcher.js';
+import {
+  dispatchWebhookEvent,
+  retryDueWebhookDeliveries,
+} from '@/core/operations/webhook-dispatcher.js';
 import { signWebhookDelivery } from '@/core/operations/webhook-signature.js';
 
 describe('Webhook signing-secret rotation', () => {
@@ -73,13 +77,14 @@ describe('Webhook signing-secret rotation', () => {
   }
 
   /** One dispatch pass, as the repeated fetch calls it produced. */
-  async function deliver() {
+  async function deliver(opts: { now?: Date; rotationWindowSeconds?: number } = {}) {
     const fetchImpl = vi.fn(async () => ({ status: 204 })) as unknown as typeof fetch;
     await dispatchWebhookEvent(db, { type: 'session.status_idled', subjectId: 'sess_1' }, {
       secret: 'legacy-key',
       dataDir,
       fetchImpl,
-      now: () => fixedNow,
+      now: () => opts.now ?? fixedNow,
+      rotationWindowSeconds: opts.rotationWindowSeconds,
     });
     return ((fetchImpl as any).mock.calls as Array<[string, any]>).map(([url, init]) => ({
       url,
@@ -169,5 +174,66 @@ describe('Webhook signing-secret rotation', () => {
     expect(signed[0]).toBe(expected(minted, legacyDelivery.headers, legacyDelivery.body));
     // The legacy derivation no longer signs this endpoint.
     expect(signed[0]).not.toBe(expected('legacy-key', legacyDelivery.headers, legacyDelivery.body));
+  });
+
+  it('retires the previous secret automatically once the window has run out', async () => {
+    const created = await createWebhook();
+    const previous = created.secret_key;
+    const rotated = await post(`/v1/webhooks/${created.id}/rotate-secret`);
+    const current = rotated.body.secret_key as string;
+
+    // Inside the window both secrets still sign.
+    const [first] = await deliver({ rotationWindowSeconds: 3600 });
+    expect(signatures(first.headers['webhook-signature'])).toHaveLength(2);
+
+    // The window is stamped at rotation; past its bound, only the current
+    // secret signs and the previous one is gone from the row, not just
+    // filtered out of the header.
+    const since = (db.prepare('SELECT secret_previous_since FROM webhooks WHERE id = ?')
+      .get(created.id) as { secret_previous_since: string }).secret_previous_since;
+    const afterWindow = new Date(Date.parse(since) + 3600 * 1000);
+    const [expired] = await deliver({ now: afterWindow, rotationWindowSeconds: 3600 });
+    const closed = signatures(expired.headers['webhook-signature']);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toBe(expected(current, expired.headers, expired.body));
+    expect(closed[0]).not.toBe(expected(previous, expired.headers, expired.body));
+    expect(
+      (db.prepare('SELECT secret_previous_ciphertext FROM webhooks WHERE id = ?').get(created.id) as any)
+        .secret_previous_ciphertext,
+    ).toBeNull();
+  });
+
+  it('sweeps an expired window even when no delivery is due', async () => {
+    const created = await createWebhook();
+    await post(`/v1/webhooks/${created.id}/rotate-secret`);
+    db.prepare("UPDATE webhooks SET secret_previous_since = ? WHERE id = ?")
+      .run(new Date(Date.now() - 60_000).toISOString(), created.id);
+
+    await retryDueWebhookDeliveries(db, {
+      secret: 'legacy-key',
+      dataDir,
+      now: () => new Date(),
+      rotationWindowSeconds: 30,
+    });
+
+    expect(
+      (db.prepare('SELECT secret_previous_ciphertext, secret_previous_since FROM webhooks WHERE id = ?')
+        .get(created.id) as any),
+    ).toEqual({ secret_previous_ciphertext: null, secret_previous_since: null });
+  });
+
+  it('keeps a window opened before the stamp column existed on manual retirement', async () => {
+    const created = await createWebhook();
+    const previous = created.secret_key;
+    await post(`/v1/webhooks/${created.id}/rotate-secret`);
+    // A window opened before M059 has no recorded start; it cannot be bounded
+    // on a clock nobody chose, so it keeps manual-retire behaviour.
+    db.prepare('UPDATE webhooks SET secret_previous_since = NULL WHERE id = ?').run(created.id);
+
+    const farFuture = new Date(Date.now() + 365 * 24 * 3600 * 1000);
+    const [delivery] = await deliver({ now: farFuture, rotationWindowSeconds: 1 });
+    const window = signatures(delivery.headers['webhook-signature']);
+    expect(window).toHaveLength(2);
+    expect(window[1]).toBe(expected(previous, delivery.headers, delivery.body));
   });
 });

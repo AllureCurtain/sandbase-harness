@@ -10,6 +10,12 @@
  * A subscription written before `M038` holds no secret and keeps the legacy
  * derivation, because inventing one during the migration would silently
  * invalidate every receiver still verifying with the old key.
+ *
+ * A rotation window is bounded: `secret_previous_since` records when it
+ * opened, and a window that has been open for the deployment's configured
+ * duration is retired — by the next delivery's signing pass, or by the
+ * periodic sweep, whichever comes first. `retire-secret` remains the manual
+ * early close.
  */
 
 import type { Database } from '@/core/db/database.js';
@@ -28,6 +34,12 @@ export type StoredWebhookSecret = {
   secret_previous_ciphertext?: string | null;
   secret_previous_nonce?: string | null;
   secret_previous_tag?: string | null;
+  /**
+   * When the window opened (`M059`). Null on a window opened before the column
+   * existed: its start is unknown, so it keeps manual-retire behaviour rather
+   * than expiring on an upgrade.
+   */
+  secret_previous_since?: string | null;
 };
 
 /** Mint one endpoint's secret, store it encrypted, and return it once. */
@@ -92,7 +104,8 @@ export function resolveWebhookSigningSecrets(
 }
 
 /**
- * Mint a new secret and keep the current one as the previous, opening a window.
+ * Mint a new secret and keep the current one as the previous, opening a
+ * window that expires after the deployment's configured duration.
  *
  * A subscription that had no stored secret simply gains one: rotation is the
  * call that moves an endpoint off the legacy derivation, so a receiver still
@@ -100,21 +113,27 @@ export function resolveWebhookSigningSecrets(
  * The previous secret is replaced rather than accumulated, so rotating twice
  * without retiring leaves one window rather than a growing list.
  */
-export function rotateWebhookSecret(db: Database, webhookId: string, dataDir?: string): string {
+export function rotateWebhookSecret(db: Database, webhookId: string, dataDir?: string, now?: Date): string {
   const row = db.prepare(
     'SELECT secret_ciphertext, secret_nonce, secret_tag FROM webhooks WHERE id = ?',
   ).get(webhookId) as StoredWebhookSecret | undefined;
   const secret = generateWebhookSecret();
   const encrypted = encryptSecret(secret, dataDir);
+  // The window's start is stamped so it can auto-retire after the configured
+  // duration. A subscription with no stored secret opens no window — there is
+  // nothing previous to keep, so the stamp stays null with the columns.
+  const since = row?.secret_ciphertext ? (now ?? new Date()).toISOString() : null;
   db.prepare(
     `UPDATE webhooks
      SET secret_previous_ciphertext = ?, secret_previous_nonce = ?, secret_previous_tag = ?,
+         secret_previous_since = ?,
          secret_ciphertext = ?, secret_nonce = ?, secret_tag = ?
      WHERE id = ?`,
   ).run(
     row?.secret_ciphertext ?? null,
     row?.secret_nonce ?? null,
     row?.secret_tag ?? null,
+    since,
     encrypted.ciphertext,
     encrypted.nonce,
     encrypted.tag,
@@ -123,11 +142,71 @@ export function rotateWebhookSecret(db: Database, webhookId: string, dataDir?: s
   return secret;
 }
 
+/**
+ * Whether the row's rotation window has been open at least `windowSeconds`.
+ *
+ * A window with no recorded start — one opened before `M059` — never reports
+ * expired: the timestamp that would bound it does not exist, and pretending
+ * otherwise would retire a secret on a clock nobody chose.
+ */
+export function webhookRotationWindowExpired(
+  row: StoredWebhookSecret,
+  now: Date,
+  windowSeconds: number,
+): boolean {
+  if (!row.secret_previous_ciphertext || !row.secret_previous_since) return false;
+  const opened = Date.parse(row.secret_previous_since);
+  if (!Number.isFinite(opened)) return false;
+  return now.getTime() - opened >= windowSeconds * 1000;
+}
+
+/**
+ * Retire the previous secret when its window has run out. Clears the stored
+ * columns and the in-memory row so a caller resolving secrets afterwards sees
+ * only the current one. Returns whether a retirement happened.
+ */
+export function retireExpiredWebhookSecret(
+  db: Database,
+  webhookId: string,
+  row: StoredWebhookSecret,
+  now: Date,
+  windowSeconds: number,
+): boolean {
+  if (!webhookRotationWindowExpired(row, now, windowSeconds)) return false;
+  retireWebhookSecret(db, webhookId);
+  row.secret_previous_ciphertext = null;
+  row.secret_previous_nonce = null;
+  row.secret_previous_tag = null;
+  row.secret_previous_since = null;
+  return true;
+}
+
+/**
+ * Sweep every open window that has run out, so a subscription that receives no
+ * deliveries still drops its previous secret instead of holding it forever.
+ * Runs on the same tick as retry passes; returns the rows retired.
+ */
+export function retireExpiredWebhookSecrets(
+  db: Database,
+  now: Date,
+  windowSeconds: number,
+): number {
+  const cutoff = new Date(now.getTime() - windowSeconds * 1000).toISOString();
+  const result = db.prepare(
+    `UPDATE webhooks
+     SET secret_previous_ciphertext = NULL, secret_previous_nonce = NULL,
+         secret_previous_tag = NULL, secret_previous_since = NULL
+     WHERE secret_previous_since IS NOT NULL AND secret_previous_since <= ?`,
+  ).run(cutoff);
+  return Number(result.changes ?? 0);
+}
+
 /** Drop the previous secret, so only the current one is accepted. */
 export function retireWebhookSecret(db: Database, webhookId: string): void {
   db.prepare(
     `UPDATE webhooks
-     SET secret_previous_ciphertext = NULL, secret_previous_nonce = NULL, secret_previous_tag = NULL
+     SET secret_previous_ciphertext = NULL, secret_previous_nonce = NULL,
+         secret_previous_tag = NULL, secret_previous_since = NULL
      WHERE id = ?`,
   ).run(webhookId);
 }
