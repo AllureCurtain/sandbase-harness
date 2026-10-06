@@ -1140,7 +1140,8 @@ pre {
   line-height: 1.45;
 }
 
-label:not(.filterSelect):not(.searchBox):not(.pickerOption):not(.resourcePickerSearch):not(.resourcePickerOption):not(.toggleSwitch):not(.checkboxLine):not(.search-control) {
+label:not([class]),
+label:is(.editField, .sessionField, .shortField, .compactField, .fieldRow) {
   display: flex;
   flex-direction: column;
   gap: 7px;

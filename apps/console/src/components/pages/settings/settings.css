@@ -84,7 +84,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-  background: #f8fafc;
+  background: var(--inset);
   color: var(--fg);
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -120,7 +120,7 @@
 .formAdvancedOptions .formOptionsEditor {
   border: 0;
   border-radius: 0 0 var(--radius-card) var(--radius-card);
-  background: #f8fafc;
+  background: var(--inset);
 }
 
 .toggleSwitch {
@@ -724,7 +724,7 @@
   min-height: 100vh;
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
-  background: #ffffff;
+  background: var(--canvas);
 }
 
 .settingsSidebar {
@@ -1152,7 +1152,7 @@
 }
 
 @media (max-width: 760px) {
-.workspaceGrid, .apiDocsShell, .apiParamRow {
+.workspaceGrid, .apiDocsShell, .apiParamRow, .builderSetupGrid, .inlineForm {
     grid-template-columns: 1fr;
   }
 }

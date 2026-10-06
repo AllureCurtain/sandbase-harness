@@ -709,7 +709,8 @@
   .editTitleGroup,
   .readonlyFields,
   .editableRow,
-  .editableRow.metadataRow {
+  .editableRow.metadataRow,
+  .environmentNestedGrid {
     grid-template-columns: 1fr;
   }
 .editTitleGroup {

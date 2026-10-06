@@ -89,9 +89,10 @@ describe('Console CSS contracts', () => {
   });
 
   it('keeps resource registry choices compact and horizontally aligned', () => {
-    const labelRule = ruleFor('label:not(.filterSelect):not(.searchBox):not(.pickerOption)');
+    // Field labels stack vertically; widget labels (pickers, toggles, inline
+    // checkboxes) are excluded by the whitelist so their own layout rules win.
+    const labelRule = ruleFor('label:is(.editField, .sessionField, .shortField, .compactField, .fieldRow)');
     expect(labelRule).toContain('flex-direction: column');
-    expect(labelRule).not.toContain('pickerOption');
     expect(resourceRuleFor('.registryList button')).toContain('min-height: 66px');
     expect(resourceRuleFor('.registryList button.selected')).toContain('background: var(--accent-tint)');
   });

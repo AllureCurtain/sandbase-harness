@@ -73,7 +73,7 @@ export function SessionTimeline({
     ? t('detail.timeline.filterAll')
     : selectedKinds.size === 0
       ? t('detail.timeline.filterNone')
-      : t('detail.timeline.filterCount', { n: selectedKinds.size });
+      : t('detail.timeline.filterCount', { n: selectedKinds.size, count: selectedKinds.size });
 
   useEffect(() => {
     // Entering a session always starts pinned to the latest message.
@@ -162,7 +162,7 @@ export function SessionTimeline({
             <div className="conversationHeader">
               <div>
                 <strong>{t('detail.timeline.conversation')}</strong>
-                <span>{t('detail.timeline.messageCount', { n: conversationMessages(events).length })}</span>
+                <span>{t('detail.timeline.messageCount', { n: conversationMessages(events).length, count: conversationMessages(events).length })}</span>
               </div>
               <span className={`streamStatus ${streamConnection}`}>
                 <span className="streamStatusDot" />
