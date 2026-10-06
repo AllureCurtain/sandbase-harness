@@ -1,8 +1,8 @@
 /**
  * Integration test: the documented `managed-agents session ...` group works.
  *
- * `docs/api-matrix.md:84` documents the group as covered — "Create, message, tail,
- * inspect, and logs" — and `src/cli/session-commands.ts` implements all five. The module
+ * `docs/api-matrix.md` documents the group as covered — "Create, list, message,
+ * tail, inspect, and logs" — and `src/cli/session-commands.ts` implements all six. The module
  * was imported by nothing, so every one of them answered `unknown command 'session'`.
  *
  * Registering them is the small half. Each command is driven against the **real** routes
@@ -27,6 +27,7 @@ import { createServer } from '@/api/server.js';
 import {
   sessionCreateCommand,
   sessionInspectCommand,
+  sessionListCommand,
   sessionLogsCommand,
   sessionMessageCommand,
   sessionTailCommand,
@@ -286,6 +287,43 @@ describe('session CLI group', () => {
     expect(printed.match(/tail me/g)).toHaveLength(1);
     expect(printed).toContain('followed live');
     expect(printed).toContain('user.message');
+  });
+
+  it('lists sessions through the real route, one line each', async () => {
+    const { app, env, agentId } = await startRuntime();
+    const first = await createSession(app, agentId);
+    const second = await createSession(app, agentId);
+
+    const { log } = await capture(() => sessionListCommand(env));
+
+    const text = log.join('\n');
+    // Both ids came back from `GET /v1/sessions` — a stubbed client could print this
+    // shape for sessions that do not exist, so the assertion is against rows the
+    // runtime itself created.
+    expect(text).toContain(first);
+    expect(text).toContain(second);
+    expect(text).toContain('assistant');
+  });
+
+  it('filters the list by status and agent, and honors --json', async () => {
+    const { app, env, agentId } = await startRuntime();
+    const sessionId = await createSession(app, agentId);
+    const created = await app.request(`/v1/sessions/${sessionId}`);
+    const status = ((await created.json()) as { status: string }).status;
+
+    const included = await capture(() => sessionListCommand({ ...env, status: [status] }));
+    expect(included.log.join('\n')).toContain(sessionId);
+
+    const excluded = await capture(() => sessionListCommand({ ...env, status: ['terminated'] }));
+    expect(excluded.log.join('\n')).not.toContain(sessionId);
+    expect(excluded.log.join('\n')).toContain('No sessions.');
+
+    const wrongAgent = await capture(() => sessionListCommand({ ...env, agent: 'agent_missing' }));
+    expect(wrongAgent.log.join('\n')).toContain('No sessions.');
+
+    const json = await capture(() => sessionListCommand({ ...env, json: true }));
+    const parsed = JSON.parse(json.log.join('\n')) as { data: Array<{ id: string }> };
+    expect(parsed.data.map((session) => session.id)).toContain(sessionId);
   });
 
   it('refuses an agent name, because a session\'s `agent` field takes an id', async () => {
