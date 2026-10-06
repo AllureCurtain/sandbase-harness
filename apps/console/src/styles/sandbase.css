@@ -110,6 +110,8 @@
 
 .configDrawerView {
   flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   margin: 0;
   padding: 12px;
   font-family: var(--font-mono);
@@ -1138,7 +1140,7 @@ pre {
   line-height: 1.45;
 }
 
-label:not(.filterSelect):not(.searchBox):not(.pickerOption) {
+label:not(.filterSelect):not(.searchBox):not(.pickerOption):not(.resourcePickerSearch):not(.resourcePickerOption):not(.toggleSwitch):not(.checkboxLine):not(.search-control) {
   display: flex;
   flex-direction: column;
   gap: 7px;

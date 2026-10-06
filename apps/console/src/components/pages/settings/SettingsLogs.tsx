@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getPage, postJson } from '../../../api';
 import { Kpi, KpiStrip, PageHeader } from '../../console-ui';
 import { ConsoleSelect } from '../../console-select';
-import { pathName } from '../../../lib/format';
+import { pathName, uiLocaleTag } from '../../../lib/format';
 import type { ConsoleData, RuntimeLogEntry, RuntimeLogLevel } from '../../../types';
 
 const LOG_LEVELS: Array<RuntimeLogLevel | 'all'> = ['all', 'debug', 'info', 'warn', 'error'];
@@ -116,7 +116,7 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
 function formatRuntimeLogTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString(uiLocaleTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function formatRuntimeLog(entry: RuntimeLogEntry) {

@@ -2,7 +2,7 @@
    Extracted from the legacy stylesheet with token remapping. */
 
 .runtimeSettingsEditor {
-  max-width: 860px;
+  min-width: 0;
 }
 
 .runtimeSettingsEditor .pageIntro {
@@ -798,7 +798,6 @@
 }
 
 .settingsContent > .stack {
-  max-width: 1120px;
   padding: 32px 40px 52px;
 }
 

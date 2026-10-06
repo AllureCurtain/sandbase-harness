@@ -29,20 +29,16 @@ describe('console i18n resources', () => {
 
 describe('resolveLanguage', () => {
   it('honours a stored supported language', () => {
-    expect(resolveLanguage('zh-CN', ['en-US'])).toBe('zh-CN');
-    expect(resolveLanguage('en', ['zh-CN'])).toBe('en');
+    expect(resolveLanguage('zh-CN')).toBe('zh-CN');
+    expect(resolveLanguage('en')).toBe('en');
   });
 
   it('maps a stored legacy zh tag onto zh-CN', () => {
-    expect(resolveLanguage('zh', ['en-US'])).toBe('zh-CN');
+    expect(resolveLanguage('zh')).toBe('zh-CN');
   });
 
-  it('falls back to the browser language list', () => {
-    expect(resolveLanguage(null, ['zh-Hans-CN'])).toBe('zh-CN');
-    expect(resolveLanguage(null, ['en-GB', 'zh'])).toBe('en');
-  });
-
-  it('defaults to English', () => {
-    expect(resolveLanguage(null, ['fr-FR'])).toBe('en');
+  it('defaults to English without a stored choice', () => {
+    expect(resolveLanguage(null)).toBe('en');
+    expect(resolveLanguage('fr-FR')).toBe('en');
   });
 });

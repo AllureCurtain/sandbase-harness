@@ -8,18 +8,13 @@ export type SupportedLanguage = (typeof supportedLanguages)[number];
 
 const LANGUAGE_STORAGE_KEY = 'sandbase-console.language';
 
-export function resolveLanguage(stored: string | null, languages: readonly string[]): SupportedLanguage {
+export function resolveLanguage(stored: string | null): SupportedLanguage {
   if (stored === 'en' || stored === 'zh-CN') return stored;
   if (stored === 'zh') return 'zh-CN';
-  for (const language of languages) {
-    const normalized = language.toLowerCase();
-    if (normalized.startsWith('zh')) return 'zh-CN';
-    if (normalized.startsWith('en')) return 'en';
-  }
   return 'en';
 }
 
-function browserLanguage(): SupportedLanguage {
+function initialLanguage(): SupportedLanguage {
   if (typeof window === 'undefined') return 'en';
   let stored: string | null = null;
   try {
@@ -27,15 +22,14 @@ function browserLanguage(): SupportedLanguage {
   } catch {
     // Storage can be unavailable in privacy-restricted browser contexts.
   }
-  const languages = window.navigator.languages?.length ? window.navigator.languages : [window.navigator.language];
-  return resolveLanguage(stored, languages);
+  return resolveLanguage(stored);
 }
 
 void i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: browserLanguage(),
+    lng: initialLanguage(),
     fallbackLng: 'en',
     supportedLngs: supportedLanguages,
     defaultNS: defaultNamespace,
@@ -56,6 +50,6 @@ export function setLanguage(language: SupportedLanguage): Promise<unknown> {
   return i18n.changeLanguage(language);
 }
 
-if (typeof document !== 'undefined') document.documentElement.lang = browserLanguage();
+if (typeof document !== 'undefined') document.documentElement.lang = initialLanguage();
 
 export default i18n;
