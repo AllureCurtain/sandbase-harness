@@ -9,6 +9,8 @@ import {
   environmentKeys,
   environmentHostingType,
   environmentMetadataEntries,
+  environmentNetwork,
+  environmentNetworkEnforcement,
 } from './EnvironmentPageModel';
 
 export function CloudEnvironment({ environment }: { environment: Environment }) {
@@ -16,6 +18,8 @@ export function CloudEnvironment({ environment }: { environment: Environment }) 
   const metadata = environmentMetadataEntries(environment);
   const executionType = environmentHostingType(environment);
   const effectiveProvider = effectiveSandboxProvider(environment);
+  const network = environmentNetwork(environment);
+  const networkEnforcement = environmentNetworkEnforcement(environment);
   const resources = environment.config.resources && typeof environment.config.resources === 'object' && !Array.isArray(environment.config.resources)
     ? environment.config.resources as Record<string, unknown>
     : {};
@@ -36,6 +40,29 @@ export function CloudEnvironment({ environment }: { environment: Environment }) 
           {executionType === 'docker' ? <ReadonlyField label={t('detail.execution.fields.dockerImage')} value={String(environment.config.image ?? 'node:22-slim')} /> : null}
           {executionType === 'docker' && resources.memory ? <ReadonlyField label={t('detail.execution.fields.memoryLimit')} value={String(resources.memory)} /> : null}
           {executionType === 'docker' && resources.cpu ? <ReadonlyField label={t('detail.execution.fields.cpuLimit')} value={String(resources.cpu)} /> : null}
+        </div>
+      </section>
+      <section className="environmentSection">
+        <h2>{t('detail.network.title')}</h2>
+        <p>{t('detail.network.hint')}</p>
+        {network.type === 'limited' && networkEnforcement === 'best_effort' ? (
+          <div className="warningNotice" role="alert">
+            <TriangleAlert size={18} aria-hidden="true" />
+            <span>{t('detail.network.bestEffortHint')}</span>
+          </div>
+        ) : null}
+        {network.type === 'limited' && networkEnforcement === 'unsupported' ? (
+          <div className="warningNotice" role="alert">
+            <TriangleAlert size={18} aria-hidden="true" />
+            <span>{t('detail.network.unsupportedHint')}</span>
+          </div>
+        ) : null}
+        <div className="readonlyFields">
+          <ReadonlyField label={t('detail.network.fields.policy')} value={network.type === 'limited' ? t('detail.network.policyLimited') : t('detail.network.policyUnrestricted')} />
+          {network.type === 'limited' ? <ReadonlyField label={t('detail.network.fields.allowedHosts')} value={network.allowedHosts.join(', ') || t('detail.network.noAllowedHosts')} wide /> : null}
+          {network.type === 'limited' ? <ReadonlyField label={t('detail.network.fields.mcpAccess')} value={network.allowMcp ? t('detail.network.flagAllowed') : t('detail.network.flagPolicyBound')} /> : null}
+          {network.type === 'limited' ? <ReadonlyField label={t('detail.network.fields.packageManagerAccess')} value={network.allowPackageManager ? t('detail.network.flagAllowed') : t('detail.network.flagDenied')} /> : null}
+          <ReadonlyField label={t('detail.network.fields.enforcement')} value={t(`detail.network.enforcementLabels.${networkEnforcement}`)} />
         </div>
       </section>
       <section className="environmentSection">

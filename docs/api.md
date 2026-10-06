@@ -1944,13 +1944,36 @@ replacement `config` cannot be applied over a damaged record.
 
 ### Network policy
 
-An environment's network policy is recorded and returned, and **nothing enforces
-it**: no sandbox provider shipped in this runtime reads it, so
-`{"type": "limited", "allowed_hosts": []}` reaches the same network as
-`{"type": "unrestricted"}`. Store the declaration — a provider that can apply it
-will read the stored shape — but do not treat it as a sandbox boundary. A
-credential vault's own `allowed_hosts` policy is a different thing and *is*
-enforced when the credential is injected.
+A `limited` network policy **is** enforced, at the strength the effective
+backend can deliver — read `networking_enforcement` on the response to see
+which:
+
+- `enforced` — **docker**. The session container runs on an `--internal`
+  docker network with no route off its bridge; its only reachable egress is a
+  relay sidecar forwarding to a per-session allowlist proxy
+  (`src/core/net/egress-proxy.ts`). Ignoring the injected proxy variables
+  changes nothing, because there is no other route.
+- `best_effort` — **local**. Every sandbox subprocess (and every stdio MCP
+  server) receives `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` pointing
+  at the session's loopback proxy, but a process that ignores proxy variables
+  egresses freely. Same host, same user: this is advisory by construction.
+- `unsupported` — **kubernetes** and **self_hosted**. No egress boundary is
+  installed; the environment read says so rather than claiming the declared
+  limit holds, and a warning is logged at session provisioning.
+- `not_applicable` — no `limited` policy is declared.
+
+`networking_enforced` is `true` only for `enforced`; treat `best_effort` as
+advisory, not as a boundary.
+
+The allowlist is the declared `allowed_hosts` (`host`, `*.suffix`, optional
+`:port`), widened by a curated set of public package-registry endpoints when
+`allow_package_managers` is set. Beyond subprocess egress, the runtime applies
+the policy in-process at two boundaries regardless of provider: a `url` MCP
+server whose host is not covered is refused at connect (unless
+`allow_mcp_servers` is set), and `web_fetch` checks the target — and every
+redirect hop — against the allowlist on top of its existing domain policy and
+SSRF guards. A credential vault's own `allowed_hosts` policy is a different
+thing and *is* enforced when the credential is injected.
 
 Resolution failures surface at `POST /v1/sessions`, before any session row is
 written, and at `POST /v1/sessions/{id}/events`, before any event is appended,

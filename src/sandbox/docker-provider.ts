@@ -23,9 +23,19 @@ import {
   type ExecResult,
 } from '@/types/sandbox.js';
 import { withAgentIdentity } from './agent-identity.js';
+import { EgressProxy } from '@/core/net/egress-proxy.js';
+import {
+  environmentEgressAllowlist,
+  environmentNetworkPolicyOf,
+  type EnvironmentNetworkPolicy,
+} from '@/core/config/environment-network.js';
 
 const DEFAULT_IMAGE = 'node:22-slim';
 const WORKDIR = '/workspace';
+/** Relay sidecar image: a static `socat` (~8 MB) that forwards the internal network's only permitted peer to the host proxy. */
+const RELAY_IMAGE = 'alpine/socat';
+/** Port the relay listens on inside the internal network. */
+const RELAY_PORT = 8080;
 
 /** True if the `docker` CLI is available on PATH. */
 export function isDockerAvailable(): boolean {
@@ -51,11 +61,19 @@ export class DockerSandboxProvider implements SandboxProvider {
     hostFilesystem: false,
     // Enforced through `--memory` / `--cpus` at provision time.
     resourceLimits: true,
+    // A `limited` policy puts the session container on an `--internal`
+    // network — no route off the bridge — whose only permitted peer is a
+    // relay sidecar forwarding to the runtime's allowlist egress proxy.
+    networkPolicyEnforcement: 'enforced',
   });
 
   async provision(sessionId: string, config: EnvironmentConfig): Promise<SandboxInstance> {
     const image = config.image ?? DEFAULT_IMAGE;
     const containerName = `ma-sandbox-${safeContainerSuffix(sessionId)}`;
+    const policy = environmentNetworkPolicyOf(config);
+    const egress = policy?.type === 'limited'
+      ? await provisionEgressBoundary(sessionId, policy)
+      : undefined;
 
     // Override the image's own entrypoint with `sleep` so the container stays
     // alive as a plain command host regardless of what the image declares.
@@ -71,6 +89,14 @@ export class DockerSandboxProvider implements SandboxProvider {
       '--entrypoint',
       'sleep',
     ];
+    if (egress) {
+      // The internal network is the enforcement: without it the proxy
+      // variables would be advisory, like the local provider's.
+      args.push('--network', egress.internalNetwork);
+      for (const [k, v] of Object.entries(egress.containerEnvironment)) {
+        args.push('-e', `${k}=${v}`);
+      }
+    }
     // Resource limits
     if (config.resources?.memory) args.push('--memory', config.resources.memory);
     if (config.resources?.cpu) args.push('--cpus', String(config.resources.cpu));
@@ -78,13 +104,136 @@ export class DockerSandboxProvider implements SandboxProvider {
 
     const run = spawnSync('docker', args, { encoding: 'utf-8', timeout: 30_000 });
     if (run.status !== 0) {
+      await egress?.close();
       throw new Error(`docker run failed: ${run.stderr || run.stdout || 'unknown error'}`);
     }
 
     // Ensure workdir exists
     spawnSync('docker', ['exec', containerName, 'mkdir', '-p', WORKDIR], { timeout: 10_000 });
 
-    return new DockerSandboxInstance(sessionId, containerName);
+    return new DockerSandboxInstance(sessionId, containerName, egress);
+  }
+}
+
+/**
+ * The egress boundary a `limited` docker sandbox sits behind.
+ *
+ * Three pieces of docker state plus the host-side proxy:
+ *
+ * - `ma-net-<session>`: an `--internal` network holding only the sandbox and
+ *   the relay. `internal` removes the NAT/masquerade and forwarding that
+ *   would let the container reach anything beyond its own bridge, so the
+ *   allowlist cannot be bypassed by ignoring proxy variables — there is
+ *   simply no other route.
+ * - `ma-ext-<session>`: an ordinary NAT'd bridge holding only the relay, the
+ *   path the relay uses to reach the host's proxy listener. The sandbox is
+ *   never attached to it.
+ * - `ma-relay-<session>`: `socat` forwarding the sandbox's proxy target to
+ *   `host.docker.internal:<proxy port>`. Two networks, one trusted hop — the
+ *   pattern that reaches the host identically on Linux (gateway IP) and
+ *   Docker Desktop (vpnkit), where reaching the host from an internal network
+ *   is otherwise platform-dependent.
+ *
+ * Residual exposure, deliberately unchanged from the default bridge: a
+ * container can still address host services listening on all interfaces via
+ * its gateway IP. The proxy itself requires its per-session credential, which
+ * rides in the container's proxy URL.
+ */
+interface DockerEgressBoundary {
+  internalNetwork: string;
+  /** Proxy environment baked into the sandbox container (`docker run -e`). */
+  containerEnvironment: Record<string, string>;
+  /** Proxy environment for runtime-spawned host processes (stdio MCP). */
+  hostEnvironment: Record<string, string>;
+  close(): Promise<void>;
+}
+
+async function provisionEgressBoundary(
+  sessionId: string,
+  policy: EnvironmentNetworkPolicy,
+): Promise<DockerEgressBoundary> {
+  const suffix = safeContainerSuffix(sessionId);
+  const internalNetwork = `ma-net-${suffix}`;
+  const externalNetwork = `ma-ext-${suffix}`;
+  const relayName = `ma-relay-${suffix}`;
+
+  const proxy = await EgressProxy.listen('0.0.0.0', {
+    allowedHosts: environmentEgressAllowlist(policy),
+  });
+  const cleanup = async () => {
+    spawnSync('docker', ['rm', '-f', relayName], { timeout: 15_000 });
+    spawnSync('docker', ['network', 'rm', internalNetwork], { timeout: 15_000 });
+    spawnSync('docker', ['network', 'rm', externalNetwork], { timeout: 15_000 });
+    await proxy.close();
+  };
+  try {
+    dockerRunOrThrow(['network', 'create', '--internal', internalNetwork], 'network create');
+    dockerRunOrThrow(['network', 'create', externalNetwork], 'network create');
+    const relayArgs = [
+      'run', '-d',
+      '--name', relayName,
+      '--network', internalNetwork,
+      // `host.docker.internal` resolves natively on Docker Desktop; on a
+      // plain Linux daemon it needs `host-gateway`, which resolves to the
+      // external bridge's gateway — the host — because the relay is also
+      // attached to `ma-ext`.
+      ...(dockerIsDesktop() ? [] : ['--add-host', 'host.docker.internal:host-gateway']),
+      RELAY_IMAGE,
+      `TCP-LISTEN:${RELAY_PORT},fork,reuseaddr`,
+      `TCP:host.docker.internal:${proxy.port}`,
+    ];
+    dockerRunOrThrow(relayArgs, 'relay run');
+    dockerRunOrThrow(['network', 'connect', externalNetwork, relayName], 'network connect');
+
+    const relayIp = dockerInspectNetworkAddress(relayName, internalNetwork);
+    if (!relayIp) {
+      throw new Error(`relay ${relayName} has no address on ${internalNetwork}`);
+    }
+
+    return {
+      internalNetwork,
+      containerEnvironment: proxy.environment(relayIp, RELAY_PORT),
+      hostEnvironment: proxy.environment('127.0.0.1'),
+      close: cleanup,
+    };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
+/** `docker info` operating system → whether `host.docker.internal` is built in. */
+function dockerIsDesktop(): boolean {
+  const info = spawnSync('docker', ['info', '--format', '{{.OperatingSystem}}'], {
+    encoding: 'utf-8',
+    timeout: 10_000,
+  });
+  return info.status === 0 && (info.stdout ?? '').includes('Docker Desktop');
+}
+
+/** The IPv4 address `container` holds on `network`, or undefined. */
+function dockerInspectNetworkAddress(container: string, network: string): string | undefined {
+  const inspect = spawnSync(
+    'docker',
+    ['inspect', '-f', '{{json .NetworkSettings.Networks}}', container],
+    { encoding: 'utf-8', timeout: 10_000 },
+  );
+  if (inspect.status !== 0) return undefined;
+  try {
+    const networks = JSON.parse(inspect.stdout) as Record<string, { IPAddress?: string }>;
+    const ip = networks[network]?.IPAddress?.trim();
+    return ip || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function dockerRunOrThrow(args: string[], what: string): void {
+  // `run` may have to pull the relay image on first use, so the timeout is
+  // generous; network create/connect and inspect answer in milliseconds.
+  const run = spawnSync('docker', args, { encoding: 'utf-8', timeout: 180_000 });
+  if (run.status !== 0) {
+    throw new Error(`docker ${what} failed: ${run.stderr || run.stdout || 'unknown error'}`);
   }
 }
 
@@ -92,7 +241,17 @@ class DockerSandboxInstance implements SandboxInstance {
   constructor(
     readonly sessionId: string,
     private readonly containerName: string,
+    private readonly egress?: DockerEgressBoundary,
   ) {}
+
+  /**
+   * The proxy block runtime-spawned session processes (stdio MCP servers)
+   * receive. They run on the host, not in the container, so the address is
+   * the proxy's loopback listener — which enforces the same allowlist.
+   */
+  get egressEnvironment(): Record<string, string> | undefined {
+    return this.egress?.hostEnvironment;
+  }
 
   async execute(command: string, options?: ExecOptions): Promise<ExecResult> {
     const timeout = options?.timeout ?? 300_000;
@@ -180,6 +339,7 @@ class DockerSandboxInstance implements SandboxInstance {
 
   async cleanup(): Promise<void> {
     spawnSync('docker', ['rm', '-f', this.containerName], { timeout: 15_000 });
+    await this.egress?.close();
   }
 }
 

@@ -90,6 +90,21 @@ export interface SandboxCapabilities {
    * incremental interface exists.
    */
   streamingExec: boolean;
+
+  /**
+   * How the backend applies an Environment's `limited` network policy.
+   *
+   * - `enforced`: sandbox egress can only leave through the policy (for docker,
+   *   an `--internal` network whose only reachable peer is the runtime's
+   *   allowlist proxy).
+   * - `best_effort`: subprocesses receive proxy variables pointing at the
+   *   allowlist proxy, but a process that ignores them egresses freely — the
+   *   local provider runs on the host with no kernel boundary, so its
+   *   enforcement is advisory by construction.
+   * - `none`: the backend cannot apply the policy; the runtime reports the gap
+   *   rather than claiming the declared limit holds.
+   */
+  networkPolicyEnforcement: 'enforced' | 'best_effort' | 'none';
 }
 
 /**
@@ -107,6 +122,7 @@ export function sandboxCapabilities(
     hostFilesystem: false,
     resourceLimits: false,
     streamingExec: false,
+    networkPolicyEnforcement: 'none',
     ...overrides,
   };
 }
@@ -176,6 +192,20 @@ export interface SandboxInstance {
    */
   readonly hostWorkDir?: string;
 
+  /**
+   * Environment variables a process spawned on the runtime host *for this
+   * session* should receive so its HTTP(S) egress crosses the session's
+   * network policy (an Environment `limited` policy for backends whose
+   * enforcement is the runtime's egress proxy).
+   *
+   * Present only when the Environment declared a limited policy. The sandbox's
+   * own command channel applies these itself; this copy exists for the
+   * runtime-spawned processes the sandbox cannot reach, chiefly stdio MCP
+   * servers. A backend with no egress boundary (kubernetes, self-hosted)
+   * leaves it unset rather than fabricating one.
+   */
+  readonly egressEnvironment?: Record<string, string>;
+
   /** Release all resources (remove working directory, kill processes) */
   cleanup(): Promise<void>;
 }
@@ -224,6 +254,19 @@ export interface EnvironmentConfig {
   };
   /** Container image (docker and kubernetes providers) */
   image?: string;
+  /**
+   * The normalized network policy (`config.network`, local spelling).
+   *
+   * Providers read `type === 'limited'` to decide whether egress needs a
+   * boundary; the normalization rules live in
+   * `core/config/environment-network.ts`.
+   */
+  network?: {
+    type: 'limited' | 'unrestricted';
+    allowed_hosts: string[];
+    allow_mcp_server_network_access: boolean;
+    allow_package_manager_network_access: boolean;
+  } & Record<string, unknown>;
   /** Kubernetes-specific settings (kubernetes provider only) */
   kubernetes?: KubernetesEnvironmentConfig;
 }

@@ -51,6 +51,7 @@ export function createRuntimeServerApp(opts: {
     metrics: opts.metrics,
     restart: opts.restart,
     workQueue: opts.workQueue,
+    sandboxCapabilities: (type) => opts.sandboxRegistry.capabilitiesOf(type),
     workspace: opts.workspace,
     runtime: {
       models: opts.modelRegistry.listRuntimeInfo(),

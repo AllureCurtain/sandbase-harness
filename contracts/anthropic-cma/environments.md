@@ -5,11 +5,14 @@ published `config` shape they carry.
 Status: `supported` for the published hosting and network configuration shape,
 with `cloud` — the published "the platform decides" value — accepted and
 resolved to the workspace's configured default backend. `partial` for
-the network policy: it is normalized and returned in one spelling, but no shipped
-sandbox provider enforces it, and this document says so rather than implying a
-declared limit is applied. See §4.
+the network policy: a `limited` policy is applied through a per-session
+allowlist egress proxy (enforced on docker, advisory on local), and the
+kubernetes and self-hosted providers carry no egress boundary at all, so the
+capability is reported at the strength the effective backend delivers rather
+than at the strength the declaration implies. See §4.
 Source: `src/sandbox/provider-names.ts`,
-`src/core/config/environment-network.ts`, `src/api/routes/environments.ts`.
+`src/core/config/environment-network.ts`, `src/core/net/egress-proxy.ts`,
+`src/api/routes/environments.ts`.
 
 <!-- capability-status
 environment-hosting-config: supported
@@ -126,11 +129,38 @@ translation between the two spellings of the hosting axis live in
   declaration the resolution path would refuse — two spellings that disagree,
   or a value that is not a name — projects `effective_sandbox_provider: null`,
   so a record is never reported as runnable while a session on it would be
-  refused. `packages_enforced` and `networking_enforced` are `false`: the
-  declarations are recorded, not applied.
-- **The policy is recorded, not enforced.** No sandbox provider shipped in this
-  runtime reads an environment's network policy, which is why the capability is
-  `partial` rather than `supported` and why §4 states it as a difference.
+  refused. `packages_enforced` is `false` — the declaration is recorded, not
+  installed. `networking_enforced` is `true` only when the policy is `limited`
+  *and* the effective backend declares a real boundary; `networking_enforcement`
+  reports the strength itself: `enforced`, `best_effort`, `unsupported`, or
+  `not_applicable` when no `limited` policy is declared.
+- **The policy is now applied, at backend-dependent strength.** A `limited`
+  policy provisions a per-session egress proxy (`src/core/net/egress-proxy.ts`)
+  speaking CONNECT and absolute-URI HTTP, gated by a per-session credential and
+  admitting only the effective allowlist — `allowed_hosts`, widened by the
+  curated public package-registry set when `allow_package_managers` is set.
+  How the boundary reaches a session depends on the provider:
+
+  - **docker** — `enforced`. The session container is attached to an
+    `--internal` docker network with no route off its bridge; its only
+    permitted peer is a `socat` relay sidecar forwarding to the runtime's
+    proxy listener, and the proxy variables are baked into the container at
+    `docker run`. Ignoring them changes nothing: there is no other route.
+  - **local** — `best_effort`. The proxy binds loopback and every sandbox
+    subprocess and stdio MCP server receives `HTTP_PROXY`/`HTTPS_PROXY`/
+    `ALL_PROXY`/`NO_PROXY`. Same host, same user, no kernel boundary — a
+    process that ignores proxy variables egresses freely, which the API and
+    Console report rather than claim.
+  - **kubernetes / self_hosted** — `unsupported`. No egress boundary is
+    installed; the capability gap is reported on the environment read and in
+    the session logs rather than silently served.
+
+  Independently of the provider, the runtime applies the policy at two
+  in-process boundaries: a `url` MCP server whose endpoint the policy does
+  not cover is refused at connect time (unless `allow_mcp_servers` is set),
+  and `web_fetch` intersects the environment allowlist — `host:port`
+  patterns, evaluated per redirect hop — with its existing domain policy and
+  SSRF guards.
 
 ## 3. Alignment
 
@@ -150,7 +180,7 @@ caller.
 | `config.type: "cloud"` | Accepted and resolved to the workspace's configured default backend — the active Settings V2 `sandbox.provider` and its options — rather than to a managed cloud, which this runtime does not have. The declaration is stored as written, `config.type` reports `cloud` back, and `effective_sandbox_provider` reports which backend it lands on, so nothing claims managed hosting and nothing maps the declaration to `local` by default. |
 | Hosting spellings that disagree | Refused with `invalid_environment_config` rather than resolved by precedence. The published shape has one spelling, so a request carrying both is a caller error this runtime cannot guess at. A stored row that already holds both is refused at resolution and reports `effective_sandbox_provider: null`; naming either spelling in an update replaces it. |
 | Workspace default seeding | `env_default` seeds the workspace `sandbox.provider` setting on a workspace that has no settings row. A `cloud` declaration there asks the workspace default to decide, which is what a seed is, so it seeds the same platform default a config that declares nothing does. An `env_default` declaring a hosting type this build cannot execute at all refuses that seeding rather than substituting `local`, so such a workspace does not start until the row is repaired — with an update, or in the database when the runtime is not running. |
-| Network policy enforcement | Normalized, stored, and returned, but not applied: no shipped provider reads it. A session whose environment declares `limited` with an empty `allowed_hosts` gets the same egress as an environment that declares `unrestricted`. |
+| Network policy enforcement | Applied at backend-dependent strength. Docker is `enforced` (an `--internal` network whose only reachable egress is the allowlist proxy), local is `best_effort` (proxy variables a subprocess can ignore), and kubernetes/self-hosted are `unsupported` (no boundary installed — the read reports it rather than claiming one). `web_fetch` and the MCP url connect boundary enforce the declared allowlist in the runtime process on every backend. |
 | `config.packages` | Recorded and reported in the published per-manager object shape — the local `{ manager, package }` array is folded into it — and marked `packages_enforced: false`. Nothing installs declared packages for any provider, so the published object shape and the local list are both inert configuration today. |
 | Deletion guard | `DELETE` is mounted and physical, but refused while any session row references the environment — a finished session included — because `sessions.environment_id` is a hard foreign key and history keeps the environment it ran on. `env_default` is refused as `environment_protected`. `POST /v1/environments/{id}/archive` remains the lifecycle verb for an environment that should stop being offered without erasing its record. |
 | Environment listing | Serves its whole set rather than a window, and accepts no query parameter ([`pagination.md`](./pagination.md)). The route surface, with its verbs, is in [`routes.md`](./routes.md). |
@@ -168,13 +198,14 @@ caller.
   reading `cloud` as `local`, ran those sessions unsandboxed on the runtime
   host. The workspace default is neither: it is the backend the operator
   configured, reported as itself.
-- The network policy is kept rather than dropped because the declaration is real
-  information: a caller who wrote a limit should see it stored and returned, and
-  a future provider that can enforce it must not have to ask callers to rewrite
-  their configuration. It is documented as unenforced because a policy that is
-  silently ignored is worse than one that is visibly recorded. When a provider
-  reads it, this entry becomes `supported` and this row and §4 lose the
-  difference.
+- The network policy is applied per backend rather than refused on the ones
+  that cannot bound egress, because a session must still be able to run: a
+  kubernetes deployment that declares `limited` gets an honest `unsupported`
+  on the environment read and a startup warning, not a session that silently
+  pretends. The local provider's advisory enforcement is the same posture the
+  capability system takes everywhere — declare what the backend can actually
+  do — and the Console says "best-effort" beside the policy rather than
+  implying a hard boundary where a same-user subprocess can bypass it.
 - `packages` follows the same rule: the declaration is preserved verbatim so no
   caller loses data, and no install is claimed, because installing a package set
   is a provider feature with ordering and lockfile semantics that nothing here
@@ -264,5 +295,7 @@ unknown values are refused by name with an actionable message and the
 documented code, the published network vocabulary is accepted, and the response
 projects the published `config` shape beside the effective backend.
 `partial` overall, for the reason §4 records: the network
-policy is stored and returned but not enforced by any shipped provider, so a
-declared limit does not yet change what a session may reach.
+policy is enforced on docker and advisory on local, while the kubernetes and
+self-hosted providers install no egress boundary at all — a declared `limited`
+policy there changes what the environment reports, not what a session may
+reach.

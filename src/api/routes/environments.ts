@@ -30,6 +30,7 @@ import {
   WORKSPACE_DEFAULT_SANDBOX_PROVIDER,
 } from '@/sandbox/provider-names.js';
 import {
+  environmentNetworkPolicyOf,
   normalizeEnvironmentNetwork,
   sameEnvironmentNetwork,
 } from '@/core/config/environment-network.js';
@@ -359,10 +360,14 @@ function toApiEnvironment(row: EnvironmentRow, deps: ServerDeps) {
     description: row.description || null,
     config: projectEnvironmentConfig(config),
     effective_sandbox_provider: effectiveProviderFor(row.id, config, deps),
-    // Declared but not applied: no sandbox provider installs declared packages
-    // or enforces the declared network policy yet.
+    // Declared but not applied: no sandbox provider installs declared packages.
     packages_enforced: false,
-    networking_enforced: false,
+    // The network policy IS applied — but at the strength the effective
+    // backend can deliver, not the strength the declaration implies. A docker
+    // session's `--internal` network makes the allowlist a real boundary;
+    // a local session's proxy variables are advisory, which `best_effort`
+    // says instead of claiming enforcement.
+    ...networkingEnforcementFor(row.id, config, deps),
     metadata: parseObject(row.metadata),
     created_at: row.created_at,
     updated_at: row.updated_at ?? row.created_at,
@@ -415,13 +420,52 @@ function projectEnvironmentConfig(config: Record<string, unknown>): Record<strin
 }
 
 /**
+ * How a declared `limited` network policy is applied by the backend sessions
+ * on this Environment would provision to.
+ *
+ * The provider's declared capability — read from the same registry that would
+ * serve the session — is the authority, so the projection reports what would
+ * actually happen rather than what was asked for:
+ *
+ * - `enforced`: egress can only leave through the policy (docker's internal
+ *   network + allowlist proxy).
+ * - `best_effort`: subprocesses get proxy variables but can ignore them
+ *   (local — same host, same user, no kernel boundary).
+ * - `unsupported`: the backend cannot bound egress (kubernetes, self_hosted)
+ *   or the provider cannot be resolved at all — reporting `enforced` here
+ *   would claim a boundary that does not exist.
+ * - `not_applicable`: the policy is not `limited`, so there is nothing to
+ *   enforce.
+ */
+function networkingEnforcementFor(
+  environmentId: string,
+  config: Record<string, unknown>,
+  deps: ServerDeps,
+): { networking_enforced: boolean; networking_enforcement: string } {
+  const policy = environmentNetworkPolicyOf(config);
+  if (!policy || policy.type !== 'limited') {
+    return { networking_enforced: false, networking_enforcement: 'not_applicable' };
+  }
+  const provider = effectiveProviderFor(environmentId, config, deps);
+  const enforcement = provider ? deps.sandboxCapabilities?.(provider)?.networkPolicyEnforcement : undefined;
+  switch (enforcement) {
+    case 'enforced':
+      return { networking_enforced: true, networking_enforcement: 'enforced' };
+    case 'best_effort':
+      return { networking_enforced: false, networking_enforcement: 'best_effort' };
+    default:
+      return { networking_enforced: false, networking_enforcement: 'unsupported' };
+  }
+}
+
+/**
  * The published `networking` spelling of the declared policy.
  *
  * Local canonical policy keys (`allow_mcp_server_network_access`,
  * `allow_package_manager_network_access`) are renamed to the published
  * `allow_mcp_servers`/`allow_package_managers`. An undeclared or unreadable
  * policy projects as `unrestricted`, which is also what the sandbox runs —
- * the policy is not enforced, so nothing is over-claimed.
+ * no declared limit, no enforcement boundary.
  */
 function officialNetworkingProjection(config: Record<string, unknown>): Record<string, unknown> {
   const policy = normalizeEnvironmentNetwork(config.network)

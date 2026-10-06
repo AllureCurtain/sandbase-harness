@@ -46,6 +46,10 @@ import https from 'node:https';
 import net from 'node:net';
 import tls from 'node:tls';
 import type { WebToolPolicy } from '@/core/agent/web-tool-policy.js';
+import {
+  environmentAllowsEgressHost,
+  type EnvironmentNetworkPolicy,
+} from '@/core/config/environment-network.js';
 import { toolError } from '@/core/tool-result-error.js';
 import { isBlockedInternalHostname, isPrivateAddress } from './address-policy.js';
 
@@ -74,6 +78,15 @@ export interface WebFetchOverrides {
 export interface WebFetchToolOptions {
   /** Resolved `allowed_domains` / `blocked_domains` / `max_content_tokens` for this agent. */
   policy?: WebToolPolicy;
+  /**
+   * The session Environment's network policy.
+   *
+   * A `limited` policy narrows what the agent's own domain policy admitted —
+   * it intersects rather than overrides, so a host both policies reject is
+   * rejected and only a host both allow is fetched. `unrestricted` or absent
+   * leaves the agent policy as the only domain boundary.
+   */
+  environmentPolicy?: EnvironmentNetworkPolicy;
   /** The session's credential redactor; applied to the final result text. */
   redact?: (value: unknown) => unknown;
   overrides?: WebFetchOverrides;
@@ -111,6 +124,27 @@ export function hostPolicyRefusal(host: string, policy?: WebToolPolicy): string 
   return undefined;
 }
 
+/**
+ * The Environment network policy's verdict on a fetch target.
+ *
+ * Checked against `host:port` — the policy's `allowed_hosts` entries may pin a
+ * port, and a bare entry is port-agnostic, matching the egress proxy exactly.
+ * Every policy boundary `web_fetch` enforces (redirect hop included) funnels
+ * through this, so an allowed page cannot redirect the tool somewhere the
+ * policy denies.
+ */
+export function environmentPolicyRefusal(
+  url: URL,
+  policy?: EnvironmentNetworkPolicy,
+): string | undefined {
+  if (!policy || policy.type !== 'limited') return undefined;
+  const host = bareHostname(url);
+  const port = url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80;
+  const authority = `${host}:${port}`;
+  if (environmentAllowsEgressHost(policy, authority)) return undefined;
+  return `host "${authority}" is not covered by the environment's network policy allowed_hosts`;
+}
+
 export function createWebFetchTool(options: WebFetchToolOptions) {
   const {
     lookupAddresses = defaultLookupAddresses,
@@ -134,6 +168,7 @@ export function createWebFetchTool(options: WebFetchToolOptions) {
       try {
         const document = await fetchDocument(String(url ?? ''), {
           policy: options.policy,
+          environmentPolicy: options.environmentPolicy,
           lookupAddresses,
           isAddressAllowed,
           timeoutMs,
@@ -153,6 +188,7 @@ export function createWebFetchTool(options: WebFetchToolOptions) {
 
 interface FetchLimits {
   policy?: WebToolPolicy;
+  environmentPolicy?: EnvironmentNetworkPolicy;
   lookupAddresses: (hostname: string) => Promise<string[]>;
   isAddressAllowed: (address: string) => boolean;
   timeoutMs: number;
@@ -185,6 +221,8 @@ async function fetchDocument(rawUrl: string, limits: FetchLimits): Promise<Fetch
     const host = bareHostname(current);
     const policyProblem = hostPolicyRefusal(host, limits.policy);
     if (policyProblem) throw new WebFetchRefusal(policyProblem);
+    const environmentProblem = environmentPolicyRefusal(current, limits.environmentPolicy);
+    if (environmentProblem) throw new WebFetchRefusal(environmentProblem);
     const address = await resolveAllowedAddress(host, limits);
 
     const response = await requestOnce(current, address, limits);

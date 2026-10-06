@@ -168,6 +168,11 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     hostFilesystem: false,
     // Enforced through the container's resources.limits.
     resourceLimits: true,
+    // No egress boundary is installed for the Pod: a `limited` policy is a
+    // declared gap, reported through `networkPolicyEnforcement`, not silently
+    // served. Pod-level enforcement needs a per-session NetworkPolicy or a
+    // routed egress proxy, neither of which a generic kubeconfig can assume.
+    networkPolicyEnforcement: 'none',
   });
 
   constructor(private readonly logger?: KubernetesProviderLogger) {}

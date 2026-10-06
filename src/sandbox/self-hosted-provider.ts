@@ -716,6 +716,10 @@ export class SelfHostedSandboxProvider implements SandboxProvider {
     hostFilesystem: false,
     // The work-item protocol carries no resource-limit fields today.
     resourceLimits: false,
+    // The worker runs on operator infrastructure; whether it can bound egress
+    // is outside this process's knowledge, so a `limited` policy reports the
+    // gap rather than claiming the declared limit holds.
+    networkPolicyEnforcement: 'none',
   });
 
   constructor(private readonly queue: WorkQueue) {}

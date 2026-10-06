@@ -41,7 +41,7 @@
       {
         "name": "network",
         "type": "object",
-        "description": "Limited or unrestricted network policy, recorded but not enforced: no shipped provider reads it, so a declared limit does not change what a session can reach."
+        "description": "Limited or unrestricted network policy. A limited policy is applied per backend: enforced on docker (internal network plus allowlist egress proxy), best-effort on local (proxy environment variables), unsupported on kubernetes and self_hosted; web_fetch and MCP url connects enforce it on every backend. The response reports the strength as networking_enforcement."
       },
       {
         "name": "packages",
@@ -118,7 +118,7 @@
       {
         "name": "network",
         "type": "object",
-        "description": "Network policy, recorded but not enforced: no shipped provider reads it, so a declared limit does not change what a session can reach."
+        "description": "Network policy: a limited policy is enforced on docker, best-effort on local, unsupported on kubernetes and self_hosted; see networking_enforcement on the response."
       },
       {
         "name": "packages",
@@ -175,7 +175,7 @@
       {
         "name": "network",
         "type": "object",
-        "description": "Network policy, recorded but not enforced: no shipped provider reads it, so a declared limit does not change what a session can reach."
+        "description": "Network policy: a limited policy is enforced on docker, best-effort on local, unsupported on kubernetes and self_hosted; see networking_enforcement on the response."
       },
       {
         "name": "packages",

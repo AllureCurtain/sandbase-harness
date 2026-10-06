@@ -1,5 +1,9 @@
 import type { AgentDefinition, McpServerConfig } from '@/types/agent.js';
-import type { SandboxInstance } from '@/types/sandbox.js';
+import type { EnvironmentConfig, SandboxInstance } from '@/types/sandbox.js';
+import {
+  environmentMcpServerAdmission,
+  environmentNetworkPolicyOf,
+} from '@/core/config/environment-network.js';
 import type { Session, SessionEvent } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import { memoryBindingForPath, resolveMemoryBindings, type MemoryBinding } from '@/core/memory/bindings.js';
@@ -41,6 +45,14 @@ export interface ToolResolverDeps {
    * model-facing or API-facing input can relax the guard.
    */
   webFetch?: WebFetchOverrides;
+  /**
+   * Resolve a session's Environment to its runtime configuration, so the
+   * Environment's network policy can bound what the tools connect to: the
+   * `web_fetch` host check, the MCP url-server admission decision, and the
+   * proxy environment a stdio server inherits. Absent means "no environment
+   * policy", matching a runtime without named Environments.
+   */
+  resolveEnvironmentConfig?: (environmentId: string) => EnvironmentConfig | undefined;
   /** Path-addressed memory provider. Mount calls fail closed when absent. */
   memoryMount?: MemoryMountAdapter;
   memoryStoreName?: (storeId: string) => string | undefined;
@@ -86,8 +98,8 @@ export class ToolResolver {
     const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
     const mount = this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: session.id } : undefined;
     const delegationCtx = rootDelegationContext(agent.name, DEFAULT_MAX_DELEGATION_DEPTH);
-    const tools = this.buildSandboxTools(agent, sandbox, bindings, mount, credentials);
-    Object.assign(tools, await this.getOrConnectMcp(session.id, agent));
+    const tools = this.buildSandboxTools(agent, sandbox, bindings, mount, credentials, session);
+    Object.assign(tools, await this.getOrConnectMcp(session, agent, sandbox));
     Object.assign(tools, this.deps.delegationService.buildDelegationTools(agent, delegationCtx, session));
     // Custom tools are model-visible declarations only. The caller executes them
     // and answers through `user.custom_tool_result`, so the entry carries the
@@ -181,7 +193,7 @@ export class ToolResolver {
     if (event.result === 'allow') {
       const bindings = resolveMemoryBindings(session.resources, this.deps.memoryStoreName);
       const mount = this.deps.memoryMount ? { adapter: this.deps.memoryMount, sessionId: session.id } : undefined;
-      const executableTools = this.buildSandboxTools(agent, sandbox, bindings, mount);
+      const executableTools = this.buildSandboxTools(agent, sandbox, bindings, mount, undefined, session);
       Object.assign(executableTools, this.mcpToolCache.get(session.id) ?? {});
       Object.assign(
         executableTools,
@@ -248,12 +260,27 @@ export class ToolResolver {
     return this.mcpManagers.get(sessionId)?.getStatuses() ?? [];
   }
 
+  /**
+   * The network policy the session's Environment declares, in the normalized
+   * shape every consumer shares. Resolving it per call — from the same
+   * `resolveEnvironmentConfig` the sandbox was provisioned from — keeps the
+   * tool boundary in step with an Environment the operator edited mid-session:
+   * the sandbox's bound proxy was fixed at provision time, while `web_fetch`
+   * and MCP admission consult the policy the Environment carries now.
+   */
+  private environmentNetworkPolicy(session: Session | undefined) {
+    return session
+      ? environmentNetworkPolicyOf(this.deps.resolveEnvironmentConfig?.(session.environmentId))
+      : undefined;
+  }
+
   buildSandboxTools(
     agent: AgentDefinition,
     sandbox: SandboxInstance,
     bindings: readonly MemoryBinding[] = [],
     memoryMount?: SessionMemoryMount,
     credentials?: SandboxCredentials,
+    session?: Session,
   ): Record<string, any> {
     const tools: Record<string, any> = {};
     const enabledTools = new Set(getEnabledToolNames(agent));
@@ -422,7 +449,11 @@ export class ToolResolver {
     }
 
     if (enabledTools.has('web_fetch')) {
-      tools['web_fetch'] = createWebFetchTool({ policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'), overrides: this.deps.webFetch });
+      tools['web_fetch'] = createWebFetchTool({
+        policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'),
+        environmentPolicy: this.environmentNetworkPolicy(session),
+        overrides: this.deps.webFetch,
+      });
     }
 
     // Everything a tool hands back is scrubbed in one place, so a tool added
@@ -461,12 +492,14 @@ export class ToolResolver {
   }
 
   private async getOrConnectMcp(
-    sessionId: string,
+    session: Session,
     agent: AgentDefinition,
+    sandbox: SandboxInstance,
   ): Promise<Record<string, unknown>> {
     if (!agent.mcp_servers || agent.mcp_servers.length === 0) {
       return {};
     }
+    const sessionId = session.id;
 
     const existing = this.mcpManagers.get(sessionId);
     if (existing) {
@@ -483,18 +516,29 @@ export class ToolResolver {
         ? { targetHost: server.url, mcpServerUrl: server.url }
         : undefined)
       : undefined;
+    // The Environment's network policy gates the connect boundary: a `url`
+    // server names an endpoint the policy can check, while a stdio server is
+    // a runtime-spawned process whose egress is bounded by the sandbox's
+    // proxy environment instead — `resolveEnvironment` merges it below.
+    const environmentPolicy = this.environmentNetworkPolicy(session);
+    const egressEnvironment = sandbox.egressEnvironment;
     const manager = new McpManager({
       // A server's tool list is only known after connect, so the owning
       // toolset's admission rule is applied here rather than to a declared list.
       admitTool: (serverName, toolName) => mcpDiscoveredToolAdmitted(agent, serverName, toolName),
-      resolveEnvironment: resolveCredentials
+      admitServer: environmentPolicy
+        ? (server) => environmentMcpServerAdmission(environmentPolicy, server)
+        : undefined,
+      resolveEnvironment: (resolveCredentials || egressEnvironment)
         ? (server) => {
-          const bundle = resolveCredentials(server);
-          const environment = { ...bundle.environment };
+          const bundle = resolveCredentials?.(server);
+          // Proxy variables come last: a credential bundle or the agent's own
+          // `env` must not be able to reroute the egress boundary.
+          const environment = { ...bundle?.environment, ...(server.type === 'stdio' ? egressEnvironment : undefined) };
           // The bundle belongs to this connect: the copy above is what the server
           // process receives, and the manager empties that copy after the spawn.
-          clearCredentialInjectionBundle(bundle);
-          return environment;
+          if (bundle) clearCredentialInjectionBundle(bundle);
+          return Object.keys(environment).length > 0 ? environment : undefined;
         }
         : undefined,
       resolveHeaders: resolveCredentials

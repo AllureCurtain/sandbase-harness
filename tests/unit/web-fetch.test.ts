@@ -10,6 +10,10 @@ import {
 } from '@/core/web/web-fetch.js';
 import { toolErrorText, ToolResultError } from '@/core/tool-result-error.js';
 import type { WebToolPolicy } from '@/core/agent/web-tool-policy.js';
+import {
+  normalizeEnvironmentNetwork,
+  type EnvironmentNetworkPolicy,
+} from '@/core/config/environment-network.js';
 
 /**
  * The suite points `webfetch.test` at a real local HTTP server through the
@@ -94,6 +98,7 @@ function handler(req: IncomingMessage, res: ServerResponse): void {
 
 function testTool(options: {
   policy?: WebToolPolicy;
+  environmentPolicy?: EnvironmentNetworkPolicy;
   strictGuard?: boolean;
   addresses?: string[];
   isAddressAllowed?: (address: string) => boolean;
@@ -104,6 +109,7 @@ function testTool(options: {
 }) {
   const tool = createWebFetchTool({
     policy: options.policy,
+    environmentPolicy: options.environmentPolicy,
     redact: options.redact,
     overrides: {
       lookupAddresses: async () => options.addresses ?? ['127.0.0.1'],
@@ -410,6 +416,72 @@ describe('extractHtmlText closing-tag tolerance', () => {
 
   it('still drops an ordinary closing tag', () => {
     expect(extractHtmlText('<p>ok</p><script>secret()</script>')).not.toContain('secret()');
+  });
+});
+
+describe('environment network policy', () => {
+  const limited = (allowedHosts: string[], overrides: Record<string, unknown> = {}) =>
+    normalizeEnvironmentNetwork({ type: 'limited', allowed_hosts: allowedHosts, ...overrides })!;
+
+  it('refuses a host the environment policy does not cover', async () => {
+    const tool = testTool({
+      policy: undefined,
+      environmentPolicy: limited(['other.test']),
+    });
+    const text = await tool.execute({ url: url('/page') });
+    expect(String(text)).toContain('environment');
+    expect(String(text)).toContain('allowed_hosts');
+  });
+
+  it('fetches a host the environment policy covers', async () => {
+    const tool = testTool({
+      policy: undefined,
+      environmentPolicy: limited([TEST_HOST]),
+    });
+    const text = await tool.execute({ url: url('/plain') });
+    expect(String(text)).toContain('plain body text');
+  });
+
+  it('honors a port-pinned allowed_hosts entry', async () => {
+    const allowed = testTool({
+      policy: undefined,
+      environmentPolicy: limited([`${TEST_HOST}:${port}`]),
+    });
+    expect(String(await allowed.execute({ url: url('/plain') }))).toContain('plain body text');
+
+    const refused = testTool({
+      policy: undefined,
+      environmentPolicy: limited([`${TEST_HOST}:${port + 1}`]),
+    });
+    expect(String(await refused.execute({ url: url('/plain') }))).toContain('allowed_hosts');
+  });
+
+  it('intersects rather than overrides the agent domain policy', async () => {
+    // The environment allows the host, the agent does not: still refused.
+    const tool = testTool({
+      policy: { mode: 'allowed', domains: ['other.test'] },
+      environmentPolicy: limited([TEST_HOST]),
+    });
+    expect(String(await tool.execute({ url: url('/page') }))).toContain('allowed_domains');
+  });
+
+  it('checks every redirect hop against the environment policy', async () => {
+    const tool = testTool({
+      policy: undefined,
+      environmentPolicy: limited([TEST_HOST]),
+    });
+    // /redirect bounces to webfetch.test — allowed. /redirect-evil leaves the
+    // allowlist and must be refused at the hop, not at fetch time.
+    expect(String(await tool.execute({ url: url('/redirect') }))).toContain('arrived after redirect');
+    expect(String(await tool.execute({ url: url('/redirect-evil') }))).toContain('allowed_hosts');
+  });
+
+  it('leaves an unrestricted environment out of the decision', async () => {
+    const tool = testTool({
+      policy: undefined,
+      environmentPolicy: normalizeEnvironmentNetwork({ type: 'unrestricted' })!,
+    });
+    expect(String(await tool.execute({ url: url('/plain') }))).toContain('plain body text');
   });
 });
 

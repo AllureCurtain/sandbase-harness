@@ -209,6 +209,8 @@ export class DefaultSessionExecutor implements SessionExecutor {
         sandbox,
         resolveMemoryBindings(parentSession?.resources, deps.memoryStoreName),
         deps.memoryMount ? { adapter: deps.memoryMount, sessionId: parentSession?.id ?? 'unknown' } : undefined,
+        undefined,
+        parentSession,
       ),
       resolveSkillDirs: (agent) => this.skillDirsFor(agent),
     });
@@ -220,6 +222,9 @@ export class DefaultSessionExecutor implements SessionExecutor {
       // The same resolver the turn uses for sandbox commands, so a vault reaches
       // an MCP server by the same policy decision that governs a shell command.
       resolveCredentialInjections: deps.resolveCredentialInjections,
+      // The Environment the sandbox was provisioned from, so `web_fetch` and
+      // the MCP connect boundary answer to the same declared network policy.
+      resolveEnvironmentConfig: deps.resolveEnvironmentConfig,
     });
   }
 
