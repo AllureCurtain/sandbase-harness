@@ -4,6 +4,13 @@
 
 ### Added
 
+- A second Playwright E2E scenario (`tests/e2e/console-session-events.spec.ts`)
+  covers the session lifecycle the smoke test does not: a session created over
+  the real API is opened in the Console and messaged through the live stream,
+  the page is reloaded and the timeline repopulated from the recorded log
+  (event replay), and the stub model is then armed to refuse the next turn so
+  the composer lands on the retries-exhausted state after the real 1s/2s/4s
+  backoff — all inside the same `E2E` CI job.
 - `session-helpers` in `managed-agents/sdk`: `collectReply` (stream a turn into
   `{ text, events }`), `sessionHistory` (the full recorded log, auto-paginated),
   `followSession` (log then live stream resumed at the last `seq`, or straight
