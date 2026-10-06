@@ -23,6 +23,12 @@ import type { ConsoleData } from '../../../apps/console/src/types';
 
 const now = '2026-07-18T12:00:00.000Z';
 
+/** Drives the headless ConsoleSelect: open the combobox, click the option. */
+async function pickConsoleSelect(user: ReturnType<typeof userEvent.setup>, label: RegExp, optionName: string) {
+  await user.click(screen.getByRole('combobox', { name: label }));
+  await user.click(await screen.findByRole('option', { name: optionName }));
+}
+
 const data = {
   agents: [{
     id: 'agent_echo',
@@ -102,7 +108,7 @@ describe('the interactive Console harness', () => {
     const tokenInputs = screen.getAllByLabelText(/authorization token/i);
     await user.type(tokenInputs[0], 'ghp_token');
 
-    await user.selectOptions(screen.getByLabelText(/checkout/i), 'branch');
+    await pickConsoleSelect(user, /checkout/i, 'Branch');
     await user.type(screen.getByLabelText(/branch name/i), 'release-1.2');
 
     await user.click(screen.getByRole('button', { name: /create session/i }));
@@ -135,10 +141,10 @@ describe('the interactive Console harness', () => {
     expect(screen.queryByLabelText(/branch name/i)).toBeNull();
     expect(screen.queryByLabelText(/commit sha/i)).toBeNull();
 
-    await user.selectOptions(screen.getByLabelText(/checkout/i), 'branch');
+    await pickConsoleSelect(user, /checkout/i, 'Branch');
     expect(screen.getByLabelText(/branch name/i)).toBeDefined();
 
-    await user.selectOptions(screen.getByLabelText(/checkout/i), 'commit');
+    await pickConsoleSelect(user, /checkout/i, 'Commit SHA');
     expect(screen.queryByLabelText(/branch name/i)).toBeNull();
     expect(screen.getByLabelText(/commit sha/i)).toBeDefined();
   });

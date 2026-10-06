@@ -1,0 +1,328 @@
+/* Agents list — page-local rules the shared grammar does not name. */
+
+/* Narrow screens swap the framed table for a card list: one tap target per
+ * agent with the same name/ID/status facts. */
+.agent-card-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-card {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.agent-card:hover {
+  background: var(--hover);
+}
+
+/* The open affordance is a real button; the copy-id control stays a sibling
+ * so no interactive element nests inside another. */
+.agent-card-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-card-open > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-card-meta > code {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .agents-table-frame {
+    display: none;
+  }
+
+  .agent-card-list {
+    display: flex;
+  }
+}
+
+/* Embedded sessions list inside the agent detail page. */
+.sessionActivity {
+  min-height: 260px;
+  padding: 22px;
+}
+
+/* Agent detail view — crumb, hero, tabs, version diff. */
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panelHeader p {
+  color: var(--fg-muted);
+}
+.agentDetail {
+  padding: 34px 38px 48px;
+}
+.detailTabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  margin-top: 30px;
+  border-bottom: 1px solid var(--line);
+}
+.detailTabs button {
+  min-height: 46px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.detailTabs button.active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+  font-weight: 720;
+}
+.newPill {
+  background: var(--accent-tint);
+  color: var(--accent);
+  border-radius: var(--radius-card);
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: 760;
+}
+.versionRow {
+  display: flex;
+}
+.detailSection {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.toolsetCard {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+  max-width: 920px;
+}
+.toolsetHeader {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 18px;
+  align-items: center;
+}
+.permissionBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.permissionBadge.permission-always_ask {
+  color: var(--fg);
+  font-weight: 600;
+}
+.permissionBadge.permission-never_allow {
+  text-decoration: line-through;
+}
+.toolsetHeader strong, .toolsetHeader span {
+  display: block;
+}
+.toolsetHeader span {
+  color: var(--fg-muted);
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}
+.toolsetIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  box-shadow: none;
+}
+.toolsetRow {
+  min-height: 56px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 18px;
+}
+.toolsetRow span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.toolsetRow b {
+  background: var(--inset);
+  border-radius: var(--radius-card);
+  padding: 3px 9px;
+  font-weight: 720;
+}
+.versionList {
+  display: grid;
+  gap: 6px;
+}
+.versionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-control);
+}
+.versionItem.current {
+  background: var(--accent-tint);
+  border-color: var(--line-strong);
+}
+.versionItem strong {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.versionItem span {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.diffControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.diffControls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.diffTable {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-control);
+}
+.diffHead, .diffRow {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr);
+}
+.diffHead {
+  padding: 8px 10px;
+  background: var(--inset);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.diffRow {
+  border-top: 1px solid var(--line-soft);
+}
+.diffRow.unchanged {
+  opacity: 0.55;
+}
+.diffField {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.diffBadge {
+  width: fit-content;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.diffBadge.changed {
+  background: var(--orange-tint);
+  color: var(--orange);
+}
+.diffBadge.added {
+  background: var(--green-tint);
+  color: var(--green);
+}
+.diffBadge.removed {
+  background: var(--red-tint);
+  color: var(--red);
+}
+.diffValue {
+  margin: 0;
+  padding: 10px;
+  border-left: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 760px) {
+.panelHeader, .toolsetRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+.agentDetail {
+    padding: 18px;
+  }
+.detailTabs {
+    gap: 14px;
+    overflow-x: auto;
+  }
+.detailTabs button {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 720px) {
+.diffHead, .diffRow {
+    grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr);
+  }
+.diffValue {
+    font-size: 11px;
+  }
+}
+

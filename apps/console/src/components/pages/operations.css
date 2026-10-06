@@ -1,0 +1,81 @@
+/* Operations pages: webhooks, scheduled deployments, outcomes.
+   Extracted from the legacy stylesheet with token remapping. */
+
+.webhookEventPicker {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.webhookEventPicker legend {
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 0 4px;
+}
+
+.webhookEventGroup > strong {
+  display: block;
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+.webhookEventOptions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2px 12px;
+}
+
+.webhookEventOptions code {
+  font-size: 12px;
+}
+
+.rowActionGroup {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.expansionRow td {
+  background: var(--inset);
+  padding: 10px 14px;
+}
+
+.deliveriesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.deliveriesTable th {
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.deliveriesTable td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+.deploymentRunsPanel .mutedValue {
+  margin: 0 0 8px;
+}
+
+/* Below ~760px the operations tables collapse to the shared mobileResourceList
+   card rail, matching the other migrated list pages. */
+@media (max-width: 760px) {
+  .webhooks-table-frame,
+  .schedules-table-frame,
+  .outcomes-table-frame {
+    display: none;
+  }
+}

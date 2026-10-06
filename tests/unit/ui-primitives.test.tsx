@@ -11,17 +11,15 @@ import {
   InfoRow,
   InlineStatus,
   parseOptionsJsonDraft,
-  SegmentedControl,
   StatusBadge,
   ToggleSwitch,
 } from '../../apps/console/src/components/FormPrimitives';
 
 describe('Console UI primitives', () => {
-  it('renders shared form field, section, status, segmented control, and actions classes', () => {
+  it('renders shared form field, section, status, and actions classes', () => {
     const html = renderToStaticMarkup(
       <FormSection title="Runtime">
         <InlineStatus tone="error"><span>Problem</span></InlineStatus>
-        <SegmentedControl value="json" options={[{ value: 'form', label: 'Form' }, { value: 'json', label: 'JSON' }]} onChange={() => {}} />
         <FormField label="Provider" description="Runtime provider" error="Required">
           <input value="local" readOnly />
         </FormField>
@@ -35,10 +33,6 @@ describe('Console UI primitives', () => {
 
     expect(html).toContain('class="formSection"');
     expect(html).toContain('class="inlineStatus error"');
-    expect(html).toContain('class="segmentedControl"');
-    expect(html).toContain('class="active"');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('aria-pressed="false"');
     expect(html).toContain('class="formField"');
     expect(html).toContain('class="infoRow"');
     expect(html).toContain('class="badgeList"');

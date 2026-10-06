@@ -25,6 +25,23 @@ export const common = {
     open: "打开",
     clearSearch: "清除搜索",
   },
+  configDrawer: {
+    title: "配置预览",
+    copy: "复制配置",
+    hide: "收起预览",
+    wrap: "自动换行",
+    unwrap: "不换行",
+    pasteTitle: "粘贴配置——回填到表单",
+    pastePlaceholder: "粘贴 YAML 或 JSON 定义…",
+    pasteFill: "解析并回填",
+    equivalentRequest: "等效 API 请求",
+  },
+  check: {
+    title: "提交前检查",
+    allGood: "全部通过",
+    toFix: "{{n}} 项待修复",
+    fix: "修复",
+  },
   list: {
     search: "搜索",
     actions: "操作",
@@ -36,5 +53,31 @@ export const common = {
     noMatches: "没有匹配项",
     deleteUncertain: "未能确认删除结果，运行时可能已删除，也可能没有。页面已重新读取，请先确认再决定是否重试。",
     noMatchesDescription: "没有符合当前搜索或筛选条件的结果。",
+  },
+  kv: {
+    notConfigured: "未配置",
+  },
+  loadingConsole: "正在加载控制台",
+  routes: {
+    noAgent: {
+      title: "未选择 agent",
+      body: "所选 agent 不存在或已归档。返回 Agents 选择一条有效记录。",
+    },
+    noSession: {
+      title: "未选择会话",
+      body: "找不到所选会话。返回会话列表选择其他运行。",
+    },
+    noEnvironment: {
+      title: "未选择环境",
+      body: "找不到所选环境。返回环境列表选择其他模板。",
+    },
+    noVault: {
+      title: "未选择凭据保险库",
+      body: "找不到所选保险库。返回凭据保险库列表选择其他保险库。",
+    },
+    noMemoryStore: {
+      title: "未选择记忆存储",
+      body: "找不到所选存储。返回记忆存储列表选择其他存储。",
+    },
   },
 } as const;

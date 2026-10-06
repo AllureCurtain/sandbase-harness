@@ -1,12 +1,17 @@
-import { Eye, EyeOff, FileText, Info, Plus, Search, Shield } from 'lucide-react';
+import { Eye, EyeOff, Info, Search } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { postJson } from '../../api';
 import { RequiredMark } from '../Common';
 import { Modal } from '../Modal';
+import { ConsoleSelect } from '../console-select';
 import { sandboxProviderForHostingType, splitCsv } from '../pages/EnvironmentPageModel';
 import type { CredentialAuthType, EnvironmentHostingType } from '../../types';
 
 export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }: { kind: 'environment' | 'credential_vault' | 'memory_store'; defaultSandboxProvider?: string; onClose: () => void; onSaved: () => void }) {
+  const { t: tEnv } = useTranslation('environments');
+  const { t: tCred } = useTranslation('credentials');
+  const { t: tMem } = useTranslation('memory');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [hostingType, setHostingType] = useState<EnvironmentHostingType>('cloud');
@@ -50,51 +55,63 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
 
   if (kind === 'environment') {
     return (
-      <Modal title="Create environment" onClose={onClose} size="medium">
+      <Modal title={tEnv('create.title')} onClose={onClose} size="medium">
         <form className="environmentCreateForm" onSubmit={submit}>
           {error ? <div className="banner error inlineBanner">{error}</div> : null}
           <label className="editField">
-            Name
-            <input value={name} onChange={(event) => setName(event.target.value.slice(0, 50))} placeholder="E.g. My Environment" required />
-            <small>50 characters or fewer.</small>
+            {tEnv('create.name')}
+            <input value={name} onChange={(event) => setName(event.target.value.slice(0, 50))} placeholder={tEnv('create.namePlaceholder')} required />
+            <small>{tEnv('create.nameHint')}</small>
           </label>
           <div className="hostingSummary">
-            <strong>Cloud</strong>
-            <p>Runs on the workspace default sandbox backend (currently <code>{defaultSandboxProvider ?? 'local'}</code>). Change the default in Settings.</p>
+            <strong>{tEnv('create.summaryTitle')}</strong>
+            <p>
+              <Trans
+                i18nKey="create.summary"
+                ns="environments"
+                values={{ provider: defaultSandboxProvider ?? 'local' }}
+                components={{ code: <code /> }}
+              />
+            </p>
           </div>
           <details className="advancedSection">
-            <summary>Advanced: choose a specific hosting type</summary>
-            <label className="editField">
-              Hosting type
-              <select value={hostingType} onChange={(event) => setHostingType(event.target.value as EnvironmentHostingType)}>
-                <option value="cloud">Cloud — workspace default backend</option>
-                <option value="local">Local</option>
-                <option value="docker">Docker</option>
-                <option value="kubernetes">Kubernetes</option>
-                <option value="self_hosted">Self-hosted</option>
-              </select>
-            </label>
+            <summary>{tEnv('create.advanced')}</summary>
+            <div className="editField">
+              <span>{tEnv('detail.execution.hostingType')}</span>
+              <ConsoleSelect
+                label={tEnv('detail.execution.hostingType')}
+                value={hostingType}
+                onChange={(next) => setHostingType(next as EnvironmentHostingType)}
+                options={[
+                  { value: 'cloud', label: tEnv('detail.execution.hostingOptions.cloud') },
+                  { value: 'local', label: tEnv('detail.execution.hostingOptions.local') },
+                  { value: 'docker', label: tEnv('detail.execution.hostingOptions.docker') },
+                  { value: 'kubernetes', label: tEnv('detail.execution.hostingOptions.kubernetes') },
+                  { value: 'self_hosted', label: tEnv('detail.execution.hostingOptions.self_hosted') },
+                ]}
+              />
+            </div>
             {hostingType === 'docker' ? (
               <label className="editField">
-                Docker image
+                {tEnv('create.dockerImage')}
                 <input value={dockerImage} onChange={(event) => setDockerImage(event.target.value)} placeholder="node:22-slim" />
-                <small>One Docker container will be created per session.</small>
+                <small>{tEnv('create.dockerImageHint')}</small>
               </label>
             ) : null}
             {hostingType === 'local' ? (
-              <div className="warningNotice"><span>Not isolated: tools execute directly on the host machine. Use Docker or Kubernetes for untrusted agent code.</span></div>
+              <div className="warningNotice"><span>{tEnv('detail.execution.localWarning')}</span></div>
             ) : null}
             {hostingType === 'self_hosted' ? (
-              <div className="subtleNotice">Self-hosted sessions are pulled by an external worker. Save this environment, then use the setup instructions on the detail page.</div>
+              <div className="subtleNotice">{tEnv('detail.execution.selfHostedNotice')}</div>
             ) : null}
           </details>
           <label className="editField">
-            Description
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional description for this environment" />
+            {tEnv('create.description')}
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder={tEnv('create.descriptionPlaceholder')} />
           </label>
           <div className="modalActions">
-            <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>Create environment</button>
+            <button className="button outline" type="button" onClick={onClose}>{tEnv('create.cancel')}</button>
+            <button className="button primary" type="submit" disabled={saving || !name.trim()}>{tEnv('create.submit')}</button>
           </div>
         </form>
       </Modal>
@@ -103,21 +120,21 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
 
   if (kind === 'credential_vault') {
     return (
-      <Modal title="Create vault" subtitle="Create a shared boundary for credentials used by your sessions." onClose={onClose} size="default">
+      <Modal title={tCred('modals.createTitle')} subtitle={tCred('modals.createSubtitle')} onClose={onClose} size="default">
         <form className="vaultCreateForm" onSubmit={submit}>
           {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
           <div className="warningNotice">
             <Info size={18} />
-            <span>Vaults are shared across this workspace. Anyone with API key access can use credentials added here. <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">Read credential vault guidance</a>.</span>
+            <span>{tCred('modals.sharedWarning')} <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">{tCred('modals.readGuidance')}</a>.</span>
           </div>
           <label className="editField">
-            Name
-            <input value={name} onChange={(event) => setName(event.target.value.slice(0, 50))} placeholder="Production vault" required />
-            <small>50 characters or fewer.</small>
+            {tCred('modals.name')}
+            <input value={name} onChange={(event) => setName(event.target.value.slice(0, 50))} placeholder={tCred('modals.namePlaceholder')} required />
+            <small>{tCred('modals.nameHint')}</small>
           </label>
           <div className="modalActions">
-            <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Creating…' : 'Create vault'}</button>
+            <button className="button outline" type="button" onClick={onClose}>{tCred('modals.cancel')}</button>
+            <button className="button primary" type="submit" disabled={saving || !name.trim()}>{saving ? tCred('modals.creating') : tCred('modals.createSubmit')}</button>
           </div>
         </form>
       </Modal>
@@ -126,20 +143,20 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
 
   if (kind === 'memory_store') {
     return (
-      <Modal title="Create memory store" onClose={onClose} size="medium">
+      <Modal title={tMem('modals.createTitle')} onClose={onClose} size="medium">
         <form className="memoryCreateForm" onSubmit={submit}>
           {error ? <div className="banner error inlineBanner">{error}</div> : null}
           <label className="editField">
-            Name
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="My memory store" required />
+            {tMem('modals.name')}
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder={tMem('modals.namePlaceholder')} required />
           </label>
           <label className="editField">
-            Description (optional)
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this store contains and how agents should use it" />
-            <small>Name and description are rendered in the agent system prompt when this store is attached.</small>
+            {tMem('modals.descriptionOptional')}
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder={tMem('modals.descriptionPlaceholder')} />
+            <small>{tMem('modals.descriptionHint')}</small>
           </label>
           <div className="modalActions">
-            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>Create memory store</button>
+            <button className="button primary" type="submit" disabled={saving || !name.trim()}>{tMem('modals.submit')}</button>
           </div>
         </form>
       </Modal>
@@ -159,6 +176,7 @@ const MCP_REGISTRY_OPTIONS = [
 ];
 
 export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: string; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('credentials');
   const [name, setName] = useState('');
   const [authType, setAuthType] = useState<CredentialAuthType>('mcp_oauth');
   const [mcpServerUrl, setMcpServerUrl] = useState('');
@@ -218,27 +236,27 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
   };
 
   return (
-    <Modal title="Add credential" subtitle="Add a credential to this vault for agents to use." onClose={onClose} size="medium">
+    <Modal title={t('modals.addTitle')} subtitle={t('modals.addSubtitle')} onClose={onClose} size="medium">
       <form className="credentialForm" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
         <label className="editField">
-          <span>Name <small className="optionalPill">Optional</small></span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example credential" />
+          <span>{t('modals.name')} <small className="optionalPill">{t('modals.optional')}</small></span>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('modals.namePlaceholderExample')} />
         </label>
         <fieldset className="credentialTypeField">
-          <legend>Credential type</legend>
-          <div className="credentialTypeGrid" role="radiogroup" aria-label="Credential type">
+          <legend>{t('modals.typeLegend')}</legend>
+          <div className="credentialTypeGrid" role="radiogroup" aria-label={t('modals.typeLegend')}>
             <label className={`credentialTypeOption ${authType === 'mcp_oauth' ? 'selected' : ''}`}>
               <input type="radio" name="credential-auth-type" value="mcp_oauth" checked={authType === 'mcp_oauth'} onChange={() => setAuthType('mcp_oauth')} />
-              <span><strong>MCP OAuth</strong><small>Connect to an MCP server without storing a raw token.</small></span>
+              <span><strong>{t('authTypes.mcp_oauth')}</strong><small>{t('modals.mcpHint')}</small></span>
             </label>
             <label className={`credentialTypeOption ${authType === 'bearer_token' ? 'selected' : ''}`}>
               <input type="radio" name="credential-auth-type" value="bearer_token" checked={authType === 'bearer_token'} onChange={() => setAuthType('bearer_token')} />
-              <span><strong>Bearer token</strong><small>Send one token with each request.</small></span>
+              <span><strong>{t('authTypes.bearer_token')}</strong><small>{t('modals.bearerHint')}</small></span>
             </label>
             <label className={`credentialTypeOption ${authType === 'environment_variable' ? 'selected' : ''}`}>
               <input type="radio" name="credential-auth-type" value="environment_variable" checked={authType === 'environment_variable'} onChange={() => setAuthType('environment_variable')} />
-              <span><strong>Environment variable</strong><small>Expose a named secret to the runtime.</small></span>
+              <span><strong>{t('authTypes.environment_variable')}</strong><small>{t('modals.envVarHint')}</small></span>
             </label>
           </div>
         </fieldset>
@@ -247,7 +265,7 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
           <div className="mcpRegistryPanel">
             <div className="pickerSearch registrySearch">
               <Search size={18} />
-              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder="Filter curated MCP servers" />
+              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder={t('modals.registryFilter')} />
             </div>
             <div className="registryList">
               {filteredRegistry.map((option) => (
@@ -269,10 +287,10 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
                   <span className="registrySelectionMark" aria-hidden="true">✓</span>
                 </button>
               ))}
-              {filteredRegistry.length === 0 ? <p className="registryEmpty">No curated servers match. Enter a custom URL below.</p> : null}
+              {filteredRegistry.length === 0 ? <p className="registryEmpty">{t('modals.registryEmpty')}</p> : null}
             </div>
             <label className="editField compactField">
-              Custom MCP server URL <RequiredMark />
+              {t('modals.customMcpUrl')} <RequiredMark />
               <input value={mcpServerUrl} onChange={(event) => setMcpServerUrl(event.target.value)} placeholder="https://mcp.example.com" required />
             </label>
           </div>
@@ -280,10 +298,10 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
 
         {authType === 'bearer_token' ? (
           <label className="editField">
-            Token <RequiredMark />
+            {t('modals.token')} <RequiredMark />
             <span className="secretField">
-              <input type={showValue ? 'text' : 'password'} autoComplete="new-password" value={value} onChange={(event) => setValue(event.target.value)} placeholder="Bearer or personal access token" required />
-              <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? 'Hide token' : 'Show token'} title={showValue ? 'Hide token' : 'Show token'}>
+              <input type={showValue ? 'text' : 'password'} autoComplete="new-password" value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modals.tokenPlaceholder')} required />
+              <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? t('modals.hideToken') : t('modals.showToken')} title={showValue ? t('modals.hideToken') : t('modals.showToken')}>
                 {showValue ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </span>
@@ -293,14 +311,14 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         {authType === 'environment_variable' ? (
           <div className="credentialGrid">
             <label className="editField">
-              Variable name <RequiredMark />
+              {t('modals.variableName')} <RequiredMark />
               <input value={variableName} onChange={(event) => setVariableName(event.target.value)} placeholder="MY_API_KEY" required />
             </label>
             <label className="editField">
-              Value <RequiredMark />
+              {t('modals.value')} <RequiredMark />
               <span className="secretField">
                 <input type={showValue ? 'text' : 'password'} autoComplete="new-password" value={value} onChange={(event) => setValue(event.target.value)} required />
-                <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? 'Hide value' : 'Show value'} title={showValue ? 'Hide value' : 'Show value'}>
+                <button className="secretToggle" type="button" onClick={() => setShowValue((current) => !current)} aria-label={showValue ? t('modals.hideValue') : t('modals.showValue')} title={showValue ? t('modals.hideValue') : t('modals.showValue')}>
                   {showValue ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </span>
@@ -311,46 +329,46 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         {needsSecretAcknowledgement ? (
           <>
             <div className="credentialSection">
-              <h3>Networking</h3>
+              <h3>{t('modals.networking')}</h3>
               <div className="segment credentialSegment">
-                <button type="button" className={networkType === 'limited' ? 'active' : ''} aria-pressed={networkType === 'limited'} onClick={() => setNetworkType('limited')}>Limited</button>
-                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} aria-pressed={networkType === 'unrestricted'} onClick={() => setNetworkType('unrestricted')}>Unrestricted</button>
+                <button type="button" className={networkType === 'limited' ? 'active' : ''} aria-pressed={networkType === 'limited'} onClick={() => setNetworkType('limited')}>{t('modals.limited')}</button>
+                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} aria-pressed={networkType === 'unrestricted'} onClick={() => setNetworkType('unrestricted')}>{t('modals.unrestricted')}</button>
               </div>
               {networkType === 'limited' ? (
                 <label className="editField">
-                  Allowed hosts
-                  <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder="api.example.com, *.example.com" />
-                  <small>Separate hosts with commas or newlines.</small>
+                  {t('modals.allowedHosts')}
+                  <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder={t('modals.allowedHostsPlaceholder')} />
+                  <small>{t('modals.allowedHostsHint')}</small>
                 </label>
-              ) : <p className="fieldHint">Requests may reach any host. Use this only when the service requires it.</p>}
+              ) : <p className="fieldHint">{t('modals.unrestrictedHint')}</p>}
             </div>
             <div className="credentialSection">
-              <h3>Injection location</h3>
+              <h3>{t('modals.injection')}</h3>
               <label className="checkboxLine">
                 <input type="checkbox" checked={injectHeaders} onChange={(event) => setInjectHeaders(event.target.checked)} />
-                Request headers
+                {t('modals.requestHeaders')}
               </label>
               <label className="checkboxLine">
                 <input type="checkbox" checked={injectBody} onChange={(event) => setInjectBody(event.target.checked)} />
-                Request body
+                {t('modals.requestBody')}
               </label>
-              {!hasInjectionLocation ? <p className="fieldError" role="alert">Select at least one injection location.</p> : null}
-              <p>Limiting to request headers is recommended unless the service reads the secret from the request body.</p>
+              {!hasInjectionLocation ? <p className="fieldError" role="alert">{t('modals.injectionRequired')}</p> : null}
+              <p>{t('modals.injectionHint')}</p>
             </div>
             <div className="warningNotice">
               <Info size={18} />
-              <span>This credential will be shared across this workspace. Anyone with API key access can use it in an agent session. <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">Read credential vault guidance</a>.</span>
+              <span>{t('modals.credentialSharedWarning')} <a href="https://github.com/sandbaseai/sandbase-harness/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer">{t('modals.readGuidance')}</a>.</span>
             </div>
             <label className="checkboxLine acknowledgement">
               <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
-              I acknowledge this credential is shared and that I am responsible for its storage and use.
+              {t('modals.acknowledge')}
             </label>
           </>
         ) : null}
 
         <div className="modalActions stickyActions">
-          <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton largeAction" type="submit" disabled={saving || !canSubmit}>{saving ? 'Adding…' : 'Add credential'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('modals.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !canSubmit}>{saving ? t('modals.adding') : t('modals.addSubmit')}</button>
         </div>
       </form>
     </Modal>
@@ -358,6 +376,7 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
 }
 
 export function AddMemoryModal({ storeId, onClose, onSaved }: { storeId: string; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('memory');
   const [path, setPath] = useState('/');
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
@@ -379,20 +398,20 @@ export function AddMemoryModal({ storeId, onClose, onSaved }: { storeId: string;
     }
   };
   return (
-    <Modal title="Add memory" onClose={onClose} size="medium">
+    <Modal title={t('modals.addTitle')} onClose={onClose} size="medium">
       <form className="addMemoryForm" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner">{error}</div> : null}
         <label className="editField">
-          Path
-          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder="/note/d" required />
-          <small>Folders are derived from the slashes in your path.</small>
+          {t('modals.path')}
+          <input value={path} onChange={(event) => setPath(event.target.value)} placeholder={t('modals.pathPlaceholder')} required />
+          <small>{t('modals.pathHint')}</small>
         </label>
         <label className="editField">
-          Content
+          {t('modals.content')}
           <textarea value={content} onChange={(event) => setContent(event.target.value)} />
         </label>
         <div className="modalActions">
-          <button className="primaryButton largeAction" type="submit" disabled={saving || !canSubmit}>Add memory</button>
+          <button className="button primary" type="submit" disabled={saving || !canSubmit}>{saving ? t('modals.adding') : t('modals.addSubmit')}</button>
         </div>
       </form>
     </Modal>

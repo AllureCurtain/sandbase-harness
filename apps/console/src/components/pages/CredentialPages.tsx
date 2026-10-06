@@ -1,11 +1,17 @@
 import { Archive, FileText, Info, KeyRound, Lock, MoreVertical, Pencil, Plus, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { deleteJson, postJson } from '../../api';
-import { EmptyState, FilterSelect, KeyValuePanel, RequiredMark, StatusPill, SummaryStrip, Toolbar } from '../Common';
+import { EmptyState, Kpi, KpiStrip, PageBody, PageHeader, StatusDot, type Tone } from '../console-ui';
+import { RequiredMark } from '../Common';
 import { ConfirmDeleteModal } from '../DangerZone';
 import { Modal } from '../Modal';
+import { ListToolbar, listSummary, SearchField } from '../list-ui';
+import { ConsoleSelect } from '../console-select';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
 import type { ConsoleData, CredentialAuthType, Vault, VaultCredential } from '../../types';
+import './resources.css';
 
 const MCP_REGISTRY_OPTIONS = [
   { name: 'Google Drive', url: 'https://drivemcp.googleapis.com/mcp/v1' },
@@ -16,7 +22,22 @@ const MCP_REGISTRY_OPTIONS = [
   { name: 'Notion', url: 'https://mcp.notion.com/mcp' },
 ];
 
+function authLabel(t: TFunction<'credentials'>, type: CredentialAuthType): string {
+  return t(`authTypes.${type}`);
+}
+
+function statusLabel(t: TFunction<'credentials'>, status: string): string {
+  return status === 'active' ? t('list.statusOptions.active') : status === 'archived' ? t('list.statusOptions.archived') : status;
+}
+
+function statusTone(status: string): Tone {
+  return status === 'active' ? 'ok' : 'neutral';
+}
+
 export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleData; onNew: () => void; onOpenVault: (vault: Vault) => void }) {
+  const { t } = useTranslation('credentials');
+  const { t: tPages } = useTranslation('pages');
+  const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const vaults = data.vaults.filter((vault) => {
@@ -25,103 +46,98 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
     const matchesQuery = vault.id.toLowerCase().includes(q) || vault.name.toLowerCase().includes(q);
     return matchesStatus && matchesQuery;
   });
+  const filtering = Boolean(query) || status !== 'all';
   const activeVaults = data.vaults.filter((vault) => vault.status === 'active').length;
   const totalCredentials = data.vaults.reduce((sum, vault) => sum + vault.credentials.length, 0);
   const activeCredentials = data.vaults.reduce((sum, vault) => sum + vault.credentials.filter((credential) => credential.status === 'active').length, 0);
+  const empty = (
+    <EmptyState
+      icon={Lock}
+      title={data.vaults.length && filtering ? t('list.noMatch') : t('list.empty')}
+      description={data.vaults.length && filtering ? undefined : t('list.emptyBody')}
+      action={query
+        ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button>
+        : <button className="button primary" type="button" onClick={onNew}><Plus size={15} />{t('list.createVault')}</button>}
+    />
+  );
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Credential vaults</h1>
-          <p>Store scoped credentials for sessions without exposing raw secrets in API responses.</p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={onNew}>
-            <Plus size={18} />
-            Create vault
-          </button>
-          <a className="iconButton" href="https://github.com/sandbaseai/managed-agents/blob/main/docs/usage.md#credential-vaults" target="_blank" rel="noreferrer" title="Documentation">
-            <FileText size={18} />
-          </a>
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Vaults', value: data.vaults.length, icon: <Lock size={18} /> },
-        { label: 'Active vaults', value: activeVaults, icon: <Shield size={18} /> },
-        { label: 'Credentials', value: totalCredentials, icon: <KeyRound size={18} /> },
-        { label: 'Active credentials', value: activeCredentials, icon: <RefreshCw size={18} /> },
-      ]} />
-      <Toolbar
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search by name or exact ID"
+    <section className="page-section console-page credentials-list-page" aria-labelledby="credentials-heading">
+      <PageHeader
+        headingId="credentials-heading"
+        title={tPages('credential-vaults.title')}
+        help={tPages('credential-vaults.description')}
         actions={(
-          <FilterSelect
-            label="Status"
+          <button className="button primary" type="button" onClick={onNew}>
+            <Plus size={15} aria-hidden="true" />
+            {tPages('credential-vaults.newVault')}
+          </button>
+        )}
+      />
+      <PageBody>
+        <KpiStrip label={t('list.filterLabel')}>
+          <Kpi label={t('list.kpis.vaults')} value={data.vaults.length} />
+          <Kpi label={t('list.kpis.activeVaults')} value={activeVaults} />
+          <Kpi label={t('list.kpis.credentials')} value={totalCredentials} />
+          <Kpi label={t('list.kpis.activeCredentials')} value={activeCredentials} />
+        </KpiStrip>
+        <ListToolbar
+          label={t('list.filterLabel')}
+          summary={listSummary(tCommon, vaults.length, data.vaults.length, { locale: i18n.resolvedLanguage })}
+        >
+          <SearchField value={query} onChange={setQuery} placeholder={t('list.searchPlaceholder')} label={t('list.filterLabel')} />
+          <ConsoleSelect
+            label={t('list.status')}
             value={status}
             onChange={setStatus}
             options={[
-              { value: 'all', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'archived', label: 'Archived' },
+              { value: 'all', label: t('list.statusOptions.all') },
+              { value: 'active', label: t('list.statusOptions.active') },
+              { value: 'archived', label: t('list.statusOptions.archived') },
             ]}
           />
-        )}
-      />
-      <div className="tablePanel resourceTablePanel">
-        <table className="resourceTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Credentials</th>
-              <th>Status</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vaults.map((vault) => (
-              <tr key={vault.id} className="clickableRow" onClick={() => onOpenVault(vault)}>
-                <td><strong className="monoText">{shortId(vault.id)}</strong></td>
-                <td>{vault.name}</td>
-                <td>{vault.credentials.length}</td>
-                <td><StatusPill status={vault.status} /></td>
-                <td>{formatDateShort(vault.updated_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {vaults.length === 0 ? (
-          <EmptyState
-            icon={<Lock size={22} />}
-            title="No credential vaults"
-            body="Create a vault to attach scoped secrets to sessions without returning raw values through the API."
-            action={<button className="primaryButton" type="button" onClick={onNew}><Plus size={16} />Create vault</button>}
-          />
-        ) : null}
-      </div>
-      <div className="mobileResourceList">
-        {vaults.map((vault) => (
-          <button className="mobileResourceCard" type="button" key={vault.id} onClick={() => onOpenVault(vault)}>
-            <span className="mobileAgentMain">
-              <strong>{vault.name}</strong>
-              <small className="monoText">{vault.id}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <span>{vault.credentials.length} credentials</span>
-              <StatusPill status={vault.status} />
-            </span>
-          </button>
-        ))}
-        {vaults.length === 0 ? (
-          <EmptyState
-            icon={<Lock size={22} />}
-            title="No credential vaults"
-            body="Create a vault to attach scoped secrets to sessions without returning raw values through the API."
-            action={<button className="primaryButton" type="button" onClick={onNew}><Plus size={16} />Create vault</button>}
-          />
-        ) : null}
-      </div>
+        </ListToolbar>
+        {vaults.length ? (
+          <div className="table-frame credentials-table-frame">
+            <table className="data-table" aria-label={tPages('credential-vaults.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('list.columns.id')}</th>
+                  <th scope="col">{t('list.columns.name')}</th>
+                  <th scope="col">{t('list.columns.credentials')}</th>
+                  <th scope="col">{t('list.columns.status')}</th>
+                  <th scope="col">{t('list.columns.updated')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vaults.map((vault) => (
+                  <tr key={vault.id} className="clickable-row" onClick={() => onOpenVault(vault)}>
+                    <td><strong className="monoText">{shortId(vault.id)}</strong></td>
+                    <td>{vault.name}</td>
+                    <td>{vault.credentials.length}</td>
+                    <td><StatusDot tone={statusTone(vault.status)} label={statusLabel(t, vault.status)} /></td>
+                    <td>{formatDateShort(vault.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : empty}
+        <div className="mobileResourceList">
+          {vaults.map((vault) => (
+            <button className="mobileResourceCard" type="button" key={vault.id} onClick={() => onOpenVault(vault)} aria-label={t('list.open', { name: vault.name })}>
+              <span className="mobileAgentMain">
+                <strong>{vault.name}</strong>
+                <small className="monoText">{vault.id}</small>
+              </span>
+              <span className="mobileAgentMeta">
+                <span>{t('list.credentialCount', { n: vault.credentials.length })}</span>
+                <StatusDot tone={statusTone(vault.status)} label={statusLabel(t, vault.status)} />
+              </span>
+            </button>
+          ))}
+          {vaults.length === 0 ? empty : null}
+        </div>
+      </PageBody>
     </section>
   );
 }
@@ -137,6 +153,8 @@ export function CredentialVaultDetail({
   onRefresh: () => void;
   onNewCredential: () => void;
 }) {
+  const { t } = useTranslation('credentials');
+  const { t: tCommon, i18n } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [credentialMenuId, setCredentialMenuId] = useState<string | null>(null);
   const [rotatingCredential, setRotatingCredential] = useState<VaultCredential | null>(null);
@@ -151,7 +169,7 @@ export function CredentialVaultDetail({
     const matchesStatus = status === 'all' || credential.status === status;
     const matchesQuery = credential.id.toLowerCase().includes(q)
       || credential.name.toLowerCase().includes(q)
-      || credentialAuthLabel(credential.auth_type).toLowerCase().includes(q)
+      || authLabel(t, credential.auth_type).toLowerCase().includes(q)
       || credential.mcp_server_url.toLowerCase().includes(q)
       || credential.variable_name.toLowerCase().includes(q);
     return matchesStatus && matchesQuery;
@@ -182,10 +200,46 @@ export function CredentialVaultDetail({
     setDeletingCredential(credential);
   };
 
+  const credentialsEmpty = (
+    <EmptyState
+      icon={Shield}
+      title={t('detail.credentialsSection.empty')}
+      description={t('detail.credentialsSection.emptyBody')}
+      action={<button className="button primary" type="button" onClick={onNewCredential}><Plus size={15} />{t('detail.addCredential')}</button>}
+    />
+  );
+
+  const credentialMenuItems = (credential: VaultCredential) => (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setEditingCredential(credential);
+          setCredentialMenuId(null);
+        }}
+      >
+        <Pencil size={18} />{t('detail.rowActions.edit')}
+      </button>
+      {credential.auth_type !== 'mcp_oauth' ? (
+        <button
+          type="button"
+          onClick={() => {
+            setRotatingCredential(credential);
+            setCredentialMenuId(null);
+          }}
+        >
+          <RefreshCw size={18} />{t('detail.rowActions.rotate')}
+        </button>
+      ) : null}
+      <button type="button" onClick={() => void archiveCredential(credential)}><Archive size={18} />{t('detail.rowActions.archive')}</button>
+      <button type="button" className="dangerMenuItem" onClick={() => askDeleteCredential(credential)}><Trash2 size={18} />{t('detail.rowActions.delete')}</button>
+    </>
+  );
+
   return (
-    <section className="environmentDetail">
+    <section className="environmentDetail vaultDetail">
       <div className="detailCrumb">
-        <button type="button" className="textButton" onClick={onBack}>Credential vaults</button>
+        <button type="button" className="textButton" onClick={onBack}>{t('detail.back')}</button>
         <span>/</span>
         <strong>{vault.name}</strong>
       </div>
@@ -193,17 +247,17 @@ export function CredentialVaultDetail({
         <div>
           <div className="titleLine">
             <h1>{vault.name}</h1>
-            <StatusPill status={vault.status} />
+            <StatusDot tone={statusTone(vault.status)} label={statusLabel(t, vault.status)} />
           </div>
-          <p className="mutedLine"><span className="monoText">{vault.id}</span> · Created {formatDateShort(vault.created_at)} · Updated {formatDateShort(vault.updated_at)}</p>
+          <p className="mutedLine"><span className="monoText">{vault.id}</span> · {t('detail.created', { time: formatDateShort(vault.created_at) })} · {t('detail.updated', { time: formatDateShort(vault.updated_at) })}</p>
         </div>
         <div className="agentHeroActions">
-          <button className="primaryButton largeAction" type="button" onClick={onNewCredential}>
-            <Plus size={18} />
-            Add credential
+          <button className="button primary largeAction" type="button" onClick={onNewCredential}>
+            <Plus size={15} />
+            {t('detail.addCredential')}
           </button>
           <div className="menuWrap">
-            <button className="iconButton" type="button" onClick={() => setMenuOpen((open) => !open)} title="Vault actions">
+            <button className="iconButton" type="button" onClick={() => setMenuOpen((open) => !open)} title={t('detail.actions')}>
               <MoreVertical size={18} />
             </button>
             {menuOpen ? (
@@ -215,9 +269,9 @@ export function CredentialVaultDetail({
                     setEditVaultOpen(true);
                   }}
                 >
-                  <Pencil size={18} />Edit
+                  <Pencil size={18} />{t('detail.edit')}
                 </button>
-                <button type="button" className="dangerMenuItem" onClick={() => void archiveVault()}><Archive size={18} />Archive</button>
+                <button type="button" className="dangerMenuItem" onClick={() => void archiveVault()}><Archive size={18} />{t('detail.archive')}</button>
                 <button
                   type="button"
                   className="dangerMenuItem"
@@ -226,162 +280,106 @@ export function CredentialVaultDetail({
                     setDeleteVaultOpen(true);
                   }}
                 >
-                  <Trash2 size={18} />Delete
+                  <Trash2 size={18} />{t('detail.delete')}
                 </button>
               </div>
             ) : null}
           </div>
         </div>
       </div>
-      <SummaryStrip items={[
-        { label: 'Credentials', value: vault.credentials.length, icon: <KeyRound size={18} /> },
-        { label: 'Active', value: activeCredentials, icon: <Shield size={18} /> },
-        { label: 'Last used', value: lastUsedCredential?.last_used_at ? relativeDate(lastUsedCredential.last_used_at) : 'Never', icon: <RefreshCw size={18} /> },
-      ]} />
-      <div className="resourceTruthStrip" aria-label="Credential vault truth model">
-        <div><span>Stored encrypted</span><strong>Raw secret values are never returned after create or rotation.</strong></div>
-        <div><span>Scoped injection</span><strong>Attach vaults to sessions before tools can request credential material.</strong></div>
-        <div><span>Runtime policy</span><strong>Allowed hosts and injection locations must be enforced at execution boundaries.</strong></div>
+      <KpiStrip label={t('detail.actions')}>
+        <Kpi label={t('detail.kpis.credentials')} value={vault.credentials.length} />
+        <Kpi label={t('detail.kpis.active')} value={activeCredentials} />
+        <Kpi label={t('detail.kpis.lastUsed')} value={lastUsedCredential?.last_used_at ? relativeDate(lastUsedCredential.last_used_at) : t('detail.neverUsed')} />
+      </KpiStrip>
+      <div className="resourceTruthStrip" aria-label={t('detail.truth.aria')}>
+        <div><span>{t('detail.truth.stored')}</span><strong>{t('detail.truth.storedBody')}</strong></div>
+        <div><span>{t('detail.truth.scoped')}</span><strong>{t('detail.truth.scopedBody')}</strong></div>
+        <div><span>{t('detail.truth.policy')}</span><strong>{t('detail.truth.policyBody')}</strong></div>
       </div>
       <div className="detailStack wideDetailStack">
-        <Toolbar
-          query={query}
-          onQuery={setQuery}
-          placeholder="Search credentials"
-          actions={(
-            <FilterSelect
-              label="Status"
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'active', label: 'Active' },
-                { value: 'archived', label: 'Archived' },
-              ]}
-            />
-          )}
-        />
-        <div className="tablePanel credentialTablePanel">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Auth</th>
-                <th>Status</th>
-                <th>Last used</th>
-                <th>Updated</th>
-                <th className="actionsCol" aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {credentials.map((credential) => (
-                <tr key={credential.id}>
-                  <td><strong className="monoText">{shortId(credential.id)}</strong></td>
-                  <td>{credential.name || credentialAuthLabel(credential.auth_type)}</td>
-                  <td><CredentialAuthCell credential={credential} /></td>
-                  <td><StatusPill status={credential.status} /></td>
-                  <td>{credential.last_used_at ? relativeDate(credential.last_used_at) : 'Never'}</td>
-                  <td>{formatDateShort(credential.updated_at)}</td>
-                  <td className="actionsCol">
-                    <div className="menuWrap">
-                      <button className="iconButton quiet" type="button" title="Credential actions" onClick={() => setCredentialMenuId((current) => current === credential.id ? null : credential.id)}>
-                        <MoreVertical size={18} />
-                      </button>
-                      {credentialMenuId === credential.id ? (
-                        <div className="agentMenu rowMenu">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingCredential(credential);
-                              setCredentialMenuId(null);
-                            }}
-                          >
-                            <Pencil size={18} />Edit
-                          </button>
-                          {credential.auth_type !== 'mcp_oauth' ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRotatingCredential(credential);
-                                setCredentialMenuId(null);
-                              }}
-                            >
-                              <RefreshCw size={18} />Rotate secret
-                            </button>
-                          ) : null}
-                          <button type="button" onClick={() => void archiveCredential(credential)}><Archive size={18} />Archive</button>
-                          <button type="button" className="dangerMenuItem" onClick={() => askDeleteCredential(credential)}><Trash2 size={18} />Delete</button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </td>
+        <ListToolbar
+          label={t('detail.credentialsSection.credentialActions')}
+          summary={listSummary(tCommon, credentials.length, vault.credentials.length, { locale: i18n.resolvedLanguage })}
+        >
+          <SearchField value={query} onChange={setQuery} placeholder={t('detail.credentialsSection.searchPlaceholder')} label={t('detail.credentialsSection.credentialActions')} />
+          <ConsoleSelect
+            label={t('list.status')}
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'all', label: t('list.statusOptions.all') },
+              { value: 'active', label: t('list.statusOptions.active') },
+              { value: 'archived', label: t('list.statusOptions.archived') },
+            ]}
+          />
+        </ListToolbar>
+        {credentials.length ? (
+          <div className="table-frame credential-table-frame">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">{t('detail.credentialsSection.columns.id')}</th>
+                  <th scope="col">{t('detail.credentialsSection.columns.name')}</th>
+                  <th scope="col">{t('detail.credentialsSection.columns.auth')}</th>
+                  <th scope="col">{t('detail.credentialsSection.columns.status')}</th>
+                  <th scope="col">{t('detail.credentialsSection.columns.lastUsed')}</th>
+                  <th scope="col">{t('detail.credentialsSection.columns.updated')}</th>
+                  <th scope="col" className="actionsCol" aria-label={t('detail.credentialsSection.columns.actions')} />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {credentials.length === 0 ? (
-            <EmptyState
-              icon={<Shield size={22} />}
-              title="No credentials"
-              body="Add an OAuth, bearer token, or environment-variable credential to make this vault useful in sessions."
-              action={<button className="primaryButton" type="button" onClick={onNewCredential}><Plus size={16} />Add credential</button>}
-            />
-          ) : null}
-        </div>
+              </thead>
+              <tbody>
+                {credentials.map((credential) => (
+                  <tr key={credential.id}>
+                    <td><strong className="monoText">{shortId(credential.id)}</strong></td>
+                    <td>{credential.name || authLabel(t, credential.auth_type)}</td>
+                    <td><CredentialAuthCell credential={credential} /></td>
+                    <td><StatusDot tone={statusTone(credential.status)} label={statusLabel(t, credential.status)} /></td>
+                    <td>{credential.last_used_at ? relativeDate(credential.last_used_at) : t('detail.neverUsed')}</td>
+                    <td>{formatDateShort(credential.updated_at)}</td>
+                    <td className="actionsCol">
+                      <div className="menuWrap">
+                        <button className="iconButton quiet" type="button" title={t('detail.credentialsSection.credentialActions')} onClick={() => setCredentialMenuId((current) => current === credential.id ? null : credential.id)}>
+                          <MoreVertical size={18} />
+                        </button>
+                        {credentialMenuId === credential.id ? (
+                          <div className="agentMenu rowMenu">
+                            {credentialMenuItems(credential)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : credentialsEmpty}
         <div className="mobileResourceList">
           {credentials.map((credential) => (
             <article className="mobileResourceCard" key={credential.id}>
               <span className="mobileAgentMain">
-                <strong>{credential.name || credentialAuthLabel(credential.auth_type)}</strong>
+                <strong>{credential.name || authLabel(t, credential.auth_type)}</strong>
                 <small className="monoText">{credential.id}</small>
               </span>
               <span className="mobileAgentMeta">
-                <span>{credentialAuthLabel(credential.auth_type)}</span>
-                <StatusPill status={credential.status} />
+                <span>{authLabel(t, credential.auth_type)}</span>
+                <StatusDot tone={statusTone(credential.status)} label={statusLabel(t, credential.status)} />
               </span>
               <span className="mobileAgentMeta">
-                <span>{credential.last_used_at ? `Used ${relativeDate(credential.last_used_at)}` : 'Never used'}</span>
-                <button className="ghostButton compactButton" type="button" onClick={() => setCredentialMenuId((current) => current === credential.id ? null : credential.id)}>
-                  Actions
+                <span>{credential.last_used_at ? t('detail.credentialsSection.usedAgo', { time: relativeDate(credential.last_used_at) }) : t('detail.credentialsSection.neverUsed')}</span>
+                <button className="button ghost" type="button" onClick={() => setCredentialMenuId((current) => current === credential.id ? null : credential.id)}>
+                  {t('detail.actions')}
                 </button>
               </span>
               {credentialMenuId === credential.id ? (
                 <div className="mobileActionMenu">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingCredential(credential);
-                      setCredentialMenuId(null);
-                    }}
-                  >
-                    <Pencil size={16} />Edit
-                  </button>
-                  {credential.auth_type !== 'mcp_oauth' ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRotatingCredential(credential);
-                        setCredentialMenuId(null);
-                      }}
-                    >
-                      <RefreshCw size={16} />Rotate secret
-                    </button>
-                  ) : null}
-                  <button type="button" onClick={() => void archiveCredential(credential)}><Archive size={16} />Archive</button>
-                  <button type="button" className="dangerMenuItem" onClick={() => askDeleteCredential(credential)}><Trash2 size={16} />Delete</button>
+                  {credentialMenuItems(credential)}
                 </div>
               ) : null}
             </article>
           ))}
-          {credentials.length === 0 ? (
-            <EmptyState
-              icon={<Shield size={22} />}
-              title="No credentials"
-              body="Add an OAuth, bearer token, or environment-variable credential to make this vault useful in sessions."
-              action={<button className="primaryButton" type="button" onClick={onNewCredential}><Plus size={16} />Add credential</button>}
-            />
-          ) : null}
+          {credentials.length === 0 ? credentialsEmpty : null}
         </div>
       </div>
       {rotatingCredential ? (
@@ -418,10 +416,10 @@ export function CredentialVaultDetail({
       ) : null}
       {deleteVaultOpen ? (
         <ConfirmDeleteModal
-          title="Delete vault"
-          subject={`${vault.name} and its ${vault.credentials.length} ${vault.credentials.length === 1 ? 'credential' : 'credentials'}`}
-          consequence="This permanently deletes the vault and every credential in it. The API refuses to delete a vault referenced by an active session."
-          confirmLabel="Delete vault"
+          title={t('detail.deleteVaultTitle')}
+          subject={t('detail.subjectCount', { name: vault.name, n: vault.credentials.length, count: vault.credentials.length })}
+          consequence={t('detail.deleteVaultConsequence')}
+          confirmLabel={t('detail.deleteVaultConfirm')}
           onClose={() => setDeleteVaultOpen(false)}
           onConfirm={async () => {
             await deleteJson(`/v1/credential-vaults/${vault.id}`);
@@ -432,10 +430,10 @@ export function CredentialVaultDetail({
       ) : null}
       {deletingCredential ? (
         <ConfirmDeleteModal
-          title="Delete credential"
+          title={t('detail.deleteCredentialTitle')}
           subject={deletingCredential.name}
-          consequence="This permanently deletes the credential. Sessions that reference it lose access, and the secret cannot be recovered."
-          confirmLabel="Delete credential"
+          consequence={t('detail.deleteCredentialConsequence')}
+          confirmLabel={t('detail.deleteCredentialConfirm')}
           onClose={() => setDeletingCredential(null)}
           onConfirm={() => deleteCredential(deletingCredential)}
         />
@@ -445,6 +443,7 @@ export function CredentialVaultDetail({
 }
 
 function VaultEditModal({ vault, onClose, onSaved }: { vault: Vault; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('credentials');
   const [name, setName] = useState(vault.name);
   const [description, setDescription] = useState(vault.description);
   const [saving, setSaving] = useState(false);
@@ -466,21 +465,21 @@ function VaultEditModal({ vault, onClose, onSaved }: { vault: Vault; onClose: ()
   };
 
   return (
-    <Modal title="Edit vault" onClose={onClose}>
+    <Modal title={t('modals.editVaultTitle')} onClose={onClose}>
       <form className="modalForm" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
         <label className="editField">
-          Name
+          {t('modals.name')}
           <input value={name} onChange={(event) => setName(event.target.value)} required />
-          <small>1-255 characters.</small>
+          <small>{t('modals.nameHintEdit')}</small>
         </label>
         <label className="editField">
-          Description
+          {t('modals.description')}
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('modals.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !name.trim()}>{saving ? t('modals.saving') : t('modals.saveChanges')}</button>
         </div>
       </form>
     </Modal>
@@ -496,6 +495,7 @@ function VaultEditModal({ vault, onClose, onSaved }: { vault: Vault; onClose: ()
  * after creation, so the form shows them read-only.
  */
 function EditCredentialModal({ vaultId, credential, onClose, onSaved }: { vaultId: string; credential: VaultCredential; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('credentials');
   const [name, setName] = useState(credential.name);
   const [secret, setSecret] = useState('');
   const [saving, setSaving] = useState(false);
@@ -503,7 +503,7 @@ function EditCredentialModal({ vaultId, credential, onClose, onSaved }: { vaultI
 
   const publishedType = credential.auth_type === 'bearer_token' ? 'static_bearer' : credential.auth_type;
   const secretField = credential.auth_type === 'environment_variable' ? 'secret_value' : credential.auth_type === 'mcp_oauth' ? 'access_token' : 'token';
-  const secretLabel = credential.auth_type === 'environment_variable' ? 'New value' : credential.auth_type === 'mcp_oauth' ? 'New access token' : 'New token';
+  const secretLabel = credential.auth_type === 'environment_variable' ? t('modals.secretLabel.variable') : credential.auth_type === 'mcp_oauth' ? t('modals.secretLabel.oauth') : t('modals.secretLabel.bearer');
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -527,35 +527,35 @@ function EditCredentialModal({ vaultId, credential, onClose, onSaved }: { vaultI
   };
 
   return (
-    <Modal title="Edit credential" subtitle={`${credentialAuthLabel(credential.auth_type)} credential`} onClose={onClose}>
+    <Modal title={t('modals.editCredentialTitle')} subtitle={t('modals.editCredentialSubtitle', { type: authLabel(t, credential.auth_type) })} onClose={onClose}>
       <form className="modalForm" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
         <label className="editField">
-          Name
+          {t('modals.name')}
           <input value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         {credential.auth_type === 'mcp_oauth' ? (
           <label className="editField">
-            MCP server URL
+            {t('modals.mcpServerUrl')}
             <input value={credential.mcp_server_url} disabled />
-            <small>Server URL is locked after creation; archive and recreate the credential to change it.</small>
+            <small>{t('modals.mcpServerUrlLocked')}</small>
           </label>
         ) : null}
         {credential.auth_type === 'environment_variable' ? (
           <label className="editField">
-            Variable name
+            {t('modals.variableName')}
             <input value={credential.variable_name} disabled />
-            <small>Variable name is locked after creation; archive and recreate the credential to change it.</small>
+            <small>{t('modals.variableNameLocked')}</small>
           </label>
         ) : null}
         <label className="editField">
           {secretLabel}
-          <input type="password" autoComplete="new-password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={credential.value_hint || 'Leave blank to keep the stored secret'} />
-          <small>Write-only: the stored value is never shown. Leave blank to keep it.</small>
+          <input type="password" autoComplete="new-password" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={credential.value_hint || t('modals.secretPlaceholder')} />
+          <small>{t('modals.secretHint')}</small>
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton largeAction" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('modals.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving}>{saving ? t('modals.saving') : t('modals.saveChanges')}</button>
         </div>
       </form>
     </Modal>
@@ -563,6 +563,7 @@ function EditCredentialModal({ vaultId, credential, onClose, onSaved }: { vaultI
 }
 
 export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: string; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('credentials');
   const [name, setName] = useState('');
   const [authType, setAuthType] = useState<CredentialAuthType>('mcp_oauth');
   const [mcpServerUrl, setMcpServerUrl] = useState('');
@@ -617,27 +618,32 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
   };
 
   return (
-    <Modal title="Add credential" subtitle="Add a credential to this vault for agents to use." onClose={onClose} size="medium">
+    <Modal title={t('modals.addTitle')} subtitle={t('modals.addSubtitle')} onClose={onClose} size="medium">
       <form className="credentialForm" onSubmit={submit}>
-        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
         <label className="editField">
-          <span>Name <small className="optionalPill">Optional</small></span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example credential" />
+          <span>{t('modals.name')} <small className="optionalPill">{t('modals.optional')}</small></span>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('modals.namePlaceholderExample')} />
         </label>
-        <label className="editField">
-          Type
-          <select value={authType} onChange={(event) => setAuthType(event.target.value as CredentialAuthType)}>
-            <option value="mcp_oauth">MCP OAuth</option>
-            <option value="bearer_token">Bearer token</option>
-            <option value="environment_variable">Environment variable</option>
-          </select>
-        </label>
+        <div className="editField">
+          <span>{t('modals.typeField')}</span>
+          <ConsoleSelect
+            label={t('modals.typeField')}
+            value={authType}
+            onChange={(next) => setAuthType(next as CredentialAuthType)}
+            options={[
+              { value: 'mcp_oauth', label: t('authTypes.mcp_oauth') },
+              { value: 'bearer_token', label: t('authTypes.bearer_token') },
+              { value: 'environment_variable', label: t('authTypes.environment_variable') },
+            ]}
+          />
+        </div>
 
         {authType === 'mcp_oauth' ? (
           <div className="mcpRegistryPanel">
             <div className="pickerSearch registrySearch">
               <Search size={18} />
-              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder="Search Anthropic's MCP registry or enter a custom URL" />
+              <input value={registryQuery} onChange={(event) => setRegistryQuery(event.target.value)} placeholder={t('modals.registryFilter')} />
             </div>
             <div className="registryList">
               {filteredRegistry.map((option) => (
@@ -658,7 +664,7 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
               ))}
             </div>
             <label className="editField compactField">
-              MCP server URL <RequiredMark />
+              {t('modals.customMcpUrl')} <RequiredMark />
               <input value={mcpServerUrl} onChange={(event) => setMcpServerUrl(event.target.value)} placeholder="https://mcp.example.com" required />
             </label>
           </div>
@@ -666,19 +672,19 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
 
         {authType === 'bearer_token' ? (
           <label className="editField">
-            Token <RequiredMark />
-            <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Bearer or personal access token" required />
+            {t('modals.token')} <RequiredMark />
+            <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modals.tokenPlaceholder')} required />
           </label>
         ) : null}
 
         {authType === 'environment_variable' ? (
           <div className="credentialGrid">
             <label className="editField">
-              Variable name <RequiredMark />
+              {t('modals.variableName')} <RequiredMark />
               <input value={variableName} onChange={(event) => setVariableName(event.target.value)} placeholder="MY_API_KEY" required />
             </label>
             <label className="editField">
-              Value <RequiredMark />
+              {t('modals.value')} <RequiredMark />
               <input value={value} onChange={(event) => setValue(event.target.value)} required />
             </label>
           </div>
@@ -687,42 +693,42 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
         {needsSecretAcknowledgement ? (
           <>
             <div className="credentialSection">
-              <h3>Networking</h3>
+              <h3>{t('modals.networking')}</h3>
               <div className="segment credentialSegment">
-                <button type="button" className={networkType === 'limited' ? 'active' : ''} onClick={() => setNetworkType('limited')}>Limited</button>
-                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} onClick={() => setNetworkType('unrestricted')}>Unrestricted</button>
+                <button type="button" className={networkType === 'limited' ? 'active' : ''} aria-pressed={networkType === 'limited'} onClick={() => setNetworkType('limited')}>{t('modals.limited')}</button>
+                <button type="button" className={networkType === 'unrestricted' ? 'active' : ''} aria-pressed={networkType === 'unrestricted'} onClick={() => setNetworkType('unrestricted')}>{t('modals.unrestricted')}</button>
               </div>
               <label className="editField">
-                Allowed hosts
-                <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder="api.example.com, *.example.com" />
-                <small>Separate hosts with commas or newlines.</small>
+                {t('modals.allowedHosts')}
+                <textarea value={allowedHosts} onChange={(event) => setAllowedHosts(event.target.value)} placeholder={t('modals.allowedHostsPlaceholder')} />
+                <small>{t('modals.allowedHostsHint')}</small>
               </label>
             </div>
             <div className="credentialSection">
-              <h3>Injection location</h3>
+              <h3>{t('modals.injection')}</h3>
               <label className="checkboxLine">
                 <input type="checkbox" checked={injectHeaders} onChange={(event) => setInjectHeaders(event.target.checked)} />
-                Request headers
+                {t('modals.requestHeaders')}
               </label>
               <label className="checkboxLine">
                 <input type="checkbox" checked={injectBody} onChange={(event) => setInjectBody(event.target.checked)} />
-                Request body
+                {t('modals.requestBody')}
               </label>
-              <p>Limiting to request headers is recommended unless the service reads the secret from the request body.</p>
+              <p>{t('modals.injectionHint')}</p>
             </div>
             <div className="warningNotice">
               <Info size={18} />
-              <span>This credential is shared across this workspace. Anyone with API key access can use it in an agent session, including reading data and taking actions on behalf of the credential owner. Review access controls in <a href="#api-keys">API keys</a>.</span>
+              <span>{t('modals.credentialSharedWarning')} <a href="#api-keys">{t('modals.readGuidance')}</a>.</span>
             </div>
             <label className="checkboxLine acknowledgement">
               <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
-              I acknowledge this credential is shared and that I am responsible for its storage and use.
+              {t('modals.acknowledge')}
             </label>
           </>
         ) : null}
 
         <div className="modalActions stickyActions">
-          <button className="primaryButton largeAction" type="submit" disabled={saving || !canSubmit}>Add credential</button>
+          <button className="button primary" type="submit" disabled={saving || !canSubmit}>{saving ? t('modals.adding') : t('modals.addSubmit')}</button>
         </div>
       </form>
     </Modal>
@@ -730,6 +736,7 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
 }
 
 function CredentialAuthCell({ credential }: { credential: VaultCredential }) {
+  const { t } = useTranslation('credentials');
   const secondary = credential.auth_type === 'mcp_oauth'
     ? credential.mcp_server_url
     : credential.auth_type === 'environment_variable'
@@ -737,7 +744,7 @@ function CredentialAuthCell({ credential }: { credential: VaultCredential }) {
       : credential.value_hint;
   return (
     <span className="authCell">
-      <strong>{credentialAuthLabel(credential.auth_type)}</strong>
+      <strong>{authLabel(t, credential.auth_type)}</strong>
       {secondary ? <small>{secondary}</small> : null}
     </span>
   );
@@ -754,6 +761,7 @@ function RotateCredentialModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation('credentials');
   const [value, setValue] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -779,35 +787,29 @@ function RotateCredentialModal({
   };
 
   return (
-    <Modal title="Rotate credential" subtitle="Replace the stored secret without changing credential id or injection metadata." onClose={onClose} size="medium">
+    <Modal title={t('modals.rotateTitle')} subtitle={t('modals.rotateSubtitle')} onClose={onClose} size="medium">
       <form className="credentialForm" onSubmit={submit}>
         {error ? <div className="banner error inlineBanner">{error}</div> : null}
-        <KeyValuePanel rows={[
-          ['Credential', credential.name || credential.id],
-          ['Type', credentialAuthLabel(credential.auth_type)],
-          ['Current hint', credential.value_hint || 'not set'],
-        ]} />
+        <div className="readonlyFields modalFactGrid">
+          <div className="readonlyField"><strong>{t('modals.rotateFields.credential')}</strong><span>{credential.name || credential.id}</span></div>
+          <div className="readonlyField"><strong>{t('modals.rotateFields.type')}</strong><span>{authLabel(t, credential.auth_type)}</span></div>
+          <div className="readonlyField"><strong>{t('modals.rotateFields.currentHint')}</strong><span>{credential.value_hint || t('modals.notSet')}</span></div>
+        </div>
         <label className="editField">
-          New secret value <RequiredMark />
-          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Paste the replacement secret" type="password" required />
+          {t('modals.newSecret')} <RequiredMark />
+          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={t('modals.newSecretPlaceholder')} type="password" required />
         </label>
         <label className="checkboxLine">
           <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
-          <span>I understand the raw secret is stored encrypted and will not be shown again.</span>
+          <span>{t('modals.rotateAck')}</span>
         </label>
         <div className="modalActions">
-          <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton largeAction" type="submit" disabled={!canSubmit}>{saving ? 'Rotating…' : 'Rotate secret'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('modals.cancel')}</button>
+          <button className="button primary" type="submit" disabled={!canSubmit}>{saving ? t('modals.rotating') : t('modals.rotateSubmit')}</button>
         </div>
       </form>
     </Modal>
   );
-}
-
-function credentialAuthLabel(type: CredentialAuthType) {
-  if (type === 'mcp_oauth') return 'MCP OAuth';
-  if (type === 'bearer_token') return 'Bearer token';
-  return 'Environment variable';
 }
 
 function splitCsv(value: string): string[] {

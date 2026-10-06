@@ -70,7 +70,7 @@ Static review evidence:
 | Files/artifacts | Resource APIs, Files page, artifact/session routes | Local artifact path is credible. S3 should not be configurable until adapter/probes exist. |
 | Skills | `src/core/skills/*`, `src/api/routes/skills.ts`, `BuildPages.tsx` | Catalog/upload/version flow exists. Needs capability-driven warnings and continued drawer/table polish. |
 | Settings | `src/core/settings/schema.ts`, `RuntimeSettings.tsx`, `SettingsPage.tsx` | Correct one-active-stack shape. Validation is too structural and should move to real probes. |
-| Operations | `src/core/operations/*`, `OperationsPages.tsx`, `OperationsSettings.tsx` | Webhook/schedule/outcome primitives exist. Automatic runtime wiring and detail UX remain. |
+| Operations | `src/core/operations/*`, `OperationsPages.tsx` | Webhook/schedule/outcome primitives exist. Automatic runtime wiring and detail UX remain. |
 | CLI/SDK/docs | `src/cli/*`, `src/sdk/*`, `docs/*`, `tests/*` | Useful alpha surface. Docs/API matrix must stay aligned with actual local subset. |
 
 ## 4. Settings model spec

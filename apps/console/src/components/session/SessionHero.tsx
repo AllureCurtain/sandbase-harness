@@ -1,6 +1,8 @@
 import { Archive, ChevronDown, Clock, Cloud, Monitor, PauseCircle, Settings, Square, Target, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { ResourceBadge, StatusPill } from '../Common';
+import { useTranslation } from 'react-i18next';
+import { ResourceBadge } from '../Common';
+import { StatusDot, type Tone } from '../console-ui';
 import { formatDuration, relativeDate, shortId } from '../../lib/format';
 import type { Agent, Session } from '../../types';
 import type { SessionDisplayStatus } from './conversation';
@@ -12,6 +14,12 @@ export type SessionUsageReceipt = {
   costAmount?: string;
   costCurrency?: string;
 };
+
+function statusTone(displayStatus: SessionDisplayStatus): Tone {
+  if (displayStatus === 'running') return 'ok';
+  if (displayStatus === 'awaiting_action' || displayStatus === 'rescheduling') return 'warning';
+  return 'neutral';
+}
 
 /**
  * The session header: breadcrumb, title/status pill, agent and environment
@@ -46,11 +54,12 @@ export function SessionHero({
   onArchive: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation('sessions');
   const [actionsOpen, setActionsOpen] = useState(false);
   return (
     <>
       <div className="sessionCrumb">
-        <button type="button" className="textButton" onClick={onBack}>Sessions</button>
+        <button type="button" className="linkButton" onClick={onBack}>{t('detail.backToSessions')}</button>
         <span>/</span>
         <strong>{shortId(session.id)}</strong>
       </div>
@@ -59,7 +68,7 @@ export function SessionHero({
         <div className="sessionHeroMain">
           <div className="titleLine">
             <h1>{session.id}</h1>
-            <StatusPill status={displayStatus} />
+            <StatusDot tone={statusTone(displayStatus)} label={displayStatus} />
           </div>
           <div className="sessionMetaRow">
             <button className="resourceBadge" type="button" onClick={() => agent ? onOpenAgent(agent) : undefined}>
@@ -72,20 +81,20 @@ export function SessionHero({
         </div>
         <div className="sessionHeroActions">
           <div className="menuWrap">
-            <button className="secondaryButton largeAction" type="button" onClick={() => setActionsOpen((open) => !open)}>
-              Actions <ChevronDown size={16} />
+            <button className="button outline largeAction" type="button" onClick={() => setActionsOpen((open) => !open)}>
+              {t('detail.actions')} <ChevronDown size={16} />
             </button>
             {actionsOpen ? (
               <div className="agentMenu sessionActionsMenu">
-                <button type="button" onClick={() => { setActionsOpen(false); onSettings(); }}><Settings size={18} />Session settings</button>
+                <button type="button" onClick={() => { setActionsOpen(false); onSettings(); }}><Settings size={18} />{t('detail.menu.settings')}</button>
                 {displayStatus !== 'terminated' && displayStatus !== 'archived' ? (
-                  <button type="button" onClick={() => { setActionsOpen(false); onDefineOutcome(); }}><Target size={18} />Define outcome</button>
+                  <button type="button" onClick={() => { setActionsOpen(false); onDefineOutcome(); }}><Target size={18} />{t('detail.menu.defineOutcome')}</button>
                 ) : null}
-                <button type="button" onClick={() => { setActionsOpen(false); onInterrupt(); }}><Square size={18} />Send interrupt</button>
+                <button type="button" onClick={() => { setActionsOpen(false); onInterrupt(); }}><Square size={18} />{t('detail.menu.interrupt')}</button>
                 {!session.archived_at ? (
-                  <button type="button" onClick={() => { setActionsOpen(false); onArchive(); }}><Archive size={18} />Archive session</button>
+                  <button type="button" onClick={() => { setActionsOpen(false); onArchive(); }}><Archive size={18} />{t('detail.menu.archive')}</button>
                 ) : null}
-                <button type="button" className="dangerMenuItem" onClick={() => { setActionsOpen(false); onDelete(); }}><Trash2 size={18} />Delete session</button>
+                <button type="button" className="dangerMenuItem" onClick={() => { setActionsOpen(false); onDelete(); }}><Trash2 size={18} />{t('detail.menu.delete')}</button>
               </div>
             ) : null}
           </div>
@@ -111,6 +120,7 @@ function RunStateStrip({
   usage?: SessionUsageReceipt;
   onInterrupt: () => void;
 }) {
+  const { t } = useTranslation('sessions');
   const live = displayStatus === 'running' || displayStatus === 'awaiting_action' || displayStatus === 'rescheduling';
   const receipt = usage ? formatUsageReceipt(usage) : '';
   if (!live && !receipt) return null;
@@ -119,19 +129,19 @@ function RunStateStrip({
       {live ? (
         <span className="runStatePill">
           {displayStatus === 'awaiting_action' ? (
-            <><PauseCircle size={15} /> Needs approval</>
+            <><PauseCircle size={15} /> {t('detail.run.needsApproval')}</>
           ) : displayStatus === 'rescheduling' ? (
-            <><Clock size={15} /> Rescheduling</>
+            <><Clock size={15} /> {t('detail.run.rescheduling')}</>
           ) : (
-            <><span className="runDot" aria-hidden="true" /> Running</>
+            <><span className="runDot" aria-hidden="true" /> {t('detail.run.running')}</>
           )}
         </span>
       ) : null}
       {receipt ? <span className="costReceipt">{receipt}</span> : null}
       <span className="spacer" />
       {live ? (
-        <button className="dangerButton compactButton" type="button" onClick={onInterrupt}>
-          <Square size={13} /> Interrupt
+        <button className="button danger compactButton" type="button" onClick={onInterrupt}>
+          <Square size={13} /> {t('detail.run.interrupt')}
         </button>
       ) : null}
     </div>

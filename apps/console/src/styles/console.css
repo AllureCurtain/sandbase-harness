@@ -879,6 +879,14 @@ html[data-theme="dark"] {
   cursor: pointer;
 }
 
+.row-actions-cell {
+  text-align: right;
+}
+
+.row-actions-cell .icon-button {
+  display: inline-grid;
+}
+
 .table-truncate {
   max-width: 360px;
   overflow: hidden;

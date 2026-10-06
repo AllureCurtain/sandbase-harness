@@ -4,6 +4,7 @@ import { cn } from "../lib/utils";
 export interface ConsoleSelectOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 /**
@@ -50,7 +51,7 @@ export function ConsoleSelect({
       </SelectTrigger>
       <SelectPopup className="text-[13px]" alignItemWithTrigger={false} sideOffset={6}>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="text-[13px] sm:text-[13px]">
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled} className="text-[13px] sm:text-[13px]">
             {option.label}
           </SelectItem>
         ))}

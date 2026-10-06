@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SetupAgentModels } from '../../apps/console/src/components/pages/settings/SetupAgentModels';
+import i18n from '../../apps/console/src/i18n';
 import {
   agentModelFieldHint,
   agentModelUpdateBody,
@@ -20,6 +21,8 @@ import {
   setupModelProvider,
   suggestedModelId,
 } from '../../apps/console/src/lib/modelSetupGuidance';
+
+const t = i18n.getFixedT('en', 'settings');
 import type { Agent, ConsoleData, RuntimeSettings, RuntimeSettingsConfig } from '../../apps/console/src/types';
 
 const now = '2026-09-29T00:00:00.000Z';
@@ -174,21 +177,22 @@ describe('Setup agent models panel', () => {
 
 describe('providerSavedMessage', () => {
   it('names the restart before the remaining step', () => {
-    expect(providerSavedMessage).toContain('Restart the runtime once');
-    expect(providerSavedMessage.indexOf('Restart')).toBeLessThan(providerSavedMessage.indexOf('set the model'));
+    const message = providerSavedMessage(t);
+    expect(message).toContain('Restart the runtime once');
+    expect(message.indexOf('Restart')).toBeLessThan(message.indexOf('set the model'));
   });
 
   it('reports the pending restart only while the runtime says one is required', () => {
-    expect(pendingRestartNote(true, 'pending')).toContain('Restart the runtime once');
-    expect(pendingRestartNote(false, 'active')).toBeUndefined();
-    expect(pendingRestartNote(undefined, undefined)).toBeUndefined();
+    expect(pendingRestartNote(true, 'pending', t)).toContain('Restart the runtime once');
+    expect(pendingRestartNote(false, 'active', t)).toBeUndefined();
+    expect(pendingRestartNote(undefined, undefined, t)).toBeUndefined();
   });
 
   it('asks for the repair, not a restart, when activation failed', () => {
     // A failed activation keeps `restart_required` set, so restarting alone leaves
     // the user exactly where they were; the runtime names the offending path and
     // that is what has to be fixed first.
-    const note = pendingRestartNote(true, 'failed');
+    const note = pendingRestartNote(true, 'failed', t);
 
     expect(note).toContain('could not be activated');
     expect(note).toContain('Settings > Advanced');
@@ -198,19 +202,19 @@ describe('providerSavedMessage', () => {
 
 describe('agentModelUpdateBody', () => {
   it('sends the model and the published precondition, and nothing else', () => {
-    const update = agentModelUpdateBody(agent({ version: 4 }), 'deepseek-chat');
+    const update = agentModelUpdateBody(agent({ version: 4 }), 'deepseek-chat', t);
 
     expect(update).toEqual({ ok: true, body: { model: 'deepseek-chat', version: 4 } });
   });
 
   it('trims what the user typed', () => {
-    const update = agentModelUpdateBody(agent(), '  deepseek-chat  ');
+    const update = agentModelUpdateBody(agent(), '  deepseek-chat  ', t);
 
     expect(update).toEqual({ ok: true, body: { model: 'deepseek-chat', version: 1 } });
   });
 
   it('refuses an empty model id instead of clearing the agent', () => {
-    const update = agentModelUpdateBody(agent(), '   ');
+    const update = agentModelUpdateBody(agent(), '   ', t);
 
     expect(update.ok).toBe(false);
     expect(update.ok === false && update.error).toContain('assistant');
@@ -220,7 +224,7 @@ describe('agentModelUpdateBody', () => {
     // `PUT /v1/agents/{id}` writes a new immutable version for a real change and
     // answers the stored agent unchanged for a no-op; asking for the no-op only
     // hides which of the two the user is looking at.
-    const update = agentModelUpdateBody(agent({ model: 'gpt-4o' }), 'gpt-4o');
+    const update = agentModelUpdateBody(agent({ model: 'gpt-4o' }), 'gpt-4o', t);
 
     expect(update.ok).toBe(false);
   });
@@ -255,8 +259,8 @@ describe('model setup derivations', () => {
   });
 
   it('describes the field in terms of what the configured provider knows', () => {
-    expect(agentModelFieldHint(setupModelProvider(settings({ model: { vendor: 'openai' } })))).toContain('gpt-4o');
-    expect(agentModelFieldHint(setupModelProvider(settings({ model: { vendor: 'openai_compatible' } }))))
+    expect(agentModelFieldHint(setupModelProvider(settings({ model: { vendor: 'openai' } })), t)).toContain('gpt-4o');
+    expect(agentModelFieldHint(setupModelProvider(settings({ model: { vendor: 'openai_compatible' } })), t))
       .toContain('forwards it unchanged');
   });
 });

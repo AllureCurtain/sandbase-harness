@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export type ResourcePickerOption = {
   id: string;
@@ -99,6 +100,7 @@ export function MultiResourcePicker({
   options: ResourcePickerOption[];
   onToggle: (id: string, checked: boolean) => void;
 }) {
+  const { t: tPicker } = useTranslation('sessions');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -121,9 +123,9 @@ export function MultiResourcePicker({
         onClick={() => setOpen((current) => !current)}
       >
         {selectedOptions.length ? (
-          <span className="resourcePickerSelection" aria-label={`${selectedOptions.length} selected`}>
+          <span className="resourcePickerSelection" aria-label={tPicker('picker.selectedCount', { n: selectedOptions.length })}>
             {selectedOptions.slice(0, 2).map((option) => <span className="resourcePickerChip" key={option.id}>{option.title}</span>)}
-            {selectedOptions.length > 2 ? <span className="resourcePickerChip more">+{selectedOptions.length - 2} more</span> : null}
+            {selectedOptions.length > 2 ? <span className="resourcePickerChip more">{tPicker('picker.more', { n: selectedOptions.length - 2 })}</span> : null}
           </span>
         ) : <PickerValue title={placeholder} />}
         <ChevronDown className="resourcePickerChevron" size={18} aria-hidden="true" />
@@ -166,11 +168,12 @@ function PickerIcon({ icon, title }: { icon?: ReactNode; title: string }) {
 }
 
 function PickerPopover({ searchPlaceholder, query, onQuery, children }: { searchPlaceholder: string; query: string; onQuery: (value: string) => void; children: ReactNode }) {
+  const { t } = useTranslation('sessions');
   return (
     <div className="resourcePickerPopover">
       <label className="resourcePickerSearch">
         <Search size={17} aria-hidden="true" />
-        <span className="srOnly">Search options</span>
+        <span className="srOnly">{t('picker.searchOptions')}</span>
         <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder={searchPlaceholder} autoFocus />
       </label>
       <div className="resourcePickerOptions" role="listbox">{children}</div>
@@ -179,7 +182,8 @@ function PickerPopover({ searchPlaceholder, query, onQuery, children }: { search
 }
 
 function PickerEmpty() {
-  return <div className="resourcePickerEmpty">No matches</div>;
+  const { t } = useTranslation();
+  return <div className="resourcePickerEmpty">{t('list.noMatches')}</div>;
 }
 
 function filterOptions(options: ResourcePickerOption[], query: string) {

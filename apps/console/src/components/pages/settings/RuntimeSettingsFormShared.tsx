@@ -1,4 +1,5 @@
 import type { RuntimeSettingsConfig } from '../../../types';
+import { ConsoleSelect } from '../../console-select';
 
 export type AdapterOption = {
   id: string;
@@ -19,19 +20,24 @@ export function AdapterSelect({
   adapters,
   value,
   onChange,
+  label,
 }: {
   adapters: AdapterOption[];
   value: string;
   onChange: (value: string) => void;
+  label: string;
 }) {
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)}>
-      {adapters.map((item) => (
-        <option key={item.id} value={item.id} disabled={item.status !== 'available'}>
-          {item.label}{item.status === 'available' ? '' : ` - ${item.status}`}
-        </option>
-      ))}
-    </select>
+    <ConsoleSelect
+      label={label}
+      value={value}
+      onChange={onChange}
+      options={adapters.map((item) => ({
+        value: item.id,
+        label: item.status === 'available' ? item.label : `${item.label} · ${item.status}`,
+        disabled: item.status !== 'available',
+      }))}
+    />
   );
 }
 

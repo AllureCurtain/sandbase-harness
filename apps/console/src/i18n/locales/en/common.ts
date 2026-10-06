@@ -25,6 +25,23 @@ export const common = {
     open: "Open",
     clearSearch: "Clear search",
   },
+  configDrawer: {
+    title: "Config preview",
+    copy: "Copy config",
+    hide: "Hide preview",
+    wrap: "Wrap lines",
+    unwrap: "No wrap",
+    pasteTitle: "Paste a config — fill the form from it",
+    pastePlaceholder: "Paste a YAML or JSON definition…",
+    pasteFill: "Parse & fill form",
+    equivalentRequest: "Equivalent API request",
+  },
+  check: {
+    title: "Pre-submit check",
+    allGood: "All good",
+    toFix: "{{n}} to fix",
+    fix: "Fix",
+  },
   list: {
     search: "Search",
     actions: "Actions",
@@ -36,5 +53,31 @@ export const common = {
     noMatches: "No matches",
     deleteUncertain: "The deletion was not confirmed; the runtime may or may not have removed it. The view was re-read, so check it before trying again.",
     noMatchesDescription: "Nothing matches the current search or filters.",
+  },
+  kv: {
+    notConfigured: "not configured",
+  },
+  loadingConsole: "Loading console",
+  routes: {
+    noAgent: {
+      title: "No agent selected",
+      body: "The selected agent is missing or archived. Return to Agents and choose an active record.",
+    },
+    noSession: {
+      title: "No session selected",
+      body: "The selected session could not be found. Return to Sessions and choose another run.",
+    },
+    noEnvironment: {
+      title: "No environment selected",
+      body: "The selected environment could not be found. Return to Environments and choose another template.",
+    },
+    noVault: {
+      title: "No credential vault selected",
+      body: "The selected vault could not be found. Return to Credential Vaults and choose another vault.",
+    },
+    noMemoryStore: {
+      title: "No memory store selected",
+      body: "The selected memory store could not be found. Return to Memory Stores and choose another store.",
+    },
   },
 } as const;

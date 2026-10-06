@@ -51,6 +51,11 @@
 }
 
 html[data-theme="dark"] {
+  /* styles.css still declares `--surface` on `:root` after foundation.css;
+   * equal specificity plus later order would freeze it white in dark mode
+   * for any migrated rule that reads var(--surface). Re-assert the dark
+   * value here until the legacy stylesheet is retired. */
+  --surface: #17191e;
   --accent: var(--ink);
   --accent-ink: var(--ink);
   --accent-tint: color-mix(in oklch, var(--ink) 16%, transparent);
@@ -1370,31 +1375,4 @@ pre {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-/* SandBase local — dialog sizes the shared grammar does not name. The agent
-   workflow dialog is this console's one split-column surface (form + config
-   drawer); `medium` covers the 960px dialogs callers already choose, and the
-   optional subtitle line sits under the dialog title. */
-.modal-card-medium {
-  width: min(960px, 100%);
-}
-
-.modal-card-workflow {
-  width: min(1160px, calc(100vw - 32px));
-}
-
-.modal-subtitle {
-  margin: 2px 0 0;
-  color: var(--fg-muted);
-  font-size: 12.5px;
-  font-weight: 400;
-  line-height: 18px;
-}
-
-.modal-card-workflow .modal-body {
-  display: flex;
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
 }

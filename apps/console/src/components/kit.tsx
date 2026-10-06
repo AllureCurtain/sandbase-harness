@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Shared form kit for the Console workflow surfaces.
@@ -161,12 +162,13 @@ export type CheckItem = {
  * row carries a jump link back to its section.
  */
 export function CheckCard({ items, onJump }: { items: CheckItem[]; onJump?: (targetId: string) => void }) {
+  const { t } = useTranslation();
   const blockers = items.filter((item) => item.state === 'blocking').length;
   return (
     <div className="checkCard" aria-live="polite">
       <div className="checkCardHead">
-        <strong>Pre-submit check</strong>
-        {blockers ? <span className="checkCardWarn">{blockers} to fix</span> : <span className="checkCardOk">All good</span>}
+        <strong>{t('check.title')}</strong>
+        {blockers ? <span className="checkCardWarn">{t('check.toFix', { n: blockers })}</span> : <span className="checkCardOk">{t('check.allGood')}</span>}
       </div>
       {items.map((item) => (
         <div className="checkRow" key={item.label}>
@@ -181,7 +183,7 @@ export function CheckCard({ items, onJump }: { items: CheckItem[]; onJump?: (tar
                 document.getElementById(item.targetId!)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 onJump?.(item.targetId!);
               }}>
-              Fix →
+              {t('check.fix')} →
             </button>
           ) : null}
         </div>

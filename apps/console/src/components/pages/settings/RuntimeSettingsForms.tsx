@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { ConsoleSelect } from '../../console-select';
 import { FormField, OptionsJsonField } from '../../FormPrimitives';
 import type { RuntimeSettingsConfig } from '../../../types';
 import {
@@ -12,16 +14,18 @@ export { SandboxSettingsForm } from './RuntimeSettingsSandboxForm';
 export { StorageSettingsForm } from './RuntimeSettingsStorageForm';
 
 export function ModelSettingsForm({ adapters, config, onChange, errors, resetKey, apiKeyConfigured }: SettingsFormProps & { apiKeyConfigured: boolean }) {
+  const { t } = useTranslation('settings');
   return (
     <>
-      <FormField label="Vendor" description="The model API family used by this workspace." error={errors?.['model.vendor']}>
+      <FormField label={t('forms.model.vendor')} description={t('forms.model.vendorHint')} error={errors?.['model.vendor']}>
         <AdapterSelect
+          label={t('forms.model.vendor')}
           adapters={adapters}
           value={config.model.vendor}
           onChange={(vendor) => onChange({ ...config, model: { ...config.model, vendor: vendor as RuntimeSettingsConfig['model']['vendor'] } })}
         />
       </FormField>
-      <FormField label="Base URL" description="Use the default endpoint or point to an OpenAI-compatible gateway." error={errors?.['model.base_url']}>
+      <FormField label={t('forms.model.baseUrl')} description={t('forms.model.baseUrlHint')} error={errors?.['model.base_url']}>
         <input
           value={config.model.base_url ?? ''}
           onChange={(event) => onChange({ ...config, model: { ...config.model, base_url: event.target.value || undefined } })}
@@ -29,15 +33,15 @@ export function ModelSettingsForm({ adapters, config, onChange, errors, resetKey
         />
       </FormField>
       <FormField
-        label="API key"
-        description={apiKeyConfigured ? 'The full key is stored encrypted and never shown again. Keep ******** to preserve it, or enter a new key to replace it.' : 'Environment placeholders such as ${OPENAI_API_KEY} are supported.'}
+        label={t('forms.model.apiKey')}
+        description={apiKeyConfigured ? t('forms.model.apiKeyHintConfigured') : t('forms.model.apiKeyHint')}
         error={errors?.['model.api_key']}
       >
         <input
           type="password"
           value={config.model.api_key ?? ''}
           onChange={(event) => onChange({ ...config, model: { ...config.model, api_key: event.target.value || undefined } })}
-          placeholder={apiKeyConfigured ? '********' : '${MODEL_API_KEY}'}
+          placeholder={apiKeyConfigured ? t('forms.model.apiKeyPlaceholderConfigured') : t('forms.model.apiKeyPlaceholder')}
         />
       </FormField>
     </>
@@ -45,6 +49,7 @@ export function ModelSettingsForm({ adapters, config, onChange, errors, resetKey
 }
 
 export function LoopEngineSettingsForm({ adapters, config, onChange, errors, resetKey }: SettingsFormProps) {
+  const { t } = useTranslation('settings');
   // Platform-owned, and off unless an operator selected it: a value the schema
   // does not recognize is displayed as the safe default rather than as itself.
   const approvalMode = config.loop_engine.options.approval_mode === 'preauthorized_once'
@@ -52,14 +57,15 @@ export function LoopEngineSettingsForm({ adapters, config, onChange, errors, res
     : 'interactive';
   return (
     <>
-      <FormField label="Provider" description="The engine that executes agent turns and tool loops." error={errors?.['loop_engine.provider']}>
+      <FormField label={t('forms.loopEngine.provider')} description={t('forms.loopEngine.providerHint')} error={errors?.['loop_engine.provider']}>
         <AdapterSelect
+          label={t('forms.loopEngine.provider')}
           adapters={adapters}
           value={config.loop_engine.provider}
           onChange={(provider) => onChange({ ...config, loop_engine: { ...config.loop_engine, provider: provider as RuntimeSettingsConfig['loop_engine']['provider'] } })}
         />
       </FormField>
-      <FormField label="Default max steps" description="An Agent's max turns setting overrides this default." error={errors?.['loop_engine.options.default_max_steps']}>
+      <FormField label={t('forms.loopEngine.maxSteps')} description={t('forms.loopEngine.maxStepsHint')} error={errors?.['loop_engine.options.default_max_steps']}>
         <input
           type="number"
           min="1"
@@ -69,28 +75,31 @@ export function LoopEngineSettingsForm({ adapters, config, onChange, errors, res
         />
       </FormField>
       <FormField
-        label="Pi gate approval mode"
-        description="How a gated Pi native tool call is answered. Interactive waits for a person. Preauthorized once lets the runtime answer the call itself under a platform rule: each decision is consumed once, is never recorded as a person's click, and never becomes a standing permission. Only the Pi loop engine reads this setting."
+        label={t('forms.loopEngine.approvalMode')}
+        description={t('forms.loopEngine.approvalModeHint')}
         error={errors?.['loop_engine.options.approval_mode']}
       >
-        <select
+        <ConsoleSelect
+          label={t('forms.loopEngine.approvalMode')}
           value={approvalMode}
-          onChange={(event) => onChange({
+          onChange={(value) => onChange({
             ...config,
             loop_engine: {
               ...config.loop_engine,
               options: {
                 ...config.loop_engine.options,
-                approval_mode: event.target.value as RuntimeSettingsConfig['loop_engine']['options']['approval_mode'],
+                approval_mode: value as RuntimeSettingsConfig['loop_engine']['options']['approval_mode'],
               },
             },
           })}
-        >
-          <option value="interactive">Interactive (ask a person)</option>
-          <option value="preauthorized_once">Preauthorized once (platform decides)</option>
-        </select>
+          options={[
+            { value: 'interactive', label: t('forms.loopEngine.approval.interactive') },
+            { value: 'preauthorized_once', label: t('forms.loopEngine.approval.preauthorized_once') },
+          ]}
+        />
       </FormField>
       <OptionsJsonField
+        label={t('forms.optionsJson')}
         value={config.loop_engine.options}
         onChange={(options) => onChange({
           ...config,

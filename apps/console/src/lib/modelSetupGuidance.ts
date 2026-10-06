@@ -15,6 +15,7 @@
  * (`missing_env`), never a guess made from the browser.
  */
 
+import type { TFunction } from 'i18next';
 import type { Agent, RuntimeConfigState, RuntimeSettings } from '../types';
 
 const ENV_REFERENCE = /\$\{([^}]+)\}/g;
@@ -98,29 +99,29 @@ export type AgentModelUpdate =
  * without it a save applied to a definition the user never saw would silently
  * discard whatever else changed in between.
  */
-export function agentModelUpdateBody(agent: Agent, model: string): AgentModelUpdate {
+export function agentModelUpdateBody(agent: Agent, model: string, t: TFunction<'settings'>): AgentModelUpdate {
   const trimmed = model.trim();
   if (!trimmed) {
-    return { ok: false, error: `Enter the model id ${agent.name} should use.` };
+    return { ok: false, error: t('setupModels.guidance.enterModel', { name: agent.name }) };
   }
   if (trimmed === agent.model) {
-    return { ok: false, error: `${agent.name} already uses ${trimmed}.` };
+    return { ok: false, error: t('setupModels.guidance.alreadyUses', { name: agent.name, model: trimmed }) };
   }
   return { ok: true, body: { model: trimmed, version: agent.version } };
 }
 
 /** The one-line hint under the model field, phrased for what the provider actually knows. */
-export function agentModelFieldHint(provider: SetupModelProvider | null): string {
-  if (!provider) return 'Agent models are provider-independent; the runtime resolves them once a provider is configured.';
+export function agentModelFieldHint(provider: SetupModelProvider | null, t: TFunction<'settings'>): string {
+  if (!provider) return t('setupModels.guidance.hintNone');
   const suggestion = suggestedModelId(provider.vendor, provider.baseUrl);
   if (provider.vendor === 'openai_compatible') {
     return suggestion
-      ? `This endpoint is DeepSeek, so \`${suggestion}\` is the id to use.`
-      : 'Use the exact model id this endpoint serves. The runtime forwards it unchanged.';
+      ? t('setupModels.guidance.hintDeepseek', { model: suggestion })
+      : t('setupModels.guidance.hintCompatible');
   }
   return suggestion
-    ? `For this provider, that is usually \`${suggestion}\`.`
-    : 'Use the exact model id this provider serves.';
+    ? t('setupModels.guidance.hintSuggested', { model: suggestion })
+    : t('setupModels.guidance.hintGeneric');
 }
 
 /**
@@ -134,8 +135,9 @@ export function agentModelFieldHint(provider: SetupModelProvider | null): string
  * `model_config_invalid` and no request left the process. The message therefore
  * names the restart before the remaining step, not after it.
  */
-export const providerSavedMessage =
-  'Model provider saved. Restart the runtime once to apply it, then set the model each agent below should use.';
+export function providerSavedMessage(t: TFunction<'settings'>): string {
+  return t('setupModels.guidance.providerSaved');
+}
 
 /**
  * The note above the agent list while a saved provider is not active yet.
@@ -152,11 +154,12 @@ export const providerSavedMessage =
  */
 export function pendingRestartNote(
   restartRequired: boolean | undefined,
-  activationStatus?: RuntimeSettings['activation_status'],
+  activationStatus: RuntimeSettings['activation_status'] | undefined,
+  t: TFunction<'settings'>,
 ): string | undefined {
   if (activationStatus === 'failed') {
-    return 'The saved provider could not be activated. Fix the highlighted field in Settings > Advanced → Model provider editor, save, then restart the runtime once.';
+    return t('setupModels.guidance.repairFailed');
   }
   if (!restartRequired) return undefined;
-  return 'The saved provider is not active yet. Restart the runtime once, then send the first message.';
+  return t('setupModels.guidance.restartPending');
 }
