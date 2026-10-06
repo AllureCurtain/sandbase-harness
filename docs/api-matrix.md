@@ -125,7 +125,7 @@ full response-shape, lifecycle, or provider conformance.
 | CLI group | Coverage |
 | --- | --- |
 | `managed-agents init/start/list/reload/chat` | Core local lifecycle and chat workflows. |
-| `managed-agents session ...` | Create, message, tail, inspect, and logs. |
+| `managed-agents session ...` | Create, list, message, tail, inspect, and logs. |
 | `managed-agents worker poll` | Advanced self-hosted environment worker queue execution. |
 | `managed-agents settings ...` | Get, set model boundary, and validate canonical runtime settings. |
 | `managed-agents environments ...` | List, inspect, create, update, archive, and list worker keys. |

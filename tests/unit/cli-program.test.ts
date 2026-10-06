@@ -17,6 +17,9 @@ vi.mock('@/cli/session-commands.js', () => ({
   sessionTailCommand: vi.fn((...args: unknown[]) => {
     recorded.calls.push(['tail', ...args]);
   }),
+  sessionListCommand: vi.fn((...args: unknown[]) => {
+    recorded.calls.push(['list', ...args]);
+  }),
   sessionInspectCommand: vi.fn((...args: unknown[]) => {
     recorded.calls.push(['inspect', ...args]);
   }),
@@ -122,11 +125,13 @@ describe('CLI program', () => {
       'archive',
       'worker-keys',
     ]);
-    // The session group is documented as covered in `docs/api-matrix.md:84` — "Create,
-    // message, tail, inspect, and logs" — and `src/cli/session-commands.ts` implements all
-    // five; the module was imported by nothing, so each answered `unknown command`.
+    // The session group is documented as covered in `docs/api-matrix.md` — "Create,
+    // list, message, tail, inspect, and logs" — and `src/cli/session-commands.ts`
+    // implements all six; the module was imported by nothing, so each answered
+    // `unknown command`.
     expect(program.commands.find((command) => command.name() === 'session')?.commands.map((command) => command.name())).toEqual([
       'create',
+      'list',
       'message',
       'tail',
       'inspect',
@@ -170,6 +175,25 @@ describe('CLI program', () => {
     expect(await run('create', '-a', 'agent_x', '-e', 'local', '-t', 'Title', '-p', '4000')).toMatchObject([
       'create',
       { port: '4000', agent: 'agent_x', environment: 'local', title: 'Title' },
+    ]);
+    expect(await run(
+      'list',
+      '-a', 'agent_x',
+      '--status', 'idle',
+      '--status', 'running',
+      '--limit', '25',
+      '--page', 'cursor_1',
+      '--include-archived',
+    )).toMatchObject([
+      'list',
+      {
+        port: '3000',
+        agent: 'agent_x',
+        status: ['idle', 'running'],
+        limit: '25',
+        page: 'cursor_1',
+        includeArchived: true,
+      },
     ]);
     // `stream` defaults to true, so the command streams unless `--no-stream` is passed.
     // This exact pair is what `sessionMessageCommand`'s `opts.stream === false` branch
@@ -368,6 +392,7 @@ describe('CLI program', () => {
     // `--agent` names an id, not a name: the route requires an `agent_...` id
     // (`src/api/routes/sessions.ts:84`) and every published example passes `$AGENT_ID`.
     expect(longs('create')).toEqual(['--agent', '--api-key', '--environment', '--port', '--title']);
+    expect(longs('list')).toEqual(['--agent', '--api-key', '--include-archived', '--json', '--limit', '--page', '--port', '--status']);
     expect(longs('message')).toEqual(['--api-key', '--message', '--no-stream', '--port']);
     expect(longs('tail')).toEqual(['--api-key', '--last-event-id', '--port']);
     expect(longs('inspect')).toEqual(['--api-key', '--json', '--port']);

@@ -18,6 +18,7 @@ import {
 import {
   sessionCreateCommand,
   sessionInspectCommand,
+  sessionListCommand,
   sessionLogsCommand,
   sessionMessageCommand,
   sessionTailCommand,
@@ -241,9 +242,9 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
     });
 
   // The session CLI group. `docs/api-matrix.md:84` documents it as covered and
-  // `src/cli/session-commands.ts` implements all five commands, but the module was
+  // `src/cli/session-commands.ts` implements all six commands, but the module was
   // imported by nothing, so every one of them answered `unknown command 'session'`.
-  const session = program.command('session').description('Create, message, tail, inspect and log sessions');
+  const session = program.command('session').description('Create, list, message, tail, inspect and log sessions');
 
   session
     .command('create')
@@ -255,6 +256,21 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
     .option('-t, --title <title>', 'Session title')
     .action(async (opts) => {
       await sessionCreateCommand(opts);
+    });
+
+  session
+    .command('list')
+    .description('List sessions')
+    .option('-p, --port <port>', 'Server port to connect to', '3000')
+    .option('-k, --api-key <key>', 'API key if the server has auth enabled')
+    .option('-a, --agent <id>', 'Only sessions whose agent is this id')
+    .option('--status <status>', 'Only sessions in this status (idle, running, rescheduling, terminated); repeat to combine', (value: string, previous: string[]) => [...previous, value], [] as string[])
+    .option('--limit <n>', 'Maximum sessions to print')
+    .option('--page <cursor>', 'Resume a listing from the cursor a previous call printed as `next page`')
+    .option('--include-archived', 'Include archived sessions', false)
+    .option('--json', 'Print the raw response envelope as JSON', false)
+    .action(async (opts) => {
+      await sessionListCommand(opts);
     });
 
   session

@@ -4,6 +4,11 @@
 
 ### Added
 
+- `managed-agents session list` — the missing member of the documented session
+  CLI group. It pages `GET /v1/sessions` with `--agent`, repeatable `--status`,
+  `--limit`, `--page`, and `--include-archived` filters, prints one session per
+  line, names the `next_page` cursor it leaves, and answers `--json` with the
+  raw envelope.
 - The five published session-thread routes (`GET /v1/sessions/{id}/threads`,
   `{id}/threads/{id}`, `{id}/threads/{id}/events`, `{id}/threads/{id}/stream`,
   and `POST .../archive`) are now mounted as `unsupported_capability` refusals

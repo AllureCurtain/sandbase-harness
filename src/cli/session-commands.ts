@@ -1,4 +1,5 @@
 import { ManagedAgentsClient } from '@/sdk/client.js';
+import type { ApiSessionStatus } from '@/types/session.js';
 
 export type CliConnectionOptions = {
   port: string;
@@ -21,6 +22,15 @@ export type SessionTailOptions = CliConnectionOptions & {
 };
 
 export type SessionInspectOptions = CliConnectionOptions & {
+  json?: boolean;
+};
+
+export type SessionListOptions = CliConnectionOptions & {
+  agent?: string;
+  status?: string[];
+  limit?: string;
+  page?: string;
+  includeArchived?: boolean;
   json?: boolean;
 };
 
@@ -78,6 +88,33 @@ function lastRecordedSeq(events: Array<{ seq?: number }>): number {
     if (typeof event.seq === 'number' && event.seq > highest) highest = event.seq;
   }
   return highest;
+}
+
+export async function sessionListCommand(opts: SessionListOptions) {
+  const client = createClient(opts);
+  const result = await client.sessions.list({
+    agentId: opts.agent,
+    statuses: opts.status as ApiSessionStatus[] | undefined,
+    limit: opts.limit === undefined ? undefined : Number(opts.limit),
+    page: opts.page,
+    includeArchived: opts.includeArchived,
+  });
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (result.data.length === 0) {
+    console.log('No sessions.');
+    return;
+  }
+  for (const session of result.data) {
+    console.log(`${session.id}  ${session.status}  ${session.agent.name}  ${session.title ?? '-'}`);
+  }
+  // The next page is named on the output so a caller can continue without reading
+  // SDK internals: `--page` takes the same cursor `next_page` carries.
+  if (result.next_page) {
+    console.log(`next page: --page ${result.next_page}`);
+  }
 }
 
 export async function sessionInspectCommand(sessionId: string, opts: SessionInspectOptions) {

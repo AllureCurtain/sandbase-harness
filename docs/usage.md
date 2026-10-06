@@ -489,6 +489,7 @@ managed-agents list
 managed-agents reload
 managed-agents chat agent_assistant --message "hello"
 managed-agents session create --agent agent_assistant
+managed-agents session list
 managed-agents session message <session-id> --message "hello"
 managed-agents session tail <session-id>
 managed-agents session inspect <session-id>
@@ -514,7 +515,11 @@ managed-agents template create <name>
 
 `session create` prints the new session id, and `--agent` takes an **agent id**
 (default: the first loaded agent): a session's `agent` field is an id, not a name,
-and the API refuses a name with `400 invalid_agent_ref`. `session message` streams
+and the API refuses a name with `400 invalid_agent_ref`. `session list` prints one
+session per line (`id  status  agent  title`), filtered by `--agent`, `--status`
+(repeatable), and `--include-archived`; a printed `next page: --page <cursor>`
+line continues a long listing, and `--json` prints the raw response envelope.
+`session message` streams
 the reply unless `--no-stream` is passed, which returns as soon as the runtime
 accepts the message. `session tail` follows the live event stream and does not
 exit on its own; `session inspect` prints a summary (or the session and its events
