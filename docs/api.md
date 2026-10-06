@@ -654,13 +654,17 @@ and `budget` move in any non-terminal state. `budget` moves the session's
 ceiling under the budget rules below — an object replaces it, `null` removes
 it — with refusals spelled `budget_create_only`, `budget_not_raised`,
 `model_not_budgetable`, or the `budget_invalid_*` family for a malformed
-value. `vault_ids` returns `vault_ids_not_updatable`, an `agent` field outside
+value. `vault_ids` rebinds the session's credential vaults under creation's
+validation — an array of existing, non-archived vault ids, deduplicated, and
+an empty array detaches every vault — an `agent` field outside
 the pair returns `agent_field_not_updatable`, and a terminated or archived
 session returns `409` with `session_terminated`. A change emits one
 `session.updated` event carrying only the fields that changed — the full
 agent snapshot, the new ceiling or `null`, the whole post-update metadata
-bag, the new title — and a no-op request emits
-none. The new configuration applies from the next turn.
+bag, the new title, the rebound vault ids — and a no-op request emits
+none. The new configuration applies from the next turn; a vault rebind also
+tears down live MCP connections so they reconnect under the new scope rather
+than holding credentials a detached vault supplied.
 
 Deleting a session is permanent. A running session returns `409` with
 `session_running` and must be interrupted to `idle` first. Otherwise the runtime

@@ -180,8 +180,8 @@ export interface SessionAgentUpdate {
 /**
  * Parameters for `SessionManager.updateSession`.
  *
- * `vault_ids` is part of the published parameter set but refused rather than
- * applied (`vault_ids_not_updatable`); `budget` moves the session's ceiling
+ * `vault_ids` replaces the session's credential vault bindings wholesale —
+ * an empty array detaches every vault; `budget` moves the session's ceiling
  * under the budget contract's rules. `metadata` is a merge patch — `null` per
  * key removes it, `null` for the whole field is no change — and `title` is a
  * plain replace where `null` clears.

@@ -382,11 +382,13 @@ export interface ApiEvent {
    * materialized agent snapshot (the same projection `toApiSession` reports),
    * `budget` the new ceiling or `null` on removal, `metadata` the session's
    * full metadata bag (which replaces the carrier's own position at the top
-   * level for this event type), and `title` the new title.
+   * level for this event type), `title` the new title, and `vault_ids` the
+   * session's credential vault bindings after a rebind.
    */
   agent?: ApiAgent | { id: string; type: 'agent'; name: string };
   budget?: SessionBudget | null;
   title?: string | null;
+  vault_ids?: string[];
   /**
    * `span.model_request_end` pair id — the `span.model_request_start` this end
    * closes. `null` on rows persisted before the pair existed.
@@ -714,6 +716,7 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     ...(sessionUpdateAgent ? { agent: sessionUpdateAgent } : {}),
     ...(sessionUpdate?.budget !== undefined ? { budget: sessionUpdate.budget as SessionBudget | null } : {}),
     ...(sessionUpdate?.title !== undefined ? { title: sessionUpdate.title as string | null } : {}),
+    ...(sessionUpdate?.vault_ids !== undefined ? { vault_ids: sessionUpdate.vault_ids as string[] } : {}),
     ...(mcpServerName ? { mcp_server_name: mcpServerName } : {}),
     ...(mcpToolUseId ? { mcp_tool_use_id: mcpToolUseId } : {}),
     ...(toolUseId ? { tool_use_id: toolUseId } : {}),

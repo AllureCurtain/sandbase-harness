@@ -2,9 +2,8 @@
 
 Contract area: `/v1/sessions` — lifecycle, status transitions, initial events,
 resources, budget.
-Status: `supported` for lifecycle, initial events, and the declared-outcome loop;
-`partial` for session update (`vault_ids` is a named refusal, not an accepted
-field).
+Status: `supported` for lifecycle, initial events, the declared-outcome loop,
+and session update (including `vault_ids` rebinding).
 The session budget is a separate contract area with its own status and is not
 claimed here; see `budget.md`.
 Source: `src/api/routes/sessions.ts`, `src/api/routes/initial-events.ts`,
@@ -16,7 +15,7 @@ session-lifecycle: supported
 initial-events: supported
 outcome-grading: supported
 prompt-caching: supported
-session-update: partial
+session-update: supported
 -->
 
 ---
@@ -87,8 +86,10 @@ contract's rules — an object replaces it, `null` removes it, and the move is
 allowed in any non-terminal state because it only changes what the next model
 request may spend; the refusal codes (`budget_create_only`,
 `budget_not_raised`, `model_not_budgetable`, and the `budget_invalid_*`
-family) belong to [`budget.md`](./budget.md). `vault_ids` is refused with
-`vault_ids_not_updatable`, any other `agent` field with
+family) belong to [`budget.md`](./budget.md). `vault_ids` rebinds the
+session's credential vaults under creation's validation — an array of
+existing, non-archived vault ids, deduplicated, and an empty array detaches
+every vault — any other `agent` field with
 `agent_field_not_updatable`, and an unknown top-level field with
 `invalid_request_error`. An `agent` change additionally needs an externally
 idle session: a running one returns `409` with `session_not_idle` and must be
@@ -385,7 +386,7 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
 | Difference | Detail |
 | --- | --- |
 | Session budget | Owned by [`budget.md`](./budget.md), which is `partial`. `/v1/sessions` accepts a `budget` at creation and echoes it back, and rejects a malformed one before the session is persisted; pricing and the ceiling rules are that contract's subject, not this one's. `POST /v1/sessions/{id}` moves it under that contract's rules and reports the change through `session.updated`. |
-| `vault_ids` on update | Refused with `vault_ids_not_updatable` on `POST /v1/sessions/{id}`; the published parameter is reserved and the refusal keeps a caller from believing its bindings moved. |
+| `vault_ids` on update | Applied on `POST /v1/sessions/{id}` under creation's validation: the session's bindings are replaced wholesale, an empty array detaches every vault, the change reports through `session.updated`, and live MCP connections are torn down so they reconnect under the new scope rather than holding a detached vault's credentials. |
 | `loop_engine` on the object | Local extension with no published equivalent: the engine selection frozen at creation (`builtin` for legacy rows). It is additive and collides with no published field. |
 | Creation response | `initial_events` is not echoed back. The published contract does not state whether the creation response echoes it. |
 | Automatic rescheduling | Implemented for transient model failures: a retryable error schedules a wait, reports `session.status_rescheduled` (internal `retrying`), and either recovers to `running` or idles as `retries_exhausted` once the policy gives up. Retry counts and delays come from the local retry policy, not a published schedule. |
@@ -602,9 +603,8 @@ object's published fields are emitted in full — `budget` always present,
 declaration and evaluation spans on every read path, and the snapshot `agent`
 carrying `version` and `multiagent: null`. Session
 update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, `title`,
-and `budget` with `session.updated`; `vault_ids` on that route is a named
-refusal rather than an accepted field, which the matrix records under the
-session-update capability. Prompt caching is `supported` as the explicit
+`vault_ids`, and `budget` with `session.updated`. Prompt caching is
+`supported` as the explicit
 breakpoint spelling of the platform's automatic behaviour. The session
 budget is `partial` in its own
 contract file, and this file does not claim it.

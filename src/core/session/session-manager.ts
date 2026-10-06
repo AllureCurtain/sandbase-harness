@@ -467,14 +467,17 @@ export class SessionManager {
    * update route and is refused by name. `metadata` is a merge patch — `null`
    * per key removes it, and `null` for the whole field is no change. `title`
    * is a plain replace where `null` clears. `budget` moves the ceiling under
-   * {@link resolveBudgetUpdate}'s rules. `vault_ids` remains the
-   * recognised-but-refused parameter: vault bindings are not updatable.
+   * {@link resolveBudgetUpdate}'s rules. `vault_ids` replaces the session's
+   * credential vault bindings wholesale — an empty array detaches every
+   * vault.
    *
    * An agent change additionally needs the session externally idle: a running
    * turn resolved its tool surface at start, so a swap underneath it would
-   * only take effect mid-turn — interrupt first. Title, metadata, and budget
-   * are durable row state and stay updatable while a turn runs, because a
-   * budget move only changes what the next model request may spend.
+   * only take effect mid-turn — interrupt first. Title, metadata, budget, and
+   * vault bindings are durable row state and stay updatable while a turn
+   * runs: a budget move only changes what the next model request may spend,
+   * and a vault move only changes which credentials the next credential
+   * resolution may reach.
    *
    * Everything a caller changed is written in one transaction together with
    * the `session.updated` event that reports it, so a rejected update leaves
@@ -487,9 +490,6 @@ export class SessionManager {
     const session = this.get(sessionId);
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
-    }
-    if (params.vault_ids !== undefined) {
-      throw sessionOperationError('vault_ids_not_updatable', `Unknown parameter: 'vault_ids'.`);
     }
     if (session.archivedAt || isTerminal(session.status)) {
       throw sessionOperationError('session_terminated', `Session ${sessionId} is in terminal state: ${session.status}`);
@@ -505,7 +505,17 @@ export class SessionManager {
     const titleChange = params.title !== undefined && (params.title ?? undefined) !== session.title
       ? params.title ?? null
       : undefined;
-    if (agentChange === undefined && budgetChange === undefined && metadataChange === undefined && titleChange === undefined) {
+    // Vault bindings compare as a set: ordering carries no meaning, and the
+    // route-level normalizer has already deduplicated the request's ids.
+    const vaultIdsChange = params.vault_ids === undefined
+      ? undefined
+      : (() => {
+        const next = [...new Set(params.vault_ids)];
+        const same = next.length === (session.vaultIds ?? []).length
+          && next.every((id) => (session.vaultIds ?? []).includes(id));
+        return same ? undefined : next;
+      })();
+    if (agentChange === undefined && budgetChange === undefined && metadataChange === undefined && titleChange === undefined && vaultIdsChange === undefined) {
       return session;
     }
 
@@ -526,11 +536,14 @@ export class SessionManager {
     if (titleChange !== undefined) {
       eventPayload.title = titleChange;
     }
+    if (vaultIdsChange !== undefined) {
+      eventPayload.vault_ids = vaultIdsChange;
+    }
 
     const updated = this.db.transaction(() => {
       this.db.prepare(
         `UPDATE sessions
-         SET agent_definition = ?, title = ?, metadata = ?, updated_at = datetime('now')
+         SET agent_definition = ?, title = ?, metadata = ?, vault_ids = ?, updated_at = datetime('now')
          WHERE id = ?`,
       ).run(
         agentChange !== undefined
@@ -540,6 +553,7 @@ export class SessionManager {
         metadataChange !== undefined
           ? JSON.stringify(metadataChange)
           : session.metadata ? JSON.stringify(session.metadata) : null,
+        JSON.stringify(vaultIdsChange ?? session.vaultIds ?? []),
         sessionId,
       );
       if (budgetChange !== undefined) {
@@ -556,7 +570,10 @@ export class SessionManager {
     // The snapshot is durable before the MCP teardown runs: a reset failure
     // leaves the session's declared tools ahead of its connected servers, which
     // the next turn's lazy connect repairs — the reverse order could not.
-    if (agentChange !== undefined) {
+    // Vault rebinds ride the same teardown: a live transport keeps the headers
+    // it was built with, so a detached vault's credentials would otherwise
+    // stay reachable until the connection happened to drop.
+    if (agentChange !== undefined || vaultIdsChange !== undefined) {
       await this.executor?.resetSessionMcpConnections?.(sessionId);
     }
     if (budgetChange !== undefined) {
