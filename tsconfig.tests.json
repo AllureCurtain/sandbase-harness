@@ -24,7 +24,11 @@
     // through the import.
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "types": ["node", "vitest/globals", "react", "react-dom"]
+    // `vite/client` supplies the `*.css` module declarations that Console page
+    // files rely on for side-effect stylesheet imports. Tests import those
+    // components transitively, so this program needs the same ambient types
+    // the Console's own tsconfig already declares.
+    "types": ["node", "vitest/globals", "react", "react-dom", "vite/client"]
   },
   "include": ["tests/**/*", "src/**/*", "scripts/**/*.ts", "playwright.config.ts"],
   "exclude": [
