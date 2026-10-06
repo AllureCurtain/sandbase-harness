@@ -155,6 +155,9 @@ export async function runDueScheduledDeployments(
     // outcome to the run that started.
     if (result.session_id) {
       await emit({ type: 'session.created', subjectId: result.session_id });
+      // Same coarse lifecycle as a created session: it begins queued, which
+      // the published catalog names `pending`.
+      await emit({ type: 'session.pending', subjectId: result.session_id });
     }
     await emit({ type: 'deployment_run.started', subjectId: result.id });
     await emit({

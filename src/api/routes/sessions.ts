@@ -175,6 +175,9 @@ export function sessionsRoutes(deps: ServerDeps) {
         ...(budget.budget ? { budget: budget.budget } : {}),
       }, initialEvents.events ?? []);
       await publishOperationEvent(deps, { type: 'session.created', subjectId: session.id });
+      // A session begins `queued`: the published coarse lifecycle names that
+      // state `pending`, so creation raises it alongside `session.created`.
+      await publishOperationEvent(deps, { type: 'session.pending', subjectId: session.id });
       return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId), sessionDerived(session.id)), 201);
     } catch (err) {
       if (err instanceof UnsupportedCapabilityError) {

@@ -2524,12 +2524,17 @@ field only) / `environment.archived` / `environment.deleted`, `vault.created` /
 `vault.archived` with one `vault_credential.archived` per credential, the
 credential `created` / `archived` / `deleted` triple, `memory_store.created` /
 `memory_store.archived` / `memory_store.deleted`, and the deployment and timed-run events below.
-The catalog names a subscription may list but nothing yet produces are
-`session.pending`, `session.running`, `session.idled`,
-`session.requires_action`, `session.thread_*`, and `agent.deleted` — each
-waits on a surface that does not exist yet. `deployment.deleted` is produced
-by the delete route above, and `vault_credential.refresh_failed` by the MCP
-OAuth refresh path (see Credentials).
+The coarse session lifecycle names ride the same transitions:
+`session.pending` is published at creation because every session begins
+queued, `session.running` accompanies `session.status_run_started`, and an
+idle raises `session.idled` — or `session.requires_action` when its
+`stop_reason.type` is `requires_action`. The four published names with no
+producing surface — `session.thread_created` / `session.thread_idled` /
+`session.thread_terminated` (no multiagent surface) and `agent.deleted` (no
+delete route) — are refused at subscription time like any name outside the
+catalog, because a stored subscription that can never fire reads as a working
+one. `vault_credential.refresh_failed` is produced by the MCP OAuth refresh
+path (see Credentials).
 
 A **timed** run publishes `deployment_run.started` and then exactly one of
 `deployment_run.succeeded` / `deployment_run.failed`; all three name the same run,

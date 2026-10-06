@@ -66,9 +66,11 @@ is created `active` (the schema default) and stays `active` until archived.
   unused: `POST` and `PUT` under `/v1/webhooks` validate every entry against
   `OFFICIAL_WEBHOOK_EVENTS` (`src/core/operations/webhook-events.ts`, the
   `BetaWebhook*EventData.type` union transcribed from
-  `@anthropic-ai/sdk@0.129.0`) and answer `400` naming each unrecognized
-  entry, so a stored subscription can only ever name an event the published
-  contract defines.
+  `@anthropic-ai/sdk@0.129.0` minus the four names this runtime can never
+  produce — the `session.thread_*` family and `agent.deleted`) and answer
+  `400` naming each unrecognized entry, so a stored subscription can only
+  ever name an event the published contract defines and this runtime can
+  raise.
 - `makePayload` builds the published envelope
   `{type: 'event', id, created_at, data: {type, id, organization_id, workspace_id, ...}}`.
   The root `type` is the literal `event`, the root `id` is the `whe_` webhook
@@ -100,12 +102,12 @@ is created `active` (the schema default) and stays `active` until archived.
   `dispatchWebhookEvent`, so matching, signing, retries and delivery rows behave
   identically; only the place the event is raised differs. A failing delivery
   never fails the state change — the result is discarded and a rejection caught.
-- The catalog names the runtime currently emits:
+- The catalog names the runtime emits — every catalog name has a producer:
 
-  | Family | Emitted | Subscribable but never emitted |
+  | Family | Emitted | Published names refused at subscription |
   | --- | --- | --- |
-  | sessions | `session.created`, `session.updated`, `session.archived`, `session.deleted`, `session.status_run_started`, `session.status_idled`, `session.status_rescheduled`, `session.status_terminated`, `session.budget_reached`, `session.outcome_evaluation_ended` | `session.pending`, `session.running`, `session.idled`, `session.requires_action`, `session.thread_*` (no multiagent surface) |
-  | agents | `agent.created`, `agent.updated` (a new version only), `agent.archived` | `agent.deleted` (no delete route) |
+  | sessions | `session.created`, `session.pending`, `session.updated`, `session.archived`, `session.deleted`, `session.status_run_started`, `session.status_idled`, `session.status_rescheduled`, `session.status_terminated`, `session.running`, `session.idled`, `session.requires_action`, `session.budget_reached`, `session.outcome_evaluation_ended` | `session.thread_*` (refused — no multiagent surface) |
+  | agents | `agent.created`, `agent.updated` (a new version only), `agent.archived` | `agent.deleted` (refused — no delete route) |
   | environments | `environment.created`, `environment.updated` (a changed field only), `environment.archived`, `environment.deleted` | — |
   | vaults | `vault.created`, `vault.archived`, `vault.deleted`, `vault_credential.created`, `vault_credential.archived`, `vault_credential.deleted`, `vault_credential.refresh_failed` (OAuth refresh at the MCP connect boundary) | — |
   | memory stores | `memory_store.created`, `memory_store.archived`, `memory_store.deleted` | — |
@@ -113,7 +115,8 @@ is created `active` (the schema default) and stays `active` until archived.
   | deployment runs | `deployment_run.started`, `deployment_run.succeeded`, `deployment_run.failed` | — |
 
   Session lifecycle events that have no stream event of their own —
-  `session.created`, `session.archived` — are published on the transition:
+  `session.created`, `session.pending` (every session begins `queued`), and
+  `session.archived` — are published on the transition:
   the REST routes through `operation-events.ts`, and a timed run that
   materialized a session from `runDueScheduledDeployments`, so a repeated
   archive and a failed run raise nothing. `session.updated` and
@@ -420,7 +423,7 @@ and the entries §4 records.
 | Difference | Detail |
 | --- | --- |
 | Delivery payload envelope | Now the published body: `{type: "event", id, created_at, data: {type, id, organization_id, workspace_id}}`, verified end-to-end by the official SDK's `client.beta.webhooks.unwrap` (conformance test §6). `organization_id` / `workspace_id` are the local constants `org_local` / `wrkspc_local` — a real org/workspace does not exist locally, and the constants keep the field set a receiver destructures. `data.type` carries the published event name: the session stream is projected through `webhookEventsForSessionEvent` rather than forwarded raw, so the names a receiver sees are the catalog's. |
-| Event coverage | Most of the published table is emitted — the per-family split is the table in §2. The names a subscription may still list and never receive are the ones with no producing surface at all: `session.pending`, `session.running`, `session.idled`, `session.requires_action`, the `session.thread_*` family (no multiagent surface), and `agent.deleted`. They remain subscribable because the SDK declares them and a published client config must not be refused — silence on a declared event is meaningful, silence on an undeclared one is refused at subscription time instead. |
+| Event coverage | Every catalog name has a producer — the per-family split is the table in §2. The coarse session lifecycle names ride the durable status events: `session.pending` fires at creation because a session begins `queued`, `session.running` accompanies `session.status_run_started`, and a `session.status_idle` raises `session.idled` — or `session.requires_action` when its `stop_reason.type` is `requires_action`, because a parked session is waiting on an answer, not idle. The four published names with no producing surface — the `session.thread_*` family (no multiagent surface) and `agent.deleted` (no delete route) — are **refused at subscription** like any name outside the catalog, because a stored subscription that can never fire reads as a working one; the refusal is the honest answer and the names re-enter the catalog when their surface exists. |
 | `deployment.paused` causes | Both published causes are implemented: a requested pause writes `paused_reason: {"type": "manual"}`, and an unrecoverable trigger failure writes `{"type": "error", "error": {"type": <run's error.type>, "message": <message>}}` in the same operation that records the failed run. The recoverable case (`session_rate_limited_error`) records the run and does **not** pause, matching the published rule. The event is raised only when the state changes, so a repeat pause is silent. |
 | `deployment.created` scope | Emitted by both mount prefixes of the create route. A create refused before the insert publishes nothing. A deployment created already `paused` is reported by `deployment.created` alone, not by `deployment.paused`: that pair reports a transition, and a resource coming into existence paused has not moved from anything. |
 | `deployment.archived` causes | Both published causes are implemented. The direct one is the archive route. The cascade is the scheduler's preflight: a timed pass that finds the bound agent missing or archived archives the deployment and records **no run** — the published "at the next scheduled run" timing, made real by `cron` being nullable since `M052`, which also gives "a deployment with no schedule" its representation (`schedule: null`). A manual `run` on a deployment whose agent is gone answers `409` and archives it too, with `deployment.archived` published in both paths. `POST /v1/agents/{id}/archive` itself still touches no `scheduled_deployments` row, so the cascade fires at the next trigger or manual run, not eagerly at the agent's archive — the same delay the published rule describes. |
@@ -683,16 +686,16 @@ catalog-bounded subscription vocabulary, the session-stream projection onto the
 published names, and the resource lifecycle events across agents,
 environments, vaults, memory stores and deployments are the aligned parts. The
 private-address rule as a default (it is opt-in here), the
-`mcp_egress_blocked_error` value with no producing path, the catalog names
-with no producing surface (`session.pending`/`running`/`idled`/`requires_action`,
-`session.thread_*`, `agent.deleted`), and a persisted in-progress run state
+`mcp_egress_blocked_error` value with no producing path, the published catalog
+names refused at subscription for having no producing surface
+(`session.thread_*`, `agent.deleted`), and a persisted in-progress run state
 are absent or differ, and are listed in §4 so that "covered by a contract" does
 not read as "implemented". Neither entry is `supported`; neither is `unavailable`, because
 the resource, the delivery engine, the scheduler and the run records are real
 and exercised by the tests in §6. A client written against the published
 deployment surface — the official SDK's `beta.deployments` and
 `beta.deploymentRuns` — now works end to end, which the conformance test in §6
-asserts over real HTTP; the webhooks and the remaining catalog silences keep
+asserts over real HTTP; the webhooks and the refused unproducible names keep
 the area `partial` as a whole.
 
 The two `supported` entries in this area are different in kind from the pair

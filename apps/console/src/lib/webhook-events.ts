@@ -27,9 +27,6 @@ export const WEBHOOK_EVENT_GROUPS: Array<{ category: string; events: string[] }>
       'session.status_terminated',
       'session.budget_reached',
       'session.outcome_evaluation_ended',
-      'session.thread_created',
-      'session.thread_idled',
-      'session.thread_terminated',
     ],
   },
   {
@@ -50,7 +47,6 @@ export const WEBHOOK_EVENT_GROUPS: Array<{ category: string; events: string[] }>
       'agent.created',
       'agent.updated',
       'agent.archived',
-      'agent.deleted',
     ],
   },
   {

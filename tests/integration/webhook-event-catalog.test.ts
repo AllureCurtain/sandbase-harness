@@ -94,6 +94,25 @@ describe('webhook event catalog', () => {
       expect(JSON.stringify(body)).toContain('turn_complete');
     });
 
+    it('refuses the SDK-declared names nothing produces', async () => {
+      // `session.thread_*` waits on the deferred multiagent surface and
+      // `agent.deleted` on a delete route that does not exist. Accepting them
+      // would store a subscription that can never fire and read as a working
+      // one, so they answer 400 like any unknown name.
+      const { status, body } = await subscribe([
+        'session.thread_created',
+        'session.thread_idled',
+        'session.thread_terminated',
+        'agent.deleted',
+      ]);
+      expect(status).toBe(400);
+      for (const name of ['thread_created', 'thread_idled', 'thread_terminated', 'agent.deleted']) {
+        expect(JSON.stringify(body)).toContain(name);
+      }
+      const listed = await app.request('/v1/webhooks');
+      expect(((await listed.json()) as any).data).toHaveLength(0);
+    });
+
     it('accepts every name in the catalog', async () => {
       const { status, body } = await subscribe([...OFFICIAL_WEBHOOK_EVENTS]);
       expect(status, JSON.stringify(body)).toBe(201);
@@ -108,6 +127,9 @@ describe('webhook event catalog', () => {
       expect(wildcard.status).toBe(400);
       const unknown = await postJson(`/v1/webhooks/${created.id}`, { events: ['turn_complete'] }, 'PUT');
       expect(unknown.status).toBe(400);
+      // An SDK-declared name with no producer is refused on update too.
+      const silent = await postJson(`/v1/webhooks/${created.id}`, { events: ['agent.deleted'] }, 'PUT');
+      expect(silent.status).toBe(400);
 
       // A refused update leaves the stored subscription alone.
       const read = await app.request(`/v1/webhooks/${created.id}`);
@@ -163,17 +185,34 @@ describe('webhook event catalog', () => {
     const deliveredTypes = () => requests.map((r) => (JSON.parse(r.body) as any).data.type);
 
     it('delivers only the published names a stream event maps to', async () => {
-      subscribe(['session.status_run_started', 'session.status_idled', 'agent.message', 'session.created']);
+      subscribe([
+        'session.status_run_started',
+        'session.status_idled',
+        'session.running',
+        'session.idled',
+        'session.requires_action',
+        'agent.message',
+        'session.created',
+      ]);
 
       listener(streamEvent('session.status_running'));
       listener(streamEvent('agent.message'));
       listener(streamEvent('span.model_request_start'));
       listener(streamEvent('session.status_idle'));
+      listener(streamEvent('session.status_idle', { stop_reason: { type: 'requires_action' } }));
       await sleep(30);
 
-      // The run and the idle arrive under their published names; the internal
-      // traffic raises nothing even though `agent.message` was subscribed.
-      expect(deliveredTypes()).toEqual(['session.status_run_started', 'session.status_idled']);
+      // Each transition arrives under its granular and coarse published names;
+      // the internal traffic raises nothing even though `agent.message` was
+      // subscribed, and a parked idle is `requires_action`, not `idled`.
+      expect(deliveredTypes()).toEqual([
+        'session.status_run_started',
+        'session.running',
+        'session.status_idled',
+        'session.idled',
+        'session.status_idled',
+        'session.requires_action',
+      ]);
     });
 
     it('emits session.budget_reached once per budget value', async () => {
@@ -209,6 +248,17 @@ describe('webhook event catalog', () => {
         `INSERT INTO webhooks (id, name, url, events, description, status, metadata, created_at, updated_at)
          VALUES ('wh_res', 'resources', 'http://127.0.0.1:1/hook', ?, '', 'active', '{}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
       ).run(JSON.stringify([...OFFICIAL_WEBHOOK_EVENTS]));
+    });
+
+    it('fires session.created and session.pending together at creation', async () => {
+      db.prepare("INSERT INTO agents (id, name, definition) VALUES ('agent_sess', 'sess', '{}')").run();
+      const created = await postJson('/v1/sessions', { agent: 'agent_sess' });
+      expect(created.status).toBe(201);
+      await sleep(30);
+      // A session begins `queued`; the published coarse lifecycle names that
+      // `pending`, and it fires once, alongside `session.created`.
+      expect(countDeliveries('session.created')).toBe(1);
+      expect(countDeliveries('session.pending')).toBe(1);
     });
 
     it('fires environment.created/updated/archived/deleted and no event on a no-op update', async () => {
