@@ -268,12 +268,44 @@ describe('session update', () => {
     expect(manager.getEventLogger().getEvents(session.id)).toHaveLength(1);
   });
 
-  it('refuses the recognized-but-not-updatable vault_ids parameter', async () => {
-    const session = manager.create({ agent: 'agent_test' });
+  it('rebinds vault_ids, reports them on session.updated, and tears down MCP connections', async () => {
+    const resetMcp = vi.fn(async () => {});
+    const executor: SessionExecutor = { async *execute() {}, resetSessionMcpConnections: resetMcp };
+    manager.setExecutor(executor);
+    const session = manager.create({ agent: 'agent_test', vaultIds: ['vlt_one'] });
+    expect(session.vaultIds).toEqual(['vlt_one']);
 
-    await expect(manager.updateSession(session.id, { vault_ids: ['vlt_one'] })).rejects.toMatchObject({
-      code: 'vault_ids_not_updatable',
-    });
+    const updated = await manager.updateSession(session.id, { vault_ids: ['vlt_two', 'vlt_three'] });
+
+    expect(updated.vaultIds).toEqual(['vlt_two', 'vlt_three']);
+    expect(manager.get(session.id)?.vaultIds).toEqual(['vlt_two', 'vlt_three']);
+    const apiEvent = toApiEvent(manager.getEventLogger().getEvents(session.id)[0]!);
+    expect(apiEvent.type).toBe('session.updated');
+    expect(apiEvent.vault_ids).toEqual(['vlt_two', 'vlt_three']);
+    expect(apiEvent.title).toBeUndefined();
+    // A live transport holds the headers it was built with; the teardown makes
+    // a detached vault's credentials unreachable instead of lingering.
+    expect(resetMcp).toHaveBeenCalledWith(session.id);
+  });
+
+  it('detaches every vault on an empty vault_ids array', async () => {
+    const session = manager.create({ agent: 'agent_test', vaultIds: ['vlt_one'] });
+
+    const updated = await manager.updateSession(session.id, { vault_ids: [] });
+
+    expect(updated.vaultIds).toEqual([]);
+    const apiEvent = toApiEvent(manager.getEventLogger().getEvents(session.id)[0]!);
+    expect(apiEvent.vault_ids).toEqual([]);
+  });
+
+  it('treats a reordered or unchanged vault_ids set as a no-op', async () => {
+    const session = manager.create({ agent: 'agent_test', vaultIds: ['vlt_one', 'vlt_two'] });
+
+    const same = await manager.updateSession(session.id, { vault_ids: ['vlt_two', 'vlt_one'] });
+    expect(same.vaultIds).toEqual(['vlt_one', 'vlt_two']);
+
+    const unchanged = await manager.updateSession(session.id, { vault_ids: ['vlt_one', 'vlt_two'] });
+    expect(unchanged.vaultIds).toEqual(['vlt_one', 'vlt_two']);
     expect(manager.getEventLogger().getEvents(session.id)).toEqual([]);
   });
 

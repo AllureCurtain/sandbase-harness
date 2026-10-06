@@ -582,6 +582,42 @@ describe('Managed Agents API', () => {
       expect(missingMemoryStore.body.error.message).toContain('Memory store not found');
     });
 
+    it('rebinds vault_ids on session update and validates them like creation', async () => {
+      const { res: created, body: session } = await postJson('/v1/sessions', {
+        agent: 'agent_echo-agent',
+      });
+      expect(created.status).toBe(201);
+      expect(session.vault_ids).toEqual([]);
+
+      const rebound = await postJson(`/v1/sessions/${session.id}`, { vault_ids: ['vlt_test'] });
+      expect(rebound.res.status, `update refused: ${rebound.body?.error?.message ?? 'no error message'}`).toBe(200);
+      expect(rebound.body.vault_ids).toEqual(['vlt_test']);
+
+      const stored = db.prepare('SELECT vault_ids FROM sessions WHERE id = ?').get(session.id) as { vault_ids: string };
+      expect(JSON.parse(stored.vault_ids)).toEqual(['vlt_test']);
+
+      const { body: events } = await getJson(`/v1/sessions/${session.id}/events`);
+      const updateEvent = events.data.find((event: any) => event.type === 'session.updated');
+      expect(updateEvent?.vault_ids).toEqual(['vlt_test']);
+
+      // Validation is creation's: a missing vault and a malformed entry are
+      // refused with the same messages rather than a generic 400.
+      const missing = await postJson(`/v1/sessions/${session.id}`, { vault_ids: ['vlt_missing'] });
+      expect(missing.res.status).toBe(400);
+      expect(missing.body.error.message).toContain('Credential vault not found');
+      const malformed = await postJson(`/v1/sessions/${session.id}`, { vault_ids: ['vlt_test', 42] });
+      expect(malformed.res.status).toBe(400);
+      expect(malformed.body.error.message).toContain('vault_ids[1]');
+      // The refused updates left the bindings alone.
+      const { body: afterRefusals } = await getJson(`/v1/sessions/${session.id}`);
+      expect(afterRefusals.vault_ids).toEqual(['vlt_test']);
+
+      // An empty array detaches every vault.
+      const detached = await postJson(`/v1/sessions/${session.id}`, { vault_ids: [] });
+      expect(detached.res.status).toBe(200);
+      expect(detached.body.vault_ids).toEqual([]);
+    });
+
     it('rejects Pi named non-local Environments before session persistence with a stable client error', async () => {
       db.prepare('INSERT INTO environments (id, name, config) VALUES (?, ?, ?)').run(
         'env_pi_docker',

@@ -871,9 +871,9 @@ export function sessionsRoutes(deps: ServerDeps) {
   //
   // The published update verb on a session resource: `agent` admits only a
   // tools/MCP swap, `metadata` merges with `null` per key as removal, `title`
-  // replaces, and `budget` moves the session's ceiling under the budget
-  // contract's rules. `vault_ids` is the one recognised parameter the request
-  // refuses by name rather than applies. A body-level key that names none of
+  // replaces, `budget` moves the session's ceiling under the budget
+  // contract's rules, and `vault_ids` rebinds the session's credential
+  // vaults under creation's validation. A body-level key that names none of
   // these is a plain invalid request — the parameter spelling that almost
   // worked is worth more than a silent drop.
   app.post('/:id', async (c) => {
@@ -908,6 +908,13 @@ export function sessionsRoutes(deps: ServerDeps) {
     if (parsedBudget && !parsedBudget.ok) {
       return invalidWithCode(c, parsedBudget.code ?? 'budget_invalid_shape', parsedBudget.message ?? 'budget is invalid');
     }
+    // `vault_ids` rebinds the session's credential vaults under the same
+    // validation creation applies: an array of existing, non-archived vault
+    // ids, deduplicated. An explicit empty array detaches every vault.
+    const vaultIds = body.vault_ids !== undefined ? normalizeVaultIds(deps, body.vault_ids) : undefined;
+    if (vaultIds && !vaultIds.ok) {
+      return invalid(c, vaultIds.message ?? 'vault_ids is invalid');
+    }
 
     try {
       const session = await sessionManager.updateSession(sessionId, {
@@ -915,7 +922,7 @@ export function sessionsRoutes(deps: ServerDeps) {
         ...(parsedBudget ? { budget: parsedBudget.remove ? null : parsedBudget.budget } : {}),
         ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
         ...(body.title !== undefined ? { title: body.title } : {}),
-        ...(body.vault_ids !== undefined ? { vault_ids: body.vault_ids } : {}),
+        ...(vaultIds?.ok ? { vault_ids: vaultIds.value } : {}),
       });
       return c.json(toApiSession(session, session.agentDefinition ?? findAgentById(deps, session.agentId), sessionDerived(session.id)));
     } catch (err: any) {
@@ -1049,9 +1056,8 @@ function readCreatedAtBounds(
 }
 
 /**
- * The parameter set `POST /v1/sessions/:id` accepts. `vault_ids` and `budget`
- * are members so they reach the manager and earn their named refusals instead
- * of the generic unknown-parameter answer.
+ * The parameter set `POST /v1/sessions/:id` accepts. A body-level key that
+ * names none of these is a plain invalid request.
  */
 const SESSION_UPDATE_PARAMS = new Set(['agent', 'budget', 'metadata', 'title', 'vault_ids']);
 
