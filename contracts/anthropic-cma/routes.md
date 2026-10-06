@@ -240,6 +240,10 @@ remain unserved. See [`unsupported.md`](./unsupported.md).
 | GET | `/v1/environments/{id}/work/{workId}` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/environments/{id}/work/poll` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/environments/{id}/work/stats` | `src/api/routes/unsupported-official.ts` |
+| GET | `/v1/sessions/{id}/threads` | `src/api/routes/unsupported-official.ts` |
+| GET | `/v1/sessions/{id}/threads/{id}` | `src/api/routes/unsupported-official.ts` |
+| GET | `/v1/sessions/{id}/threads/{id}/events` | `src/api/routes/unsupported-official.ts` |
+| GET | `/v1/sessions/{id}/threads/{id}/stream` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/tunnels` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/tunnels/{id}` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/tunnels/{id}/certificates` | `src/api/routes/unsupported-official.ts` |
@@ -253,6 +257,7 @@ remain unserved. See [`unsupported.md`](./unsupported.md).
 | POST | `/v1/environments/{id}/work/{workId}/ack` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/environments/{id}/work/{workId}/heartbeat` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/environments/{id}/work/{workId}/stop` | `src/api/routes/unsupported-official.ts` |
+| POST | `/v1/sessions/{id}/threads/{id}/archive` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/tunnels` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/tunnels/{id}/archive` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/tunnels/{id}/certificates` | `src/api/routes/unsupported-official.ts` |

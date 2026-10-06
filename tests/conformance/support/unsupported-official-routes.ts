@@ -4,16 +4,12 @@ export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<{ pattern: RegExp; reaso
   { pattern: /^\/v1\/user_profiles(?:\/|$)/, reason: 'Hosted user profile management is outside the single-tenant runtime scope.' },
   { pattern: /^\/v1\/environments\/[^/]+\/work(?:\/|$)/, reason: 'The hosted Work API is not the local worker queue API.' },
   { pattern: /^\/v1\/vaults\/[^/]+\/credentials\/[^/]+\/mcp_oauth_validate$/, reason: 'MCP OAuth tokens refresh at the injection boundary; a dedicated validation endpoint is not implemented.' },
+  { pattern: /^\/v1\/sessions\/[^/]+\/threads(?:\/|$)/, reason: 'Session threads belong to the multiagent surface this runtime does not implement.' },
 ];
 
-export const PENDING_OFFICIAL_ROUTES = [
-  ['GET /v1/sessions/:id/threads', 'Multi-agent thread listing'],
-  ['GET /v1/sessions/:id/threads/:id', 'Multi-agent thread retrieval'],
-  ['GET /v1/sessions/:id/threads/:id/events', 'Multi-agent thread events'],
-  ['GET /v1/sessions/:id/threads/:id/stream', 'Multi-agent thread streaming'],
-  ['POST /v1/sessions/:id/threads/:id/archive', 'Multi-agent thread archive'],
-].map(([route, reason]) => ({
-  route,
-  reason,
-  followUp: 'https://github.com/sandbaseai/sandbase-harness/issues/706',
-}));
+/**
+ * Official SDK routes whose mount is deferred to a tracked implementation PR.
+ * Empty: every route in the pinned inventory is either served or a mounted
+ * refusal — the structure stays so a future deferral has a declared home.
+ */
+export const PENDING_OFFICIAL_ROUTES: ReadonlyArray<{ route: string; reason: string; followUp: string }> = [];

@@ -20,6 +20,10 @@ export function unsupportedOfficialRoutes(): Hono {
   const tunnels = rejectCapability('mcp-tunnel', 'MCP tunnels require hosted connectivity outside the local-first scope.');
   const profiles = rejectCapability('user-profiles', 'Hosted user profile management is outside the single-tenant runtime scope.');
   const work = rejectCapability('environment-work', 'The hosted Work API is not the local worker queue API.');
+  const threads = rejectCapability(
+    'threads-and-coordinator',
+    'Session threads belong to the multiagent surface this runtime does not implement; a request reaches a mounted refusal rather than a 404.',
+  );
 
   app.get('/dreams', dreams);
   app.post('/dreams', dreams);
@@ -43,6 +47,12 @@ export function unsupportedOfficialRoutes(): Hono {
   app.get('/user_profiles/:id', profiles);
   app.post('/user_profiles/:id', profiles);
   app.post('/user_profiles/:id/enrollment_url', profiles);
+
+  app.get('/sessions/:id/threads', threads);
+  app.get('/sessions/:id/threads/:threadId', threads);
+  app.get('/sessions/:id/threads/:threadId/events', threads);
+  app.get('/sessions/:id/threads/:threadId/stream', threads);
+  app.post('/sessions/:id/threads/:threadId/archive', threads);
 
   app.get('/environments/:id/work', work);
   app.get('/environments/:id/work/poll', work);

@@ -29,14 +29,16 @@ mcp-tunnel: not_applicable
 | MCP tunnel | `not_applicable` | Not implemented; a hosted connectivity feature outside local-first scope. Official SDK tunnel, certificate, and token routes explicitly refuse it. |
 | Hosted user profiles | `not_applicable` | Hosted user management is outside the single-tenant scope; official SDK profile routes explicitly refuse it. |
 | Hosted environment Work API | `not_applicable` | Not the local worker queue API; official SDK Work routes explicitly refuse it without changing `/work-items` or worker endpoints. |
-| OAuth refresh | `unavailable` | Not implemented and not scheduled: no refresh loop or refresh-failure event exists. The official MCP OAuth validation endpoint explicitly refuses the capability. A supplied refresh block is parsed, stored, and answered with an explicit warning that it will not be executed. |
+| MCP OAuth validation endpoint | `unavailable` | Token refresh runs at the MCP connect boundary (see [`credentials.md`](./credentials.md)); the dedicated `mcp_oauth_validate` endpoint is not implemented and explicitly refuses the capability. |
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
 Threads, the coordinator, the advisor, and the canonical `multiagent` roster are
 **not** implemented either; they have their own file,
 [`threads.md`](./threads.md), which records the gap and the refusal that keeps a
-caller from assuming otherwise.
+caller from assuming otherwise. The five published thread routes are mounted
+`unsupported_capability` refusals, so the SDK's `sessions.threads` methods get a
+decodable 400 rather than a 404.
 
 Failure mechanism:
 

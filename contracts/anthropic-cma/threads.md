@@ -49,8 +49,11 @@ threads-and-coordinator: unavailable
 
 **None of this surface exists.** There is no thread resource, no thread row, no
 per-thread event isolation, no `session.thread_*` or `agent.thread_message_*`
-event, no `GET /v1/sessions/{id}/threads` route, no archive route, no
-`session_thread_id` routing, and no thread-level budget signal. A session is one
+event, no `session_thread_id` routing, and no thread-level budget signal. The
+five published thread routes — `GET /v1/sessions/{id}/threads`, thread
+retrieval, events, and stream, and `POST .../archive` — are mounted as
+`unsupported_capability` refusals naming `threads-and-coordinator`, so an SDK
+caller gets a decodable 400 instead of a 404. A session is one
 event stream and one context window; the budget is session-level only.
 
 What does exist is a **different, smaller mechanism**, and it is not this
@@ -88,7 +91,7 @@ with its own status transitions, while a delegated run is an internal turn.
 
 | Difference | Detail |
 | --- | --- |
-| Threads | Absent. No thread resource, no lifecycle events, no per-thread context isolation, no listing or archive route. |
+| Threads | Absent. No thread resource, no lifecycle events, no per-thread context isolation. The five published thread routes are mounted as `unsupported_capability` refusals rather than 404s. |
 | Coordinator and advisor roles | Absent. No coordinator may run several threads for one roster agent, and no advisor consultation exists. |
 | Canonical roster | A `multiagent` roster is **refused by name** on both agent write paths rather than stored and ignored. The refusal names the capability `multiagent-roster` and points at the local extension. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
@@ -125,7 +128,8 @@ with its own status transitions, while a delegated run is an internal turn.
 
 `unavailable` — nothing in this contract area is implemented. The runtime has no
 thread resource, no coordinator or advisor role, no thread lifecycle or
-message-direction events, no per-thread event isolation, no thread listing or
-archive route, and no thread-scoped budget signal. The neighbouring local
-delegation extension is recorded separately in the capability matrix and is not
-presented as threads.
+message-direction events, no per-thread event isolation, and no thread-scoped
+budget signal. The published thread routes are mounted refusals returning
+`unsupported_capability` with the `threads-and-coordinator` capability id. The
+neighbouring local delegation extension is recorded separately in the
+capability matrix and is not presented as threads.

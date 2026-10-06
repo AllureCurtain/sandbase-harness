@@ -90,6 +90,66 @@
     ]
   },
   {
+    "id": "unsupported-get-sessions-id-threads",
+    "group": "Unsupported official capabilities",
+    "title": "Unsupported official operation",
+    "method": "GET",
+    "path": "/v1/sessions/{id}/threads",
+    "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; the multiagent thread surface is not implemented.",
+    "response": [
+      {
+        "name": "error",
+        "type": "object",
+        "description": "HTTP 400 unsupported_capability with a capability id, reason, and docs/api-matrix.md#unsupported-official-routes reference."
+      }
+    ]
+  },
+  {
+    "id": "unsupported-get-sessions-id-threads-id",
+    "group": "Unsupported official capabilities",
+    "title": "Unsupported official operation",
+    "method": "GET",
+    "path": "/v1/sessions/{id}/threads/{id}",
+    "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; the multiagent thread surface is not implemented.",
+    "response": [
+      {
+        "name": "error",
+        "type": "object",
+        "description": "HTTP 400 unsupported_capability with a capability id, reason, and docs/api-matrix.md#unsupported-official-routes reference."
+      }
+    ]
+  },
+  {
+    "id": "unsupported-get-sessions-id-threads-id-events",
+    "group": "Unsupported official capabilities",
+    "title": "Unsupported official operation",
+    "method": "GET",
+    "path": "/v1/sessions/{id}/threads/{id}/events",
+    "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; the multiagent thread surface is not implemented.",
+    "response": [
+      {
+        "name": "error",
+        "type": "object",
+        "description": "HTTP 400 unsupported_capability with a capability id, reason, and docs/api-matrix.md#unsupported-official-routes reference."
+      }
+    ]
+  },
+  {
+    "id": "unsupported-get-sessions-id-threads-id-stream",
+    "group": "Unsupported official capabilities",
+    "title": "Unsupported official operation",
+    "method": "GET",
+    "path": "/v1/sessions/{id}/threads/{id}/stream",
+    "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; the multiagent thread surface is not implemented.",
+    "response": [
+      {
+        "name": "error",
+        "type": "object",
+        "description": "HTTP 400 unsupported_capability with a capability id, reason, and docs/api-matrix.md#unsupported-official-routes reference."
+      }
+    ]
+  },
+  {
     "id": "unsupported-get-tunnels",
     "group": "Unsupported official capabilities",
     "title": "Unsupported official operation",
@@ -276,6 +336,21 @@
     "method": "POST",
     "path": "/v1/environments/{id}/work/{workId}/stop",
     "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; no resource operation is executed.",
+    "response": [
+      {
+        "name": "error",
+        "type": "object",
+        "description": "HTTP 400 unsupported_capability with a capability id, reason, and docs/api-matrix.md#unsupported-official-routes reference."
+      }
+    ]
+  },
+  {
+    "id": "unsupported-post-sessions-id-threads-id-archive",
+    "group": "Unsupported official capabilities",
+    "title": "Unsupported official operation",
+    "method": "POST",
+    "path": "/v1/sessions/{id}/threads/{id}/archive",
+    "summary": "Deliberately refused after authentication, throttling, and compatibility-header admission; the multiagent thread surface is not implemented.",
     "response": [
       {
         "name": "error",
