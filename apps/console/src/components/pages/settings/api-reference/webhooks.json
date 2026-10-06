@@ -306,7 +306,7 @@
     "title": "Rotate webhook signing secret",
     "method": "POST",
     "path": "/v1/webhooks/{webhook_id}/rotate-secret",
-    "summary": "Mint a new signing secret and keep the previous one valid, opening a rotation window. Every delivery then carries both signatures in `webhook-signature`, space-separated, so a receiver can migrate without missing a delivery.",
+    "summary": "Mint a new signing secret and keep the previous one valid, opening a rotation window. Every delivery then carries both signatures in `webhook-signature`, space-separated, so a receiver can migrate without missing a delivery. The window closes on its own after the deployment's rotation window (24 hours by default, `MANAGED_AGENTS_WEBHOOK_ROTATION_WINDOW_SECONDS`), or early via retire-secret.",
     "parameters": [
       {
         "name": "webhook_id",
@@ -319,7 +319,7 @@
       {
         "name": "secret_key",
         "type": "string",
-        "description": "The new whsec_ secret, returned by this response only. The previous secret stays valid until it is retired."
+        "description": "The new whsec_ secret, returned by this response only. The previous secret stays valid until it is retired or the rotation window expires."
       }
     ]
   },
@@ -329,7 +329,7 @@
     "title": "Retire previous webhook signing secret",
     "method": "POST",
     "path": "/v1/webhooks/{webhook_id}/retire-secret",
-    "summary": "Close the rotation window: the previous secret stops being accepted and only the current one signs. The caller decides when, because only they know when every receiver has moved.",
+    "summary": "Close the rotation window early: the previous secret stops being accepted and only the current one signs. The window also closes on its own once it has been open for the deployment's configured duration.",
     "parameters": [
       {
         "name": "webhook_id",

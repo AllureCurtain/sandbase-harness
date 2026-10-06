@@ -8,7 +8,12 @@ import {
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 import { isBlockedInternalHostname, isPrivateAddress } from '@/core/web/address-policy.js';
-import { resolveWebhookSigningSecrets, type StoredWebhookSecret } from './webhook-secrets.js';
+import {
+  resolveWebhookSigningSecrets,
+  retireExpiredWebhookSecret,
+  retireExpiredWebhookSecrets,
+  type StoredWebhookSecret,
+} from './webhook-secrets.js';
 
 /** The published retry window: jitter starts at 5 s and never exceeds 120 s. */
 const MIN_RETRY_SECONDS = 5;
@@ -78,6 +83,13 @@ export type WebhookDispatchOptions = {
    * resolved at startup — so a caller only sets this to override that for a test.
    */
   sustainedFailureWindowSeconds?: number;
+  /**
+   * How long a rotation window keeps the previous secret signing, in seconds.
+   * Unset means the deployment's switch decides — `resolveWebhookRotationWindow`
+   * reads it, and the runtime records what it resolved at startup — so a caller
+   * only sets this to override that for a test.
+   */
+  rotationWindowSeconds?: number;
 };
 
 export type WebhookDeliveryResult = {
@@ -114,9 +126,13 @@ export async function retryDueWebhookDeliveries(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult[]> {
   const nowIso = (opts.now?.() ?? new Date()).toISOString();
+  // A rotation window that has run out closes on this pass even when no
+  // delivery is due, so the previous secret cannot linger valid forever.
+  retireExpiredWebhookSecrets(db, new Date(nowIso), rotationWindowSeconds(opts));
   const rows = db.prepare(
     `SELECT d.*, w.url, w.secret_ciphertext, w.secret_nonce, w.secret_tag,
-            w.secret_previous_ciphertext, w.secret_previous_nonce, w.secret_previous_tag
+            w.secret_previous_ciphertext, w.secret_previous_nonce, w.secret_previous_tag,
+            w.secret_previous_since
      FROM webhook_deliveries d
      JOIN webhooks w ON w.id = d.webhook_id
      WHERE d.status = 'pending_retry'
@@ -141,11 +157,15 @@ async function attemptDelivery(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult> {
   const payloadJson = JSON.stringify(payload);
+  const now = opts.now?.() ?? new Date();
+  // A rotation window bounds how long the previous secret signs: once it has
+  // run out, the old value is retired rather than carried forever.
+  retireExpiredWebhookSecret(db, webhook.id, webhook, now, rotationWindowSeconds(opts));
   // Each endpoint is signed with its own secret; a subscription written before
   // per-endpoint secrets existed falls back to the caller's value.
   const signingSecrets = resolveWebhookSigningSecrets(webhook, opts.secret, opts.dataDir);
   const id = `whd_${nanoid(18)}`;
-  const createdAt = (opts.now?.() ?? new Date()).toISOString();
+  const createdAt = now.toISOString();
   // The published header set is keyed by the *event* id — the receiver
   // deduplicates on `webhook-id`, which the contract defines as the event's id
   // — and the timestamp the signature covers, so a receiver can verify a replay
@@ -221,8 +241,11 @@ async function retryDelivery(
   opts: WebhookDispatchOptions,
 ): Promise<WebhookDeliveryResult> {
   const attemptCount = row.attempt_count + 1;
-  const signingSecrets = resolveWebhookSigningSecrets(row, opts.secret, opts.dataDir);
   const attemptTime = opts.now?.() ?? new Date();
+  // Same rule as a first attempt: a window that has run out signs with the
+  // current secret only.
+  retireExpiredWebhookSecret(db, row.webhook_id, row, attemptTime, rotationWindowSeconds(opts));
+  const signingSecrets = resolveWebhookSigningSecrets(row, opts.secret, opts.dataDir);
   // `webhook-id` is the event id inside the stored body — a receiver
   // deduplicates on it across every attempt. A row persisted before the
   // published envelope keeps the delivery id its first attempt sent, so the
@@ -529,6 +552,68 @@ function sustainedFailureWindowSeconds(opts: WebhookDispatchOptions): number {
   const requested = opts.sustainedFailureWindowSeconds;
   if (requested !== undefined && Number.isInteger(requested) && requested > 0) return requested;
   return resolveWebhookSustainedFailureWindow().seconds;
+}
+
+/**
+ * How long a rotation window keeps the previous secret signing.
+ *
+ * The published contract does not name a duration, so this is a local
+ * parameter recorded the same way as the sustained-failure window. Twenty-four
+ * hours is the local policy: long enough for a receiver fleet to pick up the
+ * new secret on an ordinary deploy, bounded so a secret rotated because it
+ * leaked cannot keep signing forever when nobody calls `retire-secret`. The
+ * deployment may set its own window with {@link WEBHOOK_ROTATION_WINDOW_ENV}.
+ */
+export const DEFAULT_ROTATION_WINDOW_SECONDS = 86_400;
+
+/** Bounds for the deployment's own rotation window — a typo guard, same idea
+ * as the sustained-failure bounds and the same ceiling. */
+const MIN_ROTATION_WINDOW_SECONDS = 1;
+const MAX_ROTATION_WINDOW_SECONDS = 2_592_000;
+
+/**
+ * The deployment switch that sets the rotation window, in seconds. A zero or
+ * missing value means "no window is open longer than it takes to retire",
+ * which the parser refuses rather than clamps: a caller who wants immediate
+ * retirement has `retire-secret` for that.
+ */
+export const WEBHOOK_ROTATION_WINDOW_ENV = 'MANAGED_AGENTS_WEBHOOK_ROTATION_WINDOW_SECONDS';
+
+/** Where the rotation window in effect came from, for the startup record. */
+export type WebhookRotationWindowSource = 'deployment' | 'default' | 'unusable';
+
+export type WebhookRotationWindow = {
+  seconds: number;
+  /** Same three states as the sustained-failure window: deployment value, unset default, or refused input. */
+  source: WebhookRotationWindowSource;
+};
+
+/**
+ * Resolve the rotation window from the deployment, falling back to the local
+ * default. A value that is not a positive integer inside the bounds is refused
+ * rather than clamped, so a typo cannot silently become a policy.
+ */
+export function resolveWebhookRotationWindow(
+  env: NodeJS.ProcessEnv = process.env,
+): WebhookRotationWindow {
+  const configured = (env[WEBHOOK_ROTATION_WINDOW_ENV] ?? '').trim();
+  if (!configured) return { seconds: DEFAULT_ROTATION_WINDOW_SECONDS, source: 'default' };
+  const seconds = Number(configured);
+  if (
+    !Number.isInteger(seconds)
+    || seconds < MIN_ROTATION_WINDOW_SECONDS
+    || seconds > MAX_ROTATION_WINDOW_SECONDS
+  ) {
+    return { seconds: DEFAULT_ROTATION_WINDOW_SECONDS, source: 'unusable' };
+  }
+  return { seconds, source: 'deployment' };
+}
+
+/** The rotation window one dispatch call runs with: the caller's override, else the deployment's. */
+function rotationWindowSeconds(opts: WebhookDispatchOptions): number {
+  const requested = opts.rotationWindowSeconds;
+  if (requested !== undefined && Number.isInteger(requested) && requested > 0) return requested;
+  return resolveWebhookRotationWindow().seconds;
 }
 
 /**

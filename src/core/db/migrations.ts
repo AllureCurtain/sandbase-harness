@@ -1322,6 +1322,22 @@ ALTER TABLE credential_records ADD COLUMN client_secret_nonce TEXT NOT NULL DEFA
 ALTER TABLE credential_records ADD COLUMN client_secret_tag TEXT NOT NULL DEFAULT '';
 `;
 
+/**
+ * When a webhook rotation window opened.
+ *
+ * `secret_previous_since` is stamped by `rotateWebhookSecret` at the moment the
+ * previous secret is demoted, and is what bounds the window: a rotation window
+ * auto-retires once it has been open for the deployment's configured duration,
+ * instead of holding the old secret valid forever. A window opened before this
+ * migration has no recorded start, so it keeps the manual-retire behaviour it
+ * was created under — expiring it on upgrade would silently invalidate a
+ * receiver still verifying with the old key, the same reason `M038` invented
+ * nothing for pre-secret rows.
+ */
+const M059_WEBHOOK_ROTATION_WINDOW_SINCE = `
+ALTER TABLE webhooks ADD COLUMN secret_previous_since TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1381,4 +1397,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 56, name: '056_model_request_is_error', sql: M056_MODEL_REQUEST_IS_ERROR },
   { version: 57, name: '057_model_request_speed', sql: M057_MODEL_REQUEST_SPEED },
   { version: 58, name: '058_credential_oauth_refresh', sql: M058_CREDENTIAL_OAUTH_REFRESH },
+  { version: 59, name: '059_webhook_rotation_window_since', sql: M059_WEBHOOK_ROTATION_WINDOW_SINCE },
 ];

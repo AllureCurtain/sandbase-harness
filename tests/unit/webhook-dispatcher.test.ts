@@ -4,9 +4,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Database } from '@/core/db/database.js';
 import {
+  DEFAULT_ROTATION_WINDOW_SECONDS,
   DEFAULT_SUSTAINED_FAILURE_WINDOW_SECONDS,
+  WEBHOOK_ROTATION_WINDOW_ENV,
   WEBHOOK_SUSTAINED_FAILURE_WINDOW_ENV,
   dispatchWebhookEvent,
+  resolveWebhookRotationWindow,
   resolveWebhookSustainedFailureWindow,
   retryDueWebhookDeliveries,
 } from '@/core/operations/webhook-dispatcher.js';
@@ -48,6 +51,36 @@ describe('webhook sustained-failure window switch', () => {
     }
     // A window of zero would disable an endpoint on its very first failure, which is the one
     // outcome clamping would produce, so the parsed value is refused instead.
+  });
+});
+
+/**
+ * The rotation window is the other unstated duration — the contract publishes
+ * the two-signature window but no bound on it, so it is a local policy with a
+ * default and a deployment switch, with the same refused-not-clamped contract.
+ */
+describe('webhook rotation window switch', () => {
+  it('defaults to twenty-four hours when the deployment has not set a window', () => {
+    expect(DEFAULT_ROTATION_WINDOW_SECONDS).toBe(86_400);
+    expect(resolveWebhookRotationWindow({})).toEqual({ seconds: 86_400, source: 'default' });
+    expect(resolveWebhookRotationWindow({ [WEBHOOK_ROTATION_WINDOW_ENV]: '' }))
+      .toEqual({ seconds: 86_400, source: 'default' });
+  });
+
+  it('takes a whole number of seconds from the deployment', () => {
+    expect(resolveWebhookRotationWindow({ [WEBHOOK_ROTATION_WINDOW_ENV]: '3600' }))
+      .toEqual({ seconds: 3600, source: 'deployment' });
+    expect(resolveWebhookRotationWindow({ [WEBHOOK_ROTATION_WINDOW_ENV]: '2592000' }))
+      .toEqual({ seconds: 2_592_000, source: 'deployment' });
+  });
+
+  it('refuses a value it cannot honour rather than clamping it into a policy', () => {
+    for (const configured of ['0', '-5', '1.5', 'soon', '86400s', '2592001', 'Infinity']) {
+      expect(resolveWebhookRotationWindow({ [WEBHOOK_ROTATION_WINDOW_ENV]: configured }))
+        .toEqual({ seconds: 86_400, source: 'unusable' });
+    }
+    // Zero would retire the previous secret at the moment it is written, which is
+    // the manual `retire-secret` call's job, not a window's.
   });
 });
 
