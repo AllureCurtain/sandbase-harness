@@ -171,7 +171,7 @@ describe('capability matrix', () => {
     expect(capabilityEntry('webhook-subscriptions').reason.toLowerCase())
       .toContain('only when the deployment sets managed_agents_webhook_screen_private_addresses');
     expect(capabilityEntry('scheduled-deployment-timers').reason.toLowerCase())
-      .toContain('deployment.deleted has no producer');
+      .toContain('mcp_egress_blocked_error has no producing path');
   });
 
   it('does not describe shipped operations behaviour as absent', () => {
@@ -182,7 +182,7 @@ describe('capability matrix', () => {
     expect(webhooks).not.toContain('fixed 60s/120s');
     expect(webhooks).toContain('jittered 5-120s exponential backoff');
     const deployments = capabilityEntry('scheduled-deployment-timers').reason.toLowerCase();
-    for (const stale of ['no /v1/deployments alias', 'no pause/unpause', 'no deployment.* lifecycle events', 'must be driven by a caller']) {
+    for (const stale of ['no /v1/deployments alias', 'no pause/unpause', 'no deployment.* lifecycle events', 'deployment.deleted has no producer', 'must be driven by a caller']) {
       expect(deployments).not.toContain(stale);
     }
   });

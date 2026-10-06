@@ -765,6 +765,26 @@
   ]
  },
  {
+  "id": "schedules-delete",
+  "group": "Scheduled deployments",
+  "title": "Delete deployment",
+  "method": "DELETE",
+  "path": "/v1/scheduled-deployments/{deployment_id}",
+  "summary": "Permanently delete the deployment — active, paused, or archived. Its run records are removed in the same transaction; sessions a run created are independent resources and survive. Publishes `deployment.deleted` after the write.",
+  "response": [
+   {
+    "name": "id",
+    "type": "string",
+    "description": "The deleted deployment's `depl_...` identifier."
+   },
+   {
+    "name": "type",
+    "type": "\"deployment_deleted\"",
+    "description": "The published deletion marker type."
+   }
+  ]
+ },
+ {
   "id": "schedules-runs",
   "group": "Scheduled deployments",
   "title": "List deployment runs",
