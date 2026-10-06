@@ -14,6 +14,7 @@ import {
 export {
   hasRuntimeSettingsSecret,
   maskRuntimeSettings,
+  resolveRuntimeSettingsSecret,
   runtimeSettingsSecretStates,
   type RuntimeSettingsSecretStates,
 } from './secrets.js';

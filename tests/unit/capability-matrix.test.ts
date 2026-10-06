@@ -196,7 +196,9 @@ describe('capability matrix', () => {
   });
 
   it('reports the unimplemented behaviours explicitly', () => {
-    expect(capabilityEntry('web-search-execution').status).toBe('unavailable');
+    // Search executes against the configured provider; the entry must not
+    // read as if a provider were still missing.
+    expect(capabilityEntry('web-search-execution').status).toBe('supported');
     // WebFetch is the implemented half; the search entry must not read as if
     // every web tool were still missing an executor.
     expect(capabilityEntry('web-fetch-execution').status).toBe('partial');

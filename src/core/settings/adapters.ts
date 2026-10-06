@@ -39,6 +39,7 @@ export type SettingsAdapterDescriptors = {
   };
   memory: AdapterDescriptor[];
   sandbox: AdapterDescriptor[];
+  web_search: AdapterDescriptor[];
 };
 
 /**
@@ -58,6 +59,10 @@ export const EXECUTABLE_LOOP_ENGINE_IDS = ['builtin', 'pi'] as const;
 /** Stable reason text for a roadmap engine that has no executable adapter. */
 export const ROADMAP_LOOP_ENGINE_REASON =
   'No execution adapter for this loop engine is implemented in this runtime.';
+
+/** Stable reason text for a web-search provider with no shipped adapter. */
+export const ROADMAP_WEB_SEARCH_REASON =
+  'No search adapter for this provider is implemented in this runtime.';
 
 /**
  * Pi is a shipped adapter, but it is not a peer of `builtin`: it drives a
@@ -236,6 +241,19 @@ export function describeSettingsAdapters(installedSandboxes: string[] = ['local'
       })),
       ...invalidSandboxes,
     ],
+    web_search: [
+      descriptor('tavily', 'Tavily', true, 'runtime', objectSchema({
+        api_key: { type: 'string', format: 'password', default: '${TAVILY_API_KEY}' },
+        base_url: { type: 'string', format: 'uri', default: 'https://api.tavily.com' },
+      }), {
+        capabilities: ['web_search'],
+      }),
+      // Listed so a client can discover why they are unavailable; each ships
+      // as its own adapter PR (searxng is the self-hosted, keyless one).
+      descriptor('brave', 'Brave Search', false, 'runtime', objectSchema(), { reason: ROADMAP_WEB_SEARCH_REASON }),
+      descriptor('exa', 'Exa', false, 'runtime', objectSchema(), { reason: ROADMAP_WEB_SEARCH_REASON }),
+      descriptor('searxng', 'SearXNG', false, 'runtime', objectSchema(), { reason: ROADMAP_WEB_SEARCH_REASON }),
+    ],
   };
 }
 
@@ -247,6 +265,7 @@ export function availabilityFromDescriptors(descriptors: SettingsAdapterDescript
     artifactStorage: availableIds(descriptors.storage.artifacts),
     memoryProviders: availableIds(descriptors.memory),
     sandboxProviders: availableIds(descriptors.sandbox),
+    webSearchProviders: availableIds(descriptors.web_search),
   } as SettingsAvailability;
 }
 

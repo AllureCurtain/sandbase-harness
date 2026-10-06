@@ -92,6 +92,7 @@ function isView(value: string): value is ViewId {
     'storage',
     'memory',
     'sandbox',
+    'web-search',
     'logs',
     'monitoring',
     'api-reference',

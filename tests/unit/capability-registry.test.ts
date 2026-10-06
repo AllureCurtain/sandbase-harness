@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RuntimeCapabilityRegistry,
+  runtimeCapabilityRegistryFor,
   UnsupportedCapabilityError,
 } from '@/core/capabilities/registry.js';
 import { getEnabledToolNames } from '@/core/agent/standard.js';
@@ -37,7 +38,7 @@ describe('RuntimeCapabilityRegistry', () => {
         id: 'web_search',
         kind: 'tool',
         status: 'unavailable',
-        reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.',
+        reason: 'No search provider is configured: set web_search.provider and its api_key under Settings to enable web_search.',
       },
     ]);
   });
@@ -48,7 +49,7 @@ describe('RuntimeCapabilityRegistry', () => {
     // web_fetch is executable, so only web_search is refused, and with the
     // provider reason rather than a generic "unsafe" one.
     expect(registry.getUnavailableCapabilities(unavailableWebAgent)).toMatchObject([
-      { id: 'web_search', reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.' },
+      { id: 'web_search', reason: 'No search provider is configured: set web_search.provider and its api_key under Settings to enable web_search.' },
     ]);
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(UnsupportedCapabilityError);
     expect(() => registry.assertAgentSupported(unavailableWebAgent)).toThrow(
@@ -89,6 +90,24 @@ describe('RuntimeCapabilityRegistry', () => {
     expect(getEnabledToolNames(agent)).toEqual(
       BUILTIN_TOOL_NAMES.filter((name) => name !== 'bash'),
     );
+  });
+
+  it('admits an explicit web_search declaration once a provider is configured', () => {
+    const configured = runtimeCapabilityRegistryFor({ webSearchConfigured: true });
+
+    // Admission follows configuration: the same declaration the default
+    // registry refuses is executable on a runtime that resolved a provider.
+    expect(configured.getUnavailableCapabilities(unavailableWebAgent)).toEqual([]);
+    expect(() => configured.assertAgentSupported(unavailableWebAgent)).not.toThrow();
+    expect(configured.list()).toContainEqual({ id: 'web_search', kind: 'tool', status: 'available' });
+  });
+
+  it('keeps the unconfigured refusal identical through the configured-registry factory', () => {
+    const unconfigured = runtimeCapabilityRegistryFor({ webSearchConfigured: false });
+
+    expect(unconfigured.getUnavailableCapabilities(unavailableWebAgent)).toMatchObject([
+      { id: 'web_search', status: 'unavailable' },
+    ]);
   });
 
   it('does not reject unavailable tools that are disabled or never allowed', () => {

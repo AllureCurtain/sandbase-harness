@@ -70,6 +70,34 @@ export function activeSecondsFromEvents(
   return activeSecondsFromTicks(events, now);
 }
 
+/**
+ * Count the built-in web tool invocations the event log records.
+ *
+ * Derived from the append-only log like every other usage figure: each
+ * `agent.tool_use` block is one tool invocation, and for these two tools one
+ * invocation is one upstream request — so the count is exact rather than a
+ * counter column that could drift from the log. `web_fetch` runs in-process
+ * and `web_search` posts to the configured provider; both are server-side
+ * requests the contract meters identically.
+ */
+export function serverToolUseFromEvents(
+  events: readonly { type: string; content?: unknown }[],
+): { web_search_requests: number; web_fetch_requests: number } {
+  let webSearch = 0;
+  let webFetch = 0;
+  for (const event of events) {
+    if (event.type !== 'agent.tool_use') continue;
+    if (!Array.isArray(event.content)) continue;
+    for (const block of event.content) {
+      const name = (block as { type?: string; name?: string }).name;
+      if ((block as { type?: string }).type !== 'tool_use') continue;
+      if (name === 'web_search') webSearch += 1;
+      else if (name === 'web_fetch') webFetch += 1;
+    }
+  }
+  return { web_search_requests: webSearch, web_fetch_requests: webFetch };
+}
+
 /** {@link activeSecondsFromEvents} over any row carrying type + timestamps. */
 export function activeSecondsFromTicks(
   ticks: readonly ActiveStatusTick[],

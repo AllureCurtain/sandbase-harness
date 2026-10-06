@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { probeKubernetesCluster, resolveKubernetesNamespace } from '@/sandbox/kubernetes-provider.js';
 import type { RuntimeSettings } from './schema.js';
-import { localArtifactStorageDir, runtimeSettingsSecretStates } from './store.js';
+import { hasRuntimeSettingsSecret, localArtifactStorageDir, runtimeSettingsSecretStates } from './store.js';
 import { MINIMAX_PROVIDER } from '@/core/model/minimax.js';
 
 export type RuntimeSettingsTestArea =
@@ -13,7 +13,8 @@ export type RuntimeSettingsTestArea =
   | 'storage.metadata'
   | 'storage.artifacts'
   | 'memory'
-  | 'sandbox';
+  | 'sandbox'
+  | 'web_search';
 
 export type RuntimeSettingsTestCheck = {
   name: string;
@@ -47,6 +48,8 @@ export function mergeRuntimeSettingsArea(
       return { ...base, memory: fragment as RuntimeSettings['memory'] };
     case 'sandbox':
       return { ...base, sandbox: fragment as RuntimeSettings['sandbox'] };
+    case 'web_search':
+      return { ...base, web_search: fragment as RuntimeSettings['web_search'] };
   }
 }
 
@@ -98,6 +101,8 @@ async function runChecks(
       return testMemory(db, config);
     case 'sandbox':
       return testSandbox(dataDir, config, fetchImpl, kubernetesProbe);
+    case 'web_search':
+      return testWebSearch(db, config);
   }
 }
 
@@ -362,6 +367,47 @@ async function testRemoteSandbox(config: RuntimeSettings, fetchImpl: typeof fetc
   } finally {
     clearTimeout(timeout);
   }
+  return checks;
+}
+
+/**
+ * Web-search checks stay configuration-level: a live probe would spend one of
+ * the operator's metered requests on a Test button, so the check verifies the
+ * pieces a turn needs — a shipped adapter selected and a key that resolves —
+ * rather than proving the vendor answers.
+ */
+function testWebSearch(db: Database, config: RuntimeSettings): RuntimeSettingsTestCheck[] {
+  const webSearch = config.web_search;
+  if (!webSearch) {
+    return [{
+      name: 'provider',
+      status: 'skipped',
+      message: 'No web_search provider is configured; the tool stays unavailable.',
+    }];
+  }
+  const checks: RuntimeSettingsTestCheck[] = [{
+    name: 'provider',
+    status: webSearch.provider === 'tavily' ? 'ok' : 'failed',
+    message: webSearch.provider === 'tavily'
+      ? 'Tavily adapter is installed.'
+      : `Web search provider "${webSearch.provider}" has no adapter in this runtime.`,
+  }];
+  const key = webSearch.options.api_key;
+  const envRef = typeof key === 'string' ? /^\$\{([^}]+)\}$/.exec(key) : null;
+  const resolvable = typeof key === 'string' && key.trim().length > 0 && (
+    key === '********' || key.startsWith('__managed_secret__')
+      ? hasRuntimeSettingsSecret(db, 'web_search.options.api_key')
+      : envRef
+        ? Boolean(process.env[envRef[1]])
+        : true
+  );
+  checks.push({
+    name: 'api_key',
+    status: resolvable ? 'ok' : 'failed',
+    message: resolvable
+      ? 'Web search API key is configured or resolves from the environment.'
+      : 'Web search api_key is not configured or its environment variable is missing.',
+  });
   return checks;
 }
 

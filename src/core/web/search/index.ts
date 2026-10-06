@@ -1,0 +1,53 @@
+/**
+ * Build the session-facing search provider from the effective settings.
+ *
+ * Returns `undefined` when the subsystem is absent or its key cannot resolve —
+ * the same value the capability registry reads, so admission and execution can
+ * never disagree about whether `web_search` exists. A key that resolved at
+ * activation but went missing later fails safe to "unavailable" rather than
+ * executing with an empty credential.
+ */
+import type { Database } from '@/core/db/database.js';
+import { resolveEnvVars } from '@/core/config/env-resolver.js';
+import { resolveRuntimeSettingsSecret } from '@/core/settings/secrets.js';
+import type { RuntimeSettings } from '@/core/settings/schema.js';
+import { createTavilyProvider } from './tavily.js';
+import type { SearchProvider } from './types.js';
+
+export type { SearchProvider, WebSearchOutcome, WebSearchRecency, WebSearchRequest, WebSearchResultItem } from './types.js';
+export { createTavilyProvider, TAVILY_DEFAULT_BASE_URL } from './tavily.js';
+
+export interface SearchProviderDeps {
+  db?: Database;
+  dataDir?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export function searchProviderFromSettings(
+  webSearch: RuntimeSettings['web_search'],
+  deps: SearchProviderDeps = {},
+): SearchProvider | undefined {
+  if (!webSearch) return undefined;
+  const resolveOption = (path: string): string | undefined => {
+    const raw = webSearch.options[path.slice('web_search.options.'.length)];
+    if (typeof raw !== 'string' || !raw.trim()) return undefined;
+    const stored = deps.db ? resolveRuntimeSettingsSecret(deps.db, path, raw, deps.dataDir) : raw;
+    if (typeof stored !== 'string' || !stored.trim()) return undefined;
+    const resolved = resolveEnvVars(stored, false);
+    return /\$\{[^}]+\}/.test(resolved) ? undefined : resolved;
+  };
+  const apiKey = resolveOption('web_search.options.api_key');
+  const baseUrl = resolveOption('web_search.options.base_url');
+
+  switch (webSearch.provider) {
+    case 'tavily':
+      // Tavily is key-only: without one there is no usable adapter, and an
+      // unkeyed provider that fails on every call would report "configured"
+      // while executing nothing.
+      return apiKey ? createTavilyProvider({ apiKey, baseUrl, fetchImpl: deps.fetchImpl }) : undefined;
+    // The remaining ids pass schema validation but ship no adapter yet;
+    // the availability check already refuses saving them.
+    default:
+      return undefined;
+  }
+}

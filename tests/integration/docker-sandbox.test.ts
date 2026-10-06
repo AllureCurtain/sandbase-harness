@@ -14,7 +14,16 @@ import { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import { LocalSandboxProvider } from '@/sandbox/local-provider.js';
 import { DockerSandboxProvider, dockerWorkspacePath, isDockerAvailable } from '@/sandbox/docker-provider.js';
 
-/** Find a locally-cached Docker image so tests don't require registry access. */
+/**
+ * Find a locally-cached Docker image so tests don't require registry access.
+ *
+ * The provider provisions every sandbox as `--entrypoint sleep … infinity`,
+ * so the chosen image must actually carry a `sleep` binary — a scratch image
+ * like `hello-world` or a single-binary tool image cannot host a session, and
+ * whichever image `docker images` happens to list first is arbitrary. Each
+ * candidate gets a sub-second probe run rather than a name allowlist, because
+ * the runner's cached set is not under this repository's control.
+ */
 function findLocalImage(): string | undefined {
   try {
     const r = spawnSync('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}'], {
@@ -25,8 +34,16 @@ function findLocalImage(): string | undefined {
     const images = r.stdout
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l && !l.includes('<none>'));
-    return images[0];
+      .filter((l) => l && !l.includes('<none>') && !l.includes(':<none>'));
+    for (const image of images) {
+      const probe = spawnSync(
+        'docker',
+        ['run', '--rm', '--entrypoint', 'sleep', image, '0'],
+        { stdio: 'ignore', timeout: 15_000 },
+      );
+      if (probe.status === 0) return image;
+    }
+    return undefined;
   } catch {
     return undefined;
   }

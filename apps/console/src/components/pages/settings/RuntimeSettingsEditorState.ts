@@ -2,28 +2,31 @@ import type { ConsoleData, RuntimeSettingsConfig } from '../../../types';
 import { optionDefaultsForAdapter } from './RuntimeSettingsFormShared';
 import type { SettingsSection } from './navigation';
 
-export type RuntimeSettingsSection = Extract<SettingsSection, 'models' | 'loop-engine' | 'storage' | 'memory' | 'sandbox'>;
+export type RuntimeSettingsSection = Extract<SettingsSection, 'models' | 'loop-engine' | 'storage' | 'memory' | 'sandbox' | 'web-search'>;
 type SettingsAdapters = NonNullable<ConsoleData['settings']>['adapters'];
 
-export function testAreaForSection(section: RuntimeSettingsSection): 'model' | 'loop_engine' | 'memory' | 'sandbox' {
+export function testAreaForSection(section: RuntimeSettingsSection): 'model' | 'loop_engine' | 'memory' | 'sandbox' | 'web_search' {
   if (section === 'models') return 'model';
   if (section === 'loop-engine') return 'loop_engine';
   if (section === 'memory') return 'memory';
+  if (section === 'web-search') return 'web_search';
   return 'sandbox';
 }
 
-export function configKeyForSection(section: Exclude<RuntimeSettingsSection, 'storage'>): 'model' | 'loop_engine' | 'memory' | 'sandbox' {
+export function configKeyForSection(section: Exclude<RuntimeSettingsSection, 'storage'>): 'model' | 'loop_engine' | 'memory' | 'sandbox' | 'web_search' {
   if (section === 'models') return 'model';
   if (section === 'loop-engine') return 'loop_engine';
   if (section === 'memory') return 'memory';
+  if (section === 'web-search') return 'web_search';
   return 'sandbox';
 }
 
-function sectionKeyForRuntimeSettings(section: RuntimeSettingsSection): 'model' | 'loop_engine' | 'storage' | 'memory' | 'sandbox' {
+function sectionKeyForRuntimeSettings(section: RuntimeSettingsSection): 'model' | 'loop_engine' | 'storage' | 'memory' | 'sandbox' | 'web_search' {
   if (section === 'models') return 'model';
   if (section === 'loop-engine') return 'loop_engine';
   if (section === 'storage') return 'storage';
   if (section === 'memory') return 'memory';
+  if (section === 'web-search') return 'web_search';
   return 'sandbox';
 }
 
@@ -81,6 +84,17 @@ export function applyRuntimeSettingsDefaults(
         ...config.sandbox.options,
       } as RuntimeSettingsConfig['sandbox']['options'],
     },
+    ...(config.web_search
+      ? {
+        web_search: {
+          ...config.web_search,
+          options: {
+            ...optionDefaultsForAdapter(adapters.web_search, config.web_search.provider),
+            ...config.web_search.options,
+          },
+        },
+      }
+      : {}),
   };
 }
 
@@ -136,6 +150,13 @@ function orderedRuntimeSettingsSection(config: RuntimeSettingsConfig, section: R
       options: config.memory.options,
     });
   }
+  if (section === 'web-search') {
+    // `null`, not `{}`: the section's "off" state must round-trip through the
+    // JSON editor too, and an absent key is that state spelled in the config.
+    return config.web_search
+      ? orderedObject({ provider: config.web_search.provider, options: config.web_search.options })
+      : null;
+  }
   return orderedObject({
     provider: config.sandbox.provider,
     options: config.sandbox.options,
@@ -153,9 +174,12 @@ export function mergeRuntimeSettingsSectionJson(
 ): RuntimeSettingsConfig | null {
   try {
     const parsed = JSON.parse(value);
+    const key = sectionKeyForRuntimeSettings(section);
+    // `null` is the JSON editor's spelling for removing an optional section;
+    // the settings schema wants the key absent instead.
     return {
       ...config,
-      [sectionKeyForRuntimeSettings(section)]: parsed,
+      [key]: key === 'web_search' && parsed === null ? undefined : parsed,
     };
   } catch {
     return null;

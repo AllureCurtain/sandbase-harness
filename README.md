@@ -172,7 +172,7 @@ test fails when it drifts from the matrix.
 | events | `model-request-span-pair` | Supported |  |
 | streaming | `resumable-sse` | Supported |  |
 | streaming | `agent-message-stream-preview` | Supported |  |
-| tools | `builtin-tool-execution` | Partial | File, shell, search, and web_fetch tools execute; web_search accepts configuration but has no search provider and fails admission before execution. |
+| tools | `builtin-tool-execution` | Supported |  |
 | tools | `web-fetch-execution` | Partial | WebFetch executes over HTTP/HTTPS with domain policy, per-redirect revalidation, private-address rejection, timeout and byte caps, HTML text extraction, and a max_content_tokens budget; it converts text-like content only (no image or PDF rendering), the token budget is a character estimate, and TLS hostnames are verified but content is not sandboxed beyond redaction. |
 | tools | `web-tool-domain-policy` | Supported |  |
 | tools | `tool-output-overflow` | Partial | Overflow has one unified contract (spill path, preview, marker, retrieval), but the local threshold is 50,000 chars rather than the published 100,000. |
@@ -204,7 +204,7 @@ test fails when it drifts from the matrix.
 | threads | `threads-and-coordinator` | Unsupported | Not implemented: there is no thread resource, no thread lifecycle or per-thread event isolation, no coordinator or advisor role, no /threads route, and no thread-scoped budget event. A request carrying a `multiagent` roster is refused by name rather than silently stripped. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface. |
 | unsupported | `session-budget-alerts` | Unsupported | (not_applicable) Budget notification is a hosted billing feature: it needs an outbound channel to a party who pays for the account, and SandBase is single-tenant and local, so the operator is already the only party to notify. |
 | unsupported | `mcp-tunnel` | Unsupported | (not_applicable) MCP tunnel is a hosted connectivity feature outside the local-first scope. |
-| unsupported | `web-search-execution` | Unsupported | No search provider is bundled or configured, and search-engine HTML scraping is not an accepted substitute; enabling web_search fails admission before a session is persisted. WebFetch execution is a separate, implemented capability. |
+| tools | `web-search-execution` | Supported |  |
 <!-- compat-table:end -->
 
 </details>

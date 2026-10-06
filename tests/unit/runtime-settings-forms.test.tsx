@@ -19,6 +19,7 @@ import {
   ModelSettingsForm,
   SandboxSettingsForm,
   StorageSettingsForm,
+  WebSearchSettingsForm,
   optionDefaultsForAdapter,
 } from '../../apps/console/src/components/pages/settings/RuntimeSettingsForms';
 import type { ConsoleData, RuntimeSettings, RuntimeSettingsConfig } from '../../apps/console/src/types';
@@ -396,6 +397,50 @@ describe('Runtime Settings forms', () => {
     expect(remoteHtml).toContain('worker endpoints enabled');
     expect(dockerHtml).toContain('Image');
     expect(dockerHtml).toContain('node:22-bookworm');
+  });
+
+  it('renders the web-search editor off without a section and on with provider fields', () => {
+    const adapters = [
+      { id: 'tavily', label: 'Tavily', status: 'available' as const, options_schema: { type: 'object', properties: { api_key: { type: 'string', default: '${TAVILY_API_KEY}' } } } },
+      { id: 'brave', label: 'Brave Search', status: 'unavailable' as const, options_schema: {} },
+    ];
+
+    const off = renderToStaticMarkup(<WebSearchSettingsForm adapters={adapters} config={config} onChange={() => {}} />);
+    expect(off).toContain('Web search is not configured');
+    expect(off).toContain('fail admission');
+    expect(off).not.toContain('type="password"');
+
+    const onConfig: RuntimeSettingsConfig = {
+      ...config,
+      web_search: { provider: 'tavily', options: { api_key: '********', base_url: 'https://api.tavily.com' } },
+    };
+    const on = renderToStaticMarkup(<WebSearchSettingsForm adapters={adapters} config={onConfig} onChange={() => {}} />);
+    expect(on).toContain('Web search is configured');
+    expect(on).toContain('type="password"');
+    expect(on).toContain('********');
+    expect(on).toContain('https://api.tavily.com');
+  });
+
+  it('round-trips the optional web_search section through the JSON editor', () => {
+    const withSearch: RuntimeSettingsConfig = {
+      ...config,
+      web_search: { provider: 'tavily', options: { api_key: '********' } },
+    };
+    expect(runtimeSettingsSectionJson(withSearch, 'web-search')).toBe(`{
+  "provider": "tavily",
+  "options": {
+    "api_key": "********"
+  }
+}`);
+    // "Off" serializes as null and merges back as an absent key.
+    expect(runtimeSettingsSectionJson(config, 'web-search')).toBe('null');
+    const merged = mergeRuntimeSettingsSectionJson(config, 'web-search', '{ "provider": "tavily", "options": {} }');
+    expect(merged?.web_search).toEqual({ provider: 'tavily', options: {} });
+    const removed = mergeRuntimeSettingsSectionJson(withSearch, 'web-search', 'null');
+    // The merge writes `undefined`, which JSON serialization drops — the
+    // persisted document gains no `web_search` key.
+    expect(removed?.web_search).toBeUndefined();
+    expect(JSON.stringify(removed)).not.toContain('web_search');
   });
 
   it('renders activation failure state without repeating restart controls per settings page', () => {

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Database } from '../db/database.js';
-import { runtimeCapabilityRegistry } from '../capabilities/registry.js';
+import { runtimeCapabilityRegistryFor } from '../capabilities/registry.js';
 import { loadAgentDefinitionById } from '../agent/store.js';
 import { SessionManager } from '../session/session-manager.js';
 import { DefaultSessionExecutor } from '../session/executor.js';
@@ -26,6 +26,7 @@ import { createFileArtifactReader } from '../session/session-resources.js';
 import { createGithubMaterializer } from '../resources/github-runtime.js';
 import type { RuntimeComposition } from './composition.js';
 import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
+import type { SearchProvider } from '@/core/web/search/index.js';
 
 export interface RuntimeSessionServicesOptions {
   db: Database;
@@ -71,6 +72,15 @@ export interface RuntimeSessionServicesOptions {
    */
   resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   /**
+   * The web-search provider resolved from the effective runtime settings.
+   *
+   * Supplied once at composition: settings changes are restart-gated, so the
+   * provider this process was built with is the one its capability inventory
+   * should advertise. Absent keeps `web_search` unavailable in admission and
+   * unmounted in the tool surface.
+   */
+  webSearchProvider?: SearchProvider;
+  /**
    * Resolve a `{type: "file"}` rubric to its text.
    *
    * Defaulted to reading the upload the Files API stored, so the declared rubric
@@ -106,7 +116,9 @@ export interface RuntimeSessionServices {
 export function createRuntimeSessionServices(options: RuntimeSessionServicesOptions): RuntimeSessionServices {
   const sessionManager = new SessionManager(
     options.db,
-    runtimeCapabilityRegistry,
+    // The capability inventory mirrors the resolved provider, so `/v1/x/
+    // capabilities` and admission describe the same executable set.
+    runtimeCapabilityRegistryFor({ webSearchConfigured: Boolean(options.webSearchProvider) }),
     options.loopEngine ?? 'builtin',
     (environmentId: string) => options.runtimeComposition.resolveEnvironmentConfig(environmentId)?.sandbox_provider,
     options.isLoopEngineAvailable,
@@ -170,6 +182,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     // credential store, so an embedder with none keeps running sessions that hold
     // no vault.
     resolveCredentialInjections: options.resolveCredentialInjections,
+    webSearch: options.webSearchProvider,
     logger: options.logger,
     // Session resources are materialized at provisioning, which is the first
     // point a sandbox exists. Both dependencies are passed explicitly: the

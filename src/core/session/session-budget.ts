@@ -23,7 +23,7 @@
 import type { Database } from '@/core/db/database.js';
 import type { SessionEvent } from '@/types/session.js';
 import type { SessionBudget } from '@/types/cma-protocol.js';
-import { activeSecondsFromEvents } from './session-usage.js';
+import { activeSecondsFromEvents, serverToolUseFromEvents } from './session-usage.js';
 import {
   centsToMicrocents,
   computeCost,
@@ -204,7 +204,7 @@ export function sessionSpend(
 
   const breakdown = computeCost(profile, consumptions, {
     activeSeconds: events.length > 0 ? activeSecondsFromEvents(events) : 0,
-    webSearchRequests: 0,
+    webSearchRequests: serverToolUseFromEvents(events).web_search_requests,
   });
 
   return { ...breakdown, meterable: breakdown.unpricedModels.length === 0 };

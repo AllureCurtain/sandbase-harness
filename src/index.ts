@@ -23,6 +23,7 @@ import { bootstrapRuntimeLoopEngine } from './core/runtime/loop-engine-bootstrap
 import { resolveRuntimeApiAuth } from './core/runtime/api-auth.js';
 import { createRuntimeSessionServices } from './core/runtime/session-runtime.js';
 import { resolveSessionCredentialInjections } from './core/credentials/injection.js';
+import { searchProviderFromSettings } from './core/web/search/index.js';
 import { attachRuntimeServerErrorHandler, parseCsv, runtimeStartupBannerLines } from './core/runtime/http-server.js';
 import { createLogger, InMemoryLogStore } from './core/observability/logger.js';
 import { Metrics } from './core/observability/metrics.js';
@@ -95,6 +96,10 @@ async function startServer(opts: StartServerOptions) {
   });
   const effectiveSettings = runtimeComposition.settings.effective_config;
   const memory = runtimeComposition.memory;
+  // The configured search provider, built once at startup: settings changes
+  // are restart-gated, so the provider this process resolved is also the one
+  // its capability inventory should advertise for its whole lifetime.
+  const webSearchProvider = searchProviderFromSettings(effectiveSettings.web_search, { db, dataDir });
 
   // config.yaml is a first-start import, not a live setting. Saying so at
   // startup is what keeps an edit that will not take effect from presenting
@@ -152,6 +157,7 @@ async function startServer(opts: StartServerOptions) {
       dataDir,
       ...target,
     }),
+    webSearchProvider,
     logger,
   });
   if (reconciled > 0) {

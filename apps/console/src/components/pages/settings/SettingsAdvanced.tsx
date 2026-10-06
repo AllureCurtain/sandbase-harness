@@ -55,6 +55,7 @@ export function SettingsAdvanced({ data, setView }: { data: ConsoleData; setView
             <button type="button" onClick={() => setView('storage')}>{t('advanced.runtimeConfig.storage')}</button>
             <button type="button" onClick={() => setView('memory')}>{t('advanced.runtimeConfig.memory')}</button>
             <button type="button" onClick={() => setView('sandbox')}>{t('advanced.runtimeConfig.sandbox')}</button>
+            <button type="button" onClick={() => setView('web-search')}>{t('advanced.runtimeConfig.webSearch')}</button>
           </div>
         </div>
         <div className="panel subtlePanel">

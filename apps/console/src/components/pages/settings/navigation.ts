@@ -16,6 +16,7 @@ export type SettingsSection = VisibleSettingsSection
   | 'storage'
   | 'memory'
   | 'sandbox'
+  | 'web-search'
   | 'logs'
   | 'monitoring';
 export const SETTINGS_GROUPS = ['project', 'access', 'developer'] as const;
@@ -26,5 +27,5 @@ export const SETTINGS_GROUP_LABEL_KEYS = {
 } as const;
 export const SETTINGS_VIEW_IDS: ViewId[] = [
   'settings', 'workspace', 'models', 'loop-engine', 'storage',
-  'memory', 'sandbox', 'api-keys', 'api-reference', 'logs', 'monitoring', 'advanced',
+  'memory', 'sandbox', 'web-search', 'api-keys', 'api-reference', 'logs', 'monitoring', 'advanced',
 ];

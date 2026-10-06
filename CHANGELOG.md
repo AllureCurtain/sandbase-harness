@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- The `web_search` built-in tool now executes against a configured search provider. Runtime Settings gains a `web_search` section (`{provider, options: {api_key, base_url?}}`) — `api_key` is a managed settings secret (`${VAR}` reference or encrypted storage, masked on reads) — and the Console gains a Web search editor under Settings → Advanced. Tavily is the shipped adapter (`POST /search`, bearer auth, `time_range`/`include_domains`/`exclude_domains`/`country` mapping); `brave`, `exa`, and `searxng` are recognized but ship no adapter yet. The capability is configuration-gated: a runtime with no provider keeps refusing an explicit `web_search` declaration at admission with a reason that names Settings as the remedy. Provider failures return coded tool results (`web_search_unconfigured` / `web_search_rate_limited` / `web_search_provider_failed`) instead of failing the session, each call counts once in `usage.server_tool_use.web_search_requests` and the `web_search` cost-profile rate, the Environment network policy governs the provider endpoint, and path-suffixed domain-policy entries are enforced client-side on result URLs.
+
 ### Fixed
 
 - Attaching a memory store no longer disables the `bash` tool. The published contract leaves a `read_write` mount unguarded and refuses only shell commands that name a path inside a `read_only` mount — the tool layer now enforces exactly that instead of refusing every command while a mount is attached. Shell commands can never persist into `memory_records` regardless, so a session can compute and persist memories at once.

@@ -549,6 +549,11 @@ export type RuntimeSettingsConfig = {
   };
   memory: { enabled: boolean; provider: 'sqlite' | 'memu' | 'mem0'; options: Record<string, unknown> };
   sandbox: { provider: 'local' | 'docker' | 'kubernetes' | 'remote'; options: { timeout_seconds: number; [key: string]: unknown } };
+  /**
+   * Optional: absent is the honest spelling of "no search provider configured".
+   * `options.api_key` round-trips masked, like every other settings secret.
+   */
+  web_search?: { provider: 'tavily' | 'brave' | 'exa' | 'searxng'; options: Record<string, unknown> };
 };
 
 export type RuntimeSettings = {
@@ -568,6 +573,7 @@ export type RuntimeSettings = {
     storage: { metadata: SettingsAdapterDescriptor[]; artifacts: SettingsAdapterDescriptor[] };
     memory: SettingsAdapterDescriptor[];
     sandbox: SettingsAdapterDescriptor[];
+    web_search: SettingsAdapterDescriptor[];
   };
 };
 
@@ -671,6 +677,7 @@ export type ViewId =
   | 'storage'
   | 'memory'
   | 'sandbox'
+  | 'web-search'
   | 'logs'
   | 'monitoring'
   | 'api-reference'

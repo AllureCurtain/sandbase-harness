@@ -24,7 +24,7 @@ import { attachSessionResources } from './session-resources.js';
 import { officialErrorType, retryStatus } from './session-error.js';
 import { isRetriesExhausted } from '@/model/registry.js';
 import type { RetryObserver } from '@/types/model.js';
-import { buildSessionUsageSnapshot, type SessionUsagePayload } from './session-usage.js';
+import { buildSessionUsageSnapshot, serverToolUseFromEvents, type SessionUsagePayload } from './session-usage.js';
 import type { SnapshotManager } from './snapshot-manager.js';
 import {
   BUDGET_ERROR_CODES,
@@ -394,9 +394,10 @@ export class SessionManager {
       cache_creation: { ephemeral_5m_input_tokens: session?.usage?.cacheWriteTokens ?? 0, ephemeral_1h_input_tokens: 0 },
       ...(spend.meterable ? { list_cost: { amount: String(spend.cents), currency: 'USD' as const } } : {}),
       budget: session?.budget ?? null,
-      // Genuinely zero, not unknown: this runtime has no built-in web tool, so
-      // there is no request it could have failed to count.
-      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      // Counted from the log like every other usage figure: a `web_search` or
+      // `web_fetch` tool_use block is one upstream request, so a session that
+      // never called either genuinely reports zero.
+      server_tool_use: serverToolUseFromEvents(events),
     };
   }
 

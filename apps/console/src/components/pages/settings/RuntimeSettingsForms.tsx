@@ -12,6 +12,7 @@ export { optionDefaultsForAdapter, type AdapterOption, type SettingsFormProps } 
 export { MemorySettingsForm } from './RuntimeSettingsMemoryForm';
 export { SandboxSettingsForm } from './RuntimeSettingsSandboxForm';
 export { StorageSettingsForm } from './RuntimeSettingsStorageForm';
+export { WebSearchSettingsForm } from './RuntimeSettingsWebSearchForm';
 
 export function ModelSettingsForm({ adapters, config, onChange, errors, resetKey, apiKeyConfigured }: SettingsFormProps & { apiKeyConfigured: boolean }) {
   const { t } = useTranslation('settings');

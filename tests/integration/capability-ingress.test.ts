@@ -23,7 +23,7 @@ const unsupportedCapabilityError = {
   message: 'Agent requests unavailable runtime capabilities: web_search',
   details: {
     capabilities: [
-      { id: 'web_search', reason: 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.' },
+      { id: 'web_search', reason: 'No search provider is configured: set web_search.provider and its api_key under Settings to enable web_search.' },
     ],
   },
 };
