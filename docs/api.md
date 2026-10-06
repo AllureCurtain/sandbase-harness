@@ -172,7 +172,8 @@ Known unsupported official SDK operations instead return HTTP 400 with
 `docs/api-matrix.md#unsupported-official-routes`, and
 `error.details.capabilities` containing the capability id and reason. These
 explicit refusals cover Dreams, MCP tunnels, hosted user profiles, the hosted
-environment Work API, and MCP OAuth validation; they do not create resources or
+environment Work API, session threads (the unimplemented multiagent surface),
+and MCP OAuth validation; they do not create resources or
 execute work. Authentication, throttling, and compatibility admission still run
 first. Only the documented official methods and paths are registered; unrelated
 paths or verbs keep the normal not-found behavior. See the
@@ -208,6 +209,11 @@ router, so both vault spellings preserve the same behavior.
 | POST | `/v1/environments/{id}/work/{work_id}/ack` |
 | POST | `/v1/environments/{id}/work/{work_id}/heartbeat` |
 | POST | `/v1/environments/{id}/work/{work_id}/stop` |
+| GET | `/v1/sessions/{id}/threads` |
+| GET | `/v1/sessions/{id}/threads/{thread_id}` |
+| GET | `/v1/sessions/{id}/threads/{thread_id}/events` |
+| GET | `/v1/sessions/{id}/threads/{thread_id}/stream` |
+| POST | `/v1/sessions/{id}/threads/{thread_id}/archive` |
 | POST | `/v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` |
 | POST | `/v1/credential-vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` |
 
