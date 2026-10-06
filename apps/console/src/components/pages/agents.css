@@ -326,3 +326,21 @@
   }
 }
 
+/* Migrated from legacy styles.css. */
+
+.systemPreview {
+  max-width: 920px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+
+.systemPreview pre {
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 17px;
+  max-height: 120px;
+  white-space: pre-wrap;
+}
+

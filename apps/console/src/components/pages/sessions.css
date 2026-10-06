@@ -1403,7 +1403,7 @@
 
 .resourcePickerBadge {
   max-width: 118px;
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   background: var(--inset);
   color: var(--fg-subtle);
   padding: 4px 8px;
@@ -1426,7 +1426,7 @@
   min-width: 0;
   max-width: 180px;
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   background: var(--inset);
   color: var(--fg-subtle);
   padding: 5px 9px;
@@ -1840,4 +1840,65 @@
   .sessionPickerGrid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Equivalent request + composer chrome (migrated from legacy styles.css). */
+
+.equivalentRequestTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.equivalentRequestTab {
+  border: 1px solid transparent;
+  background: none;
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.equivalentRequestTab:hover {
+  color: var(--fg);
+}
+
+.equivalentRequestTab.selected {
+  color: var(--fg);
+  border-color: var(--line-soft);
+  background: var(--surface);
+}
+
+.composerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sessionField > span:first-child {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .sessionField > span:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+}
+
+
+@keyframes conversationTyping {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+
+@keyframes runPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }

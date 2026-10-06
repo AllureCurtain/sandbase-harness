@@ -407,7 +407,7 @@
   align-items: center;
   border-radius: 6px;
   padding: 2px 8px;
-  font-size: var(--text-body-sm);
+  font-size: 13px;
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
@@ -729,7 +729,7 @@
 
 .settingsSidebar {
   border-right: 1px solid var(--line-soft);
-  background: var(--sidebar-bg);
+  background: var(--inset);
   padding: 12px 10px;
   display: flex;
   flex-direction: column;
@@ -789,7 +789,7 @@
 }
 
 .settingsNavItem.active {
-  background: var(--surface-active);
+  background: var(--hover);
   color: var(--fg);
 }
 
@@ -1075,7 +1075,7 @@
 
 .methodPATCH {
   color: var(--accent, var(--accent));
-  background: var(--accent-soft, var(--accent-tint));
+  background: var(--accent-tint);
 }
 
 .fitButton {
