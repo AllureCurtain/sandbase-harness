@@ -3,11 +3,16 @@
  *
  * Two published rules live here so they cannot drift apart:
  *
- * - `OFFICIAL_WEBHOOK_EVENTS` is the set a subscription may name, transcribed
- *   verbatim from the `BetaWebhook*EventData.type` union in
- *   `@anthropic-ai/sdk@0.129.0` (`resources/beta/webhooks.d.ts`). A name outside
- *   it is refused at subscription time with a 400 rather than stored as a
- *   subscription that can never fire.
+ * - `OFFICIAL_WEBHOOK_EVENTS` is the set a subscription may name: the
+ *   `BetaWebhook*EventData.type` union in `@anthropic-ai/sdk@0.129.0`
+ *   (`resources/beta/webhooks.d.ts`), minus the four names this runtime can
+ *   never produce — the `session.thread_*` family, because there is no
+ *   multiagent thread surface, and `agent.deleted`, because agents archive
+ *   and there is no delete route. A name outside the set is refused at
+ *   subscription time with a 400 rather than stored as a subscription that
+ *   can never fire, and that rule is what those four are held to: an SDK
+ *   name with no producer is refused the same way, because a subscription
+ *   accepted for an event that cannot exist is silently broken.
  * - `webhookEventsForSessionEvent` is the map from the durable session event
  *   stream onto the catalog. Anything not in the map is dropped — stream
  *   events like `agent.message` or `span.model_request_start` are session
@@ -19,14 +24,16 @@ import type { SessionEvent } from '@/types/session.js';
 
 /**
  * The event names the published contract defines (`订阅Webhook.md` plus the
- * SDK union), grouped the way the documentation groups them.
+ * SDK union) that this runtime can produce, grouped the way the documentation
+ * groups them.
  *
- * `session.pending`, `session.running`, `session.idled`, and
- * `session.requires_action` are valid subscription names — the SDK declares
- * them and a published client config must not be refused — but this runtime
- * produces no trigger for them, so they can be subscribed to yet never fire.
- * `session.thread_*` names are accepted for the same reason while the
- * multiagent surface is unimplemented.
+ * Every name here has a real trigger: the coarse session lifecycle names ride
+ * the durable status events (`session.pending` is published at creation,
+ * because every session begins `queued`; `session.running` / `session.idled` /
+ * `session.requires_action` are projected in `webhookEventsForSessionEvent`),
+ * and the names with no producing surface — the `session.thread_*` family and
+ * `agent.deleted` — are refused at subscription like any unknown name rather
+ * than stored silently.
  */
 export const OFFICIAL_WEBHOOK_EVENTS = [
   // Sessions
@@ -44,9 +51,6 @@ export const OFFICIAL_WEBHOOK_EVENTS = [
   'session.status_terminated',
   'session.budget_reached',
   'session.outcome_evaluation_ended',
-  'session.thread_created',
-  'session.thread_idled',
-  'session.thread_terminated',
   // Vaults and credentials
   'vault.created',
   'vault.archived',
@@ -59,7 +63,6 @@ export const OFFICIAL_WEBHOOK_EVENTS = [
   'agent.created',
   'agent.updated',
   'agent.archived',
-  'agent.deleted',
   // Deployments
   'deployment.created',
   'deployment.updated',
@@ -109,16 +112,23 @@ export function webhookEventsForSessionEvent(
   const base = { subjectId: event.sessionId };
   switch (event.type) {
     case 'session.status_running':
-      return [{ ...base, type: 'session.status_run_started' }];
-    case 'session.status_idle': {
-      const events: Array<{ type: OfficialWebhookEvent; subjectId: string }> = [
-        { ...base, type: 'session.status_idled' },
+      return [
+        { ...base, type: 'session.status_run_started' },
+        { ...base, type: 'session.running' },
       ];
-      // The durable event publishes its stop reason under
-      // `metadata.stop_reason` — the same `{type, event_ids}` shape the SSE
-      // projection exposes — not on the scalar `stopReason` column.
+    case 'session.status_idle': {
+      // The granular event always fires; the coarse companion is the parked
+      // name when the idle is a parked session and `idled` otherwise — a
+      // session waiting on an answer is in `requires_action`, not idle. The
+      // durable event publishes its stop reason under `metadata.stop_reason` —
+      // the same `{type, event_ids}` shape the SSE projection exposes — not on
+      // the scalar `stopReason` column.
       const stopReason = (event.metadata as { stop_reason?: { type?: string } } | undefined)
         ?.stop_reason;
+      const events: Array<{ type: OfficialWebhookEvent; subjectId: string }> = [
+        { ...base, type: 'session.status_idled' },
+        { ...base, type: stopReason?.type === 'requires_action' ? 'session.requires_action' : 'session.idled' },
+      ];
       if (stopReason?.type === 'budget_reached') {
         events.push({ ...base, type: 'session.budget_reached' });
       }

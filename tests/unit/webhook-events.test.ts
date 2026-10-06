@@ -3,11 +3,12 @@
  *
  * Two published surfaces are pinned here:
  *
- * - `OFFICIAL_WEBHOOK_EVENTS` is the subscription vocabulary, transcribed from
- *   the `BetaWebhook*EventData.type` union in `@anthropic-ai/sdk@0.129.0`.
- *   The count and the no-wildcard invariants are the contract — a name that
- *   drifts out of the union stops being subscribable, and a wildcard coming
- *   back would silently re-broaden every stored subscription.
+ * - `OFFICIAL_WEBHOOK_EVENTS` is the subscription vocabulary: the
+ *   `BetaWebhook*EventData.type` union in `@anthropic-ai/sdk@0.129.0` minus
+ *   the names this runtime can never produce. The count and the no-wildcard
+ *   invariants are the contract — a name that drifts in without a producer
+ *   silently unsubscribes it, and a wildcard coming back would silently
+ *   re-broaden every stored subscription.
  * - `webhookEventsForSessionEvent` is the only path from the durable session
  *   stream to a webhook. Stream events without a published counterpart must
  *   return nothing: forwarding them is how `agent.message` used to leak to a
@@ -23,35 +24,35 @@ import {
 } from '@/core/operations/webhook-events.js';
 
 describe('OFFICIAL_WEBHOOK_EVENTS', () => {
-  it('contains every name the published contract defines', () => {
-    // Transcribed from the `BetaWebhook*EventData.type` union in
-    // `@anthropic-ai/sdk@0.129.0` — 17 session + 7 vault + 4 agent +
-    // 6 deployment + 3 deployment_run + 4 environment + 3 memory_store. The
-    // count is part of the contract because a dropped name silently
-    // unsubscribes it.
-    expect(OFFICIAL_WEBHOOK_EVENTS).toHaveLength(44);
-    expect(new Set(OFFICIAL_WEBHOOK_EVENTS).size).toBe(44);
+  it('contains every name the published contract defines that this runtime can produce', () => {
+    // The `BetaWebhook*EventData.type` union in `@anthropic-ai/sdk@0.129.0` is
+    // 17 session + 7 vault + 4 agent + 6 deployment + 3 deployment_run +
+    // 4 environment + 3 memory_store = 44 names. This catalog is that union
+    // minus the four with no producing surface — `session.thread_created`,
+    // `session.thread_idled`, `session.thread_terminated` (no multiagent
+    // surface), and `agent.deleted` (agents archive; no delete route) — so a
+    // stored subscription can only name an event that can actually fire.
+    expect(OFFICIAL_WEBHOOK_EVENTS).toHaveLength(40);
+    expect(new Set(OFFICIAL_WEBHOOK_EVENTS).size).toBe(40);
     for (const name of OFFICIAL_WEBHOOK_EVENTS) {
       expect(name).not.toContain('*');
       expect(name).toMatch(/^[a-z_]+\.[a-z_]+$/);
     }
   });
 
-  it('accepts the SDK-declared names this runtime does not emit', () => {
-    // `session.pending`, `session.running`, `session.idled`,
-    // `session.requires_action`, and the `session.thread_*` family are valid
-    // subscription names even though nothing raises them yet — refusing them
-    // would break a published client config.
+  it('refuses the SDK-declared names this runtime can never produce', () => {
+    // `session.thread_*` waits on the deferred multiagent surface and
+    // `agent.deleted` on a delete route that does not exist — a subscription
+    // accepted for either would look live and never deliver, so they are
+    // refused like any name outside the catalog.
     for (const name of [
-      'session.pending',
-      'session.running',
-      'session.idled',
-      'session.requires_action',
       'session.thread_created',
       'session.thread_idled',
       'session.thread_terminated',
+      'agent.deleted',
     ]) {
-      expect(OFFICIAL_WEBHOOK_EVENTS).toContain(name);
+      expect(OFFICIAL_WEBHOOK_EVENTS).not.toContain(name);
+      expect(invalidWebhookEventNames([name])).toEqual([name]);
     }
   });
 });
@@ -76,9 +77,15 @@ describe('webhookEventsForSessionEvent', () => {
 
   it('maps each published status transition to its webhook name', () => {
     expect(webhookEventsForSessionEvent(at('session.status_running')))
-      .toEqual([{ type: 'session.status_run_started', subjectId: 'sess_1' }]);
+      .toEqual([
+        { type: 'session.status_run_started', subjectId: 'sess_1' },
+        { type: 'session.running', subjectId: 'sess_1' },
+      ]);
     expect(webhookEventsForSessionEvent(at('session.status_idle')))
-      .toEqual([{ type: 'session.status_idled', subjectId: 'sess_1' }]);
+      .toEqual([
+        { type: 'session.status_idled', subjectId: 'sess_1' },
+        { type: 'session.idled', subjectId: 'sess_1' },
+      ]);
     expect(webhookEventsForSessionEvent(at('session.status_rescheduled')))
       .toEqual([{ type: 'session.status_rescheduled', subjectId: 'sess_1' }]);
     expect(webhookEventsForSessionEvent(at('session.status_terminated')))
@@ -98,13 +105,24 @@ describe('webhookEventsForSessionEvent', () => {
       at('session.status_idle', { metadata: { stop_reason: { type: 'budget_reached' } } }),
     )).toEqual([
       { type: 'session.status_idled', subjectId: 'sess_1' },
+      { type: 'session.idled', subjectId: 'sess_1' },
       { type: 'session.budget_reached', subjectId: 'sess_1' },
     ]);
-    // Any other stop reason raises only the idle.
-    for (const reason of ['end_turn', 'requires_action', 'retries_exhausted']) {
+    // A parked session is reported under `requires_action`, not `idled`.
+    expect(webhookEventsForSessionEvent(
+      at('session.status_idle', { metadata: { stop_reason: { type: 'requires_action' } } }),
+    )).toEqual([
+      { type: 'session.status_idled', subjectId: 'sess_1' },
+      { type: 'session.requires_action', subjectId: 'sess_1' },
+    ]);
+    // Any other stop reason raises the idle pair and nothing else.
+    for (const reason of ['end_turn', 'retries_exhausted']) {
       expect(webhookEventsForSessionEvent(
         at('session.status_idle', { metadata: { stop_reason: { type: reason } } }),
-      )).toEqual([{ type: 'session.status_idled', subjectId: 'sess_1' }]);
+      )).toEqual([
+        { type: 'session.status_idled', subjectId: 'sess_1' },
+        { type: 'session.idled', subjectId: 'sess_1' },
+      ]);
     }
   });
 
