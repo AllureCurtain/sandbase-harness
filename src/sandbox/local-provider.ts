@@ -72,6 +72,7 @@ import {
   type SandboxProvider,
   type SandboxInstance,
   type EnvironmentConfig,
+  type EgressSubstitution,
   type ExecOptions,
   type ExecResult,
 } from '@/types/sandbox.js';
@@ -190,10 +191,12 @@ export class LocalSandboxProvider implements SandboxProvider {
     // `resources.memory` / `resources.cpu` cannot be enforced for a plain
     // subprocess, so the provider reports it rather than ignoring them.
     resourceLimits: false,
-    // A `limited` policy installs a loopback egress proxy and injects its
-    // address into every subprocess environment. A process that ignores proxy
-    // variables egresses freely — same host, same user — so this is advisory
-    // enforcement, reported as such rather than claimed as isolation.
+    // Every session installs a loopback egress proxy and injects its address
+    // into every subprocess environment — under `limited` it is the allowlist
+    // boundary, under any policy it is the credential-substitution boundary.
+    // A process that ignores proxy variables egresses freely — same host,
+    // same user — so this is advisory enforcement, reported as such rather
+    // than claimed as isolation.
     networkPolicyEnforcement: 'best_effort',
   });
 
@@ -203,9 +206,13 @@ export class LocalSandboxProvider implements SandboxProvider {
     const workDir = join(this.baseDir, 'sandbox', sessionId);
     mkdirSync(workDir, { recursive: true });
     const policy = environmentNetworkPolicyOf(config);
-    const egress = policy?.type === 'limited'
-      ? await EgressProxy.listen('127.0.0.1', { allowedHosts: environmentEgressAllowlist(policy) })
-      : undefined;
+    // Every session gets a loopback proxy, not only `limited` ones: the proxy
+    // is also the placeholder-substitution boundary, and a session without a
+    // declared policy can still carry vault credentials that must never reach
+    // a subprocess as plaintext. An absent policy binds it in allow-all mode.
+    const egress = await EgressProxy.listen('127.0.0.1', {
+      allowedHosts: policy?.type === 'limited' ? environmentEgressAllowlist(policy) : null,
+    });
     return new LocalSandboxInstance(sessionId, workDir, egress);
   }
 }
@@ -224,6 +231,11 @@ class LocalSandboxInstance implements SandboxInstance {
    */
   get egressEnvironment(): Record<string, string> | undefined {
     return this.egress?.environment();
+  }
+
+  /** The proxy is the session's substitution boundary; it keeps the table. */
+  configureEgressSubstitutions(substitutions: readonly EgressSubstitution[]): void {
+    this.egress?.addSubstitutions(substitutions);
   }
 
   /** Host filesystem path of the working directory (for snapshots). */

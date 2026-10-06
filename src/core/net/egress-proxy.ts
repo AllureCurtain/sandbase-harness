@@ -33,15 +33,21 @@ import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 import { hostMatchesPattern } from '@/core/credentials/policy.js';
+import type { EgressSubstitution } from '@/types/sandbox.js';
 
 /** Proxy-protocol username; the per-instance credential is the password. */
 const PROXY_USERNAME = 'sandbase';
-/** Ports a CONNECT may tunnel. The policy is host-level; the port floor keeps a proxy from becoming a raw-TCP relay. */
+/** Ports a CONNECT may tunnel under an allowlist. In allow-all mode the list is advisory — the port floor is the only remaining gate and unrestricted environments need arbitrary ports. */
 const CONNECT_PORTS = new Set([80, 443, 8080, 8443]);
 
 export interface EgressProxyOptions {
-  /** Host patterns a target must match (`host`, `*.suffix`, `host:port`). */
-  allowedHosts: readonly string[];
+  /**
+   * Host patterns a target must match (`host`, `*.suffix`, `host:port`).
+   * `null` admits every target: an environment without a `limited` policy has
+   * no egress allowlist to enforce, but a session's placeholder credentials
+   * still need a substitution boundary to materialize on.
+   */
+  allowedHosts: readonly string[] | null;
   /** Credential required on every request. Generated when omitted. */
   token?: string;
 }
@@ -50,13 +56,19 @@ export class EgressProxy {
   private readonly server: http.Server;
   private readonly sockets = new Set<net.Socket>();
   private readonly token: string;
-  private readonly allowedHosts: readonly string[];
+  private readonly allowedHosts: readonly string[] | null;
   private boundHost = '';
   private boundPort = 0;
+  /**
+   * Placeholder→secret table, filled by the session's credential resolver.
+   * Copied on arrival: the bundle that produced it is cleared at the end of
+   * the turn, while the proxy needs the values for the sandbox's lifetime.
+   */
+  private substitutions: EgressSubstitution[] = [];
 
   private constructor(options: EgressProxyOptions) {
     this.token = options.token ?? randomBytes(18).toString('base64url');
-    this.allowedHosts = [...options.allowedHosts];
+    this.allowedHosts = options.allowedHosts === null ? null : [...options.allowedHosts];
     this.server = http.createServer((req, res) => this.handleForward(req, res));
     // The connect event's socket is typed as stream.Duplex; for a plain TCP
     // server it is always a net.Socket.
@@ -133,7 +145,34 @@ export class EgressProxy {
 
   /** True when `host[:port]` matches the policy this proxy serves. */
   allows(target: string): boolean {
+    if (this.allowedHosts === null) return true;
     return this.allowedHosts.some((pattern) => hostMatchesPattern(target, pattern));
+  }
+
+  /**
+   * Register placeholder substitutions. Called per credential resolution —
+   * turn start and each MCP connect — so registration is an upsert keyed on
+   * the token: a rotation re-resolution replaces the value a spawned process's
+   * stable placeholder resolves to, rather than minting a second token.
+   */
+  addSubstitutions(entries: readonly EgressSubstitution[]): void {
+    for (const entry of entries) {
+      const existing = this.substitutions.find((known) => known.placeholder === entry.placeholder);
+      if (existing) {
+        existing.value = entry.value;
+        existing.allowedHosts = entry.allowedHosts;
+      } else {
+        this.substitutions.push({ ...entry });
+      }
+    }
+  }
+
+  /** The substitutions that may materialize on a request to `authority`. */
+  private substitutionsFor(authority: string): EgressSubstitution[] {
+    return this.substitutions.filter(
+      (entry) => entry.allowedHosts == null
+        || entry.allowedHosts.some((pattern) => hostMatchesPattern(authority, pattern)),
+    );
   }
 
   async close(): Promise<void> {
@@ -157,7 +196,9 @@ export class EgressProxy {
       return;
     }
     const target = parseConnectTarget(req.url ?? '');
-    if (!target || !CONNECT_PORTS.has(target.port) || !this.allows(target.authority)) {
+    // In allow-all mode the tunnel carries no policy decision; the port floor
+    // exists only so an allowlisted proxy cannot be used as a raw TCP relay.
+    if (!target || (this.allowedHosts !== null && !CONNECT_PORTS.has(target.port)) || !this.allows(target.authority)) {
       clientSocket.end('HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\negress denied by environment network policy\n');
       return;
     }
@@ -195,34 +236,108 @@ export class EgressProxy {
       return;
     }
 
+    // Placeholder substitution is the reason this proxy exists for
+    // unrestricted environments too: a credential enters the sandbox as an
+    // opaque token, and only here — on the wire, toward a host the credential's
+    // own policy covers — does the real value appear. Headers and the request
+    // line are strings; the body is bytes (a placeholder is ASCII, so a
+    // byte-level replace cannot corrupt a binary body).
+    const subs = this.substitutionsFor(target.authority);
     const headers = { ...req.headers };
     delete headers['proxy-authorization'];
     delete headers['proxy-connection'];
     headers.host = target.hostHeader;
-    const upstream = http.request(
-      {
-        host: target.host,
-        port: target.port,
-        path: target.path,
-        method: req.method,
-        headers,
-        agent: false,
-      },
-      (response) => {
-        res.writeHead(response.statusCode ?? 502, response.headers);
-        response.pipe(res);
-      },
-    );
-    upstream.on('error', () => {
-      if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('egress proxy upstream connection failed\n');
+    if (subs.length > 0) {
+      for (const key of Object.keys(headers)) {
+        const value = headers[key];
+        if (typeof value === 'string') headers[key] = substitutePlaceholders(value, subs);
+        else if (Array.isArray(value)) headers[key] = value.map((v) => substitutePlaceholders(v, subs));
+      }
+    }
+    const path = subs.length > 0 ? substitutePlaceholders(target.path, subs) : target.path;
+
+    const forward = (body: Buffer | undefined) => {
+      const upstream = http.request(
+        {
+          host: target.host,
+          port: target.port,
+          path,
+          method: req.method,
+          headers,
+          agent: false,
+        },
+        (response) => {
+          res.writeHead(response.statusCode ?? 502, response.headers);
+          response.pipe(res);
+        },
+      );
+      upstream.on('error', () => {
+        if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('egress proxy upstream connection failed\n');
+      });
+      if (body === undefined) {
+        req.pipe(upstream);
+      } else {
+        upstream.end(body);
+      }
+    };
+
+    // Buffering is only needed when a body could carry a placeholder; a
+    // bodyless request — or one with nothing to substitute — streams through.
+    const needsBody = subs.length > 0 && req.method !== 'GET' && req.method !== 'HEAD';
+    if (!needsBody) {
+      forward(undefined);
+      return;
+    }
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = substituteBuffer(Buffer.concat(chunks), subs);
+      // A replacement can change the length; recompute and drop the framing
+      // the buffered body makes meaningless.
+      headers['content-length'] = String(body.length);
+      delete headers['transfer-encoding'];
+      forward(body);
     });
-    req.pipe(upstream);
+    req.on('error', () => {
+      if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
+      res.end('egress proxy client request failed\n');
+    });
   }
 
   private authorized(req: http.IncomingMessage): boolean {
     return req.headers['proxy-authorization'] === this.authorizationHeader();
   }
+}
+
+/** Replace every occurrence of each placeholder in `text` with its value. */
+function substitutePlaceholders(text: string, subs: readonly EgressSubstitution[]): string {
+  let out = text;
+  for (const sub of subs) {
+    if (sub.placeholder) out = out.split(sub.placeholder).join(sub.value);
+  }
+  return out;
+}
+
+/** Byte-level placeholder replacement — safe on bodies that are not text. */
+function substituteBuffer(body: Buffer, subs: readonly EgressSubstitution[]): Buffer {
+  let out = body;
+  for (const sub of subs) {
+    const needle = Buffer.from(sub.placeholder, 'utf8');
+    const value = Buffer.from(sub.value, 'utf8');
+    const parts: Buffer[] = [];
+    let cursor = 0;
+    for (;;) {
+      const index = out.indexOf(needle, cursor);
+      if (index < 0) break;
+      parts.push(out.subarray(cursor, index), value);
+      cursor = index + needle.length;
+    }
+    if (parts.length === 0) continue;
+    parts.push(out.subarray(cursor));
+    out = Buffer.concat(parts);
+  }
+  return out;
 }
 
 // ============================================================

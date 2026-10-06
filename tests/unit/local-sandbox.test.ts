@@ -385,7 +385,11 @@ describe('Local Sandbox Provider', () => {
       }
     });
 
-    it('injects nothing under an unrestricted or absent policy', async () => {
+    it('still binds a proxy under an unrestricted or absent policy — it is the substitution boundary', async () => {
+      // The proxy exists on every session now: a policy-less environment still
+      // carries vault credentials that must never reach a subprocess as
+      // plaintext. Without an allowlist it runs in allow-all mode, so the
+      // policy decision and the substitution boundary stay separable.
       const unrestricted = await provider.provision('sess_egress_open', {
         name: 'local',
         sandbox_provider: 'local',
@@ -400,8 +404,8 @@ describe('Local Sandbox Provider', () => {
         name: 'local',
         sandbox_provider: 'local',
       });
-      expect(unrestricted.egressEnvironment).toBeUndefined();
-      expect(undeclared.egressEnvironment).toBeUndefined();
+      expect(unrestricted.egressEnvironment?.HTTP_PROXY).toMatch(/^http:\/\/sandbase:.+@127\.0\.0\.1:\d+$/);
+      expect(undeclared.egressEnvironment?.HTTP_PROXY).toMatch(/^http:\/\/sandbase:.+@127\.0\.0\.1:\d+$/);
       await unrestricted.cleanup();
       await undeclared.cleanup();
     });

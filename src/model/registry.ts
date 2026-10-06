@@ -147,7 +147,7 @@ export class ModelRegistry {
     return createRetryMiddleware(this.retryPolicy, observer);
   }
 
-  createModel(name: string, options?: { retryObserver?: RetryObserver }): LanguageModel {
+  createModel(name: string, options?: { retryObserver?: RetryObserver; headers?: Record<string, string> }): LanguageModel {
     return this.createModelFromConfig(this.resolveModelConfig(name), options);
   }
 
@@ -164,7 +164,7 @@ export class ModelRegistry {
    * names neither the variable nor the field. Failing before the request instead
    * is what makes the first turn say which variable is missing.
    */
-  createModelFromConfig(config: ModelConfig, options?: { retryObserver?: RetryObserver }): LanguageModel {
+  createModelFromConfig(config: ModelConfig, options?: { retryObserver?: RetryObserver; headers?: Record<string, string> }): LanguageModel {
     if (!config.model) {
       throw new ModelConfigInvalidError(
         config.name,
@@ -181,6 +181,7 @@ export class ModelRegistry {
       config.model,
       resolvedApiKey,
       resolvedBaseUrl,
+      options?.headers,
     );
     const middleware: LanguageModelMiddleware[] = [createRetryMiddleware(this.retryPolicy, options?.retryObserver)];
     // Only the OpenAI-compatible branches ever took a reasoning effort.
@@ -555,6 +556,7 @@ function createModelInstance(
   model: string,
   apiKey?: string,
   baseUrl?: string,
+  headers?: Record<string, string>,
 ) {
   switch (provider) {
     case 'openai':
@@ -562,6 +564,7 @@ function createModelInstance(
       const openai = createOpenAI({
         apiKey: apiKey ?? 'ollama', // Ollama doesn't need a key
         baseURL: baseUrl,
+        headers,
         fetch: createSseCompatFetch(),
       });
       return openai.chat(model);
@@ -570,6 +573,7 @@ function createModelInstance(
       const minimax = createOpenAI({
         apiKey: apiKey ?? '',
         baseURL: miniMaxOpenAiBaseUrl({}, baseUrl),
+        headers,
         fetch: createSseCompatFetch(),
       });
       return minimax.chat(model);
@@ -578,6 +582,7 @@ function createModelInstance(
       const anthropic = createAnthropic({
         apiKey: apiKey,
         baseURL: baseUrl,
+        headers,
       });
       return anthropic(model);
     }
@@ -586,10 +591,42 @@ function createModelInstance(
       const openaiCompat = createOpenAI({
         apiKey: apiKey ?? '',
         baseURL: baseUrl,
+        headers,
         fetch: createSseCompatFetch(),
       });
       return openaiCompat.chat(model);
     }
+  }
+}
+
+/**
+ * The host a request built from this config is addressed to.
+ *
+ * The credential network policy is scoped by host, so request-side injection
+ * needs to name the endpoint: a configured `base_url` decides when it resolves
+ * to one, otherwise the provider's own default endpoint does. A provider with
+ * neither returns undefined, which the policy reads as an unverifiable target.
+ */
+export function modelEndpointHost(config: ModelConfig): string | undefined {
+  const baseUrl = config.base_url
+    ? resolveEnvVars(config.base_url, false)
+    : defaultBaseUrlFor(config.provider ?? 'openai');
+  if (!baseUrl || ENV_PLACEHOLDER.test(baseUrl)) return undefined;
+  try {
+    return new URL(baseUrl).hostname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The endpoint each first-party provider defaults to when no base_url is set. */
+function defaultBaseUrlFor(provider: ModelProviderType): string | undefined {
+  switch (provider) {
+    case 'openai': return 'https://api.openai.com/v1';
+    case 'anthropic': return 'https://api.anthropic.com/v1';
+    case 'ollama': return 'http://localhost:11434/v1';
+    case MINIMAX_PROVIDER: return 'https://api.minimaxi.com/v1';
+    default: return undefined;
   }
 }
 

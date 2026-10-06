@@ -9,6 +9,10 @@ export interface SecretRedactor {
 /** Build a redactor from the ephemeral secret-bearing portions of a bundle. */
 export function createCredentialRedactor(bundle?: CredentialInjectionBundle): SecretRedactor {
   return createSecretRedactor([
+    // `environment` holds placeholders when the session has an egress
+    // boundary; the values a leak would carry are the real secrets behind
+    // them, so both shapes feed the redactor.
+    ...(bundle?.placeholders ?? []).map((entry) => entry.value),
     ...Object.values(bundle?.environment ?? {}),
     ...Object.values(bundle?.request_headers ?? {}).map((value) => value.replace(/^Bearer\s+/i, '')),
     ...Object.values(bundle?.request_body ?? {}).filter((value): value is string => typeof value === 'string'),
@@ -46,4 +50,6 @@ export function clearCredentialInjectionBundle(bundle?: CredentialInjectionBundl
   for (const key of Object.keys(bundle.environment)) delete bundle.environment[key];
   for (const key of Object.keys(bundle.request_headers)) delete bundle.request_headers[key];
   for (const key of Object.keys(bundle.request_body)) delete bundle.request_body[key];
+  for (const placeholder of bundle.placeholders) placeholder.value = '';
+  bundle.placeholders.length = 0;
 }

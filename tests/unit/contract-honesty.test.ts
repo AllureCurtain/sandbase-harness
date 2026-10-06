@@ -618,12 +618,20 @@ describe('documented capability decisions', () => {
     }
   });
 
-  it('leads the credential-injection deviation with plaintext and egress substitution', () => {
+  it('states the credential-injection boundary and its residual limits honestly', () => {
+    // The placeholder + egress-substitution model now ships. The guard that
+    // pinned the old plaintext deviation is inverted: `supported` must name
+    // the two places the guarantee still does not reach — the opaque CONNECT
+    // tunnel and the boundary-less providers — rather than the claim drifting
+    // into "secrets never reach a process" on kubernetes or self-hosted.
     const reason = entry('credential-injection-execution').reason;
-    expect(entry('credential-injection-execution').status).toBe('partial');
+    expect(entry('credential-injection-execution').status).toBe('supported');
+    expect(reason).toMatch(/__cred_/);
+    expect(reason).toMatch(/CONNECT/);
     expect(reason).toMatch(/plaintext/);
-    expect(reason).toMatch(/no opaque placeholder and no substitution at the network egress/);
-    expect(documentNamed('credentials.md').text).toMatch(/plaintext/);
+    const contract = documentNamed('credentials.md').text;
+    expect(contract).toMatch(/__cred_/);
+    expect(contract).toMatch(/vault_ids.*still means|still means "export these secrets/);
   });
 
   it('documents the shipped session.updated event in the sessions contract', () => {

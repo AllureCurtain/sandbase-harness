@@ -206,8 +206,32 @@ export interface SandboxInstance {
    */
   readonly egressEnvironment?: Record<string, string>;
 
+  /**
+   * Register placeholder substitutions on the session's egress boundary.
+   *
+   * A credential injected into a process environment travels as an opaque
+   * token; the backend that owns a real egress boundary substitutes the real
+   * value on the wire when the request's destination is inside the
+   * credential's own host scope. Providers without a boundary leave the
+   * method unset — callers must not assume placeholders are substituted.
+   */
+  configureEgressSubstitutions?(substitutions: readonly EgressSubstitution[]): void;
+
   /** Release all resources (remove working directory, kill processes) */
   cleanup(): Promise<void>;
+}
+
+/**
+ * One placeholder→secret mapping the egress boundary may materialize.
+ *
+ * `allowedHosts` scopes where the real value may appear on the wire, in the
+ * credential's own `allowed_hosts` pattern vocabulary; absent or null means
+ * the credential's network policy places no host restriction.
+ */
+export interface EgressSubstitution {
+  placeholder: string;
+  value: string;
+  allowedHosts?: readonly string[] | null;
 }
 
 // ============================================================

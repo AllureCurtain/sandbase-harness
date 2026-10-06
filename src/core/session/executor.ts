@@ -42,7 +42,12 @@ import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver, type SandboxCredentials } from './tool-resolver.js';
 import { createCredentialRedactor, clearCredentialInjectionBundle } from '@/core/credentials/redaction.js';
-import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
+import {
+  placeholderToEgressSubstitution,
+  type CredentialInjectionBundle,
+  type CredentialInjectionTarget,
+} from '@/core/credentials/injection.js';
+import { modelEndpointHost } from '@/model/registry.js';
 import { getCustomToolNames, getToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import {
   assertPiAgentCanExecute,
@@ -191,6 +196,9 @@ export class DefaultSessionExecutor implements SessionExecutor {
       // Route sub-agent sandboxes through the lifecycle so they resolve to the
       // parent session's backend instead of always landing on local.
       provisionSandbox: (session, sandboxId) => this.sandboxLifecycle.provisionDetached(session, sandboxId),
+      // Delegated children resolve credentials through the same policy path;
+      // the service scopes them to the parent session's vault ids.
+      resolveCredentialInjections: deps.resolveCredentialInjections,
       composeSystemPrompt: (agent) => this.contextBuilder.composeSystemPrompt(agent),
       // The child's sandbox is provisioned through the same lifecycle, so the
       // child's prompt describes its resources against the same backend as the
@@ -204,12 +212,12 @@ export class DefaultSessionExecutor implements SessionExecutor {
         () => {},
         { sandboxProvider: this.sandboxLifecycle.resolveProviderType(childSession) },
       )).systemPrompt,
-      buildSandboxTools: (agent, sandbox, parentSession) => this.toolResolver.buildSandboxTools(
+      buildSandboxTools: (agent, sandbox, parentSession, credentials) => this.toolResolver.buildSandboxTools(
         agent,
         sandbox,
         resolveMemoryBindings(parentSession?.resources, deps.memoryStoreName),
         deps.memoryMount ? { adapter: deps.memoryMount, sessionId: parentSession?.id ?? 'unknown' } : undefined,
-        undefined,
+        credentials,
         parentSession,
       ),
       resolveSkillDirs: (agent) => this.skillDirsFor(agent),
@@ -275,7 +283,10 @@ export class DefaultSessionExecutor implements SessionExecutor {
       : undefined;
     const model = strategy.requiresModel === false
       ? undefined
-      : modelRegistry.createModel(agent.model, { retryObserver: options?.retryObserver });
+      : modelRegistry.createModel(agent.model, {
+          retryObserver: options?.retryObserver,
+          headers: this.modelRequestHeaders(session, agent),
+        });
 
     // 3. Provision sandbox (or reuse the one bound to this session)
     const sandbox = await this.sandboxLifecycle.getOrProvision(session);
@@ -356,7 +367,20 @@ export class DefaultSessionExecutor implements SessionExecutor {
     // confirm-required stripping. A shell command declares no target host, so the
     // resolver is asked without one: an `unrestricted` credential is injected and
     // a `limited` one is denied, exactly as the policy already decides.
-    const resolvedCredentials = this.deps.resolveCredentialInjections?.(session.id);
+    // When the sandbox owns an egress boundary, a credential enters the
+    // environment as an opaque placeholder and the boundary materializes the
+    // secret on the wire, scoped to the credential's own allowed_hosts. A
+    // backend with no boundary (kubernetes, self-hosted) cannot substitute, so
+    // it keeps the plaintext materialization it always had — the bundle shape
+    // is the same, only the values differ.
+    const usePlaceholders = typeof sandbox.configureEgressSubstitutions === 'function';
+    const resolvedCredentials = this.deps.resolveCredentialInjections?.(
+      session.id,
+      usePlaceholders ? { placeholders: true } : undefined,
+    );
+    if (resolvedCredentials && resolvedCredentials.placeholders.length > 0) {
+      sandbox.configureEgressSubstitutions!(resolvedCredentials.placeholders.map(placeholderToEgressSubstitution));
+    }
     const credentials: SandboxCredentials | undefined = resolvedCredentials
       ? { env: { ...resolvedCredentials.environment }, redactor: createCredentialRedactor(resolvedCredentials) }
       : undefined;
@@ -444,6 +468,35 @@ export class DefaultSessionExecutor implements SessionExecutor {
    */
   async refreshSessionMcpCredentials(sessionId: string): Promise<void> {
     await this.toolResolver.refreshSessionMcpCredentials(sessionId);
+  }
+
+  /**
+   * Vault credentials a model request is authorized to carry.
+   *
+   * The policy is asked with the host the provider endpoint resolves to, so a
+   * `limited` credential scoped to the model's own API host contributes its
+   * `request_header` declarations here and only there. The model client lives
+   * in the runtime process, so real header values — not placeholders — are
+   * what the transport needs; nothing crosses into the sandbox.
+   */
+  private modelRequestHeaders(
+    session: Session,
+    agent: AgentDefinition,
+  ): Record<string, string> | undefined {
+    const resolve = this.deps.resolveCredentialInjections;
+    if (!resolve) return undefined;
+    let host: string | undefined;
+    try {
+      host = modelEndpointHost(this.deps.modelRegistry.resolveModelConfig(agent.model));
+    } catch {
+      host = undefined;
+    }
+    const bundle = resolve(session.id, host ? { targetHost: host } : undefined);
+    const headers = Object.keys(bundle.request_headers).length > 0
+      ? { ...bundle.request_headers }
+      : undefined;
+    clearCredentialInjectionBundle(bundle);
+    return headers;
   }
 
   /**
