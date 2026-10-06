@@ -4,6 +4,14 @@
 
 ### Added
 
+- The `redacted` content block is modelled in the `ContentBlock` union — the
+  published placeholder for content withheld by model policy — so runtime
+  output parses and round-trips it verbatim, while every user-content ingress
+  refuses it with `400`: session `initial_events`, `POST
+  /v1/sessions/{id}/messages`, the `/v1/sessions/{id}/events` batch (recursing
+  into `tool_result` children of `user.custom_tool_result` and
+  `user.tool_result`), and `/v1/runs` `input`. A client has no withheld content
+  to describe, so storing one would fabricate a model decision.
 - The coarse session webhook events now fire from real transitions:
   `session.pending` is published at creation (a session begins `queued`),
   `session.running` accompanies `session.status_run_started`, and a

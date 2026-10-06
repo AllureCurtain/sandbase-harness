@@ -16,6 +16,7 @@ import {
   normalizeMessageContent,
   normalizeResources,
   normalizeVaultIds,
+  redactedBlockProblem,
   type ValidationResult,
 } from './session-normalizers.js';
 
@@ -175,6 +176,8 @@ function parseRunRequest(deps: ServerDeps, body: unknown, admission: RunAdmissio
   if (!vaultIds.ok) return vaultIds;
   const input = normalizeMessageContent(record.input);
   if (!input || input.length === 0) return { ok: false, message: 'input must be a non-empty string or content block array' };
+  const redacted = redactedBlockProblem(input, 'input');
+  if (redacted) return { ok: false, message: redacted };
 
   const responseMode = record.response_mode === undefined ? 'wait' : record.response_mode;
   if (responseMode !== 'wait' && responseMode !== 'sse' && responseMode !== 'async') {

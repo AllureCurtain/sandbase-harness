@@ -17,7 +17,7 @@
  */
 
 import type { ContentBlock, UserDefineOutcomeEvent, UserEvent } from '@/types/cma-protocol.js';
-import { normalizeMessageContent } from './session-normalizers.js';
+import { normalizeMessageContent, redactedBlockProblem } from './session-normalizers.js';
 import { normalizeSystemMessageContent, systemMessageContentError } from './system-message.js';
 import {
   DEFAULT_OUTCOME_MAX_ITERATIONS,
@@ -153,6 +153,14 @@ export function normalizeInitialEvents(
         ok: false,
         code: 'invalid_initial_events',
         message: `initial_events[${index}].content must be a string or an array of content blocks`,
+      };
+    }
+    const redacted = redactedBlockProblem(content);
+    if (redacted) {
+      return {
+        ok: false,
+        code: 'invalid_initial_events',
+        message: `initial_events[${index}].${redacted}`,
       };
     }
     events.push({ type: 'user.message', content });

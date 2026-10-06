@@ -57,6 +57,15 @@ The append path and the row shape are `src/core/session/session-manager.ts` and
   `custom_tool_use_id` for `user.custom_tool_result`. The top-level `id` stays the
   persisted event id and `content` is unchanged; [`tools.md`](./tools.md) records
   why the two ids must not be conflated.
+- `redacted` is a content block the contract models for runtime output — the
+  placeholder for content withheld by model policy. It is part of the
+  `ContentBlock` union so a persisted `agent.message` or replayed
+  `user.message` carries it verbatim, and it is refused with `400` everywhere
+  user content is admitted: `initial_events`, `POST /sessions/{id}/messages`,
+  the `/events` batch (recursing into `tool_result` children on
+  `user.custom_tool_result` / `user.tool_result`), and `/v1/runs` `input`. A
+  client has no withheld content to describe, so storing one would fabricate a
+  model decision.
 - A persisted `agent.tool_use` always pairs with a persisted result. When the
   tool executed, the result is the tool's output; when the SDK refused the
   call before execution — an input that failed schema validation — the paired

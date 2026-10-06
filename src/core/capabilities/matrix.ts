@@ -160,7 +160,7 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     area: 'sessions',
     id: 'initial-events',
     status: 'supported',
-    reason: 'initial_events are validated against the documented whitelist and the 50-event ceiling, and creation plus resource attachment plus event delivery is wrapped in one local transaction so a rejected event cannot leave a half-created session.',
+    reason: 'initial_events are validated against the documented whitelist and the 50-event ceiling, and creation plus resource attachment plus event delivery is wrapped in one local transaction so a rejected event cannot leave a half-created session. A `redacted` content block — the runtime\'s placeholder for model-withheld content — is refused there and on every other user ingress (`/messages`, the `/events` batch, `/v1/runs` input) with 400 rather than persisted.',
     contract: 'contracts/anthropic-cma/sessions.md',
   },
   {

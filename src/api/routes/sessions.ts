@@ -35,6 +35,7 @@ import {
   normalizeMessageContent,
   normalizeResources,
   normalizeVaultIds,
+  redactedBlockProblem,
 } from './session-normalizers.js';
 import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session-stream.js';
 import type { OutcomeEventRow, StatusEventTick } from '@/core/session/event-logger.js';
@@ -480,6 +481,17 @@ export function sessionsRoutes(deps: ServerDeps) {
           400,
         );
       }
+      // A `redacted` block is the runtime's placeholder for model-withheld
+      // content, never client input. Every content-bearing user event is
+      // scanned — the check sees `event.content` as the raw tree rather than
+      // a normalized block list, so nested `tool_result` children are covered.
+      const redacted = redactedBlockProblem(event.content);
+      if (redacted) {
+        return c.json(
+          { error: { type: 'invalid_request_error', message: `${event.type} ${redacted}` } },
+          400,
+        );
+      }
       // A `user.define_outcome` payload is normalized here rather than stored as sent:
       // the default budget has to be filled in before the event is durable, and a
       // payload the runtime will not honour must be refused at admission. The
@@ -617,6 +629,10 @@ export function sessionsRoutes(deps: ServerDeps) {
         },
         400,
       );
+    }
+    const redacted = redactedBlockProblem(content);
+    if (redacted) {
+      return c.json({ error: { type: 'invalid_request_error', message: redacted } }, 400);
     }
 
     const session = sessionManager.get(sessionId);

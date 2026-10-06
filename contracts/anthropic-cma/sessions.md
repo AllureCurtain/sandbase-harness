@@ -256,7 +256,14 @@ The session-level `stop_reason` (`toApiEvent`):
 - Only `user.message` and `user.define_outcome` are accepted; any other type is
   rejected with `invalid_initial_event_type` and names the offending index.
 - `user.message` requires a string or content-block array; a malformed payload
-  is rejected rather than coerced.
+  is rejected rather than coerced. A `redacted` block — the runtime's
+  placeholder for content withheld by model policy — is refused with
+  `invalid_initial_events` and the offending index, here and on every other
+  user-content ingress (`POST /sessions/{id}/messages`, the `/events` batch
+  including `tool_result` children of `user.custom_tool_result` and
+  `user.tool_result`, and `/v1/runs` `input`). The block is modelled in the
+  `ContentBlock` union so runtime output carries it verbatim; it is never
+  client input.
 - `user.define_outcome` requires a `description` and a `rubric`, which is either
   `{type: "text", content}` or `{type: "file", file_id}`; `max_iterations` defaults to
   3 and is rejected outside 1..20 rather than clamped. A malformed payload is reported
@@ -441,6 +448,11 @@ materialized `agent` with a pinned `version` and `multiagent: null`.
 
 - `tests/integration/api.test.ts` — session create/read/status cases, engine
   admission, and rejection of an unknown loop engine.
+- `tests/integration/redacted-content-block.test.ts` and
+  `tests/unit/redacted-content-block.test.ts` — a client-sent `redacted` block
+  is refused on `initial_events`, `/messages`, the `/events` batch (including
+  nested `tool_result` content), and `/v1/runs` `input`, while a persisted one
+  round-trips the event listing verbatim.
 - `tests/unit/session-resource-instances.test.ts` — resource attach, list,
   delete, and the memory-store at-creation rule.
 - `tests/unit/session-delete.test.ts` — permanent deletion, running-session
