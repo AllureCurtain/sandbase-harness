@@ -1,8 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const css = readFileSync(join(process.cwd(), 'apps/console/src/styles.css'), 'utf8');
+// The legacy stylesheet is retired: app chrome lives in styles/shell.css and
+// the shared kit it used to own lives in styles/sandbase.css.
+const css = ['apps/console/src/styles/shell.css', 'apps/console/src/styles/sandbase.css']
+  .map((file) => readFileSync(join(process.cwd(), file), 'utf8'))
+  .join('\n');
+const appCss = readFileSync(join(process.cwd(), 'apps/console/src/styles/app.css'), 'utf8');
 // Session surfaces migrated onto the ported token system; their rules live
 // in the page-local stylesheet, not the legacy stylesheet.
 const sessionsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/sessions.css'), 'utf8');
@@ -83,15 +88,20 @@ describe('Console CSS contracts', () => {
     expect(sessionRuleFor('.conversationToolResult')).toContain('font-family: var(--font-console)');
   });
 
-  it('keeps credential vault choices compact and horizontally aligned', () => {
-    expect(ruleFor('.pickerPopover')).toContain('max-width: 460px');
-    const labelRule = ruleFor('label:not(.filterSelect):not(.searchBox):not(.pickerOption)');
+  it('keeps resource registry choices compact and horizontally aligned', () => {
+    // Field labels stack vertically; widget labels (pickers, toggles, inline
+    // checkboxes) are excluded by the whitelist so their own layout rules win.
+    const labelRule = ruleFor('label:is(.editField, .sessionField, .shortField, .compactField, .fieldRow)');
     expect(labelRule).toContain('flex-direction: column');
-    expect(labelRule).not.toContain('pickerOption');
-    const vaultOptions = ruleFor('.vaultPickerOptions .vaultOption');
-    expect(vaultOptions).toContain('display: flex');
-    expect(vaultOptions).toContain('min-height: 44px');
-    expect(ruleFor('.vaultPickerOptions .vaultOption > span:last-child')).toContain('white-space: nowrap');
+    expect(resourceRuleFor('.registryList button')).toContain('min-height: 66px');
+    expect(resourceRuleFor('.registryList button.selected')).toContain('background: var(--accent-tint)');
+  });
+
+  it('retires the legacy stylesheet', () => {
+    expect(existsSync(join(process.cwd(), 'apps/console/src/styles.css'))).toBe(false);
+    expect(appCss).not.toContain('styles.css');
+    expect(appCss).toContain('shell.css');
+    expect(css).not.toMatch(/--surface-hover|--border-subtle|--text-soft|--muted\b|--radius\b(?!-)/);
   });
 
   it('keeps credential forms readable and protects secret fields', () => {

@@ -297,7 +297,7 @@ export function CredentialVaultDetail({
         <div><span>{t('detail.truth.scoped')}</span><strong>{t('detail.truth.scopedBody')}</strong></div>
         <div><span>{t('detail.truth.policy')}</span><strong>{t('detail.truth.policyBody')}</strong></div>
       </div>
-      <div className="detailStack wideDetailStack">
+      <div className="detailStack">
         <ListToolbar
           label={t('detail.credentialsSection.credentialActions')}
           summary={listSummary(tCommon, credentials.length, vault.credentials.length, { locale: i18n.resolvedLanguage })}

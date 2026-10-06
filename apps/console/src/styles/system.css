@@ -642,6 +642,8 @@ pre {
 
 /* Filter segments: an 8px track with 6px options; the active one is a ringed surface. */
 .segmented {
+  width: fit-content;
+  max-width: 100%;
   padding: 2px;
   gap: 2px;
   background: var(--hover-2);

@@ -12,7 +12,7 @@ import {
   eventKind,
   eventText,
 } from './eventRenderers';
-import { truncateMiddle } from '../../lib/format';
+import { truncateMiddle, uiLocaleTag } from '../../lib/format';
 import type { Session, SessionEvent, ToolPermission } from '../../types';
 
 export const SESSION_EVENT_KINDS = ['user', 'agent', 'tool', 'error', 'system'] as const;
@@ -225,5 +225,5 @@ export function sessionDisplayStatus(session: Session, events: SessionEvent[]): 
 export function eventTime(event: SessionEvent) {
   const value = event.processed_at ?? event.created_at;
   if (!value) return '-';
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
+  return new Intl.DateTimeFormat(uiLocaleTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
 }

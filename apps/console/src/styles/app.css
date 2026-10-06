@@ -2,8 +2,7 @@
  * The console's single stylesheet entry, in cascade order:
  * 1. Tailwind's theme variables (no preflight: the console keeps its base rules);
  * 2. IBM Plex Sans and Beautiful UI's foundation — the design tokens every surface uses;
- * 3. the legacy stylesheet (src/styles.css), retiring page by page as surfaces
- *    migrate onto the ported grammar;
+ * 3. the app chrome (shell.css): sidebar, navigation, and workspace switcher;
  * 4. the ported OAC base + grammar (style.css, console.css) and the component
  *    system in Beautiful UI's vocabulary (system.css), plus this console's own
  *    semantic layer for workflow surfaces (sandbase.css);
@@ -17,7 +16,7 @@
 @import "@fontsource-variable/geist-mono";
 @import "./foundation.css";
 @import "./coss-theme.css";
-@import "../styles.css";
+@import "./shell.css";
 @import "./style.css";
 @import "./console.css";
 @import "./system.css";

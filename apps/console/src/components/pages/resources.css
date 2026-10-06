@@ -40,7 +40,6 @@
   display: flex;
   flex-direction: column;
   gap: 26px;
-  max-width: 1160px;
 }
 
 .environmentSection {
@@ -241,9 +240,7 @@
   box-shadow: none;
 }
 
-.wideDetailStack {
-  max-width: 100%;
-}
+
 
 .authCell strong,
 .authCell small {
@@ -316,7 +313,7 @@
   padding: 12px 14px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-card);
-  background: var(--card);
+  background: var(--surface);
 }
 
 .resourceTruthStrip span {
@@ -709,7 +706,8 @@
   .editTitleGroup,
   .readonlyFields,
   .editableRow,
-  .editableRow.metadataRow {
+  .editableRow.metadataRow,
+  .environmentNestedGrid {
     grid-template-columns: 1fr;
   }
 .editTitleGroup {
@@ -782,7 +780,7 @@
   min-height: 104px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-card);
-  background: var(--card);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
   display: flex;
@@ -815,4 +813,146 @@
   .credential-table-frame {
     display: none;
   }
+}
+
+/* Environment detail + shared readonly grammar (migrated from legacy styles.css). */
+
+.readonlyField.wide {
+  grid-column: 1 / -1;
+}
+
+.readonlyField span {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg-muted);
+  padding: 0 14px;
+}
+
+.readonlyField:not(.wide) span {
+  width: fit-content;
+  min-height: 30px;
+  background: var(--inset);
+  border-color: transparent;
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.readonlyTable .emptyValue {
+  border: 0;
+  border-radius: 0;
+}
+
+.editingEnvironment > .editField,
+.editingEnvironment .environmentSection {
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.editingEnvironment > .editField {
+  padding: 20px;
+}
+
+.editingEnvironment .environmentSection > h2,
+.editingEnvironment .sectionHeaderRow h2 {
+  margin: 0;
+}
+
+.editingEnvironment .environmentSection > p,
+.editingEnvironment .sectionHeaderRow p {
+  margin: 4px 0 0;
+}
+
+.editField {
+  gap: 10px;
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.editField input,
+.editField select {
+  min-height: 38px;
+  font-size: 14px;
+}
+
+.editField textarea {
+  min-height: 96px;
+  font-size: 14px;
+}
+
+.editingEnvironment .editField textarea {
+  min-height: 104px;
+}
+
+.editingEnvironment .environmentSection > .editField {
+  margin-top: 4px;
+}
+
+.editingEnvironment .environmentSection > .editField select,
+.editingEnvironment .environmentSection > .editField textarea {
+  width: 100%;
+}
+
+.editField small {
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.registryList button.selected {
+  background: var(--accent-tint);
+}
+
+.registryList button.selected .registrySelectionMark {
+  color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .environmentDetail {
+    padding: 18px;
+  }
+
+  .readonlyField.wide {
+    grid-column: auto;
+  }
+
+}
+
+.memoryNode:hover,
+.memoryNode.active {
+  background: var(--inset);
+}
+
+.readonlyTable table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.readonlyTable th,
+.readonlyTable td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.readonlyTable th {
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readonlyTable td {
+  color: var(--fg);
+}
+
+.readonlyTable tr:last-child td {
+  border-bottom: 0;
 }

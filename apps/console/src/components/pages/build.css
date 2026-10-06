@@ -179,7 +179,7 @@
 }
 .formAlert.error {
   background: var(--red-tint);
-  border-color: #f6bdb7;
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
   color: var(--red);
 }
 .fileUploadError {
@@ -256,3 +256,21 @@
   }
 }
 
+
+/* Compatibility notice inside the skill detail drawer. */
+.infoBanner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+.infoBanner strong {
+  color: var(--fg);
+  font-weight: 640;
+}

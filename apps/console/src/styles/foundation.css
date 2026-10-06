@@ -164,7 +164,7 @@
 
   /* type */
   --font-sans: var(--font-console);
-  --font-mono: var(--font-mono-face), ui-monospace, "SF Mono", monospace;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
 
   /* Radii are supplied by the console component tokens in system.css. */
 
