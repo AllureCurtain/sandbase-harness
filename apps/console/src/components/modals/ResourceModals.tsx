@@ -94,7 +94,7 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
           </label>
           <div className="modalActions">
             <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-            <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>Create environment</button>
+            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>Create environment</button>
           </div>
         </form>
       </Modal>
@@ -117,7 +117,7 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
           </label>
           <div className="modalActions">
             <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-            <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Creating…' : 'Create vault'}</button>
+            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Creating…' : 'Create vault'}</button>
           </div>
         </form>
       </Modal>
@@ -139,7 +139,7 @@ export function ResourceModal({ kind, defaultSandboxProvider, onClose, onSaved }
             <small>Name and description are rendered in the agent system prompt when this store is attached.</small>
           </label>
           <div className="modalActions">
-            <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>Create memory store</button>
+            <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>Create memory store</button>
           </div>
         </form>
       </Modal>
@@ -350,7 +350,7 @@ export function AddCredentialModal({ vaultId, onClose, onSaved }: { vaultId: str
 
         <div className="modalActions stickyActions">
           <button className="secondaryButton largeAction" type="button" onClick={onClose}>Cancel</button>
-          <button className="darkButton largeAction" type="submit" disabled={saving || !canSubmit}>{saving ? 'Adding…' : 'Add credential'}</button>
+          <button className="primaryButton largeAction" type="submit" disabled={saving || !canSubmit}>{saving ? 'Adding…' : 'Add credential'}</button>
         </div>
       </form>
     </Modal>
@@ -392,7 +392,7 @@ export function AddMemoryModal({ storeId, onClose, onSaved }: { storeId: string;
           <textarea value={content} onChange={(event) => setContent(event.target.value)} />
         </label>
         <div className="modalActions">
-          <button className="darkButton largeAction" type="submit" disabled={saving || !canSubmit}>Add memory</button>
+          <button className="primaryButton largeAction" type="submit" disabled={saving || !canSubmit}>Add memory</button>
         </div>
       </form>
     </Modal>

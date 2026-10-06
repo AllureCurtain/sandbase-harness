@@ -2606,26 +2606,6 @@ label.searchBox input {
   padding: 0;
 }
 
-.darkButton {
-  border: 1px solid var(--text);
-  border-radius: var(--radius);
-  min-height: var(--height-large);
-  padding: 0 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  background: var(--text);
-  color: var(--surface);
-  font-weight: 760;
-  box-shadow: var(--shadow-control);
-}
-
-.darkButton:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
 .filterButton {
   min-height: var(--height-default);
   border: 1px solid var(--border);
@@ -3306,17 +3286,6 @@ label.searchBox input {
 .mobileAgentMeta > span {
   color: var(--muted);
   font-size: 13px;
-}
-
-.selectCol {
-  width: 44px;
-}
-
-.selectCol input {
-  width: 18px;
-  height: 18px;
-  min-height: auto;
-  padding: 0;
 }
 
 .monoCell,
@@ -7719,4 +7688,591 @@ label.searchBox input {
   border-radius: var(--radius);
   padding: 8px 12px;
   margin-bottom: 10px;
+}
+
+/* ── UX redesign: shared form kit ───────────────────────────────── */
+
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldRowLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.requiredMark {
+  color: var(--danger, #b3261e);
+}
+
+.optionalPill {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+.fieldHelper {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.fieldError {
+  font-size: 12px;
+  color: var(--danger, #b3261e);
+  font-weight: 600;
+}
+
+.fieldRow input:not([type="checkbox"]):not([type="radio"]),
+.fieldRow select,
+.fieldRow textarea,
+.monoInput {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.fieldRow textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.fieldRow input:focus-visible,
+.fieldRow select:focus-visible,
+.fieldRow textarea:focus-visible,
+.monoInput:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #3568d4) 55%, transparent);
+  outline-offset: -1px;
+  border-color: var(--accent, #3568d4);
+}
+
+.monoInput {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+}
+
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+
+.formCard:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.formCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formCardHead h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.formCardNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface-muted, #eef1f6);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.formCardHint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fieldGrid .span2 {
+  grid-column: 1 / -1;
+}
+
+.kvEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kvEditorRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.addRowButton {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--accent, #3568d4);
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.iconButton.quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+  min-height: 30px;
+  width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconButton.quiet:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Radio cards — mutually-exclusive choices with a consequence line. */
+.radioCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.radioCard {
+  display: flex;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.radioCard:hover {
+  border-color: color-mix(in srgb, var(--accent, #3568d4) 45%, var(--border));
+}
+
+.radioCard.selected {
+  border-color: var(--accent, #3568d4);
+  background: color-mix(in srgb, var(--accent, #3568d4) 6%, var(--surface));
+}
+
+.radioCardDot {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 1.5px solid var(--muted);
+}
+
+.radioCard.selected .radioCardDot {
+  border-color: var(--accent, #3568d4);
+  background: radial-gradient(circle, var(--accent, #3568d4) 0 45%, transparent 50%);
+}
+
+.radioCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.radioCardBody strong {
+  font-size: 13px;
+}
+
+.radioCardBody small {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.radioCardConsequence {
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  padding-top: 4px;
+  margin-top: 2px;
+}
+
+/* Tool chips — checkbox-style capability toggles. */
+.toolChipGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 4px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.toolChip:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent, #3568d4) 45%, var(--border));
+}
+
+.toolChip.selected {
+  border-color: var(--accent, #3568d4);
+  background: color-mix(in srgb, var(--accent, #3568d4) 9%, var(--surface));
+}
+
+.toolChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolChip small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Pre-submit check. */
+.checkCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted, #f6f8fb);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.checkCardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.checkCardOk {
+  color: var(--success, #15794a);
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.checkCardWarn {
+  color: var(--warning, #b45309);
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: 16px minmax(90px, auto) 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.checkState.ok {
+  color: var(--success, #15794a);
+}
+
+.checkState.blocking {
+  color: var(--warning, #b45309);
+}
+
+.checkState.advisory {
+  color: var(--accent, #3568d4);
+}
+
+.checkLabel {
+  color: var(--muted);
+}
+
+.checkValue {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkJump {
+  font-size: 12px;
+}
+
+/* Split modal: form column + config preview drawer. */
+.modal.workflow {
+  width: min(1120px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalSplit {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.modalFormCol {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configDrawer {
+  flex: 0 0 340px;
+  border-left: 1px solid var(--border-subtle, var(--border));
+  background: var(--surface-muted, #f8fafd);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.configDrawerHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  position: sticky;
+  top: 0;
+  background: var(--surface-muted, #f8fafd);
+  font-size: 12.5px;
+}
+
+.configDrawerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.compactSegment {
+  display: flex;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.compactSegment button {
+  border: 0;
+  background: none;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.compactSegment button.active {
+  background: var(--surface-muted, #eef1f6);
+  color: var(--text);
+}
+
+.configDrawerView {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 12px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre;
+}
+
+.configDrawerPaste,
+.configDrawerRequest {
+  border-top: 1px solid var(--border-subtle, var(--border));
+  padding: 8px 12px;
+}
+
+.configDrawerPaste summary,
+.configDrawerRequest summary {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.configDrawerPaste textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 90px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  padding: 8px;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.configDrawerPaste .secondaryButton {
+  margin-top: 6px;
+}
+
+.configDrawerPaste .fieldError {
+  display: block;
+  margin-top: 4px;
+}
+
+.bareEquivalent .apiSnippet {
+  font-size: 11px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.modalActionsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+
+.modalActionsBar .spacer {
+  flex: 1;
+}
+
+.compactButton {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Narrow screens: the preview drawer overlays instead of squeezing the form. */
+@media (max-width: 860px) {
+  .modalSplit {
+    position: relative;
+  }
+
+  .configDrawer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(360px, 88%);
+    box-shadow: -8px 0 24px rgb(0 0 0 / 12%);
+  }
+}
+
+/* Run-state strip for the session hero. */
+.runStateStrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.runStateStrip .runStatePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.runStateStrip .costReceipt {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+
+.runStateStrip .spacer {
+  flex: 1;
+}
+
+/* Workflow modal body: the form hosts the split columns + action bar. */
+.modalWorkflow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.advancedFold {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.advancedFold summary {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+/* Folded "Equivalent API request" affordance in plain modals. */
+.requestFold {
+  border-top: 1px dashed var(--border);
+  padding: 10px 0 4px;
+}
+
+.requestFold summary {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.runStateStrip .runDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--success, #15794a);
+  animation: runPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes runPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }

@@ -1,5 +1,8 @@
 import type { Session, Workspace } from '../types';
 
+/** Missing figures render as an em dash — never a fabricated zero. */
+export const MISSING = '—';
+
 export function formatDate(value: string | null | undefined) {
   if (!value) return 'never';
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));

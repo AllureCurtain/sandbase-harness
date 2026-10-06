@@ -13,7 +13,7 @@ import {
  * descriptor of the HTTP call the form's submit would send; it is rebuilt on
  * every render, so the snippets track the fields the operator is editing.
  */
-export function EquivalentRequestPanel({ request }: { request: EquivalentRequest | null }) {
+export function EquivalentRequestPanel({ request, bare }: { request: EquivalentRequest | null; bare?: boolean }) {
   const [language, setLanguage] = useState<EquivalentLanguage>('typescript');
   const baseUrl = typeof window === 'undefined' ? '' : window.location.origin;
   const snippet = useMemo(
@@ -21,34 +21,51 @@ export function EquivalentRequestPanel({ request }: { request: EquivalentRequest
     [request, baseUrl, language],
   );
 
+  const tabs = (
+    <div className="equivalentRequestTabs" role="tablist">
+      {EQUIVALENT_LANGUAGES.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="tab"
+          aria-selected={language === item.id}
+          className={`equivalentRequestTab ${language === item.id ? 'selected' : ''}`}
+          onClick={() => setLanguage(item.id)}
+        >
+          {item.label}
+        </button>
+      ))}
+      <button
+        className="iconButton"
+        type="button"
+        title="Copy snippet"
+        aria-label="Copy snippet"
+        disabled={!request}
+        onClick={() => copyText(snippet)}
+      >
+        <Copy size={14} />
+      </button>
+    </div>
+  );
+
+  if (bare) {
+    return (
+      <div className="equivalentRequest bareEquivalent" aria-label="Equivalent request">
+        {tabs}
+        {request ? (
+          <pre className="metricsPreview apiSnippet">{snippet}</pre>
+        ) : (
+          <p className="apiEmptyState">Fix the config errors above to preview the request.</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="composerSection equivalentRequest" aria-label="Equivalent request">
       <div className="snippetHeader">
         <h2>Equivalent request</h2>
-        <div className="equivalentRequestTabs" role="tablist">
-          {EQUIVALENT_LANGUAGES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={language === item.id}
-              className={`equivalentRequestTab ${language === item.id ? 'selected' : ''}`}
-              onClick={() => setLanguage(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button
-            className="iconButton"
-            type="button"
-            title="Copy snippet"
-            aria-label="Copy snippet"
-            disabled={!request}
-            onClick={() => copyText(snippet)}
-          >
-            <Copy size={14} />
-          </button>
-        </div>
+        {tabs}
       </div>
       {request ? (
         <pre className="metricsPreview apiSnippet">{snippet}</pre>

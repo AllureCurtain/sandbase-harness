@@ -2,6 +2,7 @@ import { Archive, Check, ChevronDown, Database, FileText, History, MoreVertical,
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { deleteJson, getJson, postJson } from '../../api';
 import { EmptyState, FilterSelect, StatusPill, SummaryStrip, Toolbar } from '../Common';
+import { ConfirmDeleteModal } from '../DangerZone';
 import { Modal } from '../Modal';
 import { formatBytes, formatDateShort, shortId, truncateMiddle } from '../../lib/format';
 import type { ConsoleData, MemoryRecord, MemoryStore, MemoryVersion } from '../../types';
@@ -212,11 +213,7 @@ export function MemoryStoreDetail({
         { label: 'Stored context', value: formatBytes(totalBytes), icon: <Database size={18} /> },
         { label: 'Last update', value: latestMemory ? formatDateShort(latestMemory.updated_at) : 'No memories', icon: <Check size={18} /> },
       ]} />
-      <div className="resourceTruthStrip" aria-label="Memory store truth model">
-        <div><span>Resource layer</span><strong>Memory Stores are attachable session resources, not the backend setting.</strong></div>
-        <div><span>Content integrity</span><strong>Each record exposes size and SHA-256 metadata for review.</strong></div>
-        <div><span>Mount semantics</span><strong>Sessions decide whether a store is read-only or read-write when mounted.</strong></div>
-      </div>
+
 
       <div className="memoryBrowser tablePanel">
         <div className="memoryTree">
@@ -339,7 +336,7 @@ function MemoryStoreEditModal({ store, onClose, onSaved }: { store: MemoryStore;
         </label>
         <div className="modalActions">
           <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
       </form>
     </Modal>
@@ -347,37 +344,18 @@ function MemoryStoreEditModal({ store, onClose, onSaved }: { store: MemoryStore;
 }
 
 function MemoryStoreDeleteModal({ store, onClose, onDeleted }: { store: MemoryStore; onClose: () => void; onDeleted: () => void }) {
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-
-  const remove = async () => {
-    setDeleting(true);
-    setError('');
-    try {
-      await deleteJson(`/v1/memory_stores/${store.id}`);
-      onDeleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setDeleting(false);
-    }
-  };
-
   return (
-    <Modal title="Delete memory store" onClose={onClose}>
-      <div className="modalForm">
-        {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
-        <p>
-          Permanently delete <strong>{store.name}</strong> and its {store.memories.length} {store.memories.length === 1 ? 'memory' : 'memories'}?
-          A store mounted by an active session cannot be deleted.
-        </p>
-        <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="dangerButton" type="button" onClick={() => void remove()} disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete memory store'}
-          </button>
-        </div>
-      </div>
-    </Modal>
+    <ConfirmDeleteModal
+      title="Delete memory store"
+      subject={`${store.name} and its ${store.memories.length} ${store.memories.length === 1 ? 'memory' : 'memories'}`}
+      consequence="This permanently deletes the store and its memories. A store mounted by an active session cannot be deleted."
+      confirmLabel="Delete memory store"
+      onClose={onClose}
+      onConfirm={async () => {
+        await deleteJson(`/v1/memory_stores/${store.id}`);
+        onDeleted();
+      }}
+    />
   );
 }
 

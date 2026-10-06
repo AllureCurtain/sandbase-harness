@@ -2,7 +2,7 @@ import { Archive, Copy, FileText, Globe, MoreVertical, Pencil, Plus, Server, Tra
 import { useEffect, useState } from 'react';
 import { deleteJson, postJson, putJson } from '../../api';
 import { EmptyState, FilterSelect, StatusPill, Toolbar } from '../Common';
-import { Modal } from '../Modal';
+import { ConfirmDeleteModal } from '../DangerZone';
 import { copyText, formatDateShort, shortId } from '../../lib/format';
 import type { ConsoleData, Environment, EnvironmentDraft, MetadataDraft } from '../../types';
 import { CloudEnvironment, ReadonlyTable, SelfHostedEnvironment } from './EnvironmentDetailViews';
@@ -35,7 +35,7 @@ export function Environments({ data, onNew, onOpenEnvironment }: { data: Console
           <p>Configuration template for containers, such as sessions or code execution.</p>
         </div>
         <div className="toolbarActions">
-          <button className="darkButton" type="button" onClick={onNew}>
+          <button className="primaryButton" type="button" onClick={onNew}>
             <Plus size={18} />
             Create environment
           </button>
@@ -65,27 +65,21 @@ export function Environments({ data, onNew, onOpenEnvironment }: { data: Console
         <table className="resourceTable">
           <thead>
             <tr>
-              <th className="selectCol"><input type="checkbox" aria-label="Select all environments" /></th>
               <th>ID</th>
               <th>Name</th>
               <th>Status</th>
               <th>Type</th>
               <th>Updated at</th>
-              <th className="actionsCol" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
             {environments.map((environment) => (
               <tr key={environment.id} className="clickableRow" onClick={() => onOpenEnvironment(environment)}>
-                <td className="selectCol" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${environment.id}`} /></td>
                 <td><strong className="monoText">{shortId(environment.id)}</strong></td>
                 <td>{environment.name}</td>
                 <td><StatusPill status={environment.archived_at ? 'archived' : 'active'} /></td>
                 <td><span className="softChip inlineChip">{environmentKind(environment)}</span></td>
                 <td>{formatDateShort(environment.updated_at)}</td>
-                <td className="actionsCol" onClick={(event) => event.stopPropagation()}>
-                  <button className="iconButton quiet" type="button" title="Environment actions"><MoreVertical size={18} /></button>
-                </td>
               </tr>
             ))}
           </tbody>
@@ -208,37 +202,18 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
 }
 
 function EnvironmentDeleteModal({ environment, onClose, onDeleted }: { environment: Environment; onClose: () => void; onDeleted: () => void }) {
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-
-  const remove = async () => {
-    setDeleting(true);
-    setError('');
-    try {
-      await deleteJson(`/v1/environments/${environment.id}`);
-      onDeleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setDeleting(false);
-    }
-  };
-
   return (
-    <Modal title="Delete environment" onClose={onClose}>
-      <div className="modalForm">
-        {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
-        <p>
-          Permanently delete <strong>{environment.name}</strong>? Sessions that already ran keep their history,
-          but new sessions can no longer use this environment.
-        </p>
-        <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="dangerButton" type="button" onClick={() => void remove()} disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete environment'}
-          </button>
-        </div>
-      </div>
-    </Modal>
+    <ConfirmDeleteModal
+      title="Delete environment"
+      subject={environment.name}
+      consequence="This permanently deletes the environment. Sessions that already ran keep their history, but new sessions can no longer use it."
+      confirmLabel="Delete environment"
+      onClose={onClose}
+      onConfirm={async () => {
+        await deleteJson(`/v1/environments/${environment.id}`);
+        onDeleted();
+      }}
+    />
   );
 }
 
@@ -280,7 +255,7 @@ function EnvironmentEditor({ environment, data, onCancel, onSaved }: { environme
         </div>
         <div className="agentHeroActions">
           <button className="secondaryButton largeAction" type="button" onClick={onCancel}>Cancel</button>
-          <button className="darkButton largeAction" type="button" onClick={() => void save()} disabled={saving || !draft.name.trim()}>Save</button>
+          <button className="primaryButton largeAction" type="button" onClick={() => void save()} disabled={saving || !draft.name.trim()}>Save</button>
         </div>
       </div>
 

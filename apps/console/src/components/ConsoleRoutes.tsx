@@ -9,6 +9,7 @@ import {
   Monitor,
   Server,
   Settings,
+  Target,
   Zap,
 } from 'lucide-react';
 import { EmptyState } from './Common';
@@ -24,6 +25,21 @@ import type { Agent, AgentTab, ConsoleData, Environment, MemoryStore, Session, T
 
 export const NAV_GROUPS: Array<{ label: string; items: Array<{ id: ViewId; label: string; icon: typeof LayoutDashboard }> }> = [
   {
+    label: 'Work',
+    items: [
+      { id: 'agents', label: 'Agents', icon: Monitor },
+      { id: 'sessions', label: 'Sessions', icon: MessageSquare },
+    ],
+  },
+  {
+    label: 'Resources',
+    items: [
+      { id: 'environments', label: 'Environments', icon: Server },
+      { id: 'credential-vaults', label: 'Credential Vaults', icon: Lock },
+      { id: 'memory-stores', label: 'Memory Stores', icon: Database },
+    ],
+  },
+  {
     label: 'Build',
     items: [
       { id: 'files', label: 'Files', icon: FileText },
@@ -31,20 +47,11 @@ export const NAV_GROUPS: Array<{ label: string; items: Array<{ id: ViewId; label
     ],
   },
   {
-    label: 'Default',
-    items: [
-      { id: 'agents', label: 'Agents', icon: Monitor },
-      { id: 'sessions', label: 'Sessions', icon: MessageSquare },
-      { id: 'environments', label: 'Environments', icon: Server },
-      { id: 'credential-vaults', label: 'Credential Vaults', icon: Lock },
-      { id: 'memory-stores', label: 'Memory Stores', icon: Database },
-    ],
-  },
-  {
     label: 'Operations',
     items: [
       { id: 'webhooks', label: 'Webhooks', icon: Activity },
       { id: 'scheduled-deployments', label: 'Scheduled', icon: Clock },
+      { id: 'outcomes', label: 'Outcomes', icon: Target },
     ],
   },
   {

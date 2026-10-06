@@ -26,7 +26,7 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
           <h1>Sessions</h1>
           <p>Trace and debug managed agent sessions.</p>
         </div>
-        <button className="darkButton" type="button" onClick={onNewSession}>
+        <button className="primaryButton" type="button" onClick={onNewSession}>
           <Plus size={18} />
           Create session
         </button>
@@ -37,7 +37,6 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
         placeholder="Search by session ID"
         actions={(
           <>
-            <FilterSelect label="Created" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All time' }]} />
             <FilterSelect
               label="Agent"
               value={agentId}
@@ -47,7 +46,6 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
                 ...data.agents.map((agent) => ({ value: agent.id, label: agent.name })),
               ]}
             />
-            <FilterSelect label="Deployment" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All' }]} />
             <FilterSelect
               label="Status"
               value={status}
@@ -76,7 +74,6 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
         <table className="sessionTable">
           <thead>
             <tr>
-              <th className="selectCol"><input type="checkbox" aria-label="Select all sessions" /></th>
               <th>ID</th>
               <th>Name</th>
               <th>Status</th>
@@ -88,7 +85,6 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
           <tbody>
             {sessions.map((session) => (
               <tr key={session.id} className="clickableRow" onClick={() => onOpenSession(session)}>
-                <td className="selectCol" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${session.id}`} /></td>
                 <td>
                   <strong className="monoText">{shortId(session.id)}</strong>
                 </td>

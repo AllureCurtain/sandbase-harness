@@ -81,12 +81,6 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
         { label: 'Subscriptions', value: data.webhooks.length, icon: <RadioTower size={18} /> },
         { label: 'Active', value: data.webhooks.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
         { label: 'Event bindings', value: data.webhooks.reduce((total, item) => total + item.events.length, 0), icon: <Send size={18} /> },
-        { label: 'Retry mode', value: 'manual', icon: <Send size={18} /> },
-      ]} />
-      <OperationGuide items={[
-        { icon: <RadioTower size={17} />, title: 'Define subscriptions', body: 'Create webhook records here, then keep delivery operations visible and safe from the same Console page.' },
-        { icon: <Send size={17} />, title: 'Test delivery', body: 'Send a signed dry-run payload before wiring the endpoint into a real workflow.' },
-        { icon: <Activity size={17} />, title: 'Retry queue', body: 'Process due retries from here while delivery history remains in the local runtime.' },
       ]} />
       <div className="tablePanel operationTablePanel">
         <table>
@@ -211,12 +205,6 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
         { label: 'Schedules', value: data.scheduledDeployments.length, icon: <CalendarClock size={18} /> },
         { label: 'Active', value: data.scheduledDeployments.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
         { label: 'Due candidates', value: data.scheduledDeployments.filter((item) => item.status === 'active' && item.schedule?.upcoming_runs_at?.[0]).length, icon: <Play size={18} /> },
-        { label: 'Runner', value: 'manual', icon: <Play size={18} /> },
-      ]} />
-      <OperationGuide items={[
-        { icon: <CalendarClock size={17} />, title: 'Cron plans', body: 'Schedules bind an agent, environment, payload, and next-run timestamp into a replayable plan.' },
-        { icon: <Play size={17} />, title: 'Manual run', body: 'Run one schedule immediately without waiting for the due-run loop.' },
-        { icon: <Activity size={17} />, title: 'Due-run sweep', body: 'Process every active schedule whose next run is ready, then refresh local state.' },
       ]} />
       <div className="tablePanel operationTablePanel">
         <table>
@@ -337,12 +325,6 @@ export function OutcomesPage({ data, onRefresh }: OperationsPageProps) {
         { label: 'Definitions', value: data.outcomes.length, icon: <CheckCircle2 size={18} /> },
         { label: 'Active', value: data.outcomes.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
         { label: 'Sessions available', value: data.sessions.length, icon: <Play size={18} /> },
-        { label: 'Evaluator', value: 'deterministic', icon: <CheckCircle2 size={18} /> },
-      ]} />
-      <OperationGuide items={[
-        { icon: <CheckCircle2 size={17} />, title: 'Define criteria', body: 'Outcome definitions capture objective, criteria, threshold, and evaluator policy.' },
-        { icon: <Play size={17} />, title: 'Evaluate a run', body: 'Pick a real session, evaluate it against one definition, and record the result.' },
-        { icon: <Activity size={17} />, title: 'Use as evidence', body: 'Treat session outcomes as deployment-quality evidence for FDE handoffs.' },
       ]} />
       <div className="tablePanel operationTablePanel">
         <table>
@@ -848,22 +830,6 @@ function OperationNotice({ children }: { children: ReactNode }) {
   return (
     <div className="operationNotice" role="status">
       {children}
-    </div>
-  );
-}
-
-function OperationGuide({ items }: { items: Array<{ icon: ReactNode; title: string; body: string }> }) {
-  return (
-    <div className="operationGuideGrid">
-      {items.map((item) => (
-        <article className="operationGuideCard" key={item.title}>
-          <span>{item.icon}</span>
-          <div>
-            <strong>{item.title}</strong>
-            <p>{item.body}</p>
-          </div>
-        </article>
-      ))}
     </div>
   );
 }

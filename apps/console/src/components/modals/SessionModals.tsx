@@ -1,8 +1,9 @@
-import { ChevronDown, Database, ExternalLink, FileText, Plus, Shield, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, Shield, Trash2 } from 'lucide-react';
 import { type Dispatch, type FormEvent, type SetStateAction, useMemo, useState } from 'react';
 import { postJson } from '../../api';
-import { EmptyState, RequiredMark } from '../Common';
+import { RequiredMark } from '../Common';
 import { EquivalentRequestPanel } from '../EquivalentRequestPanel';
+import { KvRowEditor, kvRowsFromObject, type KvRow } from '../kit';
 import { Modal } from '../Modal';
 import { MultiResourcePicker, ResourcePicker } from '../ResourcePicker';
 import { environmentKind } from '../pages/EnvironmentPageModel';
@@ -157,10 +158,20 @@ export function SessionModal({
             </section>
         </div>
 
-        <EquivalentRequestPanel request={createRequest} />
+        <details className="requestFold">
+          <summary>Equivalent API request</summary>
+          <EquivalentRequestPanel request={createRequest} bare />
+        </details>
 
         <div className="modalActions stickyActions">
-          <button className="darkButton" type="submit" disabled={saving || !agent || !environment}>{saving ? 'Creating…' : 'Create session'}</button>
+          <button
+            className="primaryButton"
+            type="submit"
+            disabled={saving || !agent || !environment}
+            title={!agent || !environment ? 'Pick an agent and an environment first' : undefined}
+          >
+            {saving ? 'Creating…' : 'Create session'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -184,13 +195,16 @@ function SessionResourceEditor({
     return (
       <div className="resourceEditor">
         <ResourceEditorHeader title="File" onRemove={onRemove} />
-        <label>
-          <span className="fieldHeader">
-            File ID <RequiredMark />
-            <button className="linkButton" type="button" onClick={() => onNavigate('files')}>Manage files <ExternalLink size={15} /></button>
-          </span>
-          <input value={resource.file_id} onChange={(event) => onChange({ ...resource, file_id: event.target.value })} placeholder="file_abc123..." required />
-        </label>
+        <ResourcePicker
+          label="File"
+          placeholder="Select an uploaded file"
+          searchPlaceholder="Search files by name or exact ID"
+          manageLabel="Manage files"
+          onManage={() => onNavigate('files')}
+          value={resource.file_id}
+          onValue={(file_id) => onChange({ ...resource, file_id })}
+          options={data.files.map((file) => ({ id: file.id, title: file.name, subtitle: formatDateShort(file.created_at) }))}
+        />
         <label>
           Mount path <RequiredMark />
           <input value={resource.mount_path} onChange={(event) => onChange({ ...resource, mount_path: event.target.value })} placeholder="/uploads/myfile.txt" required />
@@ -210,7 +224,8 @@ function SessionResourceEditor({
         </label>
         <label>
           Authorization token <RequiredMark />
-          <input value={resource.authorization_token} onChange={(event) => onChange({ ...resource, authorization_token: event.target.value })} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required />
+          <input type="password" autoComplete="off" value={resource.authorization_token} onChange={(event) => onChange({ ...resource, authorization_token: event.target.value })} placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required />
+          <small>Stored encrypted and never returned by the API. For credentials the agent should use directly, prefer attaching a credential vault above.</small>
         </label>
         <label className="shortField">
           Checkout
@@ -256,16 +271,16 @@ function SessionResourceEditor({
   return (
     <div className="resourceEditor">
       <ResourceEditorHeader title="Memory store" onRemove={onRemove} />
-      <label>
-        <span className="fieldHeader">
-          Memory store <RequiredMark />
-          <button className="linkButton" type="button" onClick={() => onNavigate('memory-stores')}>Manage memory stores <ExternalLink size={15} /></button>
-        </span>
-        <select value={resource.memory_store_id} onChange={(event) => onChange({ ...resource, memory_store_id: event.target.value })} required>
-          <option value="">Select a memory store</option>
-          {data.memoryStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-        </select>
-      </label>
+      <ResourcePicker
+        label="Memory store"
+        placeholder="Select a memory store"
+        searchPlaceholder="Search memory stores by name or exact ID"
+        manageLabel="Manage memory stores"
+        onManage={() => onNavigate('memory-stores')}
+        value={resource.memory_store_id}
+        onValue={(memory_store_id) => onChange({ ...resource, memory_store_id })}
+        options={data.memoryStores.map((store) => ({ id: store.id, title: store.name, subtitle: formatDateShort(store.created_at) }))}
+      />
       <label>
         Access
         <select value={resource.access} onChange={(event) => onChange({ ...resource, access: event.target.value as 'read_write' | 'read_only' })}>
@@ -355,7 +370,7 @@ export function SessionSettingsModal({
   onSaved: () => void;
 }) {
   const [title, setTitle] = useState(session.title ?? '');
-  const [metadataText, setMetadataText] = useState(JSON.stringify(session.metadata ?? {}, null, 2));
+  const [metadataRows, setMetadataRows] = useState<KvRow[]>(() => kvRowsFromObject(session.metadata));
   const currentBudgetUsd = session.budget
     ? (Number(session.budget.max_list_cost.amount) / 100).toFixed(2)
     : '';
@@ -384,14 +399,26 @@ export function SessionSettingsModal({
     const nextTitle = title.trim();
     if (nextTitle !== (session.title ?? '')) body.title = nextTitle || null;
 
-    const metadata = parseJsonField(metadataText, 'Metadata');
-    if (!metadata.ok) return;
-    if (metadata.value !== undefined) {
-      if (typeof metadata.value !== 'object' || metadata.value === null || Array.isArray(metadata.value)) {
-        setError('Metadata must be a JSON object.');
-        return;
+    {
+      const edited: Record<string, unknown> = {};
+      const seenKeys = new Set<string>();
+      let invalid = false;
+      for (const row of metadataRows) {
+        const key = row.key.trim();
+        if (!key) continue;
+        if (seenKeys.has(key)) {
+          setError(`Metadata key "${key}" is listed twice.`);
+          invalid = true;
+          break;
+        }
+        seenKeys.add(key);
+        try {
+          edited[key] = JSON.parse(row.value);
+        } catch {
+          edited[key] = row.value;
+        }
       }
-      const edited = metadata.value as Record<string, unknown>;
+      if (invalid) return;
       const patch: Record<string, unknown> = { ...edited };
       for (const key of Object.keys(session.metadata ?? {})) {
         if (!(key in edited)) patch[key] = null; // removed key → patch delete
@@ -455,13 +482,8 @@ export function SessionSettingsModal({
           />
         </label>
         <label className="sessionField">
-          <span>Metadata <small className="optionalPill">JSON object; a removed key is deleted</small></span>
-          <textarea
-            value={metadataText}
-            onChange={(event) => setMetadataText(event.target.value)}
-            rows={Math.min(8, metadataText.split('\n').length + 1)}
-            spellCheck={false}
-          />
+          <span>Metadata <small className="optionalPill">a removed key is deleted; JSON values parse as JSON</small></span>
+          <KvRowEditor rows={metadataRows} onChange={setMetadataRows} addLabel="Add metadata" />
         </label>
         <label className="sessionField">
           <span>Budget <small className="optionalPill">USD; empty removes the ceiling</small></span>
@@ -475,26 +497,29 @@ export function SessionSettingsModal({
         {!idle ? (
           <p className="banner">Tools and MCP servers can only change while the session is idle — send an interrupt and wait for it to settle first.</p>
         ) : null}
-        <label className="sessionField">
-          <span>Tools override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
-          <textarea
-            value={toolsText}
-            onChange={(event) => setToolsText(event.target.value)}
-            placeholder={'[{"type": "agent_toolset_20260401", "configs": []}]'}
-            disabled={!idle}
-            spellCheck={false}
-          />
-        </label>
-        <label className="sessionField">
-          <span>MCP servers override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
-          <textarea
-            value={mcpText}
-            onChange={(event) => setMcpText(event.target.value)}
-            placeholder={'[{"type": "stdio", "name": "server", "command": "…"}]'}
-            disabled={!idle}
-            spellCheck={false}
-          />
-        </label>
+        <details className="advancedFold">
+          <summary>Advanced overrides — tools and MCP servers (JSON)</summary>
+          <label className="sessionField">
+            <span>Tools override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
+            <textarea
+              value={toolsText}
+              onChange={(event) => setToolsText(event.target.value)}
+              placeholder={'[{"type": "agent_toolset_20260401", "configs": {}}]'}
+              disabled={!idle}
+              spellCheck={false}
+            />
+          </label>
+          <label className="sessionField">
+            <span>MCP servers override <small className="optionalPill">JSON array; empty keeps current, null clears</small></span>
+            <textarea
+              value={mcpText}
+              onChange={(event) => setMcpText(event.target.value)}
+              placeholder={'[{"type": "stdio", "name": "server", "command": "…"}]'}
+              disabled={!idle}
+              spellCheck={false}
+            />
+          </label>
+        </details>
         <div className="modalActions">
           <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
           <button className="primaryButton" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>

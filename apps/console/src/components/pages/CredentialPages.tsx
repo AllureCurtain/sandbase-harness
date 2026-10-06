@@ -2,6 +2,7 @@ import { Archive, FileText, Info, KeyRound, Lock, MoreVertical, Pencil, Plus, Re
 import { FormEvent, useState } from 'react';
 import { deleteJson, postJson } from '../../api';
 import { EmptyState, FilterSelect, KeyValuePanel, RequiredMark, StatusPill, SummaryStrip, Toolbar } from '../Common';
+import { ConfirmDeleteModal } from '../DangerZone';
 import { Modal } from '../Modal';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
 import type { ConsoleData, CredentialAuthType, Vault, VaultCredential } from '../../types';
@@ -142,6 +143,7 @@ export function CredentialVaultDetail({
   const [editingCredential, setEditingCredential] = useState<VaultCredential | null>(null);
   const [editVaultOpen, setEditVaultOpen] = useState(false);
   const [deleteVaultOpen, setDeleteVaultOpen] = useState(false);
+  const [deletingCredential, setDeletingCredential] = useState<VaultCredential | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const credentials = vault.credentials.filter((credential) => {
@@ -174,6 +176,10 @@ export function CredentialVaultDetail({
     await deleteJson(`/v1/credential-vaults/${vault.id}/credentials/${credential.id}`);
     setCredentialMenuId(null);
     onRefresh();
+  };
+  const askDeleteCredential = (credential: VaultCredential) => {
+    setCredentialMenuId(null);
+    setDeletingCredential(credential);
   };
 
   return (
@@ -305,7 +311,7 @@ export function CredentialVaultDetail({
                             </button>
                           ) : null}
                           <button type="button" onClick={() => void archiveCredential(credential)}><Archive size={18} />Archive</button>
-                          <button type="button" className="dangerMenuItem" onClick={() => void deleteCredential(credential)}><Trash2 size={18} />Delete</button>
+                          <button type="button" className="dangerMenuItem" onClick={() => askDeleteCredential(credential)}><Trash2 size={18} />Delete</button>
                         </div>
                       ) : null}
                     </div>
@@ -363,7 +369,7 @@ export function CredentialVaultDetail({
                     </button>
                   ) : null}
                   <button type="button" onClick={() => void archiveCredential(credential)}><Archive size={16} />Archive</button>
-                  <button type="button" className="dangerMenuItem" onClick={() => void deleteCredential(credential)}><Trash2 size={16} />Delete</button>
+                  <button type="button" className="dangerMenuItem" onClick={() => askDeleteCredential(credential)}><Trash2 size={16} />Delete</button>
                 </div>
               ) : null}
             </article>
@@ -411,14 +417,27 @@ export function CredentialVaultDetail({
         />
       ) : null}
       {deleteVaultOpen ? (
-        <VaultDeleteModal
-          vault={vault}
+        <ConfirmDeleteModal
+          title="Delete vault"
+          subject={`${vault.name} and its ${vault.credentials.length} ${vault.credentials.length === 1 ? 'credential' : 'credentials'}`}
+          consequence="This permanently deletes the vault and every credential in it. The API refuses to delete a vault referenced by an active session."
+          confirmLabel="Delete vault"
           onClose={() => setDeleteVaultOpen(false)}
-          onDeleted={() => {
-            setDeleteVaultOpen(false);
+          onConfirm={async () => {
+            await deleteJson(`/v1/credential-vaults/${vault.id}`);
             onBack();
             onRefresh();
           }}
+        />
+      ) : null}
+      {deletingCredential ? (
+        <ConfirmDeleteModal
+          title="Delete credential"
+          subject={deletingCredential.name}
+          consequence="This permanently deletes the credential. Sessions that reference it lose access, and the secret cannot be recovered."
+          confirmLabel="Delete credential"
+          onClose={() => setDeletingCredential(null)}
+          onConfirm={() => deleteCredential(deletingCredential)}
         />
       ) : null}
     </section>
@@ -461,45 +480,9 @@ function VaultEditModal({ vault, onClose, onSaved }: { vault: Vault; onClose: ()
         </label>
         <div className="modalActions">
           <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="darkButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="primaryButton largeAction" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
       </form>
-    </Modal>
-  );
-}
-
-function VaultDeleteModal({ vault, onClose, onDeleted }: { vault: Vault; onClose: () => void; onDeleted: () => void }) {
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-
-  const remove = async () => {
-    setDeleting(true);
-    setError('');
-    try {
-      await deleteJson(`/v1/credential-vaults/${vault.id}`);
-      onDeleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <Modal title="Delete vault" onClose={onClose}>
-      <div className="modalForm">
-        {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
-        <div className="warningNotice">
-          <Info size={18} />
-          <span>Deleting removes the vault and every credential it holds. A vault referenced by an active session is refused.</span>
-        </div>
-        <p>Permanently delete <strong>{vault.name}</strong> and its {vault.credentials.length} {vault.credentials.length === 1 ? 'credential' : 'credentials'}?</p>
-        <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="dangerButton" type="button" onClick={() => void remove()} disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete vault'}
-          </button>
-        </div>
-      </div>
     </Modal>
   );
 }
@@ -572,7 +555,7 @@ function EditCredentialModal({ vaultId, credential, onClose, onSaved }: { vaultI
         </label>
         <div className="modalActions">
           <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="darkButton largeAction" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="primaryButton largeAction" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
       </form>
     </Modal>

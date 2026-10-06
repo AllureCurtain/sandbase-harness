@@ -71,11 +71,7 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
         { label: 'Errors', value: logs.filter((entry) => entry.level === 'error').length, icon: <Activity size={18} /> },
         { label: 'Data directory', value: pathName(data.workspace?.dataDir) || 'managed-agents', icon: <Database size={18} /> },
       ]} />
-      <div className="resourceTruthStrip" aria-label="Logs truth model">
-        <div><span>Diagnostics</span><strong>Logs are live process diagnostics, not persisted audit history.</strong></div>
-        <div><span>Restart</span><strong>Restart is local runtime control and may interrupt active sessions.</strong></div>
-        <div><span>Filtering</span><strong>Level filters only change the visible stream; they do not mutate runtime state.</strong></div>
-      </div>
+
       <div className="sectionHeaderRow">
         <div>
           <h2>Runtime logs</h2>
@@ -188,11 +184,7 @@ export function Observability({ data }: { data: ConsoleData }) {
         { label: 'HTTP requests', value: summary?.http.requests ?? requestCount, icon: <Activity size={18} /> },
         { label: 'HTTP errors', value: summary?.http.errors ?? errorCount, icon: <Gauge size={18} /> },
       ]} />
-      <div className="resourceTruthStrip" aria-label="Monitoring truth model">
-        <div><span>Metrics</span><strong>Prometheus text is read directly from the local runtime endpoint.</strong></div>
-        <div><span>Summary</span><strong>JSON counters aggregate sessions, events, storage, queue, and HTTP activity.</strong></div>
-        <div><span>Configuration</span><strong>Monitoring is read-only; provider and storage changes live in runtime Settings.</strong></div>
-      </div>
+
       <div className="workspaceGrid">
         <div className="panel subtlePanel">
           <h2>Runtime summary</h2>

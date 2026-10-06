@@ -165,6 +165,7 @@ export function App() {
         <AgentEditModal
           agent={agentEditModal.agent}
           initialDraft={agentEditModal.draft}
+          data={data}
           onClose={() => setAgentEditModal(null)}
           onSaved={() => {
             setAgentEditModal(null);
