@@ -91,6 +91,10 @@ describe('official SDK route coverage', () => {
     await expect(client.beta.userProfiles.retrieve('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.environments.work.retrieve('x_probe', { environment_id: 'x_probe' })).rejects.toMatchObject(expected);
     await expect(client.beta.vaults.credentials.mcpOAuthValidate('x_probe', { vault_id: 'x_probe' })).rejects.toMatchObject(expected);
+    await expect(client.beta.sessions.threads.list('x_probe')).rejects.toMatchObject(expected);
+    await expect(client.beta.sessions.threads.retrieve('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
+    await expect(client.beta.sessions.threads.archive('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
+    await expect(client.beta.sessions.threads.events.list('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
   });
 
   it('preserves the vault alias for OAuth refusal without reading its body', async () => {

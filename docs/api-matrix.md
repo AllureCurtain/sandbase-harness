@@ -87,6 +87,7 @@ families and do not admit a supported resource or bypass version validation.
 | `/v1/tunnels` and certificate/token actions | `mcp-tunnel` | Hosted connectivity is outside the local-first scope. |
 | `/v1/user_profiles` and enrollment actions | `user-profiles` | Hosted user management is outside the single-tenant scope. |
 | `/v1/environments/{id}/work` and its official actions | `environment-work` | The hosted Work API is not the local `/work-items` and `/v1/x/worker` queue API. |
+| `/v1/sessions/{id}/threads` and its official actions | `threads-and-coordinator` | Session threads are part of the multiagent surface this runtime does not implement; see `contracts/anthropic-cma/threads.md`. |
 | `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` | `mcp-oauth-validation` | Token refresh is implemented at the injection boundary; a dedicated validation endpoint is not. |
 
 ### Route Coverage Guard
@@ -97,14 +98,15 @@ organization administration are excluded from this managed-agent inventory.
 Unrecognized SDK request syntax fails rather than silently losing routes.
 
 Verified on October 5, 2026 with SDK `0.129.0`: 110 distinct method/path pairs,
-76 existing resource mounts, 29 explicit refusals, and 5 exact deferred mounts.
-The deferrals (including multi-agent threads) are tracked in
-[issue #706](https://github.com/sandbaseai/sandbase-harness/issues/706) and in
-`PENDING_OFFICIAL_ROUTES`. Each entry has a reason and follow-up; stale,
-overlapping, or already-mounted deferrals fail the guard. Implementing a route
-requires removing its entry in the same PR. An unlisted missing route fails with
-one method/path per line. Route presence is not a claim of full response-shape,
-lifecycle, or provider conformance.
+76 existing resource mounts, 34 explicit refusals, and no deferred mounts — the
+last five (the multi-agent thread routes) are now mounted refusals. The
+deferral list was tracked in
+[issue #706](https://github.com/sandbaseai/sandbase-harness/issues/706) and is
+kept as the empty `PENDING_OFFICIAL_ROUTES` array so a future deferral has a
+declared home: any entry needs a reason and a follow-up issue link, and stale,
+overlapping, or already-mounted deferrals fail the guard. An unlisted missing
+route fails with one method/path per line. Route presence is not a claim of
+full response-shape, lifecycle, or provider conformance.
 
 ## SDK Coverage
 

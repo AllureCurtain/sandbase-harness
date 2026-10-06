@@ -4,6 +4,12 @@
 
 ### Added
 
+- The five published session-thread routes (`GET /v1/sessions/{id}/threads`,
+  `{id}/threads/{id}`, `{id}/threads/{id}/events`, `{id}/threads/{id}/stream`,
+  and `POST .../archive`) are now mounted as `unsupported_capability` refusals
+  naming `threads-and-coordinator` — an SDK caller decodes a 400 instead of a
+  404. `PENDING_OFFICIAL_ROUTES` is empty: every route in the pinned official
+  SDK inventory is either served or an explicit refusal.
 - The `redacted` content block is modelled in the `ContentBlock` union — the
   published placeholder for content withheld by model policy — so runtime
   output parses and round-trips it verbatim, while every user-content ingress
