@@ -110,11 +110,13 @@ test.afterAll(async () => {
 test('create agent, approve a bash call, read the reply, archive the session', async ({ page }) => {
   await page.goto(consoleBaseUrl);
 
-  // 1. Create the agent through the YAML composer.
+  // 1. Create the agent by pasting the YAML definition into the form.
   await page.getByRole('button', { name: 'Agents' }).click();
-  await page.getByRole('button', { name: 'Create agent', exact: true }).first().click();
+  await page.getByRole('button', { name: 'New agent', exact: true }).first().click();
   const createModal = page.getByRole('dialog', { name: 'Create agent' });
-  await createModal.locator('.yamlShell textarea').fill(AGENT_YAML);
+  await createModal.locator('.configDrawerPaste summary').click();
+  await createModal.locator('.configDrawerPaste textarea').fill(AGENT_YAML);
+  await createModal.getByRole('button', { name: 'Parse & fill form' }).click();
   await createModal.getByRole('button', { name: 'Create agent', exact: true }).click();
   await expect(createModal).toBeHidden();
   await page.getByText('e2e-smoke-agent', { exact: true }).first().click();
@@ -131,7 +133,7 @@ test('create agent, approve a bash call, read the reply, archive the session', a
   await sessionModal.getByRole('button', { name: 'Create session', exact: true }).click();
   await expect(sessionModal).toBeHidden();
   // Creating lands on the sessions list; open the row just created.
-  await page.locator('tr.clickableRow').first().click();
+  await page.locator('tr.clickable-row').first().click();
 
   await page.locator('textarea').last().fill('run the command');
   await page.getByRole('button', { name: 'Send' }).click();
@@ -142,10 +144,10 @@ test('create agent, approve a bash call, read the reply, archive the session', a
 
   // 4. The turn completes: idle again, and the stub's final reply rendered.
   await expect(page.getByText(STUB_REPLY_TEXT)).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('.status.idle').first()).toBeVisible();
+  await expect(page.locator('.status-dot', { hasText: 'idle' }).first()).toBeVisible();
 
   // 5. Archive the session.
   await page.getByRole('button', { name: 'Actions' }).click();
   await page.getByRole('button', { name: 'Archive session' }).click();
-  await expect(page.locator('.status.archived').first()).toBeVisible();
+  await expect(page.locator('.status-dot', { hasText: 'archived' }).first()).toBeVisible();
 });
