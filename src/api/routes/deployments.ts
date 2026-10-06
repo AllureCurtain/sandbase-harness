@@ -310,6 +310,26 @@ export function deploymentRoutes(deps: ServerDeps, options: OperationMountOption
     return collections.json(c, rows.map(toDeploymentRun));
   });
 
+  app.delete('/:id', async (c) => {
+    const id = c.req.param('id');
+    // Archived or not, the row either exists or the answer is the same 404 —
+    // delete is the permanent form of archive and does not exclude it.
+    const existing = deps.db.prepare('SELECT id FROM scheduled_deployments WHERE id = ?').get(id);
+    if (!existing) return notFound(c, 'Deployment not found');
+    // The run rows are deployment-owned records: `schedule_id` is a hard
+    // foreign key, so they leave in the same transaction rather than orphan.
+    // The sessions a run materialized are independent resources and survive —
+    // their link to this deployment was the run row.
+    deps.db.transaction(() => {
+      deps.db.prepare('DELETE FROM scheduled_deployment_runs WHERE schedule_id = ?').run(id);
+      deps.db.prepare('DELETE FROM scheduled_deployments WHERE id = ?').run(id);
+    });
+    // Published after the write: the event is the final result, because after
+    // this point there is no object to fetch.
+    await publishOperationEvent(deps, { type: 'deployment.deleted', subjectId: id });
+    return c.json({ id, type: 'deployment_deleted' });
+  });
+
   app.post('/:id/run', async (c) => {
     const body = await readOptionalObjectBody(c);
     if (!body.ok) return body.response;

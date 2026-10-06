@@ -4,6 +4,12 @@
 
 ### Added
 
+- `DELETE /v1/deployments/{id}` (and the `/v1/scheduled-deployments` twin)
+  permanently deletes a scheduled deployment plan — active, paused, or
+  archived — returning `{id, type: "deployment_deleted"}` and publishing
+  `deployment.deleted` after the write. The deployment's `drun_` run records
+  are removed in the same transaction; sessions those runs created are
+  independent resources and survive.
 - `POST /v1/sessions/{id}` now applies `vault_ids` instead of refusing it with `vault_ids_not_updatable`. The bindings are validated exactly as at creation — an array of existing, non-archived vault ids, deduplicated, with an empty array detaching every vault — replaced wholesale in the same transaction as the rest of the update, and reported on `session.updated` when they moved. Live MCP connections are torn down so they reconnect under the new scope rather than holding headers a detached vault supplied. The `session-update` capability is `supported`.
 
 - `mcp_oauth` credentials now persist `auth.expires_at` and the `auth.refresh` block (`token_endpoint`, `client_id`, `token_endpoint_auth`) with the write-only `refresh_token` and `client_secret` encrypted in their own columns. At the MCP connect boundary an expired access token is refreshed against its token endpoint before the header is built — the transport only ever sees the resulting token, so the placeholder substitution model is unchanged. A rotated `refresh_token` persists in place; a failure stamps the credential's `oauth_state`, appends a `refresh_failed` audit event, and publishes `vault_credential.refresh_failed` (the catalog entry gains its producer), with a per-credential retry window deduplicating attempts. The Console credential list reports the refresh outcome. A refresh block missing `token_endpoint` or the refresh token is accepted with a warning naming the piece it lacks, and a credential with no `expires_at` is used until replaced. `mcp_oauth_validate` remains `unsupported_capability` — validation is not refresh.

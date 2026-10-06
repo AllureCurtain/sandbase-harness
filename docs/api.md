@@ -2526,10 +2526,10 @@ credential `created` / `archived` / `deleted` triple, `memory_store.created` /
 `memory_store.archived` / `memory_store.deleted`, and the deployment and timed-run events below.
 The catalog names a subscription may list but nothing yet produces are
 `session.pending`, `session.running`, `session.idled`,
-`session.requires_action`, `session.thread_*`, `agent.deleted`,
-and `deployment.deleted` — each waits on a surface that does not exist yet.
-`vault_credential.refresh_failed` is produced by the MCP OAuth refresh path
-(see Credentials).
+`session.requires_action`, `session.thread_*`, and `agent.deleted` — each
+waits on a surface that does not exist yet. `deployment.deleted` is produced
+by the delete route above, and `vault_credential.refresh_failed` by the MCP
+OAuth refresh path (see Credentials).
 
 A **timed** run publishes `deployment_run.started` and then exactly one of
 `deployment_run.succeeded` / `deployment_run.failed`; all three name the same run,
@@ -2739,6 +2739,7 @@ is neither deprecated nor redirected.
 | `POST` | `/v1/deployments/{schedule_id}/pause`, `/v1/scheduled-deployments/{schedule_id}/pause` | Stop the schedule from producing timed runs. Recorded as `paused_reason: {"type": "manual"}`. |
 | `POST` | `/v1/deployments/{schedule_id}/unpause`, `/v1/scheduled-deployments/{schedule_id}/unpause` | Resume the schedule from the next scheduled instant, clearing `paused_reason`. |
 | `POST` | `/v1/deployments/{schedule_id}/archive`, `/v1/scheduled-deployments/{schedule_id}/archive` | Archive a scheduled deployment plan. |
+| `DELETE` | `/v1/deployments/{schedule_id}`, `/v1/scheduled-deployments/{schedule_id}` | Permanently delete a scheduled deployment plan. Its run records are removed in the same transaction; sessions a run created are independent and survive. Returns `{id, type: "deployment_deleted"}` and publishes `deployment.deleted`. |
 | `GET` | `/v1/deployments/{schedule_id}/runs`, `/v1/scheduled-deployments/{schedule_id}/runs` | List schedule run records. |
 | `POST` | `/v1/deployments/{schedule_id}/run`, `/v1/scheduled-deployments/{schedule_id}/run` | Manually trigger a schedule and create a session. A paused schedule still runs by hand. |
 | `POST` | `/v1/deployments/run-due`, `/v1/scheduled-deployments/run-due` | Run all active schedules whose `next_run_at` is due. |
