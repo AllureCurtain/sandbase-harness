@@ -41,6 +41,17 @@ export {
   type WorkspaceFileSummary,
 } from './client.js';
 
+export {
+  collectReply,
+  converse,
+  followSession,
+  inspectSession,
+  sessionHistory,
+  type CollectedReply,
+  type CreateSessionInput,
+  type SessionsApi,
+} from './session-helpers.js';
+
 export type {
   EnvironmentConfig,
   ExecOptions,
