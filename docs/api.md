@@ -1404,12 +1404,22 @@ partial history behind:
 | An element is not an object | `invalid_initial_events` |
 | An element's `type` is neither `user.message` nor `user.define_outcome` | `invalid_initial_event_type` |
 | A message `content` is neither a string nor an array of content blocks | `invalid_initial_events` |
+| A message `content` contains a `redacted` block (top-level or inside `tool_result` content) | `invalid_initial_events` |
 | An outcome lacks a `description`, has a malformed `rubric`, or sets `max_iterations` outside 1..20 | `invalid_initial_events` |
 | The runtime composes no outcome grader, so a declared outcome could never be measured | `outcome_grader_unavailable` |
 
 The same normalization runs on a live event: `POST /v1/sessions/{id}/events` with a
 malformed `user.define_outcome` answers `400` with code `invalid_define_outcome` and
 writes nothing.
+
+`redacted` is the one content-block type that parses but is never accepted on
+input. It is the contract's placeholder for content withheld by model policy,
+so the runtime may emit it on `agent.message` and it round-trips unchanged
+through the event listing — but every user-content ingress refuses it with
+`400`: `initial_events`, `POST
+/v1/sessions/{id}/messages`, the `/events` batch (including `tool_result`
+children on `user.custom_tool_result` and `user.tool_result`), and `/v1/runs`
+`input`.
 
 The creation response does not echo `initial_events`; list the session's events
 to confirm what was written.

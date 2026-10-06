@@ -28,6 +28,30 @@ export function normalizeMessageContent(content: unknown): ContentBlock[] | null
 }
 
 /**
+ * What is wrong with a client-supplied content-block tree, or `null` when no
+ * `redacted` block appears anywhere in it.
+ *
+ * `redacted` is a runtime output — the placeholder the published contract uses
+ * for content withheld by model policy — so a client that sends one is asking
+ * the log to claim the model withheld content it never produced. The scan
+ * recurses into `tool_result` children because a result carried on
+ * `user.custom_tool_result` / `user.tool_result` is the same ingress boundary.
+ */
+export function redactedBlockProblem(content: unknown, field = 'content'): string | null {
+  if (!Array.isArray(content)) return null;
+  for (const [index, block] of content.entries()) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+    const record = block as Record<string, unknown>;
+    if (record.type === 'redacted') {
+      return `${field}[${index}].type "redacted" marks content withheld by the model and cannot be sent`;
+    }
+    const nested = redactedBlockProblem(record.content, `${field}[${index}].content`);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/**
  * The three shapes the published contract accepts for `agent`.
  *
  * - `id` (string) — the agent's current version;

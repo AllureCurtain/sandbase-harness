@@ -122,12 +122,23 @@ export interface ToolResultBlock {
   is_error?: boolean;
 }
 
+/**
+ * Placeholder for content withheld by model policy. The block is a runtime
+ * output: it may appear on `agent.message`, thread-message, and replayed
+ * `user.message` content, and a persisted event keeps it verbatim. It is never
+ * client input — a user-sent event carrying one is refused at admission.
+ */
+export interface RedactedBlock {
+  type: 'redacted';
+}
+
 export type ContentBlock =
   | TextBlock
   | ImageBlock
   | DocumentBlock
   | ToolUseBlock
-  | ToolResultBlock;
+  | ToolResultBlock
+  | RedactedBlock;
 
 // ============================================================
 // Event Base
