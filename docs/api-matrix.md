@@ -119,6 +119,7 @@ full response-shape, lifecycle, or provider conformance.
 | `client.metrics` | Prometheus text and runtime summary |
 | `client.settings` | get, patch, validate canonical runtime settings |
 | `client.environments` | list, get, create, update, delete, archive, worker keys, create/revoke worker key |
+| `session-helpers` (module functions on `client.sessions`) | `collectReply`, `sessionHistory`, `followSession`, `inspectSession`, `converse` |
 
 ## CLI Coverage
 

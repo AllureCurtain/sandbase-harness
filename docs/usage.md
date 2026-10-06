@@ -455,6 +455,15 @@ for await (const event of client.sessions.chat(session.id, 'Hello')) {
 }
 ```
 
+`managed-agents/sdk` also exports the session workflows the CLI itself is built
+on, each taking `client.sessions` as its first argument: `collectReply` streams a
+turn and returns `{ text, events }`; `sessionHistory` returns the whole recorded
+log, paginated through `next_page` for you; `followSession` yields that log and
+then the live stream resumed after the last recorded `seq` — nothing missed,
+nothing yielded twice — or starts straight at a `lastEventId` you pass;
+`inspectSession` returns the session summary and log together; and `converse`
+runs create → message → streamed reply in one call.
+
 A refused request throws `ManagedAgentsApiError`, which carries the published
 error envelope's identity as well as its prose: `status`, `type` (for example
 `invalid_request_error`, `not_found`, or `conflict`), and `code` when the

@@ -1,4 +1,9 @@
 import { ManagedAgentsClient } from '@/sdk/client.js';
+import {
+  followSession,
+  inspectSession,
+  sessionHistory,
+} from '@/sdk/session-helpers.js';
 import type { ApiSessionStatus } from '@/types/session.js';
 
 export type CliConnectionOptions = {
@@ -60,34 +65,17 @@ export async function sessionMessageCommand(sessionId: string, opts: SessionMess
 /**
  * Follow a session's event log.
  *
- * A stream opened without a cursor carries live events only, so the recorded log
- * is read first and the subscription then resumes after the last sequence that
- * was printed: nothing recorded is missed, and nothing printed twice. Passing
- * `--last-event-id` skips that read, because the caller has named where to
- * resume from.
+ * `followSession` reads the recorded log first — a stream opened without a
+ * cursor carries live events only — and then resumes the subscription after the
+ * last sequence it printed, so nothing recorded is missed and nothing is
+ * printed twice. Passing `--last-event-id` skips that read, because the caller
+ * has named where to resume from.
  */
 export async function sessionTailCommand(sessionId: string, opts: SessionTailOptions) {
   const client = createClient(opts);
-  let resumeFrom = opts.lastEventId;
-  if (resumeFrom === undefined) {
-    const history = await client.sessions.events(sessionId, { limit: 1000 });
-    for (const event of history.data) {
-      printEvent(event);
-    }
-    resumeFrom = String(lastRecordedSeq(history.data));
-  }
-  for await (const event of client.sessions.tail(sessionId, { lastEventId: resumeFrom })) {
+  for await (const event of followSession(client.sessions, sessionId, { lastEventId: opts.lastEventId })) {
     printEvent(event);
   }
-}
-
-/** The highest recorded sequence in a page of events; 0 when there is none. */
-function lastRecordedSeq(events: Array<{ seq?: number }>): number {
-  let highest = 0;
-  for (const event of events) {
-    if (typeof event.seq === 'number' && event.seq > highest) highest = event.seq;
-  }
-  return highest;
 }
 
 export async function sessionListCommand(opts: SessionListOptions) {
@@ -119,22 +107,20 @@ export async function sessionListCommand(opts: SessionListOptions) {
 
 export async function sessionInspectCommand(sessionId: string, opts: SessionInspectOptions) {
   const client = createClient(opts);
-  const session = await client.sessions.get(sessionId);
-  const events = await client.sessions.events(sessionId, { limit: 1000 });
+  const { session, events } = await inspectSession(client.sessions, sessionId);
   if (opts.json) {
-    console.log(JSON.stringify({ session, events: events.data }, null, 2));
+    console.log(JSON.stringify({ session, events }, null, 2));
     return;
   }
   console.log(`${session.id}  ${session.status}  ${session.agent.name}`);
   console.log(`title: ${session.title ?? '-'}`);
-  console.log(`events: ${events.data.length}`);
+  console.log(`events: ${events.length}`);
   console.log(`tokens: ${session.usage.input_tokens}/${session.usage.output_tokens}`);
 }
 
 export async function sessionLogsCommand(sessionId: string, opts: CliConnectionOptions) {
   const client = createClient(opts);
-  const events = await client.sessions.events(sessionId, { limit: 1000 });
-  for (const event of events.data) {
+  for (const event of await sessionHistory(client.sessions, sessionId)) {
     printEvent(event);
   }
 }

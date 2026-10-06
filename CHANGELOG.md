@@ -4,6 +4,12 @@
 
 ### Added
 
+- `session-helpers` in `managed-agents/sdk`: `collectReply` (stream a turn into
+  `{ text, events }`), `sessionHistory` (the full recorded log, auto-paginated),
+  `followSession` (log then live stream resumed at the last `seq`, or straight
+  from a `lastEventId`), `inspectSession` (summary plus log digest), and
+  `converse` (create → message → collected reply). The `session tail`, `logs`,
+  and `inspect` CLI commands now run on these instead of private copies.
 - `managed-agents session list` — the missing member of the documented session
   CLI group. It pages `GET /v1/sessions` with `--agent`, repeatable `--status`,
   `--limit`, `--page`, and `--include-archived` filters, prints one session per
