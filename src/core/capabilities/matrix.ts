@@ -236,8 +236,8 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'tools',
     id: 'builtin-tool-execution',
-    status: 'partial',
-    reason: 'File, shell, search, and web_fetch tools execute; web_search accepts configuration but has no search provider and fails admission before execution.',
+    status: 'supported',
+    reason: 'Every published built-in tool executes: file, shell, search, web_fetch, and web_search. web_search is configuration-gated like the published service — it mounts only when Settings names a search provider, and an explicit declaration on an unconfigured runtime fails admission with a reason pointing at Settings rather than dying mid-turn.',
     contract: 'contracts/anthropic-cma/tools.md',
   },
   {
@@ -458,11 +458,11 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     contract: 'contracts/anthropic-cma/unsupported.md',
   },
   {
-    area: 'unsupported',
+    area: 'tools',
     id: 'web-search-execution',
-    status: 'unavailable',
-    reason: 'No search provider is bundled or configured, and search-engine HTML scraping is not an accepted substitute; enabling web_search fails admission before a session is persisted. WebFetch execution is a separate, implemented capability.',
-    contract: 'contracts/anthropic-cma/unsupported.md',
+    status: 'supported',
+    reason: 'web_search executes against the search provider configured in Runtime Settings (Tavily is the shipped adapter; brave, exa, and searxng validate but ship no adapter yet). The request leaves the runtime process, not the sandbox: the provider key rides in an Authorization header that never enters URLs, logs, or tool output, the Environment network policy governs the provider endpoint, and the agent\'s allowed_domains/blocked_domains map to the provider\'s include/exclude parameters with any path-suffix entries enforced client-side on the returned URLs. Failures return a coded tool result — web_search_unconfigured, web_search_rate_limited, web_search_provider_failed — rather than failing the session, and each call counts once against usage.server_tool_use.web_search_requests and the web_search cost-profile field. An unconfigured runtime keeps the earlier behavior: an explicit web_search declaration fails admission before a session is persisted.',
+    contract: 'contracts/anthropic-cma/tools.md',
   },
 ];
 

@@ -84,8 +84,10 @@ describe('web_fetch registration', () => {
     const source = read('src/core/session/tool-resolver.ts');
     expect(source).toContain('createWebFetchTool({');
     expect(source).toContain("resolveWebToolExecutionPolicy(agent, 'web_fetch')");
-    // No search executor is registered, because no provider is bundled.
-    expect(source).not.toContain('createWebSearchTool');
+    // web_search mounts from the same resolver, gated on a configured provider.
+    expect(source).toContain('createWebSearchTool({');
+    expect(source).toContain("resolveWebToolExecutionPolicy(agent, 'web_search')");
+    expect(source).toContain('this.deps.webSearch');
   });
 
   it('threads the override surface from the executor, constructor-level only', () => {

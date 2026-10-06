@@ -41,6 +41,7 @@ import {
 import { ContextBuilder } from './context-builder.js';
 import { DelegationService } from './delegation-service.js';
 import { ToolResolver, type SandboxCredentials } from './tool-resolver.js';
+import type { SearchProvider } from '@/core/web/search/index.js';
 import { createCredentialRedactor, clearCredentialInjectionBundle } from '@/core/credentials/redaction.js';
 import {
   placeholderToEgressSubstitution,
@@ -121,6 +122,12 @@ export interface ExecutorDeps {
    * the guard.
    */
   webFetch?: WebFetchOverrides;
+  /**
+   * The web-search provider resolved from runtime settings. Absent keeps
+   * `web_search` unmounted — the same state capability admission reports, so
+   * an admitted agent always finds the tool it was admitted for.
+   */
+  webSearch?: SearchProvider;
   /** Optional sink for sandbox capability-gap warnings. */
   logger?: SandboxLifecycleLogger;
   /**
@@ -225,6 +232,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
     this.toolResolver = new ToolResolver({
       delegationService: this.delegationService,
       webFetch: deps.webFetch,
+      webSearch: deps.webSearch,
       memoryMount: deps.memoryMount,
       memoryStoreName: deps.memoryStoreName,
       // The same resolver the turn uses for sandbox commands, so a vault reaches

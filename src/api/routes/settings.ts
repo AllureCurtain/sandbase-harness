@@ -23,6 +23,7 @@ const SETTINGS_TEST_AREAS = new Set<RuntimeSettingsTestArea>([
   'storage.artifacts',
   'memory',
   'sandbox',
+  'web_search',
 ]);
 
 export function settingsRoutes(deps: ServerDeps) {
@@ -84,7 +85,7 @@ export function settingsRoutes(deps: ServerDeps) {
       return c.json({
         error: {
           type: 'invalid_request_error',
-          message: 'area must be one of model, loop_engine, storage.metadata, storage.artifacts, memory, or sandbox',
+          message: 'area must be one of model, loop_engine, storage.metadata, storage.artifacts, memory, sandbox, or web_search',
         },
       }, 400);
     }
@@ -231,6 +232,8 @@ function credentialPrefixesForTestArea(area: RuntimeSettingsTestArea): string[] 
       return ['memory'];
     case 'sandbox':
       return ['sandbox'];
+    case 'web_search':
+      return ['web_search'];
   }
 }
 

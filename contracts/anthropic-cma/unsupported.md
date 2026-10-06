@@ -7,7 +7,6 @@ Source: `src/core/capabilities/matrix.ts`, `src/api/capability-errors.ts`,
 
 <!-- capability-status
 dreams: unavailable
-web-search-execution: unavailable
 session-budget-alerts: not_applicable
 mcp-tunnel: not_applicable
 -->
@@ -30,7 +29,6 @@ mcp-tunnel: not_applicable
 | MCP tunnel | `not_applicable` | Not implemented; a hosted connectivity feature outside local-first scope. Official SDK tunnel, certificate, and token routes explicitly refuse it. |
 | Hosted user profiles | `not_applicable` | Hosted user management is outside the single-tenant scope; official SDK profile routes explicitly refuse it. |
 | Hosted environment Work API | `not_applicable` | Not the local worker queue API; official SDK Work routes explicitly refuse it without changing `/work-items` or worker endpoints. |
-| `web_search` execution | `unavailable` | Configuration is accepted and validated, but no search provider is bundled and engine HTML scraping is not an accepted substitute, so a request enabling `web_search` fails before the session is persisted. `web_fetch` is a separate capability and does execute; see [`tools.md`](./tools.md). |
 | OAuth refresh | `unavailable` | Not implemented and not scheduled: no refresh loop or refresh-failure event exists. The official MCP OAuth validation endpoint explicitly refuses the capability. A supplied refresh block is parsed, stored, and answered with an explicit warning that it will not be executed. |
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
@@ -70,7 +68,7 @@ unsupported capability and its reason, and separating "not implemented" from
 | Scope decisions | MCP tunnel and session-budget alerts are `not_applicable`: SandBase is local-first and single-tenant, so a hosted connectivity or billing-notification feature has no local analogue. The published contract describes them as available capabilities. |
 | Dreams | `unavailable`, not `not_applicable`: a workspace-scoped pipeline over archived sessions and memory stores belongs in a local-first runtime. What is missing is a scheduled background worker and the archived-session corpora, and this phase does not build them. |
 | Failure envelope | `unsupported_capability` with `details.capabilities` is a SandBase error shape. The published contract requires the refusal, not this envelope. |
-| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution and OAuth refresh are both `unavailable`: neither has a safe local design, so marking either `planned` would imply an implementation is coming. |
+| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution moved out of this file once a provider-backed adapter shipped; OAuth refresh remains `unavailable`: it has no safe local design, so marking it `planned` would imply an implementation is coming. |
 | Coverage moved out of this file | Session budget was implemented, so it now has its own contract file. Threads, coordinator, and advisor were never implemented and also have their own file, so this file does not have to speak for a surface it cannot describe. |
 
 ## 5. Reason for the difference
@@ -82,11 +80,11 @@ unsupported capability and its reason, and separating "not implemented" from
   "cloud scheduling" label was wrong: the feature is a local consolidation
   pipeline, so the honest record is "we have not built it", not "it does not
   apply here".
-- `web_search` execution is `unavailable` rather than `planned` because there is
-  no safe local design to plan: a search provider is a third-party service.
-  Marking it `planned` would imply a local implementation is coming. `web_fetch`
-  is not in this category — it executes, with the limits recorded in
-  `tools.md`.
+- `web_search` execution used to sit here: no adapter existed, and marking it
+  `planned` would have implied one was coming. A provider-backed implementation
+  now ships, so the entry moved to [`tools.md`](./tools.md) — an unconfigured
+  runtime still refuses the tool, but through capability admission, which is
+  execution configuration rather than an unsupported surface.
 - Every rejection names the specific capability, so a caller removes one field
   rather than guessing which of several declarations was refused.
 
@@ -104,11 +102,11 @@ unsupported capability and its reason, and separating "not implemented" from
 
 ## 7. Status
 
-Mixed, per the table in §2. Two entries are `not_applicable` by design, two are
-`unavailable`, and one of those two — Dreams — moved here from
-`not_applicable` once its reason was corrected. Every one is recorded in the
-capability matrix with its reason rather than being omitted. The entry that used
-to be here and is no longer is session budget, which has its own contract file
-because it was implemented. Threads, the coordinator, and the advisor stayed
+Mixed, per the table in §2. Two entries are `not_applicable` by design and the
+rest are `unavailable`; Dreams moved here from `not_applicable` once its reason
+was corrected. Every one is recorded in the capability matrix with its reason
+rather than being omitted. Two entries that used to be here are no longer:
+session budget and `web_search` execution each have their own coverage because
+they were implemented. Threads, the coordinator, and the advisor stayed
 out: they are `unavailable`, not `partial`, and they too have their own file
 rather than a paragraph in this one.

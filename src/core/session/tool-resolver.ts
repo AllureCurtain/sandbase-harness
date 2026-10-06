@@ -19,6 +19,8 @@ import type { DelegationService } from './delegation-service.js';
 import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, mcpDiscoveredToolAdmitted, resolveToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
+import { createWebSearchTool } from '@/core/web/web-search-tool.js';
+import type { SearchProvider } from '@/core/web/search/index.js';
 import type { SecretRedactor } from '@/core/credentials/redaction.js';
 import { clearCredentialInjectionBundle, createCredentialRedactor } from '@/core/credentials/redaction.js';
 import {
@@ -49,6 +51,12 @@ export interface ToolResolverDeps {
    * model-facing or API-facing input can relax the guard.
    */
   webFetch?: WebFetchOverrides;
+  /**
+   * The configured web-search provider, resolved from runtime settings at
+   * startup. Absent means no provider is configured: `web_search` then never
+   * mounts a tool, which is also what capability admission reports.
+   */
+  webSearch?: SearchProvider;
   /**
    * Resolve a session's Environment to its runtime configuration, so the
    * Environment's network policy can bound what the tools connect to: the
@@ -457,6 +465,19 @@ export class ToolResolver {
         policy: resolveWebToolExecutionPolicy(agent, 'web_fetch'),
         environmentPolicy: this.environmentNetworkPolicy(session),
         overrides: this.deps.webFetch,
+      });
+    }
+
+    // `web_search` mounts only when the runtime resolved a provider: the
+    // capability registry refuses explicit declarations when none exists, so
+    // a mounted tool always has a configured backend behind it. The search
+    // runs runtime-side, like web_fetch, and answers to the same Environment
+    // network policy for its provider endpoint.
+    if (enabledTools.has('web_search') && this.deps.webSearch) {
+      tools['web_search'] = createWebSearchTool({
+        provider: this.deps.webSearch,
+        policy: resolveWebToolExecutionPolicy(agent, 'web_search'),
+        environmentPolicy: this.environmentNetworkPolicy(session),
       });
     }
 

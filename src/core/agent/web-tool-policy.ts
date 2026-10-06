@@ -410,6 +410,7 @@ export function resolveWebToolExecutionPolicy(
       mode: allowed ? 'allowed' : blocked ? 'blocked' : undefined,
       domains: (allowed ?? blocked ?? []).map((domain) => domain.toLowerCase().replace(/\/$/, '')),
       maxContentTokens: config.max_content_tokens,
+      userLocation: config.user_location,
     };
   }
   return undefined;

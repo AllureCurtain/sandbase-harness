@@ -23,6 +23,9 @@ export function maskRuntimeSettings(config: RuntimeSettings): RuntimeSettings {
     },
     memory: { ...config.memory, options: maskObjectSecrets(config.memory.options) },
     sandbox: { ...config.sandbox, options: maskObjectSecrets(config.sandbox.options) },
+    ...(config.web_search
+      ? { web_search: { ...config.web_search, options: maskObjectSecrets(config.web_search.options) } }
+      : {}),
   };
 }
 
@@ -60,8 +63,17 @@ export function cleanupUnreferencedRuntimeSettingsSecrets(db: Database, ...confi
 }
 
 export function resolveRuntimeSettingsModelApiKey(db: Database, value: string | undefined, dataDir?: string): string | undefined {
-  if (value !== `${STORED_SECRET_PREFIX}model.api_key`) return value;
-  const row = db.prepare('SELECT ciphertext, nonce, tag FROM runtime_settings_secrets WHERE path = ?').get('model.api_key') as
+  return resolveRuntimeSettingsSecret(db, 'model.api_key', value, dataDir);
+}
+
+/**
+ * Resolve the value a settings field names: a `__managed_secret__:<path>`
+ * pointer reads the encrypted row, anything else (literal, `${ENV}`
+ * reference, absent) is returned unchanged for the caller to interpret.
+ */
+export function resolveRuntimeSettingsSecret(db: Database, path: string, value: string | undefined, dataDir?: string): string | undefined {
+  if (value !== `${STORED_SECRET_PREFIX}${path}`) return value;
+  const row = db.prepare('SELECT ciphertext, nonce, tag FROM runtime_settings_secrets WHERE path = ?').get(path) as
     | { ciphertext: string; nonce: string; tag: string }
     | undefined;
   return row ? decryptSecret(row, dataDir) : undefined;

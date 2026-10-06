@@ -79,6 +79,7 @@ function settings(overrides: {
       storage: { metadata: [], artifacts: [] },
       memory: [{ id: 'sqlite', label: 'SQLite', version: '1', status: 'available', restart_policy: 'runtime', options_schema: {} }],
       sandbox: [{ id: 'local', label: 'Local', version: '1', status: 'available', restart_policy: 'runtime', options_schema: {} }],
+      web_search: [],
     },
   };
 }

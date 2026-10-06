@@ -14,9 +14,11 @@ export interface RuntimeCapability {
 /**
  * Kept distinct from a generic "unsafe" reason: web_search is not missing a safe
  * implementation, it is missing a provider. Conflating the two would tell an
- * operator the same thing about two different gaps.
+ * operator the same thing about two different gaps — and the reason names the
+ * remedy, since the gap closes through Settings, not a code change.
  */
-const WEB_SEARCH_NO_PROVIDER_REASON = 'No search provider is bundled or configured in this runtime; web_search declarations are accepted but not executable.';
+const WEB_SEARCH_NO_PROVIDER_REASON =
+  'No search provider is configured: set web_search.provider and its api_key under Settings to enable web_search.';
 
 const DEFAULT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
   { id: 'bash', kind: 'tool', status: 'available' },
@@ -29,6 +31,15 @@ const DEFAULT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
   { id: 'web_fetch', kind: 'tool', status: 'available' },
   { id: 'web_search', kind: 'tool', status: 'unavailable', reason: WEB_SEARCH_NO_PROVIDER_REASON },
 ];
+
+/**
+ * The capability inventory for a runtime that resolved a search provider.
+ * Identical to {@link DEFAULT_RUNTIME_CAPABILITIES} except `web_search` is
+ * executable, so admission accepts an agent that names it and the tool mounts.
+ */
+const WEB_SEARCH_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = DEFAULT_RUNTIME_CAPABILITIES.map(
+  (capability) => (capability.id === 'web_search' ? { id: 'web_search', kind: 'tool', status: 'available' } : capability),
+);
 
 export class UnsupportedCapabilityError extends Error {
   readonly type = 'unsupported_capability';
@@ -86,3 +97,17 @@ export class RuntimeCapabilityRegistry {
 
 /** Shared default registry used by the local runtime and direct unit/API composition. */
 export const runtimeCapabilityRegistry = new RuntimeCapabilityRegistry();
+
+/**
+ * Registry for the runtime's actual search-provider state.
+ *
+ * `web_search` admission follows configuration rather than code: a runtime
+ * whose settings resolved a provider admits the tool; one without keeps the
+ * published refusal, so an agent can never be admitted into a capability the
+ * executor could not have satisfied.
+ */
+export function runtimeCapabilityRegistryFor(options: { webSearchConfigured: boolean }): RuntimeCapabilityRegistry {
+  return options.webSearchConfigured
+    ? new RuntimeCapabilityRegistry(WEB_SEARCH_RUNTIME_CAPABILITIES)
+    : new RuntimeCapabilityRegistry(DEFAULT_RUNTIME_CAPABILITIES);
+}

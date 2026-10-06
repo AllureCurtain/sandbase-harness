@@ -4,6 +4,17 @@ import { PI_APPROVAL_MODES } from '@/strategy/pi/approval-mode.js';
 
 const optionsSchema = z.record(z.string(), z.unknown()).default({});
 const STORED_SECRET_PREFIX = '__managed_secret__:';
+/**
+ * Web-search provider ids the settings document recognizes.
+ *
+ * The enum lists the providers the contract plans, not only the ones with a
+ * shipped adapter — an id outside it is a validation error naming the field,
+ * while an id inside it but without an adapter is refused by the availability
+ * check (`adapter_unavailable`), mirroring how `loop_engine` lists engines
+ * this runtime cannot execute.
+ */
+export const WEB_SEARCH_PROVIDER_IDS = ['tavily', 'brave', 'exa', 'searxng'] as const;
+export type WebSearchProviderId = (typeof WEB_SEARCH_PROVIDER_IDS)[number];
 const COMPLETE_ENV_REFERENCE = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 
 export const runtimeSettingsSchema = z.object({
@@ -65,6 +76,20 @@ export const runtimeSettingsSchema = z.object({
       timeout_seconds: z.number().int().min(1).max(86_400).default(300),
     }).catchall(z.unknown()),
   }).strict(),
+  /**
+   * Search provider configuration for the `web_search` built-in tool.
+   *
+   * Optional: a row persisted before this subsystem existed must still parse,
+   * and an absent section is the honest spelling of "no search provider is
+   * configured" — the capability stays `unavailable` and an agent that
+   * declares the tool fails admission. `options.api_key` is matched by the
+   * secret-path rules, so it gains `__managed_secret__` storage, `${ENV}`
+   * references, and Console masking without extra wiring.
+   */
+  web_search: z.object({
+    provider: z.enum(WEB_SEARCH_PROVIDER_IDS),
+    options: optionsSchema,
+  }).strict().optional(),
 }).strict();
 
 export type RuntimeSettings = z.infer<typeof runtimeSettingsSchema>;
@@ -89,6 +114,7 @@ export type SettingsAvailability = {
   artifactStorage: Set<RuntimeSettings['storage']['artifacts']['provider']>;
   memoryProviders: Set<RuntimeSettings['memory']['provider']>;
   sandboxProviders: Set<RuntimeSettings['sandbox']['provider']>;
+  webSearchProviders: Set<WebSearchProviderId>;
 };
 
 export function validateRuntimeSettings(
@@ -122,6 +148,10 @@ export function validateRuntimeSettings(
     requireAvailable(errors, 'memory.provider', config.memory.provider, availability.memoryProviders);
   }
   requireAvailable(errors, 'sandbox.provider', config.sandbox.provider, availability.sandboxProviders);
+  if (config.web_search) {
+    requireAvailable(errors, 'web_search.provider', config.web_search.provider, availability.webSearchProviders);
+    validateWebSearchSettings(errors, config.web_search);
+  }
 
   return {
     valid: errors.length === 0,
@@ -213,6 +243,57 @@ function validateSandboxSettings(errors: SettingsValidationIssue[], config: Runt
   }
 }
 
+/**
+ * Field-level checks a configured web_search provider must pass.
+ *
+ * `api_key` must be *present*, not necessarily resolvable here — a literal, a
+ * `${ENV}` reference, and a `__managed_secret__` pointer are all accepted
+ * spellings, and the credential sweep decides whether the spelled value can
+ * resolve. `base_url` overrides the vendor endpoint; it is operator-level
+ * configuration, so only the URL shape is checked — the guard against an
+ * unreachable host is the settings Test probe, not schema validation.
+ */
+function validateWebSearchSettings(
+  errors: SettingsValidationIssue[],
+  webSearch: NonNullable<RuntimeSettings['web_search']>,
+): void {
+  const apiKey = webSearch.options.api_key;
+  if (apiKey !== undefined && typeof apiKey !== 'string') {
+    errors.push({
+      path: 'web_search.options.api_key',
+      code: 'invalid_type',
+      message: 'Web search api_key must be a string',
+    });
+  }
+  const baseUrl = webSearch.options.base_url;
+  if (baseUrl === undefined) return;
+  if (typeof baseUrl !== 'string') {
+    errors.push({
+      path: 'web_search.options.base_url',
+      code: 'invalid_type',
+      message: 'Web search base_url must be a string',
+    });
+    return;
+  }
+  if (/^\$\{[^}]+\}$/.test(baseUrl)) return;
+  try {
+    const protocol = new URL(baseUrl).protocol;
+    if (protocol !== 'http:' && protocol !== 'https:') {
+      errors.push({
+        path: 'web_search.options.base_url',
+        code: 'invalid_protocol',
+        message: 'Web search base_url must use http or https',
+      });
+    }
+  } catch {
+    errors.push({
+      path: 'web_search.options.base_url',
+      code: 'invalid_url',
+      message: 'Web search base_url must be a valid URL',
+    });
+  }
+}
+
 function validatePiSandboxCompatibility(errors: SettingsValidationIssue[], config: RuntimeSettings): void {
   if (config.loop_engine.provider !== 'pi' || config.sandbox.provider === 'local') return;
   errors.push({
@@ -238,6 +319,9 @@ export function validateRuntimeSettingsCredentials(
     collectSecretCredentialIssues(config.memory, 'memory', hasStoredSecret, errors);
   }
   collectSecretCredentialIssues(config.sandbox, 'sandbox', hasStoredSecret, errors);
+  if (config.web_search) {
+    collectSecretCredentialIssues(config.web_search, 'web_search', hasStoredSecret, errors);
+  }
   return errors;
 }
 
@@ -249,6 +333,9 @@ export function defaultSettingsAvailability(): SettingsAvailability {
     artifactStorage: new Set(['local']),
     memoryProviders: new Set(['sqlite']),
     sandboxProviders: new Set(['local']),
+    // Tavily is the only shipped adapter; the other ids validate but fail the
+    // availability check until their adapters land.
+    webSearchProviders: new Set<WebSearchProviderId>(['tavily']),
   };
 }
 

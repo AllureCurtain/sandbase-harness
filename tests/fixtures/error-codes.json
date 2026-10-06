@@ -18,6 +18,7 @@
     "invalid_precondition",
     "invalid_protocol",
     "invalid_request",
+    "invalid_type",
     "invalid_url",
     "loop_engine_invalid",
     "loop_engine_not_supported",
@@ -62,6 +63,8 @@
     "too_many_initial_events",
     "too_many_stores",
     "unresolved_env_reference",
+    "web_search_provider_failed",
+    "web_search_rate_limited",
     "work_lease_lost",
     "work_outcome_unknown",
     "work_queue_timeout"

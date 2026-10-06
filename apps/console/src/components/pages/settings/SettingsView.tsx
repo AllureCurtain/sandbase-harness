@@ -37,6 +37,7 @@ export function SettingsView({
           {active === 'storage' ? <RuntimeSettingsEditor data={data} section="storage" onRefresh={onRefresh} /> : null}
           {active === 'memory' ? <RuntimeSettingsEditor data={data} section="memory" onRefresh={onRefresh} /> : null}
           {active === 'sandbox' ? <RuntimeSettingsEditor data={data} section="sandbox" onRefresh={onRefresh} /> : null}
+          {active === 'web-search' ? <RuntimeSettingsEditor data={data} section="web-search" onRefresh={onRefresh} /> : null}
           {active === 'api-keys' ? <SettingsApiKeys data={data} onRefresh={onRefresh} /> : null}
           {active === 'api-reference' ? <SettingsApiReference data={data} docs={API_REFERENCE_DOCS} /> : null}
           {active === 'logs' ? <SettingsLogs data={data} /> : null}

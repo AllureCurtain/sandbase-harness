@@ -71,6 +71,7 @@ export const SETTINGS_VIEW_IDS: ViewId[] = [
   'storage',
   'memory',
   'sandbox',
+  'web-search',
   'api-keys',
   'api-reference',
   'logs',
@@ -200,6 +201,8 @@ export function ConsoleRouteView(props: {
       return <SettingsView data={props.data} section="memory" onRefresh={props.onRefresh} setView={props.setView} />;
     case 'sandbox':
       return <SettingsView data={props.data} section="sandbox" onRefresh={props.onRefresh} setView={props.setView} />;
+    case 'web-search':
+      return <SettingsView data={props.data} section="web-search" onRefresh={props.onRefresh} setView={props.setView} />;
     case 'api-keys':
       return <SettingsView data={props.data} section="api-keys" onRefresh={props.onRefresh} setView={props.setView} />;
     case 'api-reference':

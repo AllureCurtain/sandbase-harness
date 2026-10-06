@@ -13,6 +13,7 @@ import {
   ModelSettingsForm,
   SandboxSettingsForm,
   StorageSettingsForm,
+  WebSearchSettingsForm,
 } from './RuntimeSettingsForms';
 import {
   applyRuntimeSettingsDefaults,
@@ -107,7 +108,8 @@ export function RuntimeSettingsEditor({
     : section === 'loop-engine' ? settings.adapters.loop_engine
       : section === 'memory' ? settings.adapters.memory
         : section === 'sandbox' ? settings.adapters.sandbox
-          : [];
+          : section === 'web-search' ? settings.adapters.web_search
+            : [];
   const title = t(`editor.sections.${section}.title`);
   const subtitle = t(`editor.sections.${section}.subtitle`);
 
@@ -276,6 +278,7 @@ export function RuntimeSettingsEditor({
         ) : null}
         {section === 'memory' ? <MemorySettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
         {section === 'sandbox' ? <SandboxSettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
+        {section === 'web-search' ? <WebSearchSettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
       </div> : <div className="stack">
         <p className="formHint">{t('editor.jsonHint', { section: title })}</p>
         <JsonCodeEditor value={json} onChange={(value) => {

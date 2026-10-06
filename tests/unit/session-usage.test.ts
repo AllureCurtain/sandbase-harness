@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { activeSecondsFromEvents, buildSessionUsageSnapshot } from '@/core/session/session-usage.js';
+import { activeSecondsFromEvents, buildSessionUsageSnapshot, serverToolUseFromEvents } from '@/core/session/session-usage.js';
 import type { SessionEvent } from '@/types/session.js';
 
 function ev(type: SessionEvent['type'], at: string): SessionEvent {
@@ -83,6 +83,34 @@ describe('activeSecondsFromEvents', () => {
       ev('session.status_idle', '2026-09-15T00:00:05.000Z'),
     ];
     expect(activeSecondsFromEvents(events, new Date(T0))).toBe(0);
+  });
+});
+
+describe('serverToolUseFromEvents', () => {
+  function toolUse(name: string): SessionEvent {
+    return {
+      ...ev('agent.tool_use', T0),
+      name,
+      input: {},
+      content: [{ type: 'tool_use', id: `tu_${name}`, name, input: {} }],
+    } as SessionEvent;
+  }
+
+  it('counts each web_search and web_fetch tool_use block as one request', () => {
+    const events = [
+      toolUse('web_search'),
+      toolUse('web_fetch'),
+      toolUse('web_search'),
+      toolUse('read'),
+      ev('user.message', T0),
+    ];
+    expect(serverToolUseFromEvents(events)).toEqual({ web_search_requests: 2, web_fetch_requests: 1 });
+  });
+
+  it('reports zero for a log with no web tool calls', () => {
+    expect(serverToolUseFromEvents([toolUse('bash'), ev('agent.message', T0)]))
+      .toEqual({ web_search_requests: 0, web_fetch_requests: 0 });
+    expect(serverToolUseFromEvents([])).toEqual({ web_search_requests: 0, web_fetch_requests: 0 });
   });
 });
 

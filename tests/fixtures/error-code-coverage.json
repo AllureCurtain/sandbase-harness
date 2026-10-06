@@ -1,7 +1,7 @@
 {
   "note": "Which test files mention each public error code, measured by literal presence in the test tree (not by execution). A code with an empty list is emitted by src but asserted nowhere. This file is measured by scanning tests, excluding the coverage test itself, which necessarily names the uncovered codes.",
   "covered": {
-    "adapter_unavailable": ["tests/integration/api.test.ts", "tests/unit/settings-schema.test.ts", "tests/unit/settings.test.ts"],
+    "adapter_unavailable": ["tests/integration/api.test.ts", "tests/unit/settings-schema.test.ts", "tests/unit/settings.test.ts", "tests/unit/web-search-settings.test.ts"],
     "agent_required": ["tests/integration/sdk-error-envelope.test.ts"],
     "already_exists": ["tests/integration/memory-already-exists.test.ts"],
     "cycle": ["tests/unit/orchestrator.test.ts"],
@@ -18,12 +18,13 @@
     "invalid_precondition": ["tests/unit/memory-semantics-wiring.test.ts", "tests/unit/memory-semantics.test.ts"],
     "invalid_protocol": ["tests/unit/settings.test.ts"],
     "invalid_request": ["tests/integration/invalid-request-spelling.test.ts", "tests/unit/session-resource-instances.test.ts"],
+    "invalid_type": ["tests/unit/web-search-settings.test.ts"],
     "invalid_url": ["tests/unit/settings.test.ts"],
     "loop_engine_invalid": ["tests/integration/api.test.ts", "tests/integration/session-error-paths.test.ts", "tests/unit/loop-engine-admission.test.ts", "tests/unit/session-error-shape.test.ts"],
     "loop_engine_not_supported": ["tests/integration/api.test.ts", "tests/integration/session-error-paths.test.ts", "tests/unit/session-error-shape.test.ts"],
     "memory_too_large": ["tests/unit/memory-semantics-wiring.test.ts", "tests/unit/memory-semantics.test.ts"],
     "memory_version_is_head": ["tests/integration/memory-official-shape.test.ts"],
-    "missing_env": ["tests/integration/api.test.ts", "tests/integration/sdk-settings-resource.test.ts", "tests/unit/model-registry.test.ts", "tests/unit/settings.test.ts"],
+    "missing_env": ["tests/integration/api.test.ts", "tests/integration/sdk-settings-resource.test.ts", "tests/unit/model-registry.test.ts", "tests/unit/settings.test.ts", "tests/unit/web-search-settings.test.ts"],
     "model_auth_failed": ["tests/unit/model-auth-failed.test.ts", "tests/unit/model-error-hints.test.ts", "tests/unit/session-error-shape.test.ts"],
     "model_config_invalid": ["tests/integration/unresolved-model-credential.test.ts", "tests/unit/model-config-invalid.test.ts", "tests/unit/model-error-hints.test.ts", "tests/unit/session-error-shape.test.ts"],
     "model_not_found": ["tests/integration/model-qualified-reference.test.ts", "tests/unit/model-auth-failed.test.ts", "tests/unit/model-error-hints.test.ts", "tests/unit/session-error-shape.test.ts"],
@@ -62,6 +63,8 @@
     "too_many_initial_events": ["tests/integration/api.test.ts", "tests/integration/initial-events-transaction.test.ts", "tests/unit/cma-event-contract.test.ts"],
     "too_many_stores": ["tests/unit/memory-semantics.test.ts"],
     "unresolved_env_reference": ["tests/unit/settings.test.ts"],
+    "web_search_provider_failed": ["tests/unit/web-search-tavily.test.ts", "tests/unit/web-search-tool.test.ts"],
+    "web_search_rate_limited": ["tests/unit/web-search-tavily.test.ts", "tests/unit/web-search-tool.test.ts"],
     "work_lease_lost": ["tests/integration/self-hosted.test.ts", "tests/integration/session-error-paths.test.ts", "tests/integration/worker-poll-cli.test.ts", "tests/unit/session-error-shape.test.ts"],
     "work_outcome_unknown": ["tests/integration/self-hosted.test.ts", "tests/integration/session-error-paths.test.ts", "tests/unit/session-error-shape.test.ts"],
     "work_queue_timeout": ["tests/integration/self-hosted.test.ts", "tests/integration/session-error-paths.test.ts", "tests/unit/session-error-shape.test.ts"]

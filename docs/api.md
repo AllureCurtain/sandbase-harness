@@ -473,9 +473,11 @@ immutable version, and an update that changes nothing writes no version at all.
 Including `{ "type": "agent_toolset_20260401" }` enables every built-in tool;
 `configs` entries disable (`enabled: false`, `never_allow`) or reconfigure
 specific tools, and `default_config.enabled: false` empties the implicit set.
-`web_search` has no provider in this runtime: naming it in `configs` is refused
-at admission, while the implicit enable from a bare toolset is accepted and
-simply never offered to the model.
+`web_search` is configuration-gated: it executes only when Runtime Settings
+name a usable search provider (`web_search.provider`, Tavily ships). With no
+provider configured, naming it in `configs` is refused at admission, while the
+implicit enable from a bare toolset is accepted and simply never offered to the
+model.
 
 ### MCP servers and toolsets
 
@@ -2960,9 +2962,10 @@ and every matrix entry. Each matrix entry names its `area`, its `status`, a
 carries the seven-section detail for that behaviour.
 
 Agent create/update and session creation reject enabled unavailable capabilities
-with `400 unsupported_capability` before an agent or session is persisted. In
-particular, `web_fetch` and `web_search` cannot reach model or tool execution
-until safe runtime implementations exist.
+with `400 unsupported_capability` before an agent or session is persisted.
+`web_fetch` executes in every runtime; `web_search` reaches execution only while
+a usable search provider is configured in Runtime Settings — see
+[Executing web_search](#executing-web_search).
 
 ### Tool output overflow
 
@@ -3027,10 +3030,43 @@ The transport override surface (resolver, address guard, limits) is
 constructor-level only. An agent definition cannot reach it, so no model-facing or
 API-facing input can relax the guard.
 
-`web_search` remains unavailable: no search provider is bundled or configured, so an
-enabled entry is still refused by capability admission. `GET /v1/x/capabilities`
-reports the two tools separately, because a missing safe implementation and a
-missing provider are different facts.
+`GET /v1/x/capabilities` reports the two tools separately, because a missing
+safe implementation and a missing provider are different facts.
+
+### Executing web_search
+
+`web_search` is a provider-backed tool: it executes only when Runtime Settings
+carry `web_search.provider` with a usable key. `tavily` ships today; `brave`,
+`exa`, and `searxng` are recognized provider names but have no adapter yet, so
+selecting one leaves the capability unavailable. `web_search.options.api_key`
+is a managed secret — a `${VAR}` reference or encrypted storage, masked on
+read — resolved when the runtime builds the provider at startup, so a settings
+change that enables or changes the provider takes effect on the same restart
+boundary as every other runtime setting.
+
+When no usable provider exists, `web_search` stays unavailable in exactly one
+way: `GET /v1/x/capabilities` reports it unavailable, an enabled `configs`
+entry is refused by `unsupported_capability` at admission, and no tool is
+mounted — the three surfaces cannot disagree.
+
+Each turn runs the tool against the session Environment's network policy: a
+`limited` policy must list the provider endpoint's `host:port` in
+`allowed_hosts` (HTTPS defaults to port 443) or the call is refused at the same
+egress boundary `web_fetch` uses. The agent's `allowed_domains` /
+`blocked_domains` list is forwarded to the provider as host-level
+include/exclude filters, and any path suffix the grammar allows on
+`web_search` domains is enforced client-side against every returned result
+URL, because provider APIs filter on hosts only. `user_location` is passed to
+the provider when it supports it.
+
+`web_search` input takes `query` (required), `num_results` (capped at 20),
+`recency` (`day`, `week`, `month`, `year`), and the domain list described
+below. Results render as a ranked title/URL/snippet list with each snippet
+capped at 600 characters; provider failures, rate limits, policy refusals, and
+invalid input all return the same `Error: ...` tool-result shape `web_fetch`
+uses, recorded as a normal `agent.tool_result`. Every `web_search` (and
+`web_fetch`) tool call counts one request in `session.usage`'s
+`server_tool_use`, derived from the durable event log rather than a counter.
 
 ### Web tool domain lists
 

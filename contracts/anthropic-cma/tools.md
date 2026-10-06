@@ -2,15 +2,19 @@
 
 Contract area: built-in tools — availability, web tool domain policy, MCP
 toolset approval, and tool output overflow.
-Status: `partial` — web_fetch executes with documented limits, web_search has no
-provider, and the local overflow threshold differs, see §4.
+Status: `partial` — every built-in executes, web_search included, but
+web_fetch keeps documented limits and the local overflow threshold differs,
+see §4.
 Source: `src/core/capabilities/registry.ts`, `src/core/agent/web-tool-policy.ts`,
 `src/core/agent/standard.ts`, `src/core/mcp/tool-naming.ts`,
-`src/core/session/tool-output-overflow.ts`, `src/core/web/web-fetch.ts`.
+`src/core/session/tool-output-overflow.ts`, `src/core/web/web-fetch.ts`,
+`src/core/web/web-search-tool.ts`, `src/core/web/search/index.ts`,
+`src/core/web/search/tavily.ts`.
 
 <!-- capability-status
-builtin-tool-execution: partial
+builtin-tool-execution: supported
 web-fetch-execution: partial
+web-search-execution: supported
 web-tool-domain-policy: supported
 tool-output-overflow: partial
 mcp-tool-approval-gate: supported
@@ -46,7 +50,7 @@ Tool availability (`RuntimeCapabilityRegistry`):
 | --- | --- |
 | `bash`, `edit`, `read`, `write`, `glob`, `grep` | available |
 | `web_fetch` | available — one HTTP/HTTPS fetch behind an address guard, see below |
-| `web_search` | unavailable — no search provider is bundled or configured |
+| `web_search` | configuration-gated — available when Runtime Settings names a provider, unavailable otherwise |
 
 An agent requesting an unavailable tool is rejected through
 `UnsupportedCapabilityError`, which returns 400 `unsupported_capability` with
@@ -65,6 +69,37 @@ an unsupported request never leaves state behind.
   text-like content is converted, and `max_content_tokens` is a character
   estimate rather than a tokenizer count.
 
+`web_search` execution (`web-search-tool.ts`, `web/search/index.ts`, `web/search/tavily.ts`):
+
+- The tool mounts only when `web_search.provider` resolves to a shipped adapter
+  with a usable key — for Tavily that means a literal key, a `${ENV}`
+  reference, or a `__managed_secret__` pointer that decrypts. Every other
+  spelling yields no provider, and no provider means the capability registry
+  keeps `web_search` `unavailable`, so admission and execution can never
+  disagree about whether the tool exists.
+- The request leaves the runtime process for the provider endpoint; the
+  provider key rides in an `Authorization` header and never enters a URL, a
+  log line, or the tool's result text. The Environment network policy governs
+  the endpoint exactly as it governs a `web_fetch` target, so a `limited`
+  Environment must allow it for the tool to run.
+- The provider-neutral request maps `allowed_domains`/`blocked_domains` onto
+  the vendor's include/exclude parameters. A domain entry carrying a path
+  suffix — which `web_search`'s grammar permits — is enforced client-side on
+  every result URL, because vendor APIs take hostnames only; a path-suffixed
+  `blocked_domains` entry deliberately does not go upstream, since sending the
+  bare host would block more than the list declared.
+- Failures return a coded tool result — `web_search_unconfigured`,
+  `web_search_rate_limited`, `web_search_provider_failed` — rather than
+  throwing, so a rate limit or provider outage reads to the model as a tool
+  error, not a session failure. Each call counts once against
+  `usage.server_tool_use.web_search_requests` and the `web_search_per_1000`
+  cost-profile field; both figures are derived from the event log.
+- Tavily is the shipped adapter (`POST /search`, bearer auth, `time_range` /
+  `include_domains` / `exclude_domains` / `country` mapping, 30 s timeout, 1 MB
+  response cap). `brave`, `exa`, and `searxng` are recognized settings values
+  listed as unavailable adapters — each ships as its own PR against the same
+  `SearchProvider` interface.
+
 Domain policy (`web-tool-policy.ts`):
 
 - Validates `allowed_domains` / `blocked_domains` exclusivity, the 1–64 domain
@@ -78,9 +113,10 @@ Domain policy (`web-tool-policy.ts`):
 
 Two layers are deliberately distinguished: **expression** (the schema can
 represent the configuration) and **execution** (the runtime can act on it).
-`web_tool.configuration` is `supported` for both tools; execution is not one
-answer for the pair — `web_fetch` executes behind the address guard and its
-documented limits, while `web_search` has no provider and is `unavailable`.
+`web_tool.configuration` is `supported` for both tools; execution differs in
+kind rather than in existence — `web_fetch` executes in-process behind the
+address guard, while `web_search` executes through the configured provider
+when one exists and is `unavailable` when none does.
 
 Tool output overflow (`tool-output-overflow.ts`):
 
@@ -161,7 +197,7 @@ loop reads.
 
 | Difference | Detail |
 | --- | --- |
-| `web_search` execution | SandBase has no search provider, so a `configs` entry that *names* `web_search` fails before a session is persisted. A bare `agent_toolset_20260401` implicitly enables every built-in per the published default; an implicitly enabled `web_search` is accepted but never offered to the model, because no tool implementation is registered for it. |
+| `web_search` provider | The published service runs search against Anthropic-operated infrastructure; SandBase runs it against the provider an operator configures in Settings. With none configured, a `configs` entry that *names* `web_search` still fails before a session is persisted, and a bare `agent_toolset_20260401`'s implicit enable is accepted but never offered to the model — the refusal semantics are unchanged, only the boundary moved from "never" to "until configured". |
 | `web_fetch` content types | Only text-like content is converted. An image, PDF, or other binary response is reported as its media type and size instead of being inlined, so the model is told what it did not receive. |
 | `web_fetch` content budget | `max_content_tokens` is enforced through a chars-per-token estimate, and the truncation marker says so. The published contract describes a token budget without fixing the unit. |
 | Overflow threshold | 50,000 local chars versus the published 100,000. The published value is recorded rather than silently replaced. |
@@ -170,16 +206,15 @@ loop reads.
 
 ## 5. Reason for the difference
 
-- `web_search` is `unavailable` rather than `planned` because there is no local
-  implementation to plan: a search provider is a third-party service and
-  scraping a search engine's HTML is not an accepted substitute, so an
-  *explicit* declaration is refused instead of accepted and ignored. The bare
-  toolset's implicit enable is a different thing — the caller asked for "the
-  toolset", not for search by name, and refusing it would make the simplest
-  published shape un-creatable. `web_fetch` is a
-  different question — a single URL with a known host is answerable in-process
-  behind the address guard, which is why it executes while `web_search` does
-  not.
+- `web_search` is configuration-gated rather than unconditional because a
+  search backend is third-party spend, not a local facility: the runtime ships
+  the adapter, the operator supplies the provider and key through Settings, and
+  a runtime without them keeps refusing explicit declarations. The bare
+  toolset's implicit enable stays accepted-but-inert on an unconfigured runtime
+  — the caller asked for "the toolset", not for search by name, and refusing it
+  would make the simplest published shape un-creatable. No keyless fallback
+  exists: an implicit third-party endpoint would be spend and a trust decision
+  the operator never made.
 - The lower local overflow threshold keeps a single tool result from dominating
   a local model's context window, where a hosted runtime has more headroom. The
   canonical constant is kept in the code so the divergence is visible.
@@ -188,6 +223,17 @@ loop reads.
 
 ## 6. Corresponding tests
 
+- `tests/unit/web-search-tavily.test.ts` — the adapter contract: request-field
+  mapping onto the Tavily body, bearer-only key placement, response
+  normalization, and the coded outcomes for rate limiting, HTTP failure,
+  non-JSON bodies, transport errors, and timeout.
+- `tests/unit/web-search-tool.test.ts` — the tool surface: input validation,
+  domain-policy mapping including client-side path-suffix enforcement, the
+  Environment egress check on the provider endpoint, coded failure results,
+  redaction, and the empty-page rendering.
+- `tests/unit/web-search-settings.test.ts` — the settings contract: schema
+  acceptance and refusal, `api_key` managed-secret storage and masking,
+  adapter availability, and `searchProviderFromSettings`'s fail-safe returns.
 - `tests/unit/web-tool-policy.test.ts` — 46 cases covering the domain grammar,
   exclusivity, empty-list rejection, path rules, and error paths.
 - `tests/integration/web-fetch-execution.test.ts` — the executed half against a
@@ -229,8 +275,9 @@ loop reads.
 ## 7. Status
 
 `partial` — configuration validation matches the published rules, `web_fetch`
-executes behind the address guard, and the MCP toolset approval default applies
-to dynamically discovered tools. `web_search` execution is `unavailable`, only
+executes behind the address guard, `web_search` executes against the provider
+an operator configures (admission still refuses it when none does), and the
+MCP toolset approval default applies to dynamically discovered tools. Only
 text-like fetch content is converted, the fetch content budget is a character
 estimate, and the local overflow threshold differs from the published one; all
-four are recorded in the capability matrix.
+three are recorded in the capability matrix.
