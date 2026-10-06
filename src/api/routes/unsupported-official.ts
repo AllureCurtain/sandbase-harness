@@ -11,7 +11,7 @@ function rejectCapability(id: string, reason: string): Handler {
 }
 
 export const unsupportedMcpOAuthValidation = rejectCapability(
-  'mcp-oauth-validation', 'The runtime has no MCP OAuth refresh or validation service.',
+  'mcp-oauth-validation', 'MCP OAuth tokens refresh at the injection boundary; a dedicated validation endpoint is not implemented.',
 );
 
 export function unsupportedOfficialRoutes(): Hono {

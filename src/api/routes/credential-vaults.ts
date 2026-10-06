@@ -9,9 +9,12 @@ import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
 import {
   checkCredentialUpdate,
   parseCredentialAuth,
+  parseOAuthState,
   resolveInjectionLocation,
+  serializeOAuthState,
   toCanonicalCredential,
   type CredentialInjectionLocation,
+  type OAuthStateRecord,
 } from '@/core/credentials/canonical-credential.js';
 import {
   appendCredentialAuditEvent,
@@ -274,13 +277,32 @@ export function credentialVaultRoutes(deps: ServerDeps) {
     const encryptedSecret = credential.secretValue
       ? encryptSecret(credential.secretValue, deps.workspace?.dataDir)
       : { ciphertext: '', nonce: '', tag: '' };
+    // OAuth material gets the same treatment as the primary secret: the refresh
+    // token and the token-endpoint client secret are encrypted in their own
+    // columns, and `oauth_state` carries only the non-secret configuration and
+    // the expiry the injection boundary refreshes against.
+    const encryptedRefreshToken = credential.refresh?.refreshToken
+      ? encryptSecret(credential.refresh.refreshToken, deps.workspace?.dataDir)
+      : { ciphertext: '', nonce: '', tag: '' };
+    const encryptedClientSecret = credential.refresh?.clientSecret
+      ? encryptSecret(credential.refresh.clientSecret, deps.workspace?.dataDir)
+      : { ciphertext: '', nonce: '', tag: '' };
+    const oauthState = serializeOAuthState({
+      tokenEndpoint: credential.refresh?.tokenEndpoint,
+      clientId: credential.refresh?.clientId,
+      tokenEndpointAuthType: credential.refresh?.tokenEndpointAuthType,
+      expiresAt: credential.expiresAt,
+      hasRefreshToken: Boolean(credential.refresh?.refreshToken),
+    });
     const id = `vcrd_${nanoid(18)}`;
     const now = new Date().toISOString();
     deps.db.prepare(
       `INSERT INTO credential_records (
         id, vault_id, name, auth_type, mcp_server_url, variable_name, value_hint,
-        network, injection_locations, metadata, secret_ciphertext, secret_nonce, secret_tag, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        network, injection_locations, metadata, secret_ciphertext, secret_nonce, secret_tag,
+        oauth_state, refresh_token_ciphertext, refresh_token_nonce, refresh_token_tag,
+        client_secret_ciphertext, client_secret_nonce, client_secret_tag, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       vaultId,
@@ -295,6 +317,13 @@ export function credentialVaultRoutes(deps: ServerDeps) {
       encryptedSecret.ciphertext,
       encryptedSecret.nonce,
       encryptedSecret.tag,
+      oauthState,
+      encryptedRefreshToken.ciphertext,
+      encryptedRefreshToken.nonce,
+      encryptedRefreshToken.tag,
+      encryptedClientSecret.ciphertext,
+      encryptedClientSecret.nonce,
+      encryptedClientSecret.tag,
       now,
       now,
     );
@@ -359,6 +388,8 @@ export function credentialVaultRoutes(deps: ServerDeps) {
       `UPDATE credential_records
        SET name = ?, metadata = ?, network = ?, injection_locations = ?,
            secret_ciphertext = ?, secret_nonce = ?, secret_tag = ?, value_hint = ?,
+           oauth_state = ?, refresh_token_ciphertext = ?, refresh_token_nonce = ?, refresh_token_tag = ?,
+           client_secret_ciphertext = ?, client_secret_nonce = ?, client_secret_tag = ?,
            updated_at = datetime('now')
        WHERE id = ? AND vault_id = ?`,
     ).run(
@@ -370,6 +401,13 @@ export function credentialVaultRoutes(deps: ServerDeps) {
       authPatch.secret?.nonce ?? existing.secret_nonce,
       authPatch.secret?.tag ?? existing.secret_tag,
       authPatch.secret ? secretHint(authPatch.secret.value) : existing.value_hint,
+      authPatch.oauth?.state ?? existing.oauth_state,
+      authPatch.oauth?.refreshToken?.ciphertext ?? existing.refresh_token_ciphertext,
+      authPatch.oauth?.refreshToken?.nonce ?? existing.refresh_token_nonce,
+      authPatch.oauth?.refreshToken?.tag ?? existing.refresh_token_tag,
+      authPatch.oauth?.clientSecret?.ciphertext ?? existing.client_secret_ciphertext,
+      authPatch.oauth?.clientSecret?.nonce ?? existing.client_secret_nonce,
+      authPatch.oauth?.clientSecret?.tag ?? existing.client_secret_tag,
       credentialId,
       vaultId,
     );
@@ -657,6 +695,7 @@ function listCredentials(deps: ServerDeps, vaultId: string, options: { includeAr
 
 function toCredential(row: CredentialRow) {
   const displayName = row.name ?? '';
+  const oauthState = row.auth_type === 'mcp_oauth' ? parseOAuthState(row.oauth_state) : undefined;
   return {
     ...toCanonicalCredential({
       id: row.id,
@@ -669,6 +708,7 @@ function toCredential(row: CredentialRow) {
       metadata: stringRecordField(parseObject(row.metadata)),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      oauthState,
     }),
     // The local fields stay beside the canonical projection. A Console page renders
     // and searches on `auth_type` / `name` / `variable_name`
@@ -688,6 +728,18 @@ function toCredential(row: CredentialRow) {
     status: row.status === 'deleted' ? 'deleted' : row.archived_at ? 'archived' : row.status,
     last_used_at: row.last_used_at ?? null,
     archived_at: row.archived_at ?? null,
+    // The refresh bookkeeping the Console renders: when it happened, how it
+    // went, and why it failed — never the tokens themselves. Absent for
+    // non-OAuth kinds and for an OAuth credential that has never refreshed.
+    ...(oauthState?.lastRefreshAt || oauthState?.lastRefreshStatus
+      ? {
+        oauth_refresh: {
+          last_refresh_at: oauthState.lastRefreshAt ?? null,
+          status: oauthState.lastRefreshStatus ?? null,
+          error: oauthState.lastRefreshError ?? null,
+        },
+      }
+      : {}),
   };
 }
 
@@ -768,17 +820,29 @@ function mergeMetadataPatch(stored: string | null | undefined, patch: unknown): 
  *
  * Secret-bearing fields are re-encrypted and reported through `secret` so the
  * route can stamp the hint, write the `rotate` audit entry, and rebuild live
- * MCP transports exactly once. `expires_at` and `refresh` are accepted with a
- * warning rather than persisted, matching the create path: this runtime does
- * not track OAuth expiry or run a refresh loop, and refusing the fields would
- * reject payloads the published shape legitimately sends.
+ * MCP transports exactly once. For `mcp_oauth`, `expires_at` and the `refresh`
+ * block persist into `oauth_state` — the refresh the block describes is what
+ * `oauth-refresh.ts` executes at the injection boundary — and a `refresh`
+ * patch that names a different `token_endpoint` or `client_id` is refused as a
+ * locked-field change, the same rule the top-level spellings follow.
  */
 function applyCredentialAuthPatch(
   value: unknown,
   existing: CredentialRow,
   deps: ServerDeps,
 ):
-  | { ok: true; secret?: { value: string; ciphertext: string; nonce: string; tag: string }; network?: Record<string, unknown>; injectionTokens?: string[]; warnings: string[] }
+  | {
+    ok: true;
+    secret?: { value: string; ciphertext: string; nonce: string; tag: string };
+    network?: Record<string, unknown>;
+    injectionTokens?: string[];
+    oauth?: {
+      state: string;
+      refreshToken?: { ciphertext: string; nonce: string; tag: string };
+      clientSecret?: { ciphertext: string; nonce: string; tag: string };
+    };
+    warnings: string[];
+  }
   | { ok: false; message: string } {
   const warnings: string[] = [];
   if (value === undefined) return { ok: true, warnings };
@@ -811,6 +875,11 @@ function applyCredentialAuthPatch(
     secret?: { value: string; ciphertext: string; nonce: string; tag: string };
     network?: Record<string, unknown>;
     injectionTokens?: string[];
+    oauth?: {
+      state: string;
+      refreshToken?: { ciphertext: string; nonce: string; tag: string };
+      clientSecret?: { ciphertext: string; nonce: string; tag: string };
+    };
     warnings: string[];
   } = { ok: true, warnings };
 
@@ -836,15 +905,140 @@ function applyCredentialAuthPatch(
   }
 
   if (localType === 'mcp_oauth') {
-    if (auth.expires_at !== undefined) {
-      warnings.push('auth.expires_at is accepted but not persisted: this runtime does not track OAuth token expiry, so the token is used until replaced.');
-    }
-    if (auth.refresh !== undefined) {
-      warnings.push('auth.refresh is accepted but not executed: this runtime does not refresh OAuth access tokens, so an expired token will fail the outbound request.');
-    }
+    const oauth = applyOAuthPatch(auth, existing, deps);
+    if (!oauth.ok) return { ok: false, message: oauth.message };
+    result.oauth = oauth.value;
+    warnings.push(...oauth.warnings);
   }
 
   return result;
+}
+
+/**
+ * Resolve the OAuth half of an `mcp_oauth` credential update.
+ *
+ * `auth.expires_at` replaces the stored expiry; `auth.refresh` merges over the
+ * stored refresh configuration, with `token_endpoint` and `client_id` locked
+ * to their stored values like every other structural field. The write-only
+ * `refresh_token` — taken at the auth level or inside the block — and
+ * `token_endpoint_auth.client_secret` are re-encrypted into their own columns.
+ * A `refresh: null` patch clears the refresh configuration, which makes the
+ * credential non-refreshable until a new block is written.
+ */
+function applyOAuthPatch(
+  auth: Record<string, unknown>,
+  existing: CredentialRow,
+  deps: ServerDeps,
+):
+  | {
+    ok: true;
+    value?: {
+      state: string;
+      refreshToken?: { ciphertext: string; nonce: string; tag: string };
+      clientSecret?: { ciphertext: string; nonce: string; tag: string };
+    };
+    warnings: string[];
+  }
+  | { ok: false; message: string } {
+  const warnings: string[] = [];
+  if (auth.expires_at === undefined && auth.refresh === undefined && auth.refresh_token === undefined) {
+    return { ok: true, warnings };
+  }
+
+  const stored = parseOAuthState(existing.oauth_state);
+  const next: OAuthStateRecord = { ...stored };
+  let refreshToken: { ciphertext: string; nonce: string; tag: string } | undefined;
+  let clientSecret: { ciphertext: string; nonce: string; tag: string } | undefined;
+  let patchRefreshToken: string | undefined;
+
+  if (auth.expires_at !== undefined) {
+    if (auth.expires_at === null) {
+      delete next.expiresAt;
+    } else {
+      const value = stringField(auth.expires_at);
+      const time = value ? Date.parse(value) : Number.NaN;
+      if (!value || Number.isNaN(time)) {
+        return { ok: false, message: 'auth.expires_at must be an ISO 8601 timestamp' };
+      }
+      next.expiresAt = new Date(time).toISOString();
+    }
+  }
+
+  if (auth.refresh !== undefined) {
+    if (auth.refresh === null) {
+      delete next.tokenEndpoint;
+      delete next.clientId;
+      delete next.tokenEndpointAuthType;
+    } else if (typeof auth.refresh !== 'object' || Array.isArray(auth.refresh)) {
+      return { ok: false, message: 'auth.refresh must be an object' };
+    } else {
+      const patch = auth.refresh as Record<string, unknown>;
+      for (const field of ['token_endpoint', 'client_id'] as const) {
+        if (patch[field] === undefined) continue;
+        const incoming = stringField(patch[field]);
+        const storedValue = field === 'token_endpoint' ? stored.tokenEndpoint : stored.clientId;
+        if (incoming !== storedValue) {
+          return {
+            ok: false,
+            message: `auth.refresh.${field} cannot be changed after creation; archive the credential and create a new one`,
+          };
+        }
+      }
+      const endpointAuth = patch.token_endpoint_auth;
+      if (endpointAuth !== undefined) {
+        if (endpointAuth === null || typeof endpointAuth !== 'object' || Array.isArray(endpointAuth)) {
+          return { ok: false, message: 'auth.refresh.token_endpoint_auth must be an object' };
+        }
+        const authPatch = endpointAuth as Record<string, unknown>;
+        if (authPatch.type !== undefined) {
+          const type = stringField(authPatch.type);
+          if (!type) return { ok: false, message: 'auth.refresh.token_endpoint_auth.type must be a non-empty string' };
+          next.tokenEndpointAuthType = type;
+        }
+        if (authPatch.client_secret !== undefined) {
+          const secret = stringField(authPatch.client_secret);
+          if (!secret) return { ok: false, message: 'auth.refresh.token_endpoint_auth.client_secret must be a non-empty string' };
+          clientSecret = encryptSecret(secret, deps.workspace?.dataDir);
+        }
+      }
+      if (patch.refresh_token !== undefined) {
+        const token = stringField(patch.refresh_token);
+        if (!token) return { ok: false, message: 'auth.refresh.refresh_token must be a non-empty string' };
+        patchRefreshToken = token;
+      }
+    }
+  }
+
+  // `auth.refresh_token` is the published write-only spelling; the nested
+  // `refresh.refresh_token` is accepted as an alias. A conflict between the
+  // two is refused rather than letting one win silently.
+  if (auth.refresh_token !== undefined) {
+    const token = stringField(auth.refresh_token);
+    if (!token) return { ok: false, message: 'auth.refresh_token must be a non-empty string' };
+    if (patchRefreshToken !== undefined && patchRefreshToken !== token) {
+      return { ok: false, message: 'supply only one of auth.refresh_token or auth.refresh.refresh_token' };
+    }
+    patchRefreshToken = token;
+  }
+  if (patchRefreshToken !== undefined) {
+    refreshToken = encryptSecret(patchRefreshToken, deps.workspace?.dataDir);
+    next.hasRefreshToken = true;
+  }
+
+  // A patch that completes or removes refreshability is reported the same way
+  // create reports it, so the update caller learns the same thing a create
+  // caller would.
+  if (next.tokenEndpoint && !next.hasRefreshToken && !refreshToken) {
+    warnings.push('auth.refresh has no refresh_token: the runtime cannot refresh this access token, so it is used until replaced.');
+  } else if (!next.tokenEndpoint && (next.hasRefreshToken || refreshToken)) {
+    warnings.push('auth.refresh has no token_endpoint: the runtime cannot refresh this access token, so it is used until replaced.');
+  }
+
+  return {
+    ok: true,
+    value: { state: serializeOAuthState(next), refreshToken, clientSecret },
+    warnings,
+  };
 }
 
 async function updateCredentialState(c: any, deps: ServerDeps, status: 'archived') {
@@ -894,6 +1088,13 @@ interface CredentialRow {
   secret_ciphertext: string;
   secret_nonce: string;
   secret_tag: string;
+  oauth_state: string;
+  refresh_token_ciphertext: string;
+  refresh_token_nonce: string;
+  refresh_token_tag: string;
+  client_secret_ciphertext: string;
+  client_secret_nonce: string;
+  client_secret_tag: string;
   status: string;
   metadata: string;
   created_at: string;

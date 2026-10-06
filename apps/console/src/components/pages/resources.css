@@ -253,6 +253,10 @@
   font-family: var(--font-mono);
 }
 
+.authCell small.authCellError {
+  color: var(--red);
+}
+
 .rowMenu {
   top: 38px;
   right: 0;

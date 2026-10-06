@@ -104,8 +104,14 @@ export interface McpManagerOptions {
    * the transport and then emptied, so this manager does not retain the values; the
    * transport holds the copy it presents for the life of the connection. Absent
    * means "send no extra headers".
+   *
+   * Async because resolving may first refresh an expired OAuth access token:
+   * the refresh is part of the injection boundary this callback represents,
+   * and a connect must not race ahead of it.
    */
-  resolveHeaders?: (server: McpServerConfig) => Record<string, string> | undefined;
+  resolveHeaders?: (
+    server: McpServerConfig,
+  ) => Record<string, string> | undefined | Promise<Record<string, string> | undefined>;
   /**
    * Scrub a tool result before the strategy hands it to the model.
    *
@@ -120,7 +126,7 @@ export class McpManager {
   private readonly admitTool: ((serverName: string, toolName: string) => boolean) | undefined;
   private readonly admitServer: ((server: McpServerConfig) => string | undefined) | undefined;
   private readonly resolveEnvironment: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
-  private readonly resolveHeaders: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
+  private readonly resolveHeaders: ((server: McpServerConfig) => Record<string, string> | undefined | Promise<Record<string, string> | undefined>) | undefined;
   private readonly redactResult: ((serverName: string, result: unknown) => unknown) | undefined;
   private clients = new Map<string, McpClient>();
   private serverConfigs = new Map<string, McpServerConfig>();
@@ -354,7 +360,7 @@ export class McpManager {
         throw new Error(`MCP server "${server.name}": url transport requires "url"`);
       }
       const url = resolveEnvVarsDeep(server.url, false);
-      injectedHeaders = this.resolveHeaders?.(server);
+      injectedHeaders = await this.resolveHeaders?.(server);
       const headers = { ...(injectedHeaders ?? {}) };
       transport = new SSEClientTransport(new URL(url), Object.keys(headers).length > 0
         ? {

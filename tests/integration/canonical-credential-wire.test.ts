@@ -99,21 +99,53 @@ describe('Canonical credential wire profile over HTTP', () => {
     expect(readBack.auth.mcp_server_url).toBe('https://mcp.vendor.example/api');
   });
 
-  it('round-trips an mcp_oauth credential and warns that refresh is not executed', async () => {
+  it('round-trips an mcp_oauth credential with its refresh block persisted', async () => {
     const created = await post({
       display_name: 'OAuth vendor',
       auth: {
         type: 'mcp_oauth',
         mcp_server_url: 'https://oauth.vendor.example/mcp',
         access_token: SECRET,
-        refresh: { token_endpoint: 'https://oauth.vendor.example/token', client_id: 'client_abc' },
+        expires_at: '2030-06-01T00:00:00Z',
+        refresh: {
+          token_endpoint: 'https://oauth.vendor.example/token',
+          client_id: 'client_abc',
+          refresh_token: 'rt-secret',
+        },
       },
     });
 
     expect(created.status).toBe(201);
     expect(created.body.auth.type).toBe('mcp_oauth');
-    // A caller who sends a refresh block must learn it will not be honoured.
-    expect(created.body.warnings?.join(' ')).toContain('not executed');
+    // The refresh configuration is executable, so it echoes on the read — the
+    // secrets it carries never do.
+    expect(created.body.auth.expires_at).toBe('2030-06-01T00:00:00.000Z');
+    expect(created.body.auth.refresh.token_endpoint).toBe('https://oauth.vendor.example/token');
+    expect(created.body.auth.refresh.client_id).toBe('client_abc');
+    expect(created.body.auth.refresh.has_refresh_token).toBe(true);
+    expect(JSON.stringify(created.body)).not.toContain('rt-secret');
+    expect(JSON.stringify(created.body)).not.toContain(SECRET);
+    expect(created.body.warnings).toBeUndefined();
+
+    const [readBack] = await list();
+    expect(readBack.auth.refresh.token_endpoint).toBe('https://oauth.vendor.example/token');
+    expect(readBack.auth.expires_at).toBe('2030-06-01T00:00:00.000Z');
+  });
+
+  it('warns when a refresh block cannot be executed', async () => {
+    const created = await post({
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://oauth.vendor.example/mcp',
+        access_token: SECRET,
+        refresh: { client_id: 'client_abc' },
+      },
+    });
+
+    expect(created.status).toBe(201);
+    // A block with no endpoint cannot refresh; the caller is told which piece
+    // is missing rather than left to assume it is covered.
+    expect(created.body.warnings?.join(' ')).toContain('token_endpoint');
   });
 
   it('never returns the secret it stored, for any type', async () => {

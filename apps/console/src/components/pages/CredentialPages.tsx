@@ -742,10 +742,18 @@ function CredentialAuthCell({ credential }: { credential: VaultCredential }) {
     : credential.auth_type === 'environment_variable'
       ? credential.variable_name
       : credential.value_hint;
+  const refresh = credential.oauth_refresh;
   return (
     <span className="authCell">
       <strong>{authLabel(t, credential.auth_type)}</strong>
       {secondary ? <small>{secondary}</small> : null}
+      {refresh?.status ? (
+        <small className={refresh.status === 'failed' ? 'authCellError' : undefined}>
+          {refresh.status === 'failed'
+            ? t('list.refreshFailed', { time: refresh.last_refresh_at ? relativeDate(refresh.last_refresh_at) : '' })
+            : t('list.refreshOk', { time: refresh.last_refresh_at ? relativeDate(refresh.last_refresh_at) : '' })}
+        </small>
+      ) : null}
     </span>
   );
 }

@@ -87,7 +87,7 @@ families and do not admit a supported resource or bypass version validation.
 | `/v1/tunnels` and certificate/token actions | `mcp-tunnel` | Hosted connectivity is outside the local-first scope. |
 | `/v1/user_profiles` and enrollment actions | `user-profiles` | Hosted user management is outside the single-tenant scope. |
 | `/v1/environments/{id}/work` and its official actions | `environment-work` | The hosted Work API is not the local `/work-items` and `/v1/x/worker` queue API. |
-| `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` | `mcp-oauth-validation` | No MCP OAuth refresh or validation service is implemented. |
+| `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` | `mcp-oauth-validation` | Token refresh is implemented at the injection boundary; a dedicated validation endpoint is not. |
 
 ### Route Coverage Guard
 

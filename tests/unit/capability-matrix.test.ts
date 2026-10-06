@@ -202,11 +202,11 @@ describe('capability matrix', () => {
     // WebFetch is the implemented half; the search entry must not read as if
     // every web tool were still missing an executor.
     expect(capabilityEntry('web-fetch-execution').status).toBe('partial');
-    // Not `planned`: no refresh loop is scheduled, and the plan's acceptance for
-    // this item is "implement it or mark it unavailable". Calling it planned
-    // would imply a refresh loop is coming.
-    expect(capabilityEntry('oauth-refresh').status).toBe('unavailable');
-    expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('warning');
+    // Refresh executes at the MCP connect boundary: an expired access token is
+    // renewed before its header is built, and a failure stamps the row, audits,
+    // and publishes vault_credential.refresh_failed.
+    expect(capabilityEntry('oauth-refresh').status).toBe('supported');
+    expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('refresh_failed');
     // Threads are a real gap, not a spelling difference: no thread resource, no
     // coordinator or advisor role, and no thread route exist. The earlier
     // `partial` reading described files that were never in the tree.

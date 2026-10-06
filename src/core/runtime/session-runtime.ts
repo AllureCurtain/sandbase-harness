@@ -72,6 +72,11 @@ export interface RuntimeSessionServicesOptions {
    */
   resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   /**
+   * Refresh due `mcp_oauth` credentials at the MCP connect boundary; absent
+   * keeps the stored-token-until-replaced behaviour.
+   */
+  refreshOAuthCredentials?: (sessionId: string, mcpServerUrl: string, vaultIds?: string[]) => Promise<void>;
+  /**
    * The web-search provider resolved from the effective runtime settings.
    *
    * Supplied once at composition: settings changes are restart-gated, so the
@@ -182,6 +187,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     // credential store, so an embedder with none keeps running sessions that hold
     // no vault.
     resolveCredentialInjections: options.resolveCredentialInjections,
+    refreshOAuthCredentials: options.refreshOAuthCredentials,
     webSearch: options.webSearchProvider,
     logger: options.logger,
     // Session resources are materialized at provisioning, which is the first

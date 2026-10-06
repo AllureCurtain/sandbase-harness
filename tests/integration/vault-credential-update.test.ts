@@ -14,7 +14,8 @@
  *    `value_hint`, and write a `rotate` audit event.
  *  - `injection_location` and `networking` replace wholesale;
  *    `networking: null` clears the restriction.
- *  - `expires_at` / `refresh` are accepted with a warning, never persisted.
+ *  - `expires_at` / `refresh` persist into the credential's OAuth state, with
+ *    the locked structural fields refused.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -210,27 +211,62 @@ describe('Credential update', () => {
     expect(JSON.stringify(res.body)).not.toContain('rotated-bearer');
   });
 
-  it('warns on expires_at and refresh rather than persisting them', async () => {
+  it('persists expires_at and refresh into the OAuth state', async () => {
     const server = setUp();
     const vaultId = await createVault(server);
     const oauth = await send(server, 'POST', `${PUBLISHED}/${vaultId}/credentials`, {
-      auth: { type: 'mcp_oauth', mcp_server_url: 'https://mcp.example.com', access_token: 'oauth-secret' },
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com',
+        access_token: 'oauth-secret',
+        refresh: { token_endpoint: 'https://auth.example.com/token', client_id: 'c1' },
+      },
     });
     expect(oauth.status, JSON.stringify(oauth.body)).toBe(201);
+    // The block carries no refresh token, so the create warns it cannot run.
+    expect(oauth.body!.warnings?.join(' ')).toContain('refresh_token');
 
     const res = await send(server, 'POST', `${PUBLISHED}/${vaultId}/credentials/${oauth.body!.id}`, {
       auth: {
         type: 'mcp_oauth',
         access_token: 'new-access-token',
         expires_at: '2027-01-01T00:00:00Z',
-        refresh: { refresh_token: 'rt' },
+        refresh: { token_endpoint: 'https://auth.example.com/token', client_id: 'c1', refresh_token: 'rt' },
       },
     });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(res.body!.value_hint).toBe('••••oken');
-    expect(res.body!.warnings?.some((w: string) => w.includes('expires_at'))).toBe(true);
-    expect(res.body!.warnings?.some((w: string) => w.includes('refresh'))).toBe(true);
+    expect(res.body!.warnings).toBeUndefined();
+    expect(res.body!.auth.expires_at).toBe('2027-01-01T00:00:00.000Z');
+    expect(res.body!.auth.refresh.token_endpoint).toBe('https://auth.example.com/token');
+    expect(res.body!.auth.refresh.has_refresh_token).toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('rt');
+  });
+
+  it('refuses a refresh patch that repoints the locked endpoint or client', async () => {
+    const server = setUp();
+    const vaultId = await createVault(server);
+    const oauth = await send(server, 'POST', `${PUBLISHED}/${vaultId}/credentials`, {
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com',
+        access_token: 'oauth-secret',
+        refresh: { token_endpoint: 'https://auth.example.com/token', client_id: 'c1', refresh_token: 'rt' },
+      },
+    });
+    expect(oauth.status, JSON.stringify(oauth.body)).toBe(201);
+
+    for (const refresh of [
+      { token_endpoint: 'https://other.example.com/token' },
+      { client_id: 'different' },
+    ]) {
+      const res = await send(server, 'POST', `${PUBLISHED}/${vaultId}/credentials/${oauth.body!.id}`, {
+        auth: { type: 'mcp_oauth', refresh },
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(res.body!.error.message).toContain('cannot be changed');
+    }
   });
 
   it('refuses a secret supplied as null or empty rather than clearing it', async () => {

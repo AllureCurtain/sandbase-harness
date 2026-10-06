@@ -1,17 +1,18 @@
 # CMA Contract — credentials and vaults
 
 Contract area: `/v1/vaults` and vault credentials.
-Status: `supported` for the wire profile, rotation, and injection execution;
-OAuth refresh is `unavailable`, see §4 and §7.
+Status: `supported` for the wire profile, rotation, injection execution, and
+`mcp_oauth` token refresh.
 Source: `src/core/credentials/canonical-credential.ts`,
 `src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`,
-`src/core/credentials/injection.ts`, `src/core/net/egress-proxy.ts`.
+`src/core/credentials/injection.ts`, `src/core/credentials/oauth-refresh.ts`,
+`src/core/net/egress-proxy.ts`.
 
 <!-- capability-status
 canonical-credential-wire-profile: supported
 credential-rotation: supported
 credential-injection-execution: supported
-oauth-refresh: unavailable
+oauth-refresh: supported
 -->
 
 ---
@@ -133,9 +134,41 @@ Wire profile:
 Write-only handling:
 
 - Secret material is encrypted at rest; the record stores only a hint (the last
-  four characters) for display.
+  four characters) for display. For `mcp_oauth` that covers three secrets: the
+  access token in `secret_*`, the refresh token in `refresh_token_*`, and the
+  token-endpoint client secret in `client_secret_*`, each an encrypted triple
+  of its own.
 - `toCanonicalCredential` omits write-only fields entirely rather than masking
-  them, because a mask could be mistaken for the real value.
+  them, because a mask could be mistaken for the real value. The `refresh`
+  block is echoed without its secrets: `token_endpoint`, `client_id`, the
+  `token_endpoint_auth` type, and `has_refresh_token` — a boolean, not the
+  token.
+
+OAuth refresh state and execution:
+
+- `credential_records.oauth_state` (migration 058) is a non-secret JSON bag
+  carrying the refresh configuration (`token_endpoint`, `client_id`,
+  `token_endpoint_auth_type`), the access token's `expires_at`,
+  `has_refresh_token`, and the last attempt's outcome (`last_refresh_at`,
+  `last_refresh_status`, `last_refresh_error`) — the fields the API echoes and
+  the Console renders.
+- Refresh executes once per url-transport MCP connect, inside
+  `resolveHeaders` before the injection bundle is built
+  (`src/core/credentials/oauth-refresh.ts`): credentials matching the declared
+  `mcp_server_url` whose `expires_at` is due are POSTed to their
+  `token_endpoint`, and the response's `access_token`, `expires_in`/
+  `expires_at`, and rotated `refresh_token` are re-encrypted in place. The
+  connect then resolves the fresh token through the ordinary decrypt path —
+  nothing downstream can tell a refresh happened, and no token material
+  crosses the sandbox, model, or event boundary.
+- A refresh is skipped, not failed, when the credential declares no
+  `expires_at` (nothing says it is due), no `token_endpoint`, or no refresh
+  token — the create/update warnings name which piece is missing. A failed
+  refresh leaves the stored token in place, stamps the state on the row,
+  writes a `refresh_failed` audit event, and publishes
+  `vault_credential.refresh_failed`; the dedup window on `last_refresh_at`
+  (60 seconds) keeps concurrent sessions and reconnect storms from repeating
+  the attempt.
 
 Locked fields:
 
@@ -283,10 +316,15 @@ Vault and credential lifecycle:
   rotate `value_hint`, write a `rotate` audit event, and rebuild the live MCP
   transports of sessions referencing the vault, exactly as the `rotate` route
   does. `injection_location` and `networking` replace wholesale, and
-  `networking: null` clears the restriction to unrestricted. `expires_at` and
-  `refresh` are accepted with a warning rather than persisted — the runtime
-  does not track OAuth expiry — so the response carries the warning beside the
-  projection.
+  `networking: null` clears the restriction to unrestricted. For `mcp_oauth`,
+  `expires_at` and the `refresh` block persist into the credential's stored
+  OAuth state — a `refresh.token_endpoint` or `refresh.client_id` that differs
+  from the stored value is refused as the same locked-field `400` the top-level
+  spellings produce, `token_endpoint_auth.type` and a new `client_secret` or
+  `refresh_token` update in place, and `refresh: null` clears the refresh
+  configuration so the token is used until replaced. A block that leaves the
+  credential unrefreshable (no `token_endpoint`, or no refresh token) still
+  answers a warning naming the missing piece.
 - `DELETE /v1/vaults/{vault_id}/credentials/{credential_id}` is a physical
   delete that answers `{id, type: "vault_credential_deleted"}`; a second delete
   is `404`. The audit trail survives: the `delete` event and every earlier event
@@ -319,7 +357,7 @@ their own boundary.
 | Difference | Detail |
 | --- | --- |
 | Credential exposure in the sandbox | Closed for backends with an egress boundary: the local and docker providers run a per-session egress proxy, and environment credentials enter processes only as `__cred_<id>__` placeholders the proxy replaces on the wire toward a host the credential's own `allowed_hosts` covers. Two residual limits, both recorded rather than hidden: substitution happens on the proxy's HTTP forward path only — a CONNECT tunnel is opaque, so a placeholder inside an HTTPS request is sent literally and fails closed — and a backend with no boundary (`kubernetes`, `self-hosted`) has nowhere to substitute, so it keeps the plaintext materialization it always had. On those backends `vault_ids` still means "export these secrets into the process". |
-| OAuth refresh | There is no refresh loop or refresh-failure event. The official MCP OAuth validation endpoint explicitly returns HTTP 400 `unsupported_capability` under both vault prefixes, without executing validation. A supplied `refresh` block is parsed, recorded, and reported back as **not executed**, with a warning on the response. |
+| OAuth refresh | Implemented for `mcp_oauth` at the injection boundary: when a url-transport MCP connect resolves its headers, a credential whose `expires_at` is past (minus a 30-second skew) is refreshed against its `token_endpoint` before the bundle is built — the transport only ever sees the resulting access token. Token-endpoint authentication follows `token_endpoint_auth.type` (`client_secret_basic` default, `client_secret_post`, `none`), a rotated `refresh_token` is persisted encrypted in place, and a response without one keeps the stored token. A failure stamps the row's `oauth_state` (`last_refresh_at`, status, a sanitized error — never token material), appends a `refresh_failed` audit event, publishes `vault_credential.refresh_failed`, and still lets the connect proceed with the stored value; a 60-second per-credential window deduplicates attempts so concurrent sessions and reconnect storms cannot hammer the endpoint. A credential with no `expires_at` or no refresh token is used until replaced — the runtime cannot know it is due, and the create/update response says so. The official `mcp_oauth_validate` endpoint still returns HTTP 400 `unsupported_capability` under both vault prefixes: validation is not refresh. |
 | Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
@@ -338,10 +376,17 @@ their own boundary.
   wire to substitute on. Both residuals are stated plainly rather than folded
   into "supported", because on a boundary-less backend a caller's secret still
   reaches the process.
-- OAuth refresh is reported rather than silently stored because the failure mode
-  matters: a session would keep presenting an expired access token and report
-  nothing. A warning that reaches the caller is the difference between a
-  diagnosable auth failure and a mystery.
+- OAuth refresh runs at the injection boundary rather than on a timer because
+  that is the only point the runtime knows a token is about to be presented: a
+  background loop would refresh credentials no session is using, and refreshing
+  at connect time means the header that ships is already the fresh one. The
+  failure path is deliberately loud — audit row, stamped state, webhook — for
+  the reason it was warned before it was implemented: a session silently
+  presenting an expired token is a mystery, not an auth failure.
+- A failed refresh leaves the stored token untouched and lets the connect
+  proceed, because the endpoint's own 401 is a more honest signal than a
+  withheld credential, and the stamped `oauth_state` is what the API and the
+  Console report.
 - The legacy spelling is accepted so existing SandBase callers keep working, but
   it is documented as legacy rather than presented as canonical.
 - Rotation preserving identity follows from the locking rule: if identity
@@ -357,7 +402,8 @@ their own boundary.
 - `tests/integration/canonical-credential-wire.test.ts` — each canonical type
   created through the published endpoint and read back through it: the nested
   round trip with its resolved `injection_location`, the `static_bearer` name on
-  the wire, the `refresh` warning, the mixed-shape refusal, the legacy flat alias,
+  the wire, the persisted `refresh`/`expires_at` echo with its warnings, the
+  mixed-shape refusal, the legacy flat alias,
   the missing-field refusals, and that no response carries the secret.
 - `tests/integration/credential-execution.test.ts` — the executor resolves the
   session's vault, the bash tool receives `{env: {TOKEN: …}}`, the string the
@@ -422,8 +468,16 @@ their own boundary.
   `display_name`/`metadata` patch rules, `auth.type` immutability, locked
   structural fields, secret rotation re-encrypting and writing a `rotate`
   audit event, wholesale `injection_location`/`networking` replacement with
-  `networking: null` clearing, the `expires_at`/`refresh` warnings, a null
+  `networking: null` clearing, `expires_at`/`refresh` persistence including the
+  locked-endpoint refusal and the unrefreshable warnings, a null
   secret refused, and both prefixes.
+- `tests/unit/credential-oauth-refresh.test.ts` — the refresh path itself: a
+  due token refreshed against its endpoint with each `token_endpoint_auth`
+  mode, a rotated `refresh_token` persisted, a response without one keeping
+  the stored token, `expires_in`/`expires_at` projecting the new expiry, a
+  not-due or unrefreshable credential skipped, a failure stamping the row,
+  auditing `refresh_failed`, and publishing `vault_credential.refresh_failed`,
+  the retry-window dedup, and the URL-keyed scoping.
 - `tests/conformance/vault-credential-update.test.ts` — the pinned official
   SDK's `credentials.update()` against the live runtime: the partial update
   applies, no secret material is echoed, and a type mismatch is a 400.
@@ -437,8 +491,11 @@ their own boundary.
 ## 7. Status
 
 `supported` for the wire profile, write-only handling, locked fields,
-rotation, and injection execution — placeholder emission, egress
+rotation, injection execution — placeholder emission, egress
 substitution, delegated vault inheritance, and model request headers, with
-the CONNECT-opacity and boundary-less-backend residuals recorded in §4. OAuth
-refresh is `unavailable` and is recorded as such in the capability matrix rather
-than presented as supported.
+the CONNECT-opacity and boundary-less-backend residuals recorded in §4 — and
+`mcp_oauth` refresh: expiry-tracked tokens refreshed at the connect boundary,
+rotated refresh tokens persisted, failures audited, stamped, and published.
+The `mcp_oauth_validate` endpoint remains `unsupported_capability` — refresh
+is not validation — and a credential that never declared `expires_at` is used
+until replaced, because nothing can know it is due.
