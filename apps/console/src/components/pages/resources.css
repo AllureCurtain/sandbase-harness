@@ -40,7 +40,6 @@
   display: flex;
   flex-direction: column;
   gap: 26px;
-  max-width: 1160px;
 }
 
 .environmentSection {
@@ -241,9 +240,7 @@
   box-shadow: none;
 }
 
-.wideDetailStack {
-  max-width: 100%;
-}
+
 
 .authCell strong,
 .authCell small {

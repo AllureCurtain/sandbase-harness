@@ -36,9 +36,10 @@
 }
 
 .brandMark {
-  color: var(--fg);
-  font-size: 17px;
-  line-height: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: block;
 }
 
 .workspaceSwitch {

@@ -179,7 +179,7 @@
 }
 .formAlert.error {
   background: var(--red-tint);
-  border-color: #f6bdb7;
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
   color: var(--red);
 }
 .fileUploadError {

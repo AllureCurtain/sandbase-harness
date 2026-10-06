@@ -130,7 +130,6 @@
   border-radius: var(--radius-card);
   background: var(--surface);
   overflow: hidden;
-  max-width: 920px;
 }
 .toolsetHeader {
   display: grid;
@@ -329,7 +328,6 @@
 /* Migrated from legacy styles.css. */
 
 .systemPreview {
-  max-width: 920px;
   background: var(--surface);
   border-radius: var(--radius-card);
   border: 1px solid var(--line-soft);
