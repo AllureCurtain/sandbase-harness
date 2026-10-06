@@ -13,6 +13,8 @@ export const credentials = {
     open: "Open {{name}}",
     credentialCount: "{{n}} credentials",
     kpis: { vaults: "Vaults", activeVaults: "Active vaults", credentials: "Credentials", activeCredentials: "Active credentials" },
+    refreshOk: "token refreshed {{time}}",
+    refreshFailed: "token refresh failed {{time}}",
   },
   detail: {
     back: "Credential vaults",

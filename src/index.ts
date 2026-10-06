@@ -23,6 +23,8 @@ import { bootstrapRuntimeLoopEngine } from './core/runtime/loop-engine-bootstrap
 import { resolveRuntimeApiAuth } from './core/runtime/api-auth.js';
 import { createRuntimeSessionServices } from './core/runtime/session-runtime.js';
 import { resolveSessionCredentialInjections } from './core/credentials/injection.js';
+import { refreshMcpOauthCredentialsForServer } from './core/credentials/oauth-refresh.js';
+import { dispatchWebhookEvent } from './core/operations/webhook-dispatcher.js';
 import { searchProviderFromSettings } from './core/web/search/index.js';
 import { attachRuntimeServerErrorHandler, parseCsv, runtimeStartupBannerLines } from './core/runtime/http-server.js';
 import { createLogger, InMemoryLogStore } from './core/observability/logger.js';
@@ -157,6 +159,23 @@ async function startServer(opts: StartServerOptions) {
       dataDir,
       ...target,
     }),
+    // The OAuth half of the same boundary: a connect for a url MCP server
+    // refreshes its due credentials first, so the header the transport gets
+    // never carries a token the caller already knew was expired. Refresh
+    // failures surface through the vault_credential.refresh_failed webhook
+    // rather than in the tool result — the tool result's auth failure is the
+    // endpoint's own answer.
+    refreshOAuthCredentials: (sessionId, mcpServerUrl, vaultIds) =>
+      refreshMcpOauthCredentialsForServer(db, {
+        sessionId,
+        mcpServerUrl,
+        vaultIds,
+        dataDir,
+        publish: (event) => dispatchWebhookEvent(db, event, {
+          secret: webhookSigningSecret(dataDir),
+          dataDir,
+        }).then(() => {}),
+      }),
     webSearchProvider,
     logger,
   });

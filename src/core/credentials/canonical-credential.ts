@@ -24,11 +24,13 @@
  *   the credential and creating a new one, so a credential's identity cannot
  *   drift underneath a running session.
  *
- * OAuth refresh is deliberately NOT implemented: there is no refresh loop, no
- * refresh-failure event, and no validate endpoint. Treating `refresh` as
- * accepted while never refreshing would mean a session keeps using an expired
- * access token and reports nothing, so `refresh` is parsed and then reported
- * as unsupported rather than silently stored.
+ * OAuth refresh is implemented for `mcp_oauth` only: `auth.expires_at` and the
+ * `auth.refresh` block are persisted, and the runtime refreshes an expired
+ * access token at the injection boundary before handing it to a transport —
+ * see `oauth-refresh.ts`. A refresh block without the fields a refresh needs
+ * (`token_endpoint`, a `refresh_token`) is still accepted, with a warning
+ * naming what is missing, because refusing the write would hide a credential
+ * the caller legitimately stores.
  */
 
 import { z } from 'zod';
@@ -143,15 +145,82 @@ export interface NormalizedCredential {
    */
   legacyInjectionTokens?: string[];
   metadata: Record<string, string>;
-  /** OAuth refresh block, when supplied. Recorded but not executed. */
+  /**
+   * The access token's expiry (`auth.expires_at`), normalized to an ISO
+   * timestamp. `mcp_oauth` only: it is what the injection boundary reads to
+   * decide a refresh is due.
+   */
+  expiresAt?: string;
+  /**
+   * OAuth refresh block, when supplied (`auth.refresh`, plus the write-only
+   * `auth.refresh_token`). `mcp_oauth` only; persisted so the runtime can
+   * execute the refresh it describes.
+   */
   refresh?: OAuthRefreshBlock;
 }
 
 export interface OAuthRefreshBlock {
   tokenEndpoint?: string;
   clientId?: string;
-  hasClientSecret: boolean;
+  /** The write-only client secret itself; persisted encrypted, never echoed. */
+  clientSecret?: string;
   tokenEndpointAuthType?: string;
+  /** The write-only refresh token itself; persisted encrypted, never echoed. */
+  refreshToken?: string;
+}
+
+/**
+ * The non-secret contents of `credential_records.oauth_state`.
+ *
+ * One JSON bag carries both the refresh configuration and the outcome of the
+ * last refresh attempt, so the API projection and the Console read the same
+ * record the refresher writes. Secret material never appears here: the refresh
+ * token and the client secret live in their own encrypted columns, and the bag
+ * records only that a token is stored (`hasRefreshToken`).
+ */
+export interface OAuthStateRecord {
+  tokenEndpoint?: string;
+  clientId?: string;
+  tokenEndpointAuthType?: string;
+  /** Access-token expiry, ISO 8601. Absent means the expiry is unknown. */
+  expiresAt?: string;
+  hasRefreshToken?: boolean;
+  /** Outcome of the last executed refresh, for the API and the Console. */
+  lastRefreshAt?: string;
+  lastRefreshStatus?: 'ok' | 'failed';
+  lastRefreshError?: string;
+}
+
+/** Read a stored `oauth_state` bag; an unreadable value reads as empty. */
+export function parseOAuthState(value: string | null | undefined): OAuthStateRecord {
+  const record = readRecord(typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return undefined; } })() : value);
+  if (!record) return {};
+  const state: OAuthStateRecord = {};
+  if (readString(record.token_endpoint)) state.tokenEndpoint = readString(record.token_endpoint);
+  if (readString(record.client_id)) state.clientId = readString(record.client_id);
+  if (readString(record.token_endpoint_auth_type)) state.tokenEndpointAuthType = readString(record.token_endpoint_auth_type);
+  if (readString(record.expires_at)) state.expiresAt = readString(record.expires_at);
+  if (record.has_refresh_token === true) state.hasRefreshToken = true;
+  if (readString(record.last_refresh_at)) state.lastRefreshAt = readString(record.last_refresh_at);
+  if (record.last_refresh_status === 'ok' || record.last_refresh_status === 'failed') {
+    state.lastRefreshStatus = record.last_refresh_status;
+  }
+  if (readString(record.last_refresh_error)) state.lastRefreshError = readString(record.last_refresh_error);
+  return state;
+}
+
+/** Serialize an `OAuthStateRecord` for `credential_records.oauth_state`. */
+export function serializeOAuthState(state: OAuthStateRecord): string {
+  const out: Record<string, unknown> = {};
+  if (state.tokenEndpoint) out.token_endpoint = state.tokenEndpoint;
+  if (state.clientId) out.client_id = state.clientId;
+  if (state.tokenEndpointAuthType) out.token_endpoint_auth_type = state.tokenEndpointAuthType;
+  if (state.expiresAt) out.expires_at = state.expiresAt;
+  if (state.hasRefreshToken) out.has_refresh_token = true;
+  if (state.lastRefreshAt) out.last_refresh_at = state.lastRefreshAt;
+  if (state.lastRefreshStatus) out.last_refresh_status = state.lastRefreshStatus;
+  if (state.lastRefreshError) out.last_refresh_error = state.lastRefreshError;
+  return JSON.stringify(out);
 }
 
 export type CredentialParseResult =
@@ -277,21 +346,43 @@ function parseCanonicalAuth(
     };
   }
 
-  // mcp_oauth. The refresh block is parsed so a caller learns whether it will
-  // be honoured, rather than finding out when the access token expires.
+  // mcp_oauth. The refresh block is persisted so the runtime executes it at
+  // the injection boundary; a block that names no endpoint — or a credential
+  // that carries no refresh token — cannot refresh, and the warning says which
+  // piece is missing rather than letting the caller believe it is covered.
   const refresh = readRecord(auth.refresh);
+  const refreshToken = readString(refresh?.refresh_token) ?? readString(auth.refresh_token);
   let refreshBlock: OAuthRefreshBlock | undefined;
-  if (refresh) {
-    const tokenEndpointAuth = readRecord(refresh.token_endpoint_auth);
+  if (refresh || refreshToken) {
+    const tokenEndpointAuth = readRecord(refresh?.token_endpoint_auth);
+    const tokenEndpoint = readString(refresh?.token_endpoint);
+    if (tokenEndpoint && !isHttpUrl(tokenEndpoint)) {
+      return { ok: false, message: 'auth.refresh.token_endpoint must be an http(s) URL' };
+    }
     refreshBlock = {
-      ...(readString(refresh.token_endpoint) ? { tokenEndpoint: readString(refresh.token_endpoint)! } : {}),
-      ...(readString(refresh.client_id) ? { clientId: readString(refresh.client_id)! } : {}),
-      hasClientSecret: readString(tokenEndpointAuth?.client_secret) !== undefined,
+      ...(tokenEndpoint ? { tokenEndpoint } : {}),
+      ...(readString(refresh?.client_id) ? { clientId: readString(refresh?.client_id)! } : {}),
+      ...(readString(tokenEndpointAuth?.client_secret)
+        ? { clientSecret: readString(tokenEndpointAuth?.client_secret)! }
+        : {}),
       ...(readString(tokenEndpointAuth?.type) ? { tokenEndpointAuthType: readString(tokenEndpointAuth?.type)! } : {}),
+      ...(refreshToken ? { refreshToken } : {}),
     };
-    warnings.push(
-      'auth.refresh is recorded but not executed: this runtime does not refresh OAuth access tokens, so an expired token will fail the outbound request.',
-    );
+    if (!tokenEndpoint) {
+      warnings.push('auth.refresh has no token_endpoint: the runtime cannot refresh this access token, so it is used until replaced.');
+    } else if (!refreshToken) {
+      warnings.push('auth.refresh has no refresh_token: the runtime cannot refresh this access token, so it is used until replaced.');
+    }
+  }
+
+  let expiresAt: string | undefined;
+  if (auth.expires_at !== undefined) {
+    const parsed = readString(auth.expires_at);
+    const time = parsed ? Date.parse(parsed) : Number.NaN;
+    if (!parsed || Number.isNaN(time)) {
+      return { ok: false, message: 'auth.expires_at must be an ISO 8601 timestamp' };
+    }
+    expiresAt = new Date(time).toISOString();
   }
 
   const accessToken = readString(auth.access_token);
@@ -303,6 +394,7 @@ function parseCanonicalAuth(
       displayName: displayName ?? 'MCP OAuth',
       mcpServerUrl,
       ...(accessToken ? { secretValue: accessToken } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
       ...(refreshBlock ? { refresh: refreshBlock } : {}),
       metadata,
     },
@@ -486,6 +578,8 @@ export function toCanonicalCredential(input: {
   metadata: Record<string, string>;
   createdAt: string;
   updatedAt: string;
+  /** Stored OAuth state for `mcp_oauth`; non-secret fields only ever leave. */
+  oauthState?: OAuthStateRecord;
 }): Record<string, unknown> {
   const type: CanonicalCredentialType = input.authType === 'bearer_token' ? 'static_bearer' : input.authType;
 
@@ -495,6 +589,18 @@ export function toCanonicalCredential(input: {
     if (input.injectionLocation) auth.injection_location = input.injectionLocation;
   } else if (input.mcpServerUrl) {
     auth.mcp_server_url = input.mcpServerUrl;
+  }
+  if (type === 'mcp_oauth' && input.oauthState) {
+    if (input.oauthState.expiresAt) auth.expires_at = input.oauthState.expiresAt;
+    const refresh: Record<string, unknown> = {};
+    if (input.oauthState.tokenEndpoint) refresh.token_endpoint = input.oauthState.tokenEndpoint;
+    if (input.oauthState.clientId) refresh.client_id = input.oauthState.clientId;
+    if (input.oauthState.tokenEndpointAuthType) {
+      refresh.token_endpoint_auth = { type: input.oauthState.tokenEndpointAuthType };
+    }
+    if (input.oauthState.hasRefreshToken || Object.keys(refresh).length > 0) {
+      auth.refresh = { ...refresh, has_refresh_token: input.oauthState.hasRefreshToken === true };
+    }
   }
 
   return {

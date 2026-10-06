@@ -2322,9 +2322,14 @@ curl -X POST http://127.0.0.1:3000/v1/credential-vaults/VAULT_ID/credentials \
 ```
 
 `static_bearer` and `mcp_oauth` are keyed by `mcp_server_url` and carry `token` and
-`access_token` respectively; an `mcp_oauth` create may also send a `refresh` block,
-and the response then carries a `warnings` entry saying the refresh is not
-executed, because this runtime holds no OAuth refresh loop. Omitting
+`access_token` respectively; an `mcp_oauth` create may also send `expires_at`, a
+`refresh` block (`token_endpoint`, `client_id`, `token_endpoint_auth`, and the
+write-only `refresh_token`), and when it does the runtime refreshes the access
+token at the MCP connect boundary once it expires — a rotated `refresh_token`
+persists, and a failure publishes `vault_credential.refresh_failed` and shows on
+the credential's `oauth_refresh` field. A `refresh` block missing
+`token_endpoint` or the refresh token is accepted with a `warnings` entry naming
+the piece it lacks. Omitting
 `injection_location` enables both positions, supplying the object fills omitted
 fields with `false`, and the response always resolves both. A payload supplying
 both `auth` and a flat field is refused rather than merged, so a flat field can
@@ -2518,7 +2523,9 @@ credential `created` / `archived` / `deleted` triple, `memory_store.created` /
 The catalog names a subscription may list but nothing yet produces are
 `session.pending`, `session.running`, `session.idled`,
 `session.requires_action`, `session.thread_*`, `agent.deleted`,
-`vault_credential.refresh_failed`, and `deployment.deleted` — each waits on a surface that does not exist yet.
+and `deployment.deleted` — each waits on a surface that does not exist yet.
+`vault_credential.refresh_failed` is produced by the MCP OAuth refresh path
+(see Credentials).
 
 A **timed** run publishes `deployment_run.started` and then exactly one of
 `deployment_run.succeeded` / `deployment_run.failed`; all three name the same run,

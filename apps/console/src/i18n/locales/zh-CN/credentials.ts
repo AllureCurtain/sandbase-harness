@@ -12,6 +12,8 @@ export const credentials = {
     open: "打开 {{name}}",
     credentialCount: "{{n}} 个凭据",
     kpis: { vaults: "凭据库", activeVaults: "活动凭据库", credentials: "凭据", activeCredentials: "活动凭据" },
+    refreshOk: "令牌已于 {{time}} 刷新",
+    refreshFailed: "令牌刷新失败 {{time}}",
   },
   detail: {
     back: "凭据库",

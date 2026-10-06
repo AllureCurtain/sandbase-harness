@@ -1303,6 +1303,25 @@ const M057_MODEL_REQUEST_SPEED = `
 ALTER TABLE events ADD COLUMN speed TEXT;
 `;
 
+/**
+ * 058: `mcp_oauth` credentials gain what a refresh needs that the record did
+ * not carry. `oauth_state` is a non-secret JSON bag: the refresh configuration
+ * (`token_endpoint`, `client_id`, `token_endpoint_auth_type`), the access
+ * token's `expires_at`, and the last refresh attempt's outcome so the API and
+ * the Console can report it. The refresh token and the token-endpoint client
+ * secret are secret material, so they get their own encrypted triples beside
+ * the access token's, not a seat in the JSON bag.
+ */
+const M058_CREDENTIAL_OAUTH_REFRESH = `
+ALTER TABLE credential_records ADD COLUMN oauth_state TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE credential_records ADD COLUMN refresh_token_ciphertext TEXT NOT NULL DEFAULT '';
+ALTER TABLE credential_records ADD COLUMN refresh_token_nonce TEXT NOT NULL DEFAULT '';
+ALTER TABLE credential_records ADD COLUMN refresh_token_tag TEXT NOT NULL DEFAULT '';
+ALTER TABLE credential_records ADD COLUMN client_secret_ciphertext TEXT NOT NULL DEFAULT '';
+ALTER TABLE credential_records ADD COLUMN client_secret_nonce TEXT NOT NULL DEFAULT '';
+ALTER TABLE credential_records ADD COLUMN client_secret_tag TEXT NOT NULL DEFAULT '';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1361,4 +1380,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 55, name: '055_usage_cache_buckets', sql: M055_USAGE_CACHE_BUCKETS },
   { version: 56, name: '056_model_request_is_error', sql: M056_MODEL_REQUEST_IS_ERROR },
   { version: 57, name: '057_model_request_speed', sql: M057_MODEL_REQUEST_SPEED },
+  { version: 58, name: '058_credential_oauth_refresh', sql: M058_CREDENTIAL_OAUTH_REFRESH },
 ];

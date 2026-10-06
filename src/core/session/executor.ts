@@ -158,6 +158,14 @@ export interface ExecutorDeps {
    */
   resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   /**
+   * Refresh due `mcp_oauth` credentials at the MCP connect boundary.
+   *
+   * Optional and paired with `resolveCredentialInjections`: a runtime that can
+   * resolve vault credentials gets the refresher from the same composition so
+   * an expired access token is renewed before its header is built.
+   */
+  refreshOAuthCredentials?: (sessionId: string, mcpServerUrl: string, vaultIds?: string[]) => Promise<void>;
+  /**
    * Publish the files an agent wrote under the session output directory.
    *
    * Optional because an embedder with no Files API has nowhere to put them.
@@ -238,6 +246,9 @@ export class DefaultSessionExecutor implements SessionExecutor {
       // The same resolver the turn uses for sandbox commands, so a vault reaches
       // an MCP server by the same policy decision that governs a shell command.
       resolveCredentialInjections: deps.resolveCredentialInjections,
+      // The OAuth refresh runs at the same boundary the resolver serves: a
+      // connect first refreshes what is due, then injects the fresh token.
+      refreshOAuthCredentials: deps.refreshOAuthCredentials,
       // The Environment the sandbox was provisioned from, so `web_fetch` and
       // the MCP connect boundary answer to the same declared network policy.
       resolveEnvironmentConfig: deps.resolveEnvironmentConfig,

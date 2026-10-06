@@ -286,6 +286,15 @@ export type VaultCredential = {
   updated_at: string;
   last_used_at: string | null;
   archived_at: string | null;
+  /**
+   * The last OAuth refresh attempt's outcome (`mcp_oauth` only; absent when
+   * the credential has never refreshed).
+   */
+  oauth_refresh?: {
+    last_refresh_at: string | null;
+    status: 'ok' | 'failed' | null;
+    error: string | null;
+  };
 };
 
 export type MemoryStore = {

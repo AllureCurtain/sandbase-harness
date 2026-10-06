@@ -19,6 +19,8 @@ export type CredentialAuditAction =
   | 'runtime_inject'
   | 'runtime_denied'
   | 'rotate'
+  | 'refresh'
+  | 'refresh_failed'
   | 'mark_used'
   | 'archive'
   | 'delete';

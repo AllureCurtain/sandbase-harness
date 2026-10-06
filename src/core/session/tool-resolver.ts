@@ -79,6 +79,16 @@ export interface ToolResolverDeps {
    * only applies to the endpoint it names.
    */
   resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
+  /**
+   * Refresh due `mcp_oauth` credentials before a url-transport connect
+   * resolves its headers.
+   *
+   * Called once per connect attempt, scoped to the declared server URL: the
+   * refresher itself decides which credentials are due and publishes
+   * `vault_credential.refresh_failed` on failure. Absent means the runtime has
+   * no OAuth refresh — stored tokens are used until replaced.
+   */
+  refreshOAuthCredentials?: (sessionId: string, mcpServerUrl: string, vaultIds?: string[]) => Promise<void>;
 }
 
 export interface ToolConfirmationResolution {
@@ -584,7 +594,14 @@ export class ToolResolver {
         }
         : undefined,
       resolveHeaders: resolveCredentials
-        ? (server) => {
+        ? async (server) => {
+          // An expired `mcp_oauth` token is refreshed here, before the bundle
+          // is resolved, so the header below already carries the fresh value.
+          // The refresh is runtime-side: the transport only ever sees the
+          // resulting access token, never the refresh material.
+          if (server.type === 'url' && server.url) {
+            await this.deps.refreshOAuthCredentials?.(sessionId, server.url, session.vaultIds);
+          }
           const bundle = resolveCredentials(server);
           const headers = { ...bundle.request_headers };
           // Same lifetime rule as the environment: the transport keeps the copy it

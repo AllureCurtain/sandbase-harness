@@ -108,12 +108,14 @@ describe('parseCredentialAuth canonical auth', () => {
     expect(result.value.secretValue).toBe('lin_api_key');
   });
 
-  it('records an OAuth refresh block but warns that it will not run', () => {
+  it('records an OAuth refresh block for execution, secrets included', () => {
     const result = parseCredentialAuth({
       auth: {
         type: 'mcp_oauth',
         mcp_server_url: 'https://mcp.example.com/mcp',
         access_token: 'at',
+        expires_at: '2030-01-01T00:00:00Z',
+        refresh_token: 'rt-1',
         refresh: {
           token_endpoint: 'https://auth.example.com/token',
           client_id: 'client-1',
@@ -126,10 +128,56 @@ describe('parseCredentialAuth canonical auth', () => {
     expect(result.value.refresh).toEqual({
       tokenEndpoint: 'https://auth.example.com/token',
       clientId: 'client-1',
-      hasClientSecret: true,
+      clientSecret: 'cs',
       tokenEndpointAuthType: 'client_secret_post',
+      refreshToken: 'rt-1',
     });
-    expect(result.warnings.join(' ')).toContain('not executed');
+    expect(result.value.expiresAt).toBe('2030-01-01T00:00:00.000Z');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('warns which piece makes a refresh block unexecutable', () => {
+    const noEndpoint = parseCredentialAuth({
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com/mcp',
+        refresh: { client_id: 'client-1' },
+      },
+    });
+    expect(noEndpoint.ok).toBe(true);
+    if (!noEndpoint.ok) return;
+    expect(noEndpoint.warnings.join(' ')).toContain('token_endpoint');
+
+    const noToken = parseCredentialAuth({
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com/mcp',
+        refresh: { token_endpoint: 'https://auth.example.com/token' },
+      },
+    });
+    expect(noToken.ok).toBe(true);
+    if (!noToken.ok) return;
+    expect(noToken.warnings.join(' ')).toContain('refresh_token');
+  });
+
+  it('refuses a non-http refresh token endpoint and a malformed expires_at', () => {
+    const endpoint = parseCredentialAuth({
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com/mcp',
+        refresh: { token_endpoint: 'ftp://auth.example.com/token' },
+      },
+    });
+    expect(endpoint.ok).toBe(false);
+
+    const expiry = parseCredentialAuth({
+      auth: {
+        type: 'mcp_oauth',
+        mcp_server_url: 'https://mcp.example.com/mcp',
+        expires_at: 'soon',
+      },
+    });
+    expect(expiry.ok).toBe(false);
   });
 
   it('refuses a payload that supplies both auth and the flat spelling', () => {

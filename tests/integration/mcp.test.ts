@@ -17,7 +17,9 @@ import { McpManager, reconnectDelay } from '@/core/mcp/mcp-manager.js';
 import { Database } from '@/core/db/database.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { resolveSessionCredentialInjections } from '@/core/credentials/injection.js';
-import { ToolResolver } from '@/core/session/tool-resolver.js';
+import { ToolResolver, type ToolResolverDeps } from '@/core/session/tool-resolver.js';
+import { refreshMcpOauthCredentialsForServer } from '@/core/credentials/oauth-refresh.js';
+import { serializeOAuthState } from '@/core/credentials/canonical-credential.js';
 import type { McpServerConfig, AgentDefinition } from '@/types/agent.js';
 import type { Session } from '@/types/session.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
@@ -401,7 +403,10 @@ describe('MCP integration', () => {
     }
 
     /** Resolve the tool map a turn would use for one declared MCP server. */
-    async function toolsFor(mcpServer: Record<string, unknown>): Promise<Record<string, any>> {
+    async function toolsFor(
+      mcpServer: Record<string, unknown>,
+      deps?: { refreshOAuthCredentials?: ToolResolverDeps['refreshOAuthCredentials'] },
+    ): Promise<Record<string, any>> {
       const agent = {
         name: 'mcp-agent',
         model: 'gpt-4o-mini',
@@ -419,6 +424,7 @@ describe('MCP integration', () => {
           dataDir: tmpDir,
           ...target,
         }),
+        refreshOAuthCredentials: deps?.refreshOAuthCredentials,
       });
       resolvers.push(resolver);
       const sandbox = {
@@ -466,6 +472,51 @@ describe('MCP integration', () => {
       // authentication path at all.
       expect(JSON.stringify(result)).toContain('AUTHORIZATION=Bearer [REDACTED]');
       expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
+    it('refreshes an expired mcp_oauth token before the connect sends it', async () => {
+      const url = await startSseServer();
+      setupVault(url, 'mcp_oauth');
+      // Expired access token plus a stored refresh token: the connect boundary
+      // must refresh through the token endpoint before resolving the header.
+      const refresh = encryptSecret('rt-vendor', tmpDir);
+      db!.prepare(
+        `UPDATE credential_records
+         SET oauth_state = ?, refresh_token_ciphertext = ?, refresh_token_nonce = ?, refresh_token_tag = ?
+         WHERE id = 'crd_url'`,
+      ).run(
+        serializeOAuthState({
+          tokenEndpoint: 'https://auth.vendor.example/token',
+          expiresAt: '2020-01-01T00:00:00.000Z',
+          hasRefreshToken: true,
+        }),
+        refresh.ciphertext, refresh.nonce, refresh.tag,
+      );
+
+      const tokenCalls: string[] = [];
+      const tools = await toolsFor({ name: 'scoped', type: 'url', url }, {
+        refreshOAuthCredentials: (sessionId, mcpServerUrl, vaultIds) =>
+          refreshMcpOauthCredentialsForServer(db!, {
+            sessionId,
+            mcpServerUrl,
+            vaultIds,
+            dataDir: tmpDir,
+            fetchImpl: (async (input: any) => {
+              tokenCalls.push(String(input));
+              return new Response(JSON.stringify({ access_token: 'at-refreshed', expires_in: 3600 }));
+            }) as typeof fetch,
+          }),
+      });
+
+      const result = await tools['mcp_scoped_report_auth'].execute({});
+      // The transport presented the refreshed value, and nothing in the result
+      // carries it back to the strategy.
+      expect(tokenCalls).toEqual(['https://auth.vendor.example/token']);
+      expect(JSON.stringify(result)).toContain('AUTHORIZATION=Bearer [REDACTED]');
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+      expect(JSON.stringify(result)).not.toContain('at-refreshed');
+      const stored = db!.prepare('SELECT oauth_state FROM credential_records WHERE id = ?').get('crd_url') as { oauth_state: string };
+      expect(JSON.parse(stored.oauth_state).last_refresh_status).toBe('ok');
     });
 
     it('does not send it to a server the credential does not name', async () => {
