@@ -73,6 +73,17 @@ export interface McpManagerOptions {
    */
   admitTool?: (serverName: string, toolName: string) => boolean;
   /**
+   * Admission rule evaluated before a server is connected at all.
+   *
+   * Distinct from `admitTool`: that gates which discovered tools ship, this
+   * decides whether the connection may be attempted — an Environment's
+   * `limited` network policy uses it to refuse a `url` server whose endpoint
+   * the policy does not cover. Returning a message refuses the server; the
+   * refusal is recorded as its status error so the operator sees a policy
+   * decision, not an opaque connect failure. Refused servers are not retried.
+   */
+  admitServer?: (server: McpServerConfig) => string | undefined;
+  /**
    * Environment a stdio server's process should receive in addition to the
    * `env` its own configuration declares.
    *
@@ -107,6 +118,7 @@ export interface McpManagerOptions {
 
 export class McpManager {
   private readonly admitTool: ((serverName: string, toolName: string) => boolean) | undefined;
+  private readonly admitServer: ((server: McpServerConfig) => string | undefined) | undefined;
   private readonly resolveEnvironment: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
   private readonly resolveHeaders: ((server: McpServerConfig) => Record<string, string> | undefined) | undefined;
   private readonly redactResult: ((serverName: string, result: unknown) => unknown) | undefined;
@@ -118,6 +130,7 @@ export class McpManager {
 
   constructor(options: McpManagerOptions = {}) {
     this.admitTool = options.admitTool;
+    this.admitServer = options.admitServer;
     this.resolveEnvironment = options.resolveEnvironment;
     this.resolveHeaders = options.resolveHeaders;
     this.redactResult = options.redactResult;
@@ -142,6 +155,13 @@ export class McpManager {
     for (const server of servers) {
       // Record the config so a server that's down now can be reconnected later.
       this.serverConfigs.set(server.name, server);
+      // A policy refusal is a decision, not a connect failure: record the
+      // refusal as the server's status and move on without an attempt.
+      const refusal = this.admitServer?.(server);
+      if (refusal) {
+        this.setStatus(server, false, 0, refusal);
+        continue;
+      }
       // Initial connect is fast-degrade (R5.5): one attempt, skip on failure.
       const result = await this.tryConnect(server);
       if (result) {

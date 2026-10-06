@@ -89,6 +89,26 @@ export function environmentNetwork(environment: Environment) {
   };
 }
 
+export type NetworkEnforcement = 'enforced' | 'best_effort' | 'unsupported' | 'not_applicable';
+
+/**
+ * How a `limited` network policy is applied by the effective backend, as the
+ * API reports it. A response that predates the field is inferred from the
+ * effective provider so an older server does not silently render a limited
+ * policy as enforced — the local backend is advisory by construction.
+ */
+export function environmentNetworkEnforcement(environment: Environment): NetworkEnforcement {
+  const reported = environment.networking_enforcement;
+  if (reported === 'enforced' || reported === 'best_effort' || reported === 'unsupported' || reported === 'not_applicable') {
+    return reported;
+  }
+  if (environmentNetwork(environment).type !== 'limited') return 'not_applicable';
+  const provider = effectiveSandboxProvider(environment);
+  if (provider === 'local') return 'best_effort';
+  if (provider === 'docker') return 'enforced';
+  return 'unsupported';
+}
+
 export function emptyPackagesDraft(): EnvironmentPackagesDraft {
   return { apt: '', cargo: '', gem: '', go: '', npm: '', pip: '' };
 }

@@ -15,6 +15,7 @@ import {
   type MaterializeResult,
 } from '@/core/resources/github-materializer.js';
 import { repoSkillFilePath } from '@/core/resources/github-repository.js';
+import { environmentNetworkPolicyOf } from '@/core/config/environment-network.js';
 
 /** Minimal warn sink so the lifecycle can report capability gaps. */
 export interface SandboxLifecycleLogger {
@@ -91,6 +92,8 @@ export class SandboxLifecycle {
    * single-developer local runtime would be pure noise.
    */
   private readonly reportedUnisolated = new Set<string>();
+  /** Same dedup for the advisory-only enforcement backends report. */
+  private readonly reportedBestEffort = new Set<string>();
 
   constructor(private readonly deps: SandboxLifecycleDeps) {}
 
@@ -325,6 +328,23 @@ export class SandboxLifecycle {
       logger.warn('sandbox: commands run without isolation from the runtime host', {
         sandbox_provider: provider.type,
         capability: 'isolatedExecution',
+      });
+    }
+
+    const networkPolicy = environmentNetworkPolicyOf(envConfig);
+    const enforcement = provider.capabilities.networkPolicyEnforcement;
+    if (networkPolicy?.type === 'limited' && enforcement === 'none') {
+      logger.warn('sandbox: limited network policy declared but backend cannot enforce it', {
+        session_id: session.id,
+        sandbox_provider: provider.type,
+        capability: 'networkPolicyEnforcement',
+      });
+    } else if (networkPolicy?.type === 'limited' && enforcement === 'best_effort'
+      && !this.reportedBestEffort.has(provider.type)) {
+      this.reportedBestEffort.add(provider.type);
+      logger.warn('sandbox: limited network policy enforced best-effort — subprocesses that ignore proxy variables egress freely', {
+        sandbox_provider: provider.type,
+        capability: 'networkPolicyEnforcement',
       });
     }
   }

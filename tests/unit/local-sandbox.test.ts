@@ -358,6 +358,70 @@ describe('Local Sandbox Provider', () => {
     });
   });
 
+  describe('egress policy', () => {
+    it('injects proxy variables into subprocesses under a limited policy', async () => {
+      const sandbox = await provider.provision('sess_egress', {
+        name: 'local',
+        sandbox_provider: 'local',
+        network: {
+          type: 'limited',
+          allowed_hosts: ['api.github.com'],
+          allow_mcp_server_network_access: false,
+          allow_package_manager_network_access: false,
+        },
+      });
+      try {
+        expect(sandbox.egressEnvironment?.HTTP_PROXY).toMatch(/^http:\/\/sandbase:.+@127\.0\.0\.1:\d+$/);
+        expect(sandbox.egressEnvironment?.NO_PROXY).toContain('localhost');
+        // Prove the variables reach a spawned process, not just the instance
+        // field: write a script and run it through the same exec path a tool
+        // command takes.
+        await sandbox.writeFile('show-env.js', 'console.log(process.env.HTTP_PROXY || "")');
+        const result = await sandbox.execute('node show-env.js');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).toMatch(/^http:\/\/sandbase:.+@127\.0\.0\.1:\d+$/);
+      } finally {
+        await sandbox.cleanup();
+      }
+    });
+
+    it('injects nothing under an unrestricted or absent policy', async () => {
+      const unrestricted = await provider.provision('sess_egress_open', {
+        name: 'local',
+        sandbox_provider: 'local',
+        network: {
+          type: 'unrestricted',
+          allowed_hosts: [],
+          allow_mcp_server_network_access: false,
+          allow_package_manager_network_access: false,
+        },
+      });
+      const undeclared = await provider.provision('sess_egress_none', {
+        name: 'local',
+        sandbox_provider: 'local',
+      });
+      expect(unrestricted.egressEnvironment).toBeUndefined();
+      expect(undeclared.egressEnvironment).toBeUndefined();
+      await unrestricted.cleanup();
+      await undeclared.cleanup();
+    });
+
+    it('reads the published networking spelling the same way', async () => {
+      // The published spelling lands on the config record verbatim; the
+      // normalizer reads it the same way it reads `network`.
+      const sandbox = await provider.provision('sess_egress_published', {
+        name: 'local',
+        sandbox_provider: 'local',
+        networking: { type: 'limited', allowed_hosts: ['api.github.com'] },
+      } as never);
+      try {
+        expect(sandbox.egressEnvironment?.HTTPS_PROXY).toMatch(/^http:\/\/sandbase:/);
+      } finally {
+        await sandbox.cleanup();
+      }
+    });
+  });
+
   describe('cleanup', () => {
     it('removes the working directory', async () => {
       const sandbox = await provider.provision('sess_cleanup', {

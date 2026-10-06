@@ -33,6 +33,7 @@ import type { AgentDefinition } from '@/types/agent.js';
 import { workerRoutes } from './routes/worker.js';
 import { operationsRoutes } from './routes/operations.js';
 import type { WorkQueue } from '@/sandbox/self-hosted-provider.js';
+import type { SandboxCapabilities } from '@/types/sandbox.js';
 import type { Logger, LogStore } from '@/core/observability/logger.js';
 import type { Metrics } from '@/core/observability/metrics.js';
 import type { Skill } from '@/core/skills/loader.js';
@@ -111,6 +112,13 @@ export interface ServerDeps {
   restart?: () => Promise<void> | void;
   /** Optional work queue for the self_hosted sandbox worker endpoints (R9.14). */
   workQueue?: WorkQueue;
+  /**
+   * Capability lookup for a registered sandbox provider, so an Environment's
+   * projected enforcement fields report what the effective backend can do
+   * rather than what the declaration asked for. Absent means "no registry was
+   * wired", and a declared `limited` policy then projects as unsupported.
+   */
+  sandboxCapabilities?: (type: string) => SandboxCapabilities | undefined;
   /**
    * Additional browser origins allowed to call the API. Same-origin and
    * localhost loopback origins are always allowed for the local Dashboard.

@@ -76,6 +76,11 @@ import {
   type ExecResult,
 } from '@/types/sandbox.js';
 import { withAgentIdentity } from './agent-identity.js';
+import { EgressProxy } from '@/core/net/egress-proxy.js';
+import {
+  environmentEgressAllowlist,
+  environmentNetworkPolicyOf,
+} from '@/core/config/environment-network.js';
 
 const INHERITED_ENVIRONMENT_KEYS = [
   'HOME',
@@ -185,14 +190,23 @@ export class LocalSandboxProvider implements SandboxProvider {
     // `resources.memory` / `resources.cpu` cannot be enforced for a plain
     // subprocess, so the provider reports it rather than ignoring them.
     resourceLimits: false,
+    // A `limited` policy installs a loopback egress proxy and injects its
+    // address into every subprocess environment. A process that ignores proxy
+    // variables egresses freely — same host, same user — so this is advisory
+    // enforcement, reported as such rather than claimed as isolation.
+    networkPolicyEnforcement: 'best_effort',
   });
 
   constructor(private readonly baseDir: string) {}
 
-  async provision(sessionId: string, _config: EnvironmentConfig): Promise<SandboxInstance> {
+  async provision(sessionId: string, config: EnvironmentConfig): Promise<SandboxInstance> {
     const workDir = join(this.baseDir, 'sandbox', sessionId);
     mkdirSync(workDir, { recursive: true });
-    return new LocalSandboxInstance(sessionId, workDir);
+    const policy = environmentNetworkPolicyOf(config);
+    const egress = policy?.type === 'limited'
+      ? await EgressProxy.listen('127.0.0.1', { allowedHosts: environmentEgressAllowlist(policy) })
+      : undefined;
+    return new LocalSandboxInstance(sessionId, workDir, egress);
   }
 }
 
@@ -200,7 +214,17 @@ class LocalSandboxInstance implements SandboxInstance {
   constructor(
     readonly sessionId: string,
     private readonly workDir: string,
+    private readonly egress?: EgressProxy,
   ) {}
+
+  /**
+   * The proxy block runtime-spawned session processes (stdio MCP servers)
+   * receive, so their egress crosses the same boundary the sandbox's own
+   * commands do.
+   */
+  get egressEnvironment(): Record<string, string> | undefined {
+    return this.egress?.environment();
+  }
 
   /** Host filesystem path of the working directory (for snapshots). */
   get hostWorkDir(): string {
@@ -256,7 +280,9 @@ class LocalSandboxInstance implements SandboxInstance {
     this.assertExistingPathInsideWorkDir(cwd, options?.cwd ?? '.');
     // Commands are untrusted agent actions. Do not inherit service credentials
     // or arbitrary host configuration; credentials must be injected explicitly.
-    const env = sandboxEnvironment(options?.env);
+    // The egress block is applied last so neither an inherited host proxy nor
+    // a caller-supplied `env` entry can reroute the policy boundary.
+    const env = { ...sandboxEnvironment(options?.env), ...this.egressEnvironment };
 
     return new Promise<ExecResult>((resolve) => {
       let stdout = '';
@@ -388,6 +414,7 @@ class LocalSandboxInstance implements SandboxInstance {
   }
 
   async cleanup(): Promise<void> {
+    await this.egress?.close();
     if (existsSync(this.workDir)) {
       rmSync(this.workDir, { recursive: true, force: true });
     }

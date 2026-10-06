@@ -78,6 +78,33 @@ export const environments = {
         cpuLimit: "CPU limit",
       },
     },
+    network: {
+      title: "Network",
+      hint: "The declared egress policy and how the effective backend applies it.",
+      policyLimited: "Limited",
+      policyUnrestricted: "Unrestricted",
+      noAllowedHosts: "No hosts listed",
+      flagAllowed: "Allowed",
+      flagPolicyBound: "Bound by allowed hosts",
+      flagDenied: "Denied",
+      fields: {
+        policy: "Policy",
+        allowedHosts: "Allowed hosts",
+        enforcement: "Enforcement",
+        mcpAccess: "MCP server network access",
+        packageManagerAccess: "Package manager network access",
+      },
+      enforcementLabels: {
+        enforced: "Enforced",
+        best_effort: "Best-effort",
+        unsupported: "Unsupported",
+        not_applicable: "Not applicable",
+      },
+      bestEffortHint:
+        "Best-effort on this backend: session processes receive proxy environment variables, but a process that ignores them can still reach the network. Use Docker for a hard boundary.",
+      unsupportedHint:
+        "The effective backend cannot apply this network policy. The declared limit is recorded, but egress is not bounded.",
+    },
     packages: {
       title: "Packages",
       hint: "Pre-installed packages per manager. Separate package names with commas or newlines.",

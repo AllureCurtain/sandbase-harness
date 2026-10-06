@@ -196,6 +196,7 @@ async function startServer(opts: StartServerOptions) {
       stopRuntime('restart');
     },
     workQueue,
+    sandboxCapabilities: (type) => sandboxRegistry.capabilitiesOf(type),
     corsOrigins: parseCsv(process.env.MANAGED_AGENTS_CORS_ORIGINS),
     workspace: {
       root: workspaceRoot,

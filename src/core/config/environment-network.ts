@@ -22,11 +22,15 @@
  * documented vocabulary are preserved rather than dropped; they are recorded and
  * echoed without being interpreted.
  *
- * **What this module does not do.** It records and normalizes a policy; it does
- * not enforce one. No sandbox provider shipped in this runtime reads an
- * Environment's network policy, which `docs/api.md` and the capability matrix
- * state plainly rather than implying that a declared limit is applied.
+ * Enforcement lives elsewhere: `src/core/net/egress-proxy.ts` is the boundary
+ * subprocess traffic crosses, `src/sandbox/` providers install it, and
+ * `src/core/session/tool-resolver.ts` applies the policy to the MCP connect
+ * boundary and `web_fetch`. This module owns the shared read of the policy —
+ * the effective allowlist, the MCP admission decision — so every consumer
+ * interprets the same declaration the same way.
  */
+
+import { hostMatchesPattern } from '@/core/credentials/policy.js';
 
 export type EnvironmentNetworkType = 'limited' | 'unrestricted';
 
@@ -94,6 +98,124 @@ function fingerprint(policy: EnvironmentNetworkPolicy): string {
   return JSON.stringify(
     Object.keys(policy).sort().map((key) => [key, policy[key]]),
   );
+}
+
+/**
+ * Well-known package-registry hosts `allow_package_manager_network_access`
+ * opens under a `limited` policy.
+ *
+ * The flag names a *kind* of traffic, not a host list, so the concrete hosts
+ * are this runtime's curated reading of it — the public endpoints each shipped
+ * package manager's default configuration contacts. A mirror or a private
+ * registry belongs in `allowed_hosts`, not in this list.
+ */
+export const PACKAGE_MANAGER_EGRESS_HOSTS: readonly string[] = [
+  // npm / yarn
+  'registry.npmjs.org',
+  'registry.yarnpkg.com',
+  // pip
+  'pypi.org',
+  'files.pythonhosted.org',
+  // go modules
+  'proxy.golang.org',
+  'sum.golang.org',
+  'index.golang.org',
+  // cargo
+  'index.crates.io',
+  'static.crates.io',
+  'crates.io',
+  // rubygems
+  'rubygems.org',
+  '*.rubygems.org',
+  // maven
+  'repo.maven.apache.org',
+  'repo1.maven.org',
+  // nuget
+  'api.nuget.org',
+  // common distribution package mirrors
+  'archive.ubuntu.com',
+  'security.ubuntu.com',
+  'deb.debian.org',
+  'security.debian.org',
+];
+
+/**
+ * The host patterns a `limited` policy's egress boundary must admit: the
+ * declared `allowed_hosts` plus the package-registry set when the policy
+ * opens package-manager access.
+ *
+ * One list serves every enforcement point — the egress proxy subprocesses get,
+ * and the `web_fetch` bound — so the same policy cannot allow a host in one
+ * place and refuse it in another. MCP servers are governed separately by
+ * {@link environmentMcpServerAdmission}: `allow_mcp_server_network_access`
+ * is a statement about MCP endpoints, not a general widening of the host list.
+ */
+export function environmentEgressAllowlist(policy: EnvironmentNetworkPolicy): string[] {
+  return [
+    ...policy.allowed_hosts,
+    ...(policy.allow_package_manager_network_access ? PACKAGE_MANAGER_EGRESS_HOSTS : []),
+  ];
+}
+
+/**
+ * Whether a `limited` policy admits the host at all, registry widening
+ * included. The port rule matches `hostMatchesPattern`: a pattern carrying a
+ * port requires it, a bare pattern is port-agnostic.
+ */
+export function environmentAllowsEgressHost(
+  policy: EnvironmentNetworkPolicy,
+  host: string,
+): boolean {
+  return environmentEgressAllowlist(policy).some((pattern) => hostMatchesPattern(host, pattern));
+}
+
+/**
+ * The MCP connect admission decision under a policy.
+ *
+ * A stdio server is a local subprocess — it declares no endpoint, so there is
+ * no host to check; its egress is bounded the same way every session
+ * subprocess is (proxy environment where the backend supplies one). A `url`
+ * server names its destination, and under `limited` that destination must be
+ * covered by `allowed_hosts` unless `allow_mcp_server_network_access` opens
+ * MCP endpoints generally. An `unrestricted` or absent policy admits
+ * everything. Returns the refusal message, or `undefined` when admitted.
+ */
+export function environmentMcpServerAdmission(
+  policy: EnvironmentNetworkPolicy | undefined,
+  server: { type: string; url?: string },
+): string | undefined {
+  if (!policy || policy.type !== 'limited') return undefined;
+  if (server.type !== 'url' || !server.url) return undefined;
+  if (policy.allow_mcp_server_network_access) return undefined;
+
+  const host = normalizePolicyHost(server.url);
+  if (host && policy.allowed_hosts.some((pattern) => hostMatchesPattern(host, pattern))) {
+    return undefined;
+  }
+  return `MCP server endpoint ${host ? `"${host}"` : `"${server.url}"`} is not covered by the environment's `
+    + 'allowed_hosts and the policy does not allow MCP server network access';
+}
+
+/** Read the policy a resolved EnvironmentConfig carries, whatever spelling it arrived in. */
+export function environmentNetworkPolicyOf(
+  config: { network?: unknown; networking?: unknown } | undefined,
+): EnvironmentNetworkPolicy | undefined {
+  if (!config) return undefined;
+  return normalizeEnvironmentNetwork(config.network) ?? normalizeEnvironmentNetwork(config.networking);
+}
+
+/** Normalize a URL or host[:port] into `host` / `host:port` for pattern matching. */
+function normalizePolicyHost(value: string): string | undefined {
+  let raw = value.trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    raw = url.port ? `${url.hostname}:${url.port}` : url.hostname;
+  } catch {
+    // fall through to the raw split
+  }
+  raw = raw.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
+  return raw || undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

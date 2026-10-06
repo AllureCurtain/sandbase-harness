@@ -73,6 +73,33 @@ export const environments = {
         cpuLimit: "CPU 限制",
       },
     },
+    network: {
+      title: "网络",
+      hint: "已声明的出站策略，以及实际后端对它的执行方式。",
+      policyLimited: "受限",
+      policyUnrestricted: "不限制",
+      noAllowedHosts: "未列出任何主机",
+      flagAllowed: "允许",
+      flagPolicyBound: "仅允许列表中的主机",
+      flagDenied: "拒绝",
+      fields: {
+        policy: "策略",
+        allowedHosts: "允许的主机",
+        enforcement: "执行强度",
+        mcpAccess: "MCP 服务器网络访问",
+        packageManagerAccess: "包管理器网络访问",
+      },
+      enforcementLabels: {
+        enforced: "强制",
+        best_effort: "尽力而为",
+        unsupported: "不支持",
+        not_applicable: "不适用",
+      },
+      bestEffortHint:
+        "该后端上为尽力而为的执行：会话进程会收到代理环境变量，但忽略它们的进程仍可访问网络。需要硬边界请使用 Docker。",
+      unsupportedHint:
+        "实际后端无法应用该网络策略。已记录声明的限制，但出站流量不受约束。",
+    },
     packages: {
       title: "软件包",
       hint: "按包管理器预装软件包。用逗号或换行分隔包名。",

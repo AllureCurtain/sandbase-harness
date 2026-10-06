@@ -23,6 +23,7 @@ import type { Session } from '@/types/session.js';
 import type { SandboxInstance } from '@/types/sandbox.js';
 
 const MOCK_SERVER = join(import.meta.dirname, '../fixtures/mock-mcp-server.mjs');
+const ENV_SERVER = join(import.meta.dirname, '../fixtures/env-mcp-server.mjs');
 const CREDENTIAL_SERVER = join(import.meta.dirname, '../fixtures/credential-mcp-server.mjs');
 
 describe('MCP integration', () => {
@@ -503,6 +504,141 @@ describe('MCP integration', () => {
       const actions = db!.prepare('SELECT action FROM credential_audit_events').all() as { action: string }[];
       expect(actions.map((row) => row.action)).not.toContain('runtime_denied');
       expect(actions.map((row) => row.action)).not.toContain('runtime_inject');
+    });
+  });
+
+  /**
+   * The Environment network policy at the MCP boundary: `url` servers name an
+   * endpoint the allowlist can check, `stdio` servers are runtime-spawned
+   * processes that inherit the sandbox's proxy environment instead.
+   */
+  describe('environment network policy', () => {
+    const resolvers: ToolResolver[] = [];
+    let session: Session | undefined;
+
+    const EGRESS_ENV = { HTTP_PROXY: 'http://sandbase:tok@127.0.0.1:19999', NO_PROXY: 'localhost' };
+
+    afterEach(async () => {
+      if (session) {
+        for (const resolver of resolvers.splice(0)) await resolver.cleanupSession(session.id);
+      }
+      session = undefined;
+    });
+
+    function sessionOnEnvironment(config: Record<string, unknown>): Session {
+      session = {
+        id: 'sess_envpol',
+        agentId: 'agent_envpol',
+        agentName: 'mcp-agent',
+        environmentId: 'env_envpol',
+        status: 'running',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as unknown as Session;
+      return session;
+    }
+
+    function resolverFor(network: Record<string, unknown> | undefined): ToolResolver {
+      const resolver = new ToolResolver({
+        delegationService: { buildDelegationTools: () => ({}) } as never,
+        // The same shape composition.resolveEnvironmentConfig returns: the raw
+        // stored config, both spellings readable by the policy normalizer.
+        resolveEnvironmentConfig: () => ({
+          name: 'local',
+          sandbox_provider: 'local',
+          ...(network ? { network } : {}),
+        }) as never,
+      });
+      resolvers.push(resolver);
+      return resolver;
+    }
+
+    const sandboxWithEgress = {
+      egressEnvironment: EGRESS_ENV,
+      async writeFile() {},
+      async readFile() { return ''; },
+      async listFiles() { return []; },
+      async execute() { return { exitCode: 0, stdout: '', stderr: '' }; },
+      async destroy() {},
+    } as unknown as SandboxInstance;
+
+    function agentWith(mcpServer: Record<string, unknown>): AgentDefinition {
+      return {
+        name: 'mcp-agent',
+        model: 'gpt-4o-mini',
+        system: 'test',
+        mcp_servers: [mcpServer],
+        tools: [{
+          type: 'mcp_toolset',
+          mcp_server_name: mcpServer.name,
+          default_config: { permission_policy: { type: 'always_allow' } },
+        }],
+      } as unknown as AgentDefinition;
+    }
+
+    it('refuses a url server whose host the environment allowlist does not cover', async () => {
+      const resolver = resolverFor({ type: 'limited', allowed_hosts: ['mcp.github.com'] });
+      const tools = await resolver.resolveTools(
+        sessionOnEnvironment({}),
+        agentWith({ name: 'blocked', type: 'url', url: 'https://mcp.evil.com/sse' }),
+        sandboxWithEgress,
+      ) as Record<string, unknown>;
+
+      // No tool ships for a refused server, and the refusal is recorded as a
+      // policy decision on its status rather than an opaque connect error.
+      expect(Object.keys(tools).some((name) => name.startsWith('mcp_blocked_'))).toBe(false);
+      const status = resolver.getMcpStatus(session!.id).find((s) => s.name === 'blocked');
+      expect(status?.connected).toBe(false);
+      expect(status?.error).toContain('mcp.evil.com');
+    });
+
+    it('connects a url server the environment allowlist covers', async () => {
+      const module = await import(
+        pathToFileURL(join(import.meta.dirname, '../fixtures/sse-credential-mcp-server.mjs')).href
+      ) as { startSseCredentialMcpServer: () => Promise<{ url: string; close: () => Promise<void> }> };
+      const sse = await module.startSseCredentialMcpServer();
+      try {
+        const resolver = resolverFor({ type: 'limited', allowed_hosts: ['127.0.0.1'] });
+        const tools = await resolver.resolveTools(
+          sessionOnEnvironment({}),
+          agentWith({ name: 'scoped', type: 'url', url: sse.url }),
+          sandboxWithEgress,
+        ) as Record<string, any>;
+        expect(tools['mcp_scoped_report_auth']).toBeDefined();
+      } finally {
+        await sse.close();
+      }
+    });
+
+    it('starts a stdio server with the sandbox egress environment', async () => {
+      const resolver = resolverFor({ type: 'limited', allowed_hosts: ['api.github.com'] });
+      const tools = await resolver.resolveTools(
+        sessionOnEnvironment({}),
+        agentWith({ name: 'env', type: 'stdio', command: 'node', args: [ENV_SERVER] }),
+        sandboxWithEgress,
+      ) as Record<string, any>;
+
+      const result = await tools['mcp_env_report_env'].execute({});
+      expect(JSON.stringify(result)).toContain(`HTTP_PROXY=${EGRESS_ENV.HTTP_PROXY}`);
+    });
+
+    it('starts a stdio server with no egress environment when the sandbox has none', async () => {
+      const resolver = resolverFor(undefined);
+      const bare = {
+        async writeFile() {},
+        async readFile() { return ''; },
+        async listFiles() { return []; },
+        async execute() { return { exitCode: 0, stdout: '', stderr: '' }; },
+        async destroy() {},
+      } as unknown as SandboxInstance;
+      const tools = await resolver.resolveTools(
+        sessionOnEnvironment({}),
+        agentWith({ name: 'env', type: 'stdio', command: 'node', args: [ENV_SERVER] }),
+        bare,
+      ) as Record<string, any>;
+
+      const result = await tools['mcp_env_report_env'].execute({});
+      expect(JSON.stringify(result)).toContain('HTTP_PROXY=missing');
     });
   });
 });

@@ -240,6 +240,12 @@ export type Environment = {
   effective_sandbox_provider: string | null;
   packages_enforced: boolean;
   networking_enforced: boolean;
+  /**
+   * How the effective backend applies a declared `limited` network policy:
+   * `enforced` | `best_effort` | `unsupported`, or `not_applicable` when the
+   * policy is not limited. Older API responses may not carry it.
+   */
+  networking_enforcement?: string;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;

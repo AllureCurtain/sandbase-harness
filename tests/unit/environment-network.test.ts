@@ -11,7 +11,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  environmentAllowsEgressHost,
+  environmentEgressAllowlist,
+  environmentMcpServerAdmission,
+  environmentNetworkPolicyOf,
   normalizeEnvironmentNetwork,
+  PACKAGE_MANAGER_EGRESS_HOSTS,
   sameEnvironmentNetwork,
 } from '@/core/config/environment-network.js';
 
@@ -103,5 +108,85 @@ describe('environment network normalization', () => {
       type: 'limited',
       allowed_hosts: ['a.example.com'],
     })!)).toBe(false);
+  });
+});
+
+describe('environment egress allowlist', () => {
+  const policy = (overrides: Record<string, unknown> = {}) => normalizeEnvironmentNetwork({
+    type: 'limited',
+    allowed_hosts: ['api.github.com', '*.example.com', 'ci.internal:8443'],
+    ...overrides,
+  })!;
+
+  it('admits exact hosts, subdomains, and pinned ports', () => {
+    expect(environmentAllowsEgressHost(policy(), 'api.github.com:443')).toBe(true);
+    expect(environmentAllowsEgressHost(policy(), 'api.github.com')).toBe(true);
+    expect(environmentAllowsEgressHost(policy(), 'v1.example.com:443')).toBe(true);
+    // `*.example.com` does not cover the apex, matching the credential policy.
+    expect(environmentAllowsEgressHost(policy(), 'example.com')).toBe(false);
+    expect(environmentAllowsEgressHost(policy(), 'evil.github.com')).toBe(false);
+    // A pattern with a port requires that port.
+    expect(environmentAllowsEgressHost(policy(), 'ci.internal:8443')).toBe(true);
+    expect(environmentAllowsEgressHost(policy(), 'ci.internal:443')).toBe(false);
+  });
+
+  it('widens the allowlist with package registries only when the flag is set', () => {
+    const closed = policy();
+    expect(environmentAllowsEgressHost(closed, 'registry.npmjs.org:443')).toBe(false);
+    expect(environmentEgressAllowlist(closed)).not.toContain('registry.npmjs.org');
+
+    const open = policy({ allow_package_manager_network_access: true });
+    expect(environmentAllowsEgressHost(open, 'registry.npmjs.org:443')).toBe(true);
+    expect(environmentAllowsEgressHost(open, 'pypi.org:443')).toBe(true);
+    for (const host of PACKAGE_MANAGER_EGRESS_HOSTS) {
+      expect(environmentEgressAllowlist(open)).toContain(host);
+    }
+  });
+
+  it('reads the policy from whichever spelling the config carries', () => {
+    expect(environmentNetworkPolicyOf({ network: { type: 'limited', allowed_hosts: ['a.b'] } })?.type).toBe('limited');
+    expect(environmentNetworkPolicyOf({ networking: { type: 'limited', allow_mcp_servers: true } })?.allow_mcp_server_network_access).toBe(true);
+    expect(environmentNetworkPolicyOf({})).toBeUndefined();
+    expect(environmentNetworkPolicyOf(undefined)).toBeUndefined();
+  });
+});
+
+describe('environment MCP server admission', () => {
+  const limited = (overrides: Record<string, unknown> = {}) => normalizeEnvironmentNetwork({
+    type: 'limited',
+    allowed_hosts: ['mcp.github.com'],
+    ...overrides,
+  })!;
+
+  it('refuses a url server whose host the policy does not cover', () => {
+    const refusal = environmentMcpServerAdmission(limited(), {
+      type: 'url',
+      url: 'https://mcp.evil.com/sse',
+    });
+    expect(refusal).toContain('mcp.evil.com');
+  });
+
+  it('admits a url server whose host is covered', () => {
+    expect(environmentMcpServerAdmission(limited(), {
+      type: 'url',
+      url: 'https://mcp.github.com/sse',
+    })).toBeUndefined();
+  });
+
+  it('admits any url server when the policy opens MCP access', () => {
+    expect(environmentMcpServerAdmission(limited({ allow_mcp_server_network_access: true }), {
+      type: 'url',
+      url: 'https://mcp.evil.com/sse',
+    })).toBeUndefined();
+  });
+
+  it('admits stdio servers — their egress is bounded at the subprocess, not here', () => {
+    expect(environmentMcpServerAdmission(limited(), { type: 'stdio' })).toBeUndefined();
+  });
+
+  it('admits everything under an unrestricted or absent policy', () => {
+    const url = { type: 'url', url: 'https://mcp.evil.com/sse' };
+    expect(environmentMcpServerAdmission(normalizeEnvironmentNetwork({ type: 'unrestricted' }), url)).toBeUndefined();
+    expect(environmentMcpServerAdmission(undefined, url)).toBeUndefined();
   });
 });
