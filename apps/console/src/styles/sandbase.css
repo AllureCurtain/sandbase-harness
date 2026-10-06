@@ -710,3 +710,166 @@ html[data-theme="dark"] .main {
   border: 1px solid var(--line-soft);
 }
 
+
+/* Shared detail-page grammar (crumb, hero, menus, chips) migrated from
+ * styles.css; consumed by every *-detail view. */
+.sourceBadge {
+  display: inline-flex;
+  width: max-content;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 9px;
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 760;
+}
+.sourceBadge.anthropic {
+  background: var(--inset);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.sourceBadge.custom {
+  background: var(--inset);
+  color: var(--fg);
+}
+.titleLine.compact {
+  gap: 10px;
+}
+.titleLine.compact h2 {
+  font-size: 20px;
+}
+.mutedLine, .agentDescription, .emptyInline {
+  color: var(--fg-muted);
+}
+.skillReferenceGrid .mutedLine {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+.monoText {
+  font-family: var(--font-mono);
+}
+.detailCrumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+  margin-bottom: 24px;
+}
+.detailCrumb .textButton {
+  color: var(--fg-muted);
+  font-size: 18px;
+  min-height: auto;
+}
+.agentHero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.titleLine h1 {
+  font-size: 23px;
+  font-weight: 760;
+}
+.mutedLine {
+  margin-top: 10px;
+  font-size: 14px;
+}
+.agentDescription {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.agentHeroActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+.menuWrap {
+  position: relative;
+}
+.agentMenu {
+  position: absolute;
+  right: 0;
+  top: 46px;
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-overlay);
+  padding: 8px;
+  z-index: 10;
+}
+.agentMenu button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--fg);
+  text-align: left;
+}
+.agentMenu button:hover {
+  background: var(--inset);
+}
+.agentMenu button:disabled, .agentMenu button:disabled:hover {
+  color: var(--fg-subtle);
+  background: transparent;
+  cursor: default;
+}
+.agentMenu .dangerMenuItem {
+  color: var(--red);
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.detailStack {
+  padding-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1120px;
+}
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.softChip {
+  border-radius: 999px;
+  background: var(--inset);
+  color: var(--fg);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 680;
+}
+.versionsPanel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+@media (max-width: 760px) {
+.agentHero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+.agentHeroActions {
+    width: 100%;
+  }
+}
+

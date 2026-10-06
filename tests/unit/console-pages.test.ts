@@ -669,8 +669,9 @@ describe('Console page static coverage', () => {
 
     const filesHtml = renderToString(React.createElement(Files, { data, onRefresh: () => {} }));
     expect(filesHtml).toContain('notes.md');
-    expect(filesHtml).toContain('class="stack filesView claudeFilesView"');
-    expect(filesHtml).toContain('filesTablePanel');
+    expect(filesHtml).toContain('console-page-header');
+    expect(filesHtml).toContain('data-table');
+    expect(filesHtml).toContain('files-table-frame');
 
     const webhooksHtml = renderToString(React.createElement(WebhooksPage, { data, onRefresh: () => {} }));
     expect(webhooksHtml).toContain('UI events');

@@ -74,7 +74,7 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
                 <td><code>{key.key_prefix}</code></td>
                 <td>{key.last_used_at ? relativeDate(key.last_used_at) : t('apiKeys.never')}</td>
                 <td>{formatDateShort(key.created_at)}</td>
-                <td className="rowActionsCell">
+                <td className="row-actions-cell">
                   <button className="iconButton quiet" type="button" title={t('apiKeys.copyPrefix')} aria-label={t('apiKeys.copyPrefix')} onClick={() => void copyText(key.key_prefix)}>
                     <Copy size={16} />
                   </button>

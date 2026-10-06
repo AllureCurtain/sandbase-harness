@@ -1,6 +1,6 @@
 import { TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { MetricCard } from '../Common';
+import { Kpi, KpiStrip } from '../console-ui';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
 import type { Environment, Session } from '../../types';
 import {
@@ -63,12 +63,12 @@ export function SelfHostedEnvironment({ environment, sessions }: { environment: 
       <section className="environmentSection">
         <h2>{t('detail.selfHosted.overviewTitle')}</h2>
         <p>{t('detail.selfHosted.overviewHint')}</p>
-        <div className="metricGrid compactMetrics">
-          <MetricCard title={t('detail.selfHosted.idle')} value={idleSessions.length} />
-          <MetricCard title={t('detail.selfHosted.running')} value={runningSessions.length} />
-          <MetricCard title={t('detail.selfHosted.completed')} value={completedSessions.length} />
-          <MetricCard title={t('detail.selfHosted.oldestActive')} value={oldestActiveSession ? relativeDate(oldestActiveSession.created_at) : t('detail.selfHosted.none')} />
-        </div>
+        <KpiStrip label={t('detail.selfHosted.overviewTitle')}>
+          <Kpi label={t('detail.selfHosted.idle')} value={idleSessions.length} />
+          <Kpi label={t('detail.selfHosted.running')} value={runningSessions.length} />
+          <Kpi label={t('detail.selfHosted.completed')} value={completedSessions.length} />
+          <Kpi label={t('detail.selfHosted.oldestActive')} value={oldestActiveSession ? relativeDate(oldestActiveSession.created_at) : t('detail.selfHosted.none')} />
+        </KpiStrip>
       </section>
       <div className="selfHostedGrid">
         <section className="environmentSection">

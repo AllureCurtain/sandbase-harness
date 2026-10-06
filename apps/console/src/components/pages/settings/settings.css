@@ -1280,3 +1280,35 @@
   min-width: 0;
 }
 
+
+/* Page-intro block, still used by the runtime settings editor. */
+.pageIntro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.pageIntro > div {
+  min-width: 0;
+}
+.pageIntro h1 {
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 720;
+}
+.pageIntro p {
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.pageIntro p {
+  color: var(--fg-muted);
+}
+
+@media (max-width: 760px) {
+.pageIntro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+

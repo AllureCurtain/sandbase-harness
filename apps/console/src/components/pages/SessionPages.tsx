@@ -2,7 +2,7 @@ import { Plus, Send, Target } from 'lucide-react';
 import { type FormEvent, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deleteJson, postJson } from '../../api';
-import { StatusPill } from '../Common';
+import { StatusDot, type Tone } from '../console-ui';
 import { ConfirmDeleteModal } from '../DangerZone';
 import { DefineOutcomeModal, SessionSettingsModal } from '../modals/SessionModals';
 import { SessionComposer } from '../session/SessionComposer';
@@ -25,6 +25,13 @@ export {
 export { toolResultId, toolUseDetails } from '../session/eventRenderers';
 import { relativeDate, shortId } from '../../lib/format';
 import type { Agent, ConsoleData, Session } from '../../types';
+
+function outcomeTone(result: string): Tone {
+  if (result === 'satisfied') return 'ok';
+  if (result === 'pending' || result === 'evaluating') return 'pending';
+  if (result === 'failed') return 'danger';
+  return 'neutral';
+}
 
 export function SessionDetail({
   session,
@@ -231,7 +238,7 @@ export function SessionDetail({
               <div className="outcomeCardHead">
                 <Target size={15} />
                 <strong>{evaluation.description}</strong>
-                <StatusPill status={evaluation.result} />
+                <StatusDot tone={outcomeTone(evaluation.result)} label={evaluation.result} />
               </div>
               <div className="outcomeCardMeta">
                 <span>{t('detail.outcome.iteration', { n: evaluation.iteration })}</span>

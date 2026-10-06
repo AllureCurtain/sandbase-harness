@@ -1,12 +1,19 @@
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Download, FileText, Plus, Search, Trash2, Upload, X, Zap } from 'lucide-react';
+import { ChangeEvent, DragEvent, FormEvent, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Download, FileText, Plus, Trash2, Upload, X, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { postForm } from '../../api';
 import type { ConsoleData, Skill, WorkspaceFile } from '../../types';
-import { EmptyState, FilterSelect } from '../Common';
+import { EmptyState, PageBody, PageHeader } from '../console-ui';
+import { ListToolbar, listSummary, SearchField } from '../list-ui';
+import { ConsoleSelect } from '../console-select';
 import { Modal } from '../Modal';
 import { formatBytes, formatDateShort, formatDateWithYear, shortId } from '../../lib/format';
+import './build.css';
 
 export function Skills({ data, onRefresh }: { data: ConsoleData; onRefresh: () => void }) {
+  const { t } = useTranslation('skills');
+  const { t: tPages } = useTranslation('pages');
+  const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [source, setSource] = useState<'all' | Skill['source']>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -27,75 +34,78 @@ export function Skills({ data, onRefresh }: { data: ConsoleData; onRefresh: () =
   const selected = selectedId ? filtered.find((skill) => skill.id === selectedId) ?? null : null;
 
   return (
-    <section className="stack skillsPage">
-      <div className="pageIntro">
-        <div>
-          <h1>Skills</h1>
-          <p>Skills are repeatable and customizable instructions that the agent runtime can follow.</p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />
-            Create skill
-          </button>
-          <a className="iconButton" href="https://github.com/sandbaseai/managed-agents/blob/main/docs/skills.md" target="_blank" rel="noreferrer" title="Documentation">
-            <FileText size={18} />
-          </a>
-        </div>
-      </div>
+    <section className="page-section console-page skills-page" aria-labelledby="skills-heading">
+      <PageHeader
+        headingId="skills-heading"
+        title={tPages('skills.title')}
+        help={tPages('skills.description')}
+        actions={(
+          <>
+            <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={15} aria-hidden="true" />
+              {tPages('skills.newSkill')}
+            </button>
+            <a className="icon-button" href="https://github.com/sandbaseai/managed-agents/blob/main/docs/skills.md" target="_blank" rel="noreferrer" title={t('view.docs')} aria-label={t('view.docs')}>
+              <FileText size={17} aria-hidden="true" />
+            </a>
+          </>
+        )}
+      />
+      <PageBody>
+        <ListToolbar
+          label={t('view.filterLabel')}
+          summary={listSummary(tCommon, filtered.length, data.skills.length, { locale: i18n.resolvedLanguage })}
+        >
+          <SearchField value={query} onChange={setQuery} placeholder={t('view.searchPlaceholder')} label={t('view.filterLabel')} />
+          <ConsoleSelect
+            label={t('view.source')}
+            value={source}
+            onChange={(value) => setSource(value as 'all' | Skill['source'])}
+            options={[
+              { value: 'all', label: t('view.sourceOptions.all') },
+              { value: 'anthropic', label: t('view.sourceOptions.anthropic') },
+              { value: 'custom', label: t('view.sourceOptions.custom') },
+            ]}
+          />
+        </ListToolbar>
 
-      <div className="toolbar compactToolbar">
-        <label className="searchBox">
-          <Search size={17} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or exact ID" />
-        </label>
-        <FilterSelect
-          label="Source"
-          value={source}
-          onChange={(value) => setSource(value as 'all' | Skill['source'])}
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'anthropic', label: 'Anthropic' },
-            { value: 'custom', label: 'Custom' },
-          ]}
-        />
-      </div>
+        <div className={`skillsLayout${selected ? ' hasDrawer' : ''}`}>
+          {filtered.length ? (
+            <div className="table-frame skill-table-frame">
+              <table className="data-table" aria-label={tPages('skills.title')}>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('view.columns.id')}</th>
+                    <th scope="col">{t('view.columns.name')}</th>
+                    <th scope="col">{t('view.columns.source')}</th>
+                    <th scope="col">{t('view.columns.latestVersion')}</th>
+                    <th scope="col">{t('view.columns.updated')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((skill) => (
+                    <tr
+                      key={skill.id}
+                      className={`clickable-row ${selected?.id === skill.id ? 'selected-row' : ''}`}
+                      onClick={() => setSelectedId(skill.id)}
+                    >
+                      <td><code>{skill.id}</code></td>
+                      <td><strong>{skillDisplayName(skill)}</strong></td>
+                      <td><SourceBadge source={skill.source} /></td>
+                      <td>{formatSkillLatestVersion(skill)}</td>
+                      <td>{formatDateShort(skill.updated_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState icon={Zap} title={t('view.noSkills')} />
+          )}
 
-      <div className={`skillsLayout${selected ? ' hasDrawer' : ''}`}>
-        <div className="tablePanel skillTablePanel">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Source</th>
-                <th>Latest version</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((skill) => (
-                <tr
-                  key={skill.id}
-                  className={`clickableRow ${selected?.id === skill.id ? 'selectedRow' : ''}`}
-                  onClick={() => setSelectedId(skill.id)}
-                >
-                  <td><strong className="monoCell">{skill.id}</strong></td>
-                  <td>
-                    <strong>{skillDisplayName(skill)}</strong>
-                  </td>
-                  <td><SourceBadge source={skill.source} /></td>
-                  <td>{formatSkillLatestVersion(skill)}</td>
-                  <td>{formatDateShort(skill.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 ? <EmptyState icon={<Zap size={22} />} title="No skills" /> : null}
+          {selected ? <SkillDetailsDrawer skill={selected} onClose={() => setSelectedId(null)} /> : null}
         </div>
-
-        {selected ? <SkillDetailsDrawer skill={selected} onClose={() => setSelectedId(null)} /> : null}
-      </div>
+      </PageBody>
 
       {createOpen ? (
         <CreateSkillModal
@@ -111,6 +121,7 @@ export function Skills({ data, onRefresh }: { data: ConsoleData; onRefresh: () =
 }
 
 function SkillDetailsDrawer({ skill, onClose }: { skill: Skill; onClose: () => void }) {
+  const { t } = useTranslation('skills');
   return (
     <aside className="skillDrawer">
       <div className="drawerHeader">
@@ -119,39 +130,39 @@ function SkillDetailsDrawer({ skill, onClose }: { skill: Skill; onClose: () => v
             <h2>{skillDisplayName(skill)}</h2>
             <SourceBadge source={skill.source} />
           </div>
-          <p>{formatDateShort(skill.updated_at)} · <span className="monoText">{skill.id}</span></p>
+          <p>{formatDateShort(skill.updated_at)} · <code>{skill.id}</code></p>
         </div>
-        <button className="iconButton quiet" type="button" onClick={onClose} title="Close"><X size={18} /></button>
+        <button className="icon-button" type="button" onClick={onClose} title={t('detail.close')} aria-label={t('detail.close')}><X size={17} aria-hidden="true" /></button>
       </div>
       <div className="drawerBody">
         <p>{skill.description}</p>
         {skill.compatibility ? (
           <div className="infoBanner">
-            <strong>Compatibility</strong>
+            <strong>{t('detail.compatibility')}</strong>
             <span>{skill.compatibility}</span>
           </div>
         ) : null}
-        <div className="drawerMetaGrid">
-          <span>Source</span>
-          <strong>{skill.source === 'anthropic' ? 'Anthropic' : 'Custom'}</strong>
-          <span>Latest version</span>
-          <strong>{formatSkillLatestVersion(skill)}</strong>
-          <span>Package</span>
-          <strong className="monoText">{skillPackageName(skill) ?? '-'}</strong>
-          <span>File</span>
-          <strong className="monoText">{skill.file ?? '-'}</strong>
-        </div>
+        <dl className="drawerMetaGrid">
+          <dt>{t('detail.source')}</dt>
+          <dd>{skill.source === 'anthropic' ? t('view.sourceOptions.anthropic') : t('view.sourceOptions.custom')}</dd>
+          <dt>{t('detail.latestVersion')}</dt>
+          <dd>{formatSkillLatestVersion(skill)}</dd>
+          <dt>{t('detail.package')}</dt>
+          <dd><code>{skillPackageName(skill) ?? '-'}</code></dd>
+          <dt>{t('detail.file')}</dt>
+          <dd><code>{skill.file ?? '-'}</code></dd>
+        </dl>
         <div className="skillVersionSection">
-          <h3>Versions</h3>
+          <h3>{t('detail.versions')}</h3>
           <div className="skillVersionList">
             {skill.versions.map((version) => (
               <div className="skillVersionRow" key={version.id}>
-                <span className="monoText">{version.id}</span>
+                <code>{version.id}</code>
                 <small>{formatDateShort(version.created_at)}</small>
-                {version.latest ? <b>Latest</b> : null}
+                {version.latest ? <b>{t('detail.latest')}</b> : null}
               </div>
             ))}
-            {skill.versions.length === 0 ? <div className="emptyInline">No versions</div> : null}
+            {skill.versions.length === 0 ? <div className="emptyInline">{t('detail.noVersions')}</div> : null}
           </div>
         </div>
       </div>
@@ -160,6 +171,7 @@ function SkillDetailsDrawer({ skill, onClose }: { skill: Skill; onClose: () => v
 }
 
 function CreateSkillModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('skills');
   const packageInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Array<{ file: File; path: string }>>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -209,11 +221,11 @@ function CreateSkillModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   };
 
   return (
-    <Modal title="Create skill" onClose={onClose}>
+    <Modal title={t('create.title')} onClose={onClose}>
       <form className="modalForm" onSubmit={submit}>
         {error ? (
-          <div className="formAlert error">
-            <AlertTriangle size={18} />
+          <div className="formAlert error" role="alert">
+            <AlertTriangle size={17} aria-hidden="true" />
             <span>{error}</span>
           </div>
         ) : null}
@@ -233,30 +245,30 @@ function CreateSkillModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           onDragLeave={() => setDragActive(false)}
           onDrop={onDrop}
         >
-          <Upload size={26} />
-          <strong>Drag and drop a .zip or .skill package to upload</strong>
-          <span>The package is unpacked and validated. It must contain one top-level folder with SKILL.md at the root.</span>
+          <Upload size={24} aria-hidden="true" />
+          <strong>{t('create.dropTitle')}</strong>
+          <span>{t('create.dropHint')}</span>
           <div className="skillUploadActions">
-            <button className="secondaryButton" type="button" onClick={() => packageInputRef.current?.click()}>
-              Select file
+            <button className="button outline" type="button" onClick={() => packageInputRef.current?.click()}>
+              {t('create.selectFile')}
             </button>
           </div>
         </div>
         {selectedFiles.length > 0 ? (
           <div className="skillUploadFile">
-            <FileText size={20} />
+            <FileText size={18} aria-hidden="true" />
             <div>
               <strong>{selectedFiles[0].path}</strong>
-              <span>{selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'} · {formatBytes(selectedFiles.reduce((total, item) => total + item.file.size, 0))}</span>
+              <span>{t('create.fileCount', { count: selectedFiles.length })} · {formatBytes(selectedFiles.reduce((total, item) => total + item.file.size, 0))}</span>
             </div>
-            <button className="iconButton quiet" type="button" onClick={() => setSelectedFiles([])} title="Remove upload">
-              <Trash2 size={17} />
+            <button className="icon-button" type="button" onClick={() => setSelectedFiles([])} title={t('create.removeUpload')} aria-label={t('create.removeUpload')}>
+              <Trash2 size={16} aria-hidden="true" />
             </button>
           </div>
         ) : null}
         <div className="modalActions">
-          <button className="primaryButton" type="submit" disabled={!canSave || saving}>
-            {saving ? 'Creating...' : 'Continue'}
+          <button className="button primary" type="submit" disabled={!canSave || saving}>
+            {saving ? t('create.creating') : t('create.continue')}
           </button>
         </div>
       </form>
@@ -265,7 +277,8 @@ function CreateSkillModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 }
 
 function SourceBadge({ source }: { source: Skill['source'] }) {
-  return <span className={`sourceBadge ${source}`}>{source === 'anthropic' ? 'Anthropic' : 'Custom'}</span>;
+  const { t } = useTranslation('skills');
+  return <span className={`sourceBadge ${source}`}>{source === 'anthropic' ? t('view.sourceOptions.anthropic') : t('view.sourceOptions.custom')}</span>;
 }
 
 function skillDisplayName(skill: Skill): string {
@@ -291,6 +304,8 @@ function formatSkillLatestVersion(skill: Skill): string {
 }
 
 export function Files({ data, onRefresh }: { data: ConsoleData; onRefresh: () => void }) {
+  const { t } = useTranslation('files');
+  const { t: tPages } = useTranslation('pages');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -321,58 +336,64 @@ export function Files({ data, onRefresh }: { data: ConsoleData; onRefresh: () =>
   };
 
   return (
-    <section className="stack filesView claudeFilesView">
-      <div className="pageIntro">
-        <div>
-          <h1>Files</h1>
-          <p>Upload and manage files to use with agent sessions.</p>
-        </div>
-        <div className="toolbarActions">
-          <input ref={inputRef} className="hiddenFileInput" type="file" multiple onChange={onUploadChange} />
-          <button className="primaryButton" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>
-            <Upload size={16} />
-            {uploading ? 'Uploading...' : 'Upload file'}
-          </button>
-          <a className="iconButton" href="https://github.com/sandbaseai/managed-agents/blob/main/docs/api.md#files" target="_blank" rel="noreferrer" title="Documentation">
-            <FileText size={18} />
-          </a>
-        </div>
-      </div>
-      {error ? (
-        <div className="formAlert error fileUploadError">
-          <AlertTriangle size={18} />
-          <span>{error}</span>
-        </div>
-      ) : null}
-      <div className="tablePanel filesTablePanel claudeFilesTable">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Size</th>
-              <th>Created</th>
-              <th aria-label="Actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {files.map((file) => (
-              <tr key={file.id}>
-                <td><strong className="monoCell">{shortId(file.id)}</strong></td>
-                <td><strong>{file.name}</strong></td>
-                <td>{formatBytes(file.size_bytes)}</td>
-                <td>{formatDateShort(file.created_at)}</td>
-                <td className="rowActionsCell">
-                  <a className="iconButton quiet" href={`/v1/files/${encodeURIComponent(file.id)}/content`} download={file.name} title="Download file">
-                    <Download size={16} />
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {files.length === 0 ? <EmptyState icon={<FileText size={22} />} title="No files" /> : null}
-      </div>
+    <section className="page-section console-page files-page" aria-labelledby="files-heading">
+      <PageHeader
+        headingId="files-heading"
+        title={tPages('files.title')}
+        help={tPages('files.description')}
+        actions={(
+          <>
+            <input ref={inputRef} className="hiddenFileInput" type="file" multiple onChange={onUploadChange} />
+            <button className="button primary" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>
+              <Upload size={15} aria-hidden="true" />
+              {uploading ? t('view.uploading') : t('view.upload')}
+            </button>
+            <a className="icon-button" href="https://github.com/sandbaseai/managed-agents/blob/main/docs/api.md#files" target="_blank" rel="noreferrer" title={t('view.docs')} aria-label={t('view.docs')}>
+              <FileText size={17} aria-hidden="true" />
+            </a>
+          </>
+        )}
+      />
+      <PageBody>
+        {error ? (
+          <div className="formAlert error fileUploadError" role="alert">
+            <AlertTriangle size={17} aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        ) : null}
+        {files.length ? (
+          <div className="table-frame files-table-frame">
+            <table className="data-table" aria-label={tPages('files.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('view.columns.id')}</th>
+                  <th scope="col">{t('view.columns.name')}</th>
+                  <th scope="col">{t('view.columns.size')}</th>
+                  <th scope="col">{t('view.columns.created')}</th>
+                  <th scope="col"><span className="visually-hidden">{t('view.columns.actions')}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {files.map((file) => (
+                  <tr key={file.id}>
+                    <td><code>{shortId(file.id)}</code></td>
+                    <td><strong>{file.name}</strong></td>
+                    <td>{formatBytes(file.size_bytes)}</td>
+                    <td>{formatDateShort(file.created_at)}</td>
+                    <td className="row-actions-cell">
+                      <a className="icon-button" href={`/v1/files/${encodeURIComponent(file.id)}/content`} download={file.name} title={t('view.download')} aria-label={t('view.download')}>
+                        <Download size={15} aria-hidden="true" />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState icon={FileText} title={t('view.noFiles')} />
+        )}
+      </PageBody>
     </section>
   );
 }

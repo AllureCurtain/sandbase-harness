@@ -54,4 +54,30 @@ export const common = {
     deleteUncertain: "未能确认删除结果，运行时可能已删除，也可能没有。页面已重新读取，请先确认再决定是否重试。",
     noMatchesDescription: "没有符合当前搜索或筛选条件的结果。",
   },
+  kv: {
+    notConfigured: "未配置",
+  },
+  loadingConsole: "正在加载控制台",
+  routes: {
+    noAgent: {
+      title: "未选择 agent",
+      body: "所选 agent 不存在或已归档。返回 Agents 选择一条有效记录。",
+    },
+    noSession: {
+      title: "未选择会话",
+      body: "找不到所选会话。返回会话列表选择其他运行。",
+    },
+    noEnvironment: {
+      title: "未选择环境",
+      body: "找不到所选环境。返回环境列表选择其他模板。",
+    },
+    noVault: {
+      title: "未选择凭据保险库",
+      body: "找不到所选保险库。返回凭据保险库列表选择其他保险库。",
+    },
+    noMemoryStore: {
+      title: "未选择记忆存储",
+      body: "找不到所选存储。返回记忆存储列表选择其他存储。",
+    },
+  },
 } as const;

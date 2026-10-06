@@ -81,11 +81,11 @@ describe('agent capability rows', () => {
     };
 
     const availableHtml = renderToString(React.createElement(CapabilityStatus, { capability: available }));
-    expect(availableHtml).toContain('allowText');
+    expect(availableHtml).toContain('status-dot-ok');
     expect(availableHtml).toContain('Available');
 
     const unavailableHtml = renderToString(React.createElement(CapabilityStatus, { capability: unavailable }));
-    expect(unavailableHtml).toContain('status unavailable');
+    expect(unavailableHtml).toContain('status-dot-neutral');
     expect(unavailableHtml).toContain('Unavailable');
     expect(unavailableHtml).toContain('No search provider is bundled.');
   });
