@@ -4,8 +4,18 @@ import type { SandboxInstance } from '@/types/sandbox.js';
 import type { Session, SessionLoopEngine } from '@/types/session.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
 import type { AgentStrategy, StrategyContext } from '@/types/strategy.js';
-import { ModelRegistry } from '@/model/registry.js';
+import { ModelRegistry, modelEndpointHost } from '@/model/registry.js';
 import { InMemoryEventLog } from './in-memory-event-log.js';
+import {
+  clearCredentialInjectionBundle,
+  createCredentialRedactor,
+} from '@/core/credentials/redaction.js';
+import {
+  placeholderToEgressSubstitution,
+  type CredentialInjectionBundle,
+  type CredentialInjectionTarget,
+} from '@/core/credentials/injection.js';
+import type { SandboxCredentials } from './tool-resolver.js';
 import {
   assertPiAgentCanExecute,
 } from '@/core/session/pi-policy.js';
@@ -35,7 +45,16 @@ export interface DelegationServiceDeps {
   provisionSandbox: (session: Session, sandboxId: string) => Promise<SandboxInstance>;
   composeSystemPrompt: (agent: AgentDefinition) => string;
   buildMemoryContext?: (session: Session, agent: AgentDefinition, event: UserEvent) => Promise<string>;
-  buildSandboxTools: (agent: AgentDefinition, sandbox: SandboxInstance, session?: Session) => Record<string, any>;
+  buildSandboxTools: (agent: AgentDefinition, sandbox: SandboxInstance, session?: Session, credentials?: SandboxCredentials) => Record<string, any>;
+  /**
+   * Resolve vault credentials for a delegated child.
+   *
+   * Called with the child's synthetic session id and the parent session's
+   * `vaultIds` in the target, because the child row is never persisted: the
+   * override is what carries the parent's vault scope into the resolution,
+   * and it can only name what the parent itself references.
+   */
+  resolveCredentialInjections?: (sessionId: string, target?: CredentialInjectionTarget) => CredentialInjectionBundle;
   resolveSkillDirs?: (agent: AgentDefinition) => string[];}
 
 export class DelegationService {
@@ -146,12 +165,6 @@ export class DelegationService {
     // Pi owns its transport but still needs the selected concrete model config.
     // Builtin strategies keep their existing AI SDK model construction path and
     // do not need registry resolution before that factory runs.
-    const modelConfig = strategy.requiresModel === false
-      ? this.deps.modelRegistry.resolveModelConfig(target.model)
-      : undefined;
-    const model = strategy.requiresModel === false
-      ? undefined
-      : this.deps.modelRegistry.createModel(target.model);
     const subSessionId = `subsess_${ctx.chain.join('.')}_${nanoid(8)}`;
     const childSession: Session = {
       id: subSessionId,
@@ -169,9 +182,35 @@ export class DelegationService {
     // Same backend as the parent session, resolved through the same fail-loud
     // path — a sub-agent must not receive weaker isolation than its parent.
     const sandbox = await this.deps.provisionSandbox(session, subSessionId);
+    // The child inherits exactly the vaults the parent session references —
+    // `session.vaultIds` is the hydrated row value, and an absent list narrows
+    // the child to none rather than widening it to anything the store holds.
+    // Placeholders go to the child's own sandbox boundary, provisioned above,
+    // so the secret still never enters a delegated process environment.
+    const usePlaceholders = typeof sandbox.configureEgressSubstitutions === 'function';
+    const childCredentialTarget = (): CredentialInjectionTarget => ({
+      vaultIds: session.vaultIds ?? [],
+      placeholders: usePlaceholders,
+    });
+    const resolvedCredentials = this.deps.resolveCredentialInjections?.(childSession.id, childCredentialTarget());
+    if (resolvedCredentials && resolvedCredentials.placeholders.length > 0) {
+      sandbox.configureEgressSubstitutions!(resolvedCredentials.placeholders.map(placeholderToEgressSubstitution));
+    }
+    const credentials: SandboxCredentials | undefined = resolvedCredentials
+      ? { env: { ...resolvedCredentials.environment }, redactor: createCredentialRedactor(resolvedCredentials) }
+      : undefined;
+
+    const modelConfig = strategy.requiresModel === false
+      ? this.deps.modelRegistry.resolveModelConfig(target.model)
+      : undefined;
+    const model = strategy.requiresModel === false
+      ? undefined
+      : this.deps.modelRegistry.createModel(target.model, {
+          headers: this.modelRequestHeaders(childSession, target, childCredentialTarget()),
+        });
 
     try {
-      const tools = this.deps.buildSandboxTools(target, sandbox, childSession);
+      const tools = this.deps.buildSandboxTools(target, sandbox, childSession, credentials);
       Object.assign(tools, this.buildDelegationTools(target, ctx, session));
 
       const memLog = new InMemoryEventLog();
@@ -211,7 +250,45 @@ export class DelegationService {
 
       return collected.join('\n') || '(sub-agent produced no output)';
     } finally {
+      // Same lifetime rule as a root turn: the run's end retires the redactor
+      // and the bundle it was built from. The placeholders on the child's own
+      // boundary die with the sandbox, cleaned up below.
+      credentials?.redactor.clear();
+      clearCredentialInjectionBundle(resolvedCredentials);
       await sandbox.cleanup().catch(() => {});
     }
+  }
+
+  /**
+   * Vault credentials a delegated child's model request may carry.
+   *
+   * Same rule as the root executor's model injection: the credential policy
+   * is asked with the host the resolved endpoint names, the child borrows the
+   * parent's vault ids, and real header values stay inside the runtime
+   * process — the model client is runtime-side, not sandbox-side.
+   */
+  private modelRequestHeaders(
+    childSession: Session,
+    agent: AgentDefinition,
+    target: CredentialInjectionTarget,
+  ): Record<string, string> | undefined {
+    const resolve = this.deps.resolveCredentialInjections;
+    if (!resolve) return undefined;
+    let host: string | undefined;
+    try {
+      host = modelEndpointHost(this.deps.modelRegistry.resolveModelConfig(agent.model));
+    } catch {
+      host = undefined;
+    }
+    // Only the request_headers channel is consumed here, so no placeholders:
+    // the environment channel is unused by the model client, and an env-scope
+    // credential admitted under the placeholder rule would mint a token no
+    // boundary ever registers.
+    const bundle = resolve(childSession.id, { vaultIds: target.vaultIds, targetHost: host });
+    const headers = Object.keys(bundle.request_headers).length > 0
+      ? { ...bundle.request_headers }
+      : undefined;
+    clearCredentialInjectionBundle(bundle);
+    return headers;
   }
 }

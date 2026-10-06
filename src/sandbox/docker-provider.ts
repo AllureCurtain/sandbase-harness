@@ -19,6 +19,7 @@ import {
   type SandboxProvider,
   type SandboxInstance,
   type EnvironmentConfig,
+  type EgressSubstitution,
   type ExecOptions,
   type ExecResult,
 } from '@/types/sandbox.js';
@@ -71,9 +72,11 @@ export class DockerSandboxProvider implements SandboxProvider {
     const image = config.image ?? DEFAULT_IMAGE;
     const containerName = `ma-sandbox-${safeContainerSuffix(sessionId)}`;
     const policy = environmentNetworkPolicyOf(config);
-    const egress = policy?.type === 'limited'
-      ? await provisionEgressBoundary(sessionId, policy)
-      : undefined;
+    // Every session gets a proxy, not only `limited` ones: the proxy is also
+    // the placeholder-substitution boundary, and a session without a declared
+    // policy can still carry vault credentials that must never reach the
+    // container as plaintext. An absent policy binds it in allow-all mode.
+    const egress = await provisionEgressBoundary(sessionId, policy);
 
     // Override the image's own entrypoint with `sleep` so the container stays
     // alive as a plain command host regardless of what the image declares.
@@ -88,14 +91,10 @@ export class DockerSandboxProvider implements SandboxProvider {
       WORKDIR,
       '--entrypoint',
       'sleep',
+      ...egress.containerArgs,
     ];
-    if (egress) {
-      // The internal network is the enforcement: without it the proxy
-      // variables would be advisory, like the local provider's.
-      args.push('--network', egress.internalNetwork);
-      for (const [k, v] of Object.entries(egress.containerEnvironment)) {
-        args.push('-e', `${k}=${v}`);
-      }
+    for (const [k, v] of Object.entries(egress.containerEnvironment)) {
+      args.push('-e', `${k}=${v}`);
     }
     // Resource limits
     if (config.resources?.memory) args.push('--memory', config.resources.memory);
@@ -140,17 +139,20 @@ export class DockerSandboxProvider implements SandboxProvider {
  * rides in the container's proxy URL.
  */
 interface DockerEgressBoundary {
-  internalNetwork: string;
+  /** Extra `docker run` args the boundary needs (`--network`, `--add-host`). */
+  containerArgs: string[];
   /** Proxy environment baked into the sandbox container (`docker run -e`). */
   containerEnvironment: Record<string, string>;
   /** Proxy environment for runtime-spawned host processes (stdio MCP). */
   hostEnvironment: Record<string, string>;
+  /** The host-side proxy; owns the placeholder substitution table. */
+  proxy: EgressProxy;
   close(): Promise<void>;
 }
 
 async function provisionEgressBoundary(
   sessionId: string,
-  policy: EnvironmentNetworkPolicy,
+  policy: EnvironmentNetworkPolicy | undefined,
 ): Promise<DockerEgressBoundary> {
   const suffix = safeContainerSuffix(sessionId);
   const internalNetwork = `ma-net-${suffix}`;
@@ -158,8 +160,24 @@ async function provisionEgressBoundary(
   const relayName = `ma-relay-${suffix}`;
 
   const proxy = await EgressProxy.listen('0.0.0.0', {
-    allowedHosts: environmentEgressAllowlist(policy),
+    allowedHosts: policy?.type === 'limited' ? environmentEgressAllowlist(policy) : null,
   });
+
+  if (policy?.type !== 'limited') {
+    // No allowlist to enforce, so no isolation is needed — the proxy exists
+    // as the credential-substitution boundary. The container keeps the
+    // default bridge and reaches the host listener through
+    // `host.docker.internal` (built in on Docker Desktop; `host-gateway`
+    // fills it in on a plain Linux daemon).
+    return {
+      containerArgs: dockerIsDesktop() ? [] : ['--add-host', 'host.docker.internal:host-gateway'],
+      containerEnvironment: proxy.environment('host.docker.internal'),
+      hostEnvironment: proxy.environment('127.0.0.1'),
+      proxy,
+      close: () => proxy.close(),
+    };
+  }
+
   const cleanup = async () => {
     spawnSync('docker', ['rm', '-f', relayName], { timeout: 15_000 });
     spawnSync('docker', ['network', 'rm', internalNetwork], { timeout: 15_000 });
@@ -191,9 +209,10 @@ async function provisionEgressBoundary(
     }
 
     return {
-      internalNetwork,
+      containerArgs: ['--network', internalNetwork],
       containerEnvironment: proxy.environment(relayIp, RELAY_PORT),
       hostEnvironment: proxy.environment('127.0.0.1'),
+      proxy,
       close: cleanup,
     };
   } catch (error) {
@@ -251,6 +270,11 @@ class DockerSandboxInstance implements SandboxInstance {
    */
   get egressEnvironment(): Record<string, string> | undefined {
     return this.egress?.hostEnvironment;
+  }
+
+  /** The host-side proxy is the session's substitution boundary. */
+  configureEgressSubstitutions(substitutions: readonly EgressSubstitution[]): void {
+    this.egress?.proxy.addSubstitutions(substitutions);
   }
 
   async execute(command: string, options?: ExecOptions): Promise<ExecResult> {

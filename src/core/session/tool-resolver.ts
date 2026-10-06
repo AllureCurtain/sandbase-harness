@@ -21,7 +21,11 @@ import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
 import { createWebFetchTool, type WebFetchOverrides } from '@/core/web/web-fetch.js';
 import type { SecretRedactor } from '@/core/credentials/redaction.js';
 import { clearCredentialInjectionBundle, createCredentialRedactor } from '@/core/credentials/redaction.js';
-import type { CredentialInjectionBundle, CredentialInjectionTarget } from '@/core/credentials/injection.js';
+import {
+  placeholderToEgressSubstitution,
+  type CredentialInjectionBundle,
+  type CredentialInjectionTarget,
+} from '@/core/credentials/injection.js';
 
 /**
  * Vault-derived material one turn's sandbox tools use.
@@ -511,10 +515,27 @@ export class ToolResolver {
     // credential is injected and a `limited` one is denied by the policy. A url
     // server names both, so the policy can check its host and a credential keyed by
     // `mcp_server_url` can be matched against the endpoint it was minted for.
+    // A stdio server's environment is agent-adjacent process state, so its
+    // credentials enter as placeholders when the sandbox owns an egress
+    // boundary — and each bundle's substitution table is registered on that
+    // boundary before the spawn. A url server is an in-process transport: its
+    // headers keep real values because the runtime itself presents them, and
+    // the placeholders an environment credential produces still register so a
+    // later turn's subprocesses resolve them the same way.
+    const usePlaceholders = typeof sandbox.configureEgressSubstitutions === 'function';
     const resolveCredentials = this.deps.resolveCredentialInjections
-      ? (server: McpServerConfig) => this.deps.resolveCredentialInjections!(sessionId, server.type === 'url' && server.url
-        ? { targetHost: server.url, mcpServerUrl: server.url }
-        : undefined)
+      ? (server: McpServerConfig) => {
+        const bundle = this.deps.resolveCredentialInjections!(sessionId, {
+          ...(server.type === 'url' && server.url
+            ? { targetHost: server.url, mcpServerUrl: server.url }
+            : {}),
+          placeholders: usePlaceholders,
+        });
+        if (bundle.placeholders.length > 0) {
+          sandbox.configureEgressSubstitutions!(bundle.placeholders.map(placeholderToEgressSubstitution));
+        }
+        return bundle;
+      }
       : undefined;
     // The Environment's network policy gates the connect boundary: a `url`
     // server names an endpoint the policy can check, while a stdio server is

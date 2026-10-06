@@ -11,6 +11,7 @@ describe('credential redaction', () => {
       environment: { TOKEN: envSecret },
       request_headers: { Authorization: `Bearer ${bearerSecret}` },
       request_body: { token: bearerSecret },
+      placeholders: [],
       credentials: [],
       denied: [],
     });

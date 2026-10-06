@@ -1,15 +1,16 @@
 # CMA Contract — credentials and vaults
 
 Contract area: `/v1/vaults` and vault credentials.
-Status: `supported` for the wire profile and rotation; `partial` for injection
-execution; OAuth refresh is `unavailable`, see §4 and §7.
+Status: `supported` for the wire profile, rotation, and injection execution;
+OAuth refresh is `unavailable`, see §4 and §7.
 Source: `src/core/credentials/canonical-credential.ts`,
-`src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`.
+`src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`,
+`src/core/credentials/injection.ts`, `src/core/net/egress-proxy.ts`.
 
 <!-- capability-status
 canonical-credential-wire-profile: supported
 credential-rotation: supported
-credential-injection-execution: partial
+credential-injection-execution: supported
 oauth-refresh: unavailable
 -->
 
@@ -192,18 +193,52 @@ Session execution:
   the runtime composition (`src/index.ts` → `createRuntimeSessionServices` → the
   executor), so a runtime started by the CLI has the path; an embedder that
   assembles these services without a credential store runs sessions with no vault.
+- On a backend that owns an egress boundary — `local` and `docker`, which run
+  every session's outbound HTTP through the environment egress proxy —
+  environment credentials are emitted as **placeholders**: the process receives
+  `__cred_<credential_id>__`, the bundle's substitution table is registered on
+  the sandbox's proxy (`SandboxInstance.configureEgressSubstitutions`), and the
+  proxy replaces the token with the real value on the wire, in request headers,
+  the request line, and the request body, only toward a host the credential's
+  own `allowed_hosts` covers. `env` cannot print the secret because the secret
+  never enters the process.
+- Under that model a `limited` credential with no declared target host is
+  admissible: what denied it under plaintext was the guarantee the secret could
+  go anywhere, and the boundary supplies exactly that guarantee. A named host
+  outside `allowed_hosts` is still refused.
+- Substitution rides the proxy's plain-HTTP forward path; a CONNECT tunnel is
+  opaque, so a placeholder sent inside an HTTPS request reaches the server
+  literally — it fails closed rather than leaking, and HTTPS API use from
+  inside the sandbox should be reached through a `static_bearer`/`mcp_oauth`
+  credential on a url transport or through in-process injection.
+- A backend with no egress boundary (`kubernetes`, `self-hosted`) cannot
+  substitute, so its resolver keeps producing plaintext — the provider's
+  `configureEgressSubstitutions` absence is what the executor reads, and the
+  bundle shape is identical either way.
 - A shell command declares no target host, so only credentials the policy admits
-  without one reach the environment. A `limited` credential is denied for a shell
-  command exactly as it is denied for any other call without a target host.
+  without one reach the environment. Under plaintext that denies every `limited`
+  credential; under placeholders it admits them scoped to their own
+  `allowed_hosts`, as above.
 - The same resolved `environment` starts a stdio MCP server the agent declares,
   and a vault value wins over the `env` the agent configured itself. A
   url-transport server is handed the credentials scoped to its own URL as request
-  headers, on the initial SSE request and on every message POST. Values an MCP tool
-  returns are scrubbed the way a sandbox tool's return value is, and the resolver's
-  bundle is cleared after each use so nothing outlives the call.
-- The delegated child path is **not** covered: `DelegationService` builds its own
-  sandbox tools and does not thread credentials, so a sub-agent receives no vault
-  environment. Nothing is injected into model requests either.
+  headers, on the initial SSE request and on every message POST — that transport
+  runs inside the runtime process, so it presents real values rather than
+  placeholders. Values an MCP tool returns are scrubbed the way a sandbox tool's
+  return value is, and the resolver's bundle is cleared after each use so nothing
+  outlives the call.
+- A delegated sub-agent inherits exactly the parent session's `vault_ids`: the
+  child's synthetic session row is never persisted, so the resolver takes the
+  parent's list as an explicit override — a child can never reach a credential
+  its parent does not reference — and its own freshly provisioned sandbox is
+  the boundary its placeholders register on.
+- Model requests are covered on the request side: the executor resolves the
+  endpoint host the model configuration points at and hands the provider client
+  the `request_header` credentials the policy admits for that host, so a
+  credential scoped to the model API authenticates the completion call.
+- The placeholder token is stable per credential, so a rotation re-resolution
+  replaces the value behind it: a process spawned before the rotation still
+  holds the token, and its next substituted request carries the new secret.
 
 - A `github_repository.authorization_token` is a separate encrypted
   session-resource secret, matching the official CMA GitHub resource shape. It
@@ -273,31 +308,36 @@ their `vault_in_use`/`vault_archived` refusals and tombstone envelopes, and the
 session path that injects a
 vault's environment into its own sandbox commands and into a stdio MCP server the
 agent declares, attaches a `static_bearer` credential to the url-transport server
-whose URL it was keyed to, and redacts what each of them returns.
+whose URL it was keyed to, and redacts what each of them returns. On backends
+with an egress boundary the process never holds the secret: the placeholder the
+environment carries materializes on the wire, scoped to the credential's own
+`allowed_hosts`, and delegated children inherit the parent's vault scope against
+their own boundary.
 
 ## 4. Differences
 
 | Difference | Detail |
 | --- | --- |
-| Credential exposure in the sandbox | This is a **security-model** difference, not a placement detail. SandBase puts the secret itself into the sandbox command environment as plaintext, so any command the agent runs can read it and send it anywhere it can reach. The published model keeps the secret out of the process and substitutes it at the network egress, so the value the model's code can observe is an opaque placeholder. There is no placeholder in this runtime and no egress substitution: `vault_ids` currently means "export these secrets into the process". |
+| Credential exposure in the sandbox | Closed for backends with an egress boundary: the local and docker providers run a per-session egress proxy, and environment credentials enter processes only as `__cred_<id>__` placeholders the proxy replaces on the wire toward a host the credential's own `allowed_hosts` covers. Two residual limits, both recorded rather than hidden: substitution happens on the proxy's HTTP forward path only — a CONNECT tunnel is opaque, so a placeholder inside an HTTPS request is sent literally and fails closed — and a backend with no boundary (`kubernetes`, `self-hosted`) has nowhere to substitute, so it keeps the plaintext materialization it always had. On those backends `vault_ids` still means "export these secrets into the process". |
 | OAuth refresh | There is no refresh loop or refresh-failure event. The official MCP OAuth validation endpoint explicitly returns HTTP 400 `unsupported_capability` under both vault prefixes, without executing validation. A supplied `refresh` block is parsed, recorded, and reported back as **not executed**, with a warning on the response. |
 | Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
 | Audit | Rotations append a credential audit event. The published contract requires rotation semantics without fixing an audit shape. |
-| Delegated execution | A session's vault environment reaches its own sandbox commands and a stdio MCP server it declares, but the delegated child path builds its own sandbox tools and receives none. The published contract does not describe sub-agent credential scope, so this is recorded as a boundary rather than presented as alignment. |
+| Delegated execution | A delegated sub-agent inherits the parent session's `vault_ids` — passed as an explicit resolution override because the child's synthetic session row is never persisted — resolved under the same policy against the child's own provisioned boundary, so a child's injection scope can never exceed its parent's. The published contract does not describe sub-agent credential scope, so this is recorded as the local reading rather than presented as canonical. |
+| Model requests | A model request carries the `request_header` credentials the credential policy admits for the resolved endpoint host, so a credential scoped to the model API authenticates the completion. The client lives in the runtime process, so it presents real values rather than placeholders; the body channel is not applied to model requests. |
 | Local management routes answer at the published prefix too | `rotate`, `mark-used` and both `audit` routes are local extensions with no published equivalent, and they are reachable under `/v1/vaults*` as well as `/v1/credential-vaults*`. The alias is a mount, not a curated list, so a caller who learned the published spelling does not have to learn which routes answer at it. This is recorded rather than curated because curating would create exactly the per-route divergence the mount prevents. |
 
 ## 5. Reason for the difference
 
-- Plaintext injection is recorded as a difference rather than folded into
-  "alignment" because the two models give a caller different guarantees. Under
-  the published model, running untrusted code beside a credential is survivable:
-  the code sees a placeholder and the real value is attached on the way out.
-  Here the value is in the environment, so the same untrusted code can read it,
-  print it, or post it elsewhere. Writing this as an injection-location detail
-  would tell a caller their secret never reaches the process, which is the
-  opposite of what happens.
+- Placeholder substitution is scoped to the proxy's HTTP forward path and to
+  backends that own a boundary because those are the only places the runtime can
+  truthfully materialize a value. A CONNECT tunnel is ciphertext from the
+  proxy's seat — rewriting inside it would require terminating TLS, which a
+  loopback boundary cannot honestly do — and a provider without a proxy has no
+  wire to substitute on. Both residuals are stated plainly rather than folded
+  into "supported", because on a boundary-less backend a caller's secret still
+  reaches the process.
 - OAuth refresh is reported rather than silently stored because the failure mode
   matters: a session would keep presenting an expired access token and report
   nothing. A warning that reaches the caller is the difference between a
@@ -321,7 +361,22 @@ whose URL it was keyed to, and redacts what each of them returns.
   the missing-field refusals, and that no response carries the secret.
 - `tests/integration/credential-execution.test.ts` — the executor resolves the
   session's vault, the bash tool receives `{env: {TOKEN: …}}`, the string the
-  strategy sees is redacted, and no persisted event carries the secret.
+  strategy sees is redacted, and no persisted event carries the secret; the
+  same path on a sandbox that owns an egress boundary receives
+  `{env: {TOKEN: '__cred_crd_exec__'}}` while the boundary is handed the real
+  value in its substitution table.
+- `tests/unit/credential-injection-placeholders.test.ts` — the placeholder
+  emission rules: the stable `__cred_<id>__` token, the plaintext fallback for
+  a boundary-less caller, a `limited` credential admitted under placeholders
+  with its own `allowed_hosts` scope, a named-but-uncovered host still denied,
+  and the delegated-vault override resolving an unpersisted child to exactly
+  the vault ids it is handed.
+- `tests/unit/egress-proxy.test.ts` — the substitution half of the boundary:
+  a placeholder materialized in a request header and a request body with its
+  recomputed length, a scoped credential not materializing outside its
+  `allowed_hosts`, the upsert that makes a rotation re-resolution update the
+  value a live process's token resolves to, and substitution working in the
+  allow-all mode a policy-less environment binds.
 - `tests/unit/credential-policy.test.ts` — network policy normalization.
 - `tests/unit/credential-redaction.test.ts` — secret material never appears in
   a response.
@@ -381,9 +436,9 @@ whose URL it was keyed to, and redacts what each of them returns.
 
 ## 7. Status
 
-`supported` for the wire profile, write-only handling, locked fields, and
-rotation. `partial` for injection execution: the sandbox environment path works
-and is tested, but it exports the plaintext secret into the process and has no
-egress substitution, and the delegated child path receives no vault. OAuth
+`supported` for the wire profile, write-only handling, locked fields,
+rotation, and injection execution — placeholder emission, egress
+substitution, delegated vault inheritance, and model request headers, with
+the CONNECT-opacity and boundary-less-backend residuals recorded in §4. OAuth
 refresh is `unavailable` and is recorded as such in the capability matrix rather
 than presented as supported.

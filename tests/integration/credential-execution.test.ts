@@ -121,4 +121,88 @@ describe('credential execution wiring', () => {
     expect(JSON.stringify(events)).not.toContain(SECRET);
     await executor.cleanupSession(session.id);
   });
+
+  it('hands a sandbox with an egress boundary a placeholder, and the boundary the real value', async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'ma-credential-placeholder-'));
+    db = new Database(join(tmpDir, 'test.db'));
+    db.runMigrations();
+    db.exec(`INSERT INTO environments (id, name, config) VALUES ('env_test', 'local', '{}')`);
+    db.exec(`INSERT INTO agents (id, name, definition) VALUES ('agent_test', 'credential-agent', '{}')`);
+    db.exec(`INSERT INTO credential_vaults (id, name) VALUES ('vlt_exec', 'execution vault')`);
+    db.exec(`INSERT INTO sessions (id, agent_id, agent_name, environment_id, status, vault_ids) VALUES ('sess_exec', 'agent_test', 'credential-agent', 'env_test', 'running', '["vlt_exec"]')`);
+    const encrypted = encryptSecret(SECRET, tmpDir);
+    db.prepare(
+      `INSERT INTO credential_records (
+        id, vault_id, name, auth_type, variable_name, value_hint, network,
+        injection_locations, secret_ciphertext, secret_nonce, secret_tag, status, metadata, created_at, updated_at
+      ) VALUES (?, ?, ?, 'environment_variable', 'TOKEN', '••••cret', ?, '[]', ?, ?, ?, 'active', '{}', ?, ?)`,
+    ).run(
+      'crd_exec', 'vlt_exec', 'token', JSON.stringify({ type: 'unrestricted', allowed_hosts: [] }),
+      encrypted.ciphertext, encrypted.nonce, encrypted.tag, new Date().toISOString(), new Date().toISOString(),
+    );
+
+    let executeOptions: Record<string, unknown> | undefined;
+    const registered: Array<{ placeholder: string; value: string; allowedHosts?: readonly string[] | null }> = [];
+    const sandbox: SandboxInstance = {
+      sessionId: 'sess_exec',
+      async execute(_command, options) {
+        executeOptions = options as Record<string, unknown>;
+        return { exitCode: 0, stdout: 'ok', stderr: '', timedOut: false };
+      },
+      async writeFile() {},
+      async readFile() { return ''; },
+      async listFiles() { return []; },
+      configureEgressSubstitutions(substitutions) { registered.push(...substitutions.map((s) => ({ ...s }))); },
+      async cleanup() {},
+    };
+    const provider: SandboxProvider = {
+      type: 'local',
+      capabilities: sandboxCapabilities(),
+      async provision() { return sandbox; },
+    };
+    const agent: AgentDefinition = {
+      name: 'credential-agent', model: 'm', system: 'test',
+      tools: [{
+        type: 'agent_toolset_20260401',
+        default_config: { enabled: true, permission_policy: { type: 'always_allow' } },
+        configs: [{ name: 'bash', enabled: true }],
+      }],
+    };
+    const strategy: AgentStrategy = {
+      name: 'credential-test',
+      requiresModel: false,
+      async *execute(context) {
+        await context.tools.bash.execute!({ command: 'env' });
+      },
+    };
+    const modelRegistry = new ModelRegistry();
+    modelRegistry.register({ name: 'm', provider: 'openai', model: 'm', is_default: true });
+    const executor = new DefaultSessionExecutor({
+      agents: [agent],
+      modelRegistry,
+      sandboxProvider: provider,
+      resolveEnvironmentConfig: () => ({ name: 'local', sandbox_provider: 'local' }),
+      strategy,
+      eventLogger: new EventLogger(db),
+      resolveCredentialInjections: (sessionId, target) => resolveSessionCredentialInjections(db!, sessionId, {
+        dataDir: tmpDir,
+        ...target,
+      }),
+    });
+    const session: Session = {
+      id: 'sess_exec', agentId: 'agent_test', agentName: agent.name, agentDefinition: agent,
+      environmentId: 'env_test', status: 'running', vaultIds: ['vlt_exec'],
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+
+    for await (const _event of executor.execute(session, { type: 'user.message', content: [{ type: 'text', text: 'run it' }] })) {
+      // drain
+    }
+
+    // The process environment holds a token, never the secret; the session's
+    // egress boundary is what can materialize it.
+    expect(executeOptions).toEqual({ env: { TOKEN: '__cred_crd_exec__' } });
+    expect(registered).toEqual([{ placeholder: '__cred_crd_exec__', value: SECRET, allowedHosts: null }]);
+    await executor.cleanupSession(session.id);
+  });
 });

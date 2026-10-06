@@ -229,6 +229,108 @@ describe('egress proxy — CONNECT', () => {
   });
 });
 
+describe('egress proxy — placeholder substitution', () => {
+  const SECRET = 'egress-substitution-secret';
+
+  function echoHeaders(): Promise<http.Server & { port: number; seen: Array<{ headers: http.IncomingHttpHeaders; url?: string; body: string }> }> {
+    return new Promise((resolve, reject) => {
+      const seen: Array<{ headers: http.IncomingHttpHeaders; url?: string; body: string }> = [];
+      const server = http.createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          seen.push({ headers: req.headers, url: req.url, body: Buffer.concat(chunks).toString() });
+          res.writeHead(200, { 'content-type': 'text/plain' });
+          res.end('ok');
+        });
+      });
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const port = (server.address() as AddressInfo).port;
+        openResources.push({ close: () => new Promise<void>((r) => server.close(() => r())) });
+        resolve(Object.assign(server, { port, seen }));
+      });
+    });
+  }
+
+  it('materializes a placeholder in request headers toward a scoped host', async () => {
+    const upstream = await echoHeaders();
+    const proxy = await startProxy([`127.0.0.1:${upstream.port}`]);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_demo__', value: SECRET, allowedHosts: [`127.0.0.1:${upstream.port}`] }]);
+
+    const res = await requestThroughProxy(proxy, {
+      method: 'GET',
+      path: `http://127.0.0.1:${upstream.port}/`,
+      headers: { authorization: 'Bearer __cred_crd_demo__' },
+    });
+    expect(res.status).toBe(200);
+    expect(upstream.seen[0].headers.authorization).toBe(`Bearer ${SECRET}`);
+    expect(JSON.stringify(upstream.seen[0])).not.toContain('__cred_');
+  });
+
+  it('materializes a placeholder in a request body and fixes the length', async () => {
+    const upstream = await echoHeaders();
+    const proxy = await startProxy([`127.0.0.1:${upstream.port}`]);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_body__', value: SECRET, allowedHosts: null }]);
+
+    const res = await requestThroughProxy(proxy, {
+      method: 'POST',
+      path: `http://127.0.0.1:${upstream.port}/submit`,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: '__cred_crd_body__' }),
+    });
+    expect(res.status).toBe(200);
+    expect(upstream.seen[0].body).toBe(JSON.stringify({ token: SECRET }));
+    expect(upstream.seen[0].headers['content-length']).toBe(String(JSON.stringify({ token: SECRET }).length));
+  });
+
+  it('does not materialize a placeholder toward a host outside its scope', async () => {
+    const upstream = await echoHeaders();
+    const proxy = await startProxy([`127.0.0.1:${upstream.port}`]);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_scoped__', value: SECRET, allowedHosts: ['other.example.com'] }]);
+
+    const res = await requestThroughProxy(proxy, {
+      method: 'GET',
+      path: `http://127.0.0.1:${upstream.port}/`,
+      headers: { authorization: 'Bearer __cred_crd_scoped__' },
+    });
+    expect(res.status).toBe(200);
+    // The token reaches the wire untouched — the secret never does.
+    expect(upstream.seen[0].headers.authorization).toBe('Bearer __cred_crd_scoped__');
+    expect(JSON.stringify(upstream.seen[0])).not.toContain(SECRET);
+  });
+
+  it('updates the value a stable placeholder resolves to on re-registration', async () => {
+    const upstream = await echoHeaders();
+    const proxy = await startProxy([`127.0.0.1:${upstream.port}`]);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_rotated__', value: 'old-value', allowedHosts: null }]);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_rotated__', value: SECRET, allowedHosts: null }]);
+
+    const res = await requestThroughProxy(proxy, {
+      method: 'GET',
+      path: `http://127.0.0.1:${upstream.port}/`,
+      headers: { 'x-key': '__cred_crd_rotated__' },
+    });
+    expect(res.status).toBe(200);
+    expect(upstream.seen[0].headers['x-key']).toBe(SECRET);
+  });
+
+  it('substitutes in allow-all mode, where the boundary exists for credentials', async () => {
+    const upstream = await echoHeaders();
+    const proxy = await EgressProxy.listen('127.0.0.1', { allowedHosts: null });
+    openResources.push(proxy);
+    proxy.addSubstitutions([{ placeholder: '__cred_crd_open__', value: SECRET, allowedHosts: null }]);
+
+    const res = await requestThroughProxy(proxy, {
+      method: 'GET',
+      path: `http://127.0.0.1:${upstream.port}/`,
+      headers: { 'x-key': '__cred_crd_open__' },
+    });
+    expect(res.status).toBe(200);
+    expect(upstream.seen[0].headers['x-key']).toBe(SECRET);
+  });
+});
+
 describe('egress proxy — environment()', () => {
   it('advertises both proxy spellings with the credential embedded', async () => {
     const proxy = await startProxy(['api.github.com']);

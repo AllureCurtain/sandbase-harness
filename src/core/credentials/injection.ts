@@ -1,4 +1,5 @@
 import type { Database } from '@/core/db/database.js';
+import type { EgressSubstitution } from '@/types/sandbox.js';
 import { decryptSecret } from '@/core/security/secrets.js';
 import { appendCredentialAuditEvent } from './audit.js';
 import { mcpServerUrlMatches } from './canonical-credential.js';
@@ -19,12 +20,36 @@ export type CredentialInjectionDenial = {
   message: string;
 };
 
+/**
+ * One placeholder→secret mapping produced by a resolution.
+ *
+ * `environment` carries the token, not the secret: a subprocess (or an MCP
+ * server's process env) reads `__cred_<id>__`, and only the session's
+ * egress boundary — when one exists — substitutes the real value on the wire,
+ * and only toward a host the credential's own `allowed_hosts` covers.
+ * `allowed_hosts` is null for a credential whose network policy is
+ * unrestricted.
+ */
+export type CredentialPlaceholder = {
+  credential_id: string;
+  placeholder: string;
+  value: string;
+  allowed_hosts: string[] | null;
+};
+
 export type CredentialInjectionBundle = {
   sessionId: string;
   vaultIds: string[];
   environment: Record<string, string>;
   request_headers: Record<string, string>;
   request_body: Record<string, unknown>;
+  /**
+   * The placeholder→secret pairs `environment` (and any other channel that
+   * emits tokens) produced this resolution. Empty when the caller did not ask
+   * for placeholders — a boundary without egress substitution cannot resolve
+   * them, so plaintext keeps the existing behaviour.
+   */
+  placeholders: CredentialPlaceholder[];
   credentials: Array<{
     id: string;
     vault_id: string;
@@ -49,6 +74,29 @@ export type CredentialInjectionTarget = {
   targetHost?: string | null;
   /** Declared MCP server URL, when the caller is connecting to one. */
   mcpServerUrl?: string;
+  /**
+   * Vault ids to resolve instead of the session row's.
+   *
+   * Delegated sub-agents run under a synthetic session id that was never
+   * persisted; they inherit the parent session's vaults by carrying its ids.
+   * The per-call policy checks (`targetHost`, `mcpServerUrl`) still apply, so
+   * a child can never reach a credential its parent could not.
+   */
+  vaultIds?: string[];
+  /**
+   * Emit placeholder tokens instead of plaintext in `environment`.
+   *
+   * Set only when the session's sandbox owns an egress boundary that can
+   * substitute them (`SandboxInstance.configureEgressSubstitutions`): on a
+   * boundary-less backend a placeholder is a string that means nothing, so
+   * the caller asks for the materialization model it can actually honour.
+   *
+   * A `limited` environment credential with no declared target host is
+   * admissible under placeholders: the secret can only materialize on the
+   * wire toward a host its own `allowed_hosts` covers, which is exactly the
+   * guarantee the plaintext path could not offer and why it denied instead.
+   */
+  placeholders?: boolean;
 };
 
 /**
@@ -67,15 +115,24 @@ export function resolveSessionCredentialInjections(
   sessionId: string,
   opts: CredentialInjectionTarget & { dataDir?: string; actor?: string; metadata?: Record<string, string> } = {},
 ): CredentialInjectionBundle {
-  const session = db.prepare('SELECT id, vault_ids FROM sessions WHERE id = ?').get(sessionId) as { id: string; vault_ids: string } | undefined;
-  if (!session) throw new Error(`Session not found: ${sessionId}`);
-  const vaultIds = parseSessionVaultIds(session.vault_ids);
+  // A caller-supplied vault list stands in for the session row: delegated
+  // sub-sessions are not persisted, so the row lookup would lose the vaults
+  // the parent carries. The ids still reach `parseSessionVaultIds`'s shape
+  // check through the filter below.
+  const vaultIds = opts.vaultIds !== undefined
+    ? opts.vaultIds.filter((id) => typeof id === 'string' && id.startsWith('vlt_'))
+    : (() => {
+      const session = db.prepare('SELECT id, vault_ids FROM sessions WHERE id = ?').get(sessionId) as { id: string; vault_ids: string } | undefined;
+      if (!session) throw new Error(`Session not found: ${sessionId}`);
+      return parseSessionVaultIds(session.vault_ids);
+    })();
   const bundle: CredentialInjectionBundle = {
     sessionId,
     vaultIds,
     environment: {},
     request_headers: {},
     request_body: {},
+    placeholders: [],
     credentials: [],
     denied: [],
   };
@@ -98,8 +155,22 @@ export function resolveSessionCredentialInjections(
     // above the decrypt call, the secret is not even decrypted.
     if (row.mcp_server_url && !matchesDeclaredServer(row.mcp_server_url, opts.mcpServerUrl)) continue;
 
-    const authorization = authorizeCredentialNetwork(parseCredentialNetworkPolicy(row.network), opts.targetHost);
-    if (!authorization.allowed) {
+    const networkPolicy = parseCredentialNetworkPolicy(row.network);
+    const authorization = authorizeCredentialNetwork(networkPolicy, opts.targetHost);
+    // A `limited` environment credential with no declared target host is
+    // denied under plaintext because the secret would be readable by any code
+    // the process runs. Under the placeholder model the process only ever
+    // sees a token, and the egress boundary materializes the value solely on
+    // requests the credential's own `allowed_hosts` covers — which is the
+    // guarantee the plaintext path lacked, so the denial does not apply.
+    // `host_not_allowed` still denies: a named-but-uncovered host is a
+    // policy refusal, not a missing one.
+    const placeholderScopedEnv = opts.placeholders === true
+      && row.auth_type === 'environment_variable'
+      && row.variable_name !== null
+      && !authorization.allowed
+      && authorization.reason === 'host_unverified';
+    if (!authorization.allowed && !placeholderScopedEnv) {
       bundle.denied.push({
         credential_id: row.id,
         vault_id: row.vault_id,
@@ -129,7 +200,22 @@ export function resolveSessionCredentialInjections(
     const secret = decryptCredential(row, opts.dataDir);
     const locations = parseStringArray(row.injection_locations);
     if (row.auth_type === 'environment_variable' && row.variable_name && secret) {
-      bundle.environment[row.variable_name] = secret;
+      if (opts.placeholders) {
+        // The process receives a token; the secret only exists on the wire.
+        // The token is stable per credential so a rotation re-resolution
+        // replaces the value behind the placeholder a spawned process already
+        // holds — the stale-secret problem plaintext env had cannot recur.
+        const placeholder = `__cred_${row.id}__`;
+        bundle.environment[row.variable_name] = placeholder;
+        bundle.placeholders.push({
+          credential_id: row.id,
+          placeholder,
+          value: secret,
+          allowed_hosts: networkPolicy.type === 'limited' ? networkPolicy.allowed_hosts : null,
+        });
+      } else {
+        bundle.environment[row.variable_name] = secret;
+      }
     }
     if (row.auth_type === 'bearer_token' || row.auth_type === 'mcp_oauth') {
       // Both canonical MCP types are keyed by `mcp_server_url`, and their create
@@ -172,6 +258,15 @@ export function resolveSessionCredentialInjections(
 function decryptCredential(row: CredentialRecordRow, dataDir?: string): string {
   if (!row.secret_ciphertext || !row.secret_nonce || !row.secret_tag) return '';
   return decryptSecret({ ciphertext: row.secret_ciphertext, nonce: row.secret_nonce, tag: row.secret_tag }, dataDir);
+}
+
+/**
+ * Adapt a resolved placeholder to the sandbox boundary's substitution shape.
+ * The bundle carries `credential_id` for audit; the boundary needs only the
+ * token, the value, and the host scope.
+ */
+export function placeholderToEgressSubstitution(entry: CredentialPlaceholder): EgressSubstitution {
+  return { placeholder: entry.placeholder, value: entry.value, allowedHosts: entry.allowed_hosts };
 }
 
 function recordCredentialAudit(
