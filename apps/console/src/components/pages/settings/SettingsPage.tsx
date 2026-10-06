@@ -1,8 +1,10 @@
 import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConsoleData, ViewId } from '../../../types';
-import { SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsSection } from './navigation';
+import { SETTINGS_GROUP_LABEL_KEYS, SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsSection } from './navigation';
+import './settings.css';
 
 // V1 Settings default environment seed: "{\"hosting_type\":\"local\",\"sandbox_provider\":\"local\"}".
 
@@ -17,6 +19,7 @@ export function SettingsPage({
   setView: (view: ViewId) => void;
   renderSection: (section: SettingsSection) => ReactNode;
 }) {
+  const { t } = useTranslation('settings');
   const [active, setActive] = useState<SettingsSection>(section);
 
   useEffect(() => {
@@ -25,16 +28,16 @@ export function SettingsPage({
 
   return (
     <section className="settingsShell">
-      <aside className="settingsSidebar" aria-label="Settings sections">
+      <aside className="settingsSidebar" aria-label={t('nav.title')}>
         <div className="settingsSidebarHeader">
-          <strong>Settings</strong>
-          <button className="iconButton quiet" type="button" title="Back to console" onClick={() => setView('agents')}>
+          <strong>{t('nav.title')}</strong>
+          <button className="iconButton quiet" type="button" title={t('nav.back')} onClick={() => setView('agents')}>
             <X size={17} />
           </button>
         </div>
         {SETTINGS_GROUPS.map((group) => (
           <div className="settingsNavGroup" key={group}>
-            <div className="settingsGroupLabel">{group}</div>
+            <div className="settingsGroupLabel">{t(SETTINGS_GROUP_LABEL_KEYS[group])}</div>
             <div className="settingsNav">
               {SETTINGS_SECTIONS.filter((item) => item.group === group).map((item) => {
                 const Icon = item.icon;
@@ -50,7 +53,7 @@ export function SettingsPage({
                     }}
                   >
                     <Icon size={18} />
-                    <span>{item.label}</span>
+                    <span>{t(item.labelKey)}</span>
                   </button>
                 );
               })}

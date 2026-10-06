@@ -1,9 +1,11 @@
 import { MoreVertical } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { postJson, putJson } from '../../../api';
 import { JsonCodeEditor } from '../../CodeEditor';
 import { LoadingState } from '../../Common';
-import { ActionNotice, FormActions, InlineStatus, SegmentedControl } from '../../FormPrimitives';
+import { ActionNotice, FormActions, InlineStatus } from '../../FormPrimitives';
+import { SegmentedControl } from '../../console-ui';
 import type { ConsoleData, RuntimeSettingsConfig } from '../../../types';
 import {
   LoopEngineSettingsForm,
@@ -40,6 +42,7 @@ export function RuntimeSettingsEditor({
   section: RuntimeSettingsSection;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation('settings');
   const settings = data.settings;
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const [draft, setDraft] = useState<RuntimeSettingsConfig | null>(
@@ -49,6 +52,10 @@ export function RuntimeSettingsEditor({
     settings ? runtimeSettingsSectionJson(applyRuntimeSettingsDefaults(settings.saved_config, settings.adapters), section) : '',
   );
   const [error, setError] = useState('');
+  // Message tone is tracked separately from the text: the displayed copy is
+  // localized, so prefix matching against it is not reliable.
+  const [positive, setPositive] = useState(false);
+  const [canRestart, setCanRestart] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -63,13 +70,15 @@ export function RuntimeSettingsEditor({
     setDraft(hydrated);
     setJson(hydrated ? runtimeSettingsSectionJson(hydrated, section) : '');
     setError('');
+    setPositive(false);
+    setCanRestart(false);
     setValidationState('unknown');
     setValidatedJson('');
     setValidationErrors({});
     setFormResetKey((key) => key + 1);
   }, [settings?.revision, section]);
 
-  if (!settings || !draft) return <LoadingState label="Loading runtime settings..." />;
+  if (!settings || !draft) return <LoadingState label={t('editor.loading')} />;
 
   const savedConfig = applyRuntimeSettingsDefaults(settings.saved_config, settings.adapters);
   const savedJson = runtimeSettingsSectionJson(savedConfig, section);
@@ -78,12 +87,6 @@ export function RuntimeSettingsEditor({
   const currentJson = mode === 'json' ? json : runtimeSettingsSectionJson(draft, section);
   const currentFingerprint = currentJsonCandidate ? stableSettingsJson(currentJsonCandidate) : null;
   const isDirty = currentFingerprint ? currentFingerprint !== savedFingerprint : currentJson !== savedJson;
-  const isPositiveMessage = error === 'Configuration is valid.'
-    || error.startsWith('Saved.')
-    || error.startsWith('Restart scheduled.')
-    || error.includes('OK ')
-    || error.includes('SKIPPED ');
-  const canRestartFromMessage = error.startsWith('Saved.') || error.startsWith('Restart scheduled.');
   const sectionActivationErrors = settings.activation_status === 'failed'
     ? settings.activation_errors.filter((item) => isSettingsPathInSection(item.path || 'config', section))
     : [];
@@ -105,21 +108,19 @@ export function RuntimeSettingsEditor({
       : section === 'memory' ? settings.adapters.memory
         : section === 'sandbox' ? settings.adapters.sandbox
           : [];
-  const title = section === 'models' ? 'Model' : section === 'loop-engine' ? 'Loop engine' : section === 'memory' ? 'Memory' : section === 'sandbox' ? 'Sandbox' : 'Storage';
-  const subtitle = section === 'models'
-    ? 'Configure the single model vendor used by this workspace.'
-    : section === 'loop-engine'
-      ? 'Configure the one engine that runs agent turns and tool loops.'
-      : section === 'memory'
-        ? 'Configure the context-memory backend. Memory Stores remain separate resources.'
-        : section === 'sandbox'
-          ? 'Configure the default sandbox. Environments can override it for individual sessions.'
-          : 'Metadata and artifact storage are the two global storage backends.';
+  const title = t(`editor.sections.${section}.title`);
+  const subtitle = t(`editor.sections.${section}.subtitle`);
+
+  const fail = (message: string) => {
+    setError(message);
+    setPositive(false);
+    setCanRestart(false);
+  };
 
   const validate = async (): Promise<RuntimeSettingsConfig | null> => {
     try {
       const candidate = mode === 'json' ? mergeRuntimeSettingsSectionJson(draft, section, json) : draft;
-      if (!candidate) throw new Error('Configuration is invalid JSON.');
+      if (!candidate) throw new Error(t('editor.messages.invalidJson'));
       const result = await postJson<{
         valid: boolean;
         normalized_config?: RuntimeSettingsConfig;
@@ -127,7 +128,7 @@ export function RuntimeSettingsEditor({
       }>('/v1/x/settings/validate', candidate);
       if (!result.valid) {
         setValidationErrors(Object.fromEntries(result.errors.map((item) => [item.path, item.message])));
-        setError(result.errors.map((item) => `${item.path || 'config'}: ${item.message}`).join('\n'));
+        fail(result.errors.map((item) => `${item.path || 'config'}: ${item.message}`).join('\n'));
         setValidationState('invalid');
         setValidatedJson('');
         return null;
@@ -137,19 +138,21 @@ export function RuntimeSettingsEditor({
         : candidate;
       setConfig(normalized, 'valid');
       setValidationErrors({});
-      setError('Configuration is valid.');
+      setError(t('editor.messages.valid'));
+      setPositive(true);
+      setCanRestart(false);
       return normalized;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Configuration is invalid JSON.');
+      fail(err instanceof Error ? err.message : t('editor.messages.invalidJson'));
       setValidationState('invalid');
       setValidatedJson('');
-      setValidationErrors({ config: err instanceof Error ? err.message : 'Configuration is invalid JSON.' });
+      setValidationErrors({ config: err instanceof Error ? err.message : t('editor.messages.invalidJson') });
       return null;
     }
   };
   const save = async () => {
     if (!currentFingerprint || !isDirty) {
-      setError('No settings changes to save.');
+      fail(t('editor.messages.nothingToSave'));
       return;
     }
     let configToSave = draft;
@@ -161,10 +164,12 @@ export function RuntimeSettingsEditor({
     setSaving(true);
     try {
       await putJson('/v1/x/settings', { revision: settings.revision, config: configToSave });
-      setError('Saved. Restart the runtime once to apply this saved configuration.');
+      setError(t('editor.messages.saved'));
+      setPositive(true);
+      setCanRestart(true);
       onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save settings.');
+      fail(err instanceof Error ? err.message : t('editor.messages.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -174,7 +179,7 @@ export function RuntimeSettingsEditor({
     setTesting(true);
     try {
       const candidate = mode === 'json' ? mergeRuntimeSettingsSectionJson(draft, section, json) : draft;
-      if (!candidate) throw new Error('Configuration is invalid JSON.');
+      if (!candidate) throw new Error(t('editor.messages.invalidJson'));
       const areas = section === 'storage'
         ? [
           { area: 'storage.metadata', config: candidate.storage.metadata, full_config: candidate },
@@ -192,9 +197,15 @@ export function RuntimeSettingsEditor({
         return result.checks.map((check) => `${check.status.toUpperCase()} ${check.name}: ${check.message}`);
       });
       syncConfigAfterConnectionTest(candidate);
-      setError(messages.join('\n') || 'Connection test completed.');
+      // Check statuses are published API vocabulary ("OK", "SKIPPED", "FAIL"),
+      // not UI copy, so they stay matched on the raw values.
+      const joined = messages.join('\n') || t('editor.messages.testComplete');
+      const failed = results.some((result) => !result.ok);
+      setError(joined);
+      setPositive(!failed);
+      setCanRestart(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection test failed.');
+      fail(err instanceof Error ? err.message : t('editor.messages.testFailed'));
     } finally {
       setTesting(false);
     }
@@ -203,9 +214,11 @@ export function RuntimeSettingsEditor({
     setRestarting(true);
     try {
       await postJson('/v1/x/restart', {});
-      setError('Restart scheduled. Refresh this page once the runtime is ready.');
+      setError(t('editor.messages.restartScheduled'));
+      setPositive(true);
+      setCanRestart(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not restart the runtime.');
+      fail(err instanceof Error ? err.message : t('editor.messages.restartFailed'));
     } finally {
       setRestarting(false);
     }
@@ -215,6 +228,8 @@ export function RuntimeSettingsEditor({
     setDraft(savedConfig);
     setJson(savedJson);
     setError('');
+    setPositive(false);
+    setCanRestart(false);
     setValidationState('unknown');
     setValidatedJson('');
     setValidationErrors({});
@@ -239,12 +254,12 @@ export function RuntimeSettingsEditor({
           <h1>{title}</h1>
           <p>{subtitle}</p>
           {sectionActivationErrors.length > 0 ? <InlineStatus tone="error">
-            <span>Saved settings are not active.</span>
-            <span>Fix {activationErrorCount === 1 ? 'the highlighted field' : `${activationErrorCount} highlighted fields`}, save, then restart once.</span>
+            <span>{t('editor.activation.notActive')}</span>
+            <span>{activationErrorCount === 1 ? t('editor.activation.fixOne') : t('editor.activation.fixMany', { n: activationErrorCount })}</span>
           </InlineStatus> : null}
         </div>
       </div>
-      <SegmentedControl value={mode} onChange={setMode} options={[{ value: 'form', label: 'Form' }, { value: 'json', label: 'JSON' }]} />
+      <SegmentedControl label={t('editor.modes.label')} value={mode} onChange={setMode} options={[{ value: 'form', label: t('editor.modes.form') }, { value: 'json', label: t('editor.modes.json') }]} />
       {mode === 'form' ? <div className="panel formStack runtimeSettingsForm">
         {section === 'models' ? <ModelSettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} apiKeyConfigured={settings.secret_states.model.api_key === 'configured'} /> : null}
         {section === 'loop-engine' ? <LoopEngineSettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
@@ -262,7 +277,7 @@ export function RuntimeSettingsEditor({
         {section === 'memory' ? <MemorySettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
         {section === 'sandbox' ? <SandboxSettingsForm adapters={adapters} config={draft} onChange={setConfig} errors={visibleErrors} resetKey={formResetKey} /> : null}
       </div> : <div className="stack">
-        <p className="formHint">Editing only the {title} configuration JSON. Save merges this section into the versioned runtime settings document.</p>
+        <p className="formHint">{t('editor.jsonHint', { section: title })}</p>
         <JsonCodeEditor value={json} onChange={(value) => {
           setJson(value);
           setValidationState('unknown');
@@ -270,26 +285,26 @@ export function RuntimeSettingsEditor({
           setValidationErrors({});
         }} />
       </div>}
-      {error ? isPositiveMessage ? (
+      {error ? positive ? (
         <ActionNotice>
           <span>{error}</span>
-          {canRestartFromMessage ? <button className="secondaryButton" type="button" onClick={() => void restart()} disabled={restarting}>{restarting ? 'Restarting...' : 'Restart now'}</button> : null}
+          {canRestart ? <button className="button secondary" type="button" onClick={() => void restart()} disabled={restarting}>{restarting ? t('editor.actions.restarting') : t('editor.actions.restartNow')}</button> : null}
         </ActionNotice>
       ) : <div className="formError">{error}</div> : null}
       <FormActions>
         <div className="menuWrap settingsActionsMenu">
-          <button className="iconButton" type="button" onClick={() => setActionsOpen((open) => !open)} title="More settings actions" aria-label="More settings actions">
+          <button className="iconButton" type="button" onClick={() => setActionsOpen((open) => !open)} title={t('editor.actions.more')} aria-label={t('editor.actions.more')}>
             <MoreVertical size={18} />
           </button>
           {actionsOpen ? (
             <div className="agentMenu settingsMoreMenu">
-              <button type="button" onClick={() => { setActionsOpen(false); void validate(); }}>Validate</button>
-              <button type="button" onClick={() => void testConnection()} disabled={testing}>{testing ? 'Checking...' : 'Check configuration'}</button>
+              <button type="button" onClick={() => { setActionsOpen(false); void validate(); }}>{t('editor.actions.validate')}</button>
+              <button type="button" onClick={() => void testConnection()} disabled={testing}>{testing ? t('editor.actions.checking') : t('editor.actions.check')}</button>
             </div>
           ) : null}
         </div>
-        {isDirty ? <button className="secondaryButton" type="button" onClick={discard} disabled={saving}>Discard</button> : null}
-        <button className="primaryButton" type="button" onClick={() => void save()} disabled={!isDirty || saving}>{saving ? 'Saving...' : 'Save settings'}</button>
+        {isDirty ? <button className="button secondary" type="button" onClick={discard} disabled={saving}>{t('editor.actions.discard')}</button> : null}
+        <button className="button primary" type="button" onClick={() => void save()} disabled={!isDirty || saving}>{saving ? t('editor.actions.saving') : t('editor.actions.save')}</button>
       </FormActions>
     </section>
   );

@@ -1,13 +1,16 @@
-import { Copy, KeyRound, Lock, Plus, Settings, Shield, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clearStoredApiKey, deleteJson, getStoredApiKey, postJson, setStoredApiKey } from '../../../api';
 import { copyText, formatDateShort, relativeDate, truncateMiddle } from '../../../lib/format';
 import type { ApiKey, ApiKeyCreateResponse, ConsoleData } from '../../../types';
-import { EmptyState, RequiredMark, ResourceBadge, StatusPill, SummaryStrip } from '../../Common';
+import { RequiredMark, ResourceBadge } from '../../Common';
+import { EmptyState, Kpi, KpiStrip, PageHeader, StatusDot } from '../../console-ui';
 import { ConfirmDeleteModal } from '../../DangerZone';
 import { Modal } from '../../Modal';
 
 export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefresh: () => void }) {
+  const { t } = useTranslation('settings');
   const [modalOpen, setModalOpen] = useState(false);
   const [deletingKey, setDeletingKey] = useState<ApiKey | null>(null);
   const [storedKey, setStoredKey] = useState(() => getStoredApiKey());
@@ -32,33 +35,33 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
 
   return (
     <section className="stack">
-      <SummaryStrip items={[
-        { label: 'Auth', value: data.runtime?.auth_enabled ? 'enabled' : 'disabled', icon: <KeyRound size={18} /> },
-        { label: 'Active keys', value: String(activeKeys.length), icon: <Shield size={18} /> },
-        { label: 'Managed keys', value: String(managedKeys.length), icon: <Lock size={18} /> },
-        { label: 'Configured keys', value: String(configuredKeys.length), icon: <Settings size={18} /> },
-      ]} />
-      <div className="sectionHeaderRow">
-        <div>
-          <h1>API keys</h1>
-          <p>Create and manage bearer tokens for the local API.</p>
-        </div>
-        <button className="primaryButton" type="button" onClick={() => setModalOpen(true)}>
-          <Plus size={18} />Create key
-        </button>
-      </div>
-      <div className="tablePanel">
-        <table>
+      <PageHeader
+        title={t('apiKeys.title')}
+        description={t('apiKeys.description')}
+        actions={(
+          <button className="primaryButton" type="button" onClick={() => setModalOpen(true)}>
+            <Plus size={18} />{t('apiKeys.create')}
+          </button>
+        )}
+      />
+      <KpiStrip label={t('apiKeys.title')}>
+        <Kpi label={t('apiKeys.kpis.auth')} value={data.runtime?.auth_enabled ? t('general.auth.enabled') : t('general.auth.disabled')} />
+        <Kpi label={t('apiKeys.kpis.activeKeys')} value={String(activeKeys.length)} />
+        <Kpi label={t('apiKeys.kpis.managedKeys')} value={String(managedKeys.length)} />
+        <Kpi label={t('apiKeys.kpis.configuredKeys')} value={String(configuredKeys.length)} />
+      </KpiStrip>
+      <div className="table-frame">
+        <table className="data-table" aria-label={t('apiKeys.title')}>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th>Key prefix</th>
-              <th>Last used</th>
-              <th>Created</th>
-              <th />
+              <th scope="col">{t('apiKeys.columns.id')}</th>
+              <th scope="col">{t('apiKeys.columns.name')}</th>
+              <th scope="col">{t('apiKeys.columns.source')}</th>
+              <th scope="col">{t('apiKeys.columns.status')}</th>
+              <th scope="col">{t('apiKeys.columns.keyPrefix')}</th>
+              <th scope="col">{t('apiKeys.columns.lastUsed')}</th>
+              <th scope="col">{t('apiKeys.columns.created')}</th>
+              <th scope="col"><span className="srOnly">{t('apiKeys.columns.action')}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -66,17 +69,17 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
               <tr key={key.id}>
                 <td><code>{truncateMiddle(key.id, 18)}</code></td>
                 <td><strong>{key.name}</strong></td>
-                <td><ResourceBadge>{key.source === 'managed' ? 'Managed' : 'Config / env'}</ResourceBadge></td>
-                <td><StatusPill status={key.status} /></td>
+                <td><ResourceBadge>{key.source === 'managed' ? t('apiKeys.sourceManaged') : t('apiKeys.sourceConfig')}</ResourceBadge></td>
+                <td><StatusDot tone={key.status === 'active' ? 'ok' : 'neutral'} label={key.status} /></td>
                 <td><code>{key.key_prefix}</code></td>
-                <td>{key.last_used_at ? relativeDate(key.last_used_at) : 'Never'}</td>
+                <td>{key.last_used_at ? relativeDate(key.last_used_at) : t('apiKeys.never')}</td>
                 <td>{formatDateShort(key.created_at)}</td>
                 <td className="rowActionsCell">
-                  <button className="iconButton quiet" type="button" title="Copy key prefix" onClick={() => void copyText(key.key_prefix)}>
+                  <button className="iconButton quiet" type="button" title={t('apiKeys.copyPrefix')} aria-label={t('apiKeys.copyPrefix')} onClick={() => void copyText(key.key_prefix)}>
                     <Copy size={16} />
                   </button>
                   {key.source === 'managed' ? (
-                    <button className="iconButton danger" type="button" title="Delete API key" onClick={() => setDeletingKey(key)}>
+                    <button className="iconButton danger" type="button" title={t('apiKeys.delete')} aria-label={t('apiKeys.delete')} onClick={() => setDeletingKey(key)}>
                       <Trash2 size={16} />
                     </button>
                   ) : null}
@@ -87,25 +90,26 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
         </table>
         {data.apiKeys.length === 0 ? (
           <EmptyState
-            icon={<KeyRound size={22} />}
-            title="No API keys"
-            body="Create a key to require bearer-token authentication for the API."
-            action={<button className="primaryButton" type="button" onClick={() => setModalOpen(true)}><Plus size={18} />Create key</button>}
+            icon={KeyRound}
+            title={t('apiKeys.empty')}
+            description={t('apiKeys.emptyBody')}
+            action={<button className="primaryButton" type="button" onClick={() => setModalOpen(true)}><Plus size={18} />{t('apiKeys.create')}</button>}
           />
         ) : null}
       </div>
       <div className="panel subtlePanel">
-        <h2>Browser token</h2>
-        <p>Store a key locally in this browser so Console requests can authenticate when API auth is enabled.</p>
+        <h2>{t('apiKeys.browserToken.title')}</h2>
+        <p>{t('apiKeys.browserToken.description')}</p>
         <div className="inlineForm">
           <input
             value={storedKey}
             onChange={(event) => setStoredKey(event.target.value)}
-            placeholder="ma_..."
+            placeholder={t('apiKeys.browserToken.placeholder')}
             type="password"
+            aria-label={t('apiKeys.browserToken.title')}
           />
-          <button type="button" onClick={saveStoredKey}>Save token</button>
-          <button type="button" className="ghostButton" onClick={clearBrowserKey}>Clear</button>
+          <button type="button" className="secondaryButton" onClick={saveStoredKey}>{t('apiKeys.browserToken.save')}</button>
+          <button type="button" className="ghostButton" onClick={clearBrowserKey}>{t('apiKeys.browserToken.clear')}</button>
         </div>
       </div>
       {modalOpen ? (
@@ -120,10 +124,10 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
       ) : null}
       {deletingKey ? (
         <ConfirmDeleteModal
-          title="Delete API key"
+          title={t('apiKeys.deleteConfirm.title')}
           subject={deletingKey.name}
-          consequence="This permanently deletes the key. Requests authenticating with this token are refused once it is gone."
-          confirmLabel="Delete API key"
+          consequence={t('apiKeys.deleteConfirm.consequence')}
+          confirmLabel={t('apiKeys.deleteConfirm.confirm')}
           onClose={() => setDeletingKey(null)}
           onConfirm={() => deleteKey(deletingKey)}
         />
@@ -133,6 +137,7 @@ export function SettingsApiKeys({ data, onRefresh }: { data: ConsoleData; onRefr
 }
 
 function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: (secret: string) => void }) {
+  const { t } = useTranslation('settings');
   const [name, setName] = useState('Default API key');
   const [created, setCreated] = useState<ApiKeyCreateResponse | null>(null);
   const [error, setError] = useState('');
@@ -158,16 +163,16 @@ function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: (secr
   };
 
   return (
-    <Modal title="Create API key" onClose={onClose}>
+    <Modal title={t('apiKeys.modal.title')} onClose={onClose}>
       <form className="modalForm" onSubmit={submit}>
         {error ? <div className="banner error">{error}</div> : null}
         {!created ? (
           <>
             <label>
-              <span>Name <RequiredMark /></span>
-              <input value={name} onChange={(event) => setName(event.target.value.slice(0, 80))} placeholder="Production key" required />
+              <span>{t('apiKeys.modal.name')} <RequiredMark /></span>
+              <input value={name} onChange={(event) => setName(event.target.value.slice(0, 80))} placeholder={t('apiKeys.modal.namePlaceholder')} required />
             </label>
-            <p className="formHint">The generated key will be shown once. Store it before closing this dialog.</p>
+            <p className="formHint">{t('apiKeys.modal.hint')}</p>
           </>
         ) : (
           <div className="secretReveal">
@@ -176,14 +181,14 @@ function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: (secr
               <span>{created.key_prefix}</span>
             </div>
             <code>{created.secret_key}</code>
-            <button type="button" onClick={() => void copyText(created.secret_key)}>
-              <Copy size={16} />Copy key
+            <button type="button" className="secondaryButton" onClick={() => void copyText(created.secret_key)}>
+              <Copy size={16} />{t('apiKeys.modal.copyKey')}
             </button>
           </div>
         )}
         <div className="modalActions">
-          <button type="button" onClick={onClose}>{created ? 'Done' : 'Cancel'}</button>
-          {!created ? <button className="primaryButton" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create key'}</button> : null}
+          <button type="button" className="secondaryButton" onClick={onClose}>{created ? t('apiKeys.modal.done') : t('apiKeys.modal.cancel')}</button>
+          {!created ? <button className="primaryButton" type="submit" disabled={saving}>{saving ? t('apiKeys.modal.creating') : t('apiKeys.modal.submit')}</button> : null}
         </div>
       </form>
     </Modal>

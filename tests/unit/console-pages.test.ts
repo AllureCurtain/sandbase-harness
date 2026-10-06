@@ -9,7 +9,8 @@ import { EnvironmentDetail, Environments } from '../../apps/console/src/componen
 import { MemoryStoreDetail, MemoryStores } from '../../apps/console/src/components/pages/MemoryPages.js';
 import { OutcomesPage, ScheduledDeploymentsPage, WebhooksPage } from '../../apps/console/src/components/pages/OperationsPages.js';
 import { SessionDetail, Sessions } from '../../apps/console/src/components/pages/SessionPages.js';
-import { Observability, SettingsLogs } from '../../apps/console/src/components/pages/settings/OperationsSettings.js';
+import { SettingsLogs } from '../../apps/console/src/components/pages/settings/SettingsLogs.js';
+import { SettingsMonitoring } from '../../apps/console/src/components/pages/settings/SettingsMonitoring.js';
 import { SettingsView } from '../../apps/console/src/components/pages/settings/SettingsView.js';
 import type { SettingsSection } from '../../apps/console/src/components/pages/settings/navigation.js';
 import type { ConsoleData, RuntimeSettings, RuntimeSettingsConfig } from '../../apps/console/src/types.js';
@@ -600,13 +601,13 @@ describe('Console page static coverage', () => {
     expect(operationsPage).toContain('disabled={retrying || data.webhooks.length === 0}');
     expect(operationsPage).toContain('disabled={runningDue || data.scheduledDeployments.length === 0}');
     expect(operationsPage.match(/mobileResourceList/g)?.length).toBeGreaterThanOrEqual(3);
-    const operationsSettings = readFileSync('apps/console/src/components/pages/settings/OperationsSettings.tsx', 'utf8');
-    expect(operationsSettings).toContain('No runtime logs');
-    expect(operationsSettings).toContain('Refresh metrics');
-    expect(operationsSettings).toContain('loadMetrics');
-    expect(operationsSettings).toContain('Logs truth model');
-    expect(operationsSettings).toContain('Monitoring truth model');
-    expect(operationsSettings).toContain('Monitoring is read-only');
+    const settingsLogs = readFileSync('apps/console/src/components/pages/settings/SettingsLogs.tsx', 'utf8');
+    expect(settingsLogs).toContain("useTranslation('settings')");
+    expect(settingsLogs).toContain('ConsoleSelect');
+    expect(settingsLogs).not.toContain('<select');
+    const settingsMonitoring = readFileSync('apps/console/src/components/pages/settings/SettingsMonitoring.tsx', 'utf8');
+    expect(settingsMonitoring).toContain("useTranslation('settings')");
+    expect(settingsMonitoring).toContain('/v1/x/metrics');
     const buildPages = readFileSync('apps/console/src/components/pages/BuildPages.tsx', 'utf8');
     expect(buildPages).toContain('fileUploadDropzone');
     expect(buildPages).toContain('Drop files here to upload');
@@ -916,6 +917,6 @@ describe('Console page static coverage', () => {
     const data = populatedConsoleData();
     expect(renderToString(React.createElement(SettingsView, { data, section: 'api-reference', onRefresh: () => {}, setView: () => {} }))).toContain('Copy endpoint');
     expect(renderToString(React.createElement(SettingsLogs, { data }))).toContain('Runtime logs');
-    expect(renderToString(React.createElement(Observability, { data }))).toContain('Runtime summary');
+    expect(renderToString(React.createElement(SettingsMonitoring, { data }))).toContain('Runtime metrics');
   });
 });

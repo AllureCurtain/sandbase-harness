@@ -645,3 +645,68 @@
 html[data-theme="dark"] .main {
   background: var(--surface);
 }
+
+/* Shared code-card and metric preview surfaces (ConfigDrawer equivalent request,
+   settings API reference, monitoring). */
+
+.apiEmptyState {
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+  color: var(--fg-muted);
+  font-size: 13px;
+  padding: 12px;
+}
+
+.apiDocsCodeCard .metricsPreview {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  background: #171717;
+  color: #efeeec;
+  overflow-x: auto;
+}
+
+.snippetHeader {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.snippetHeader h2 {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.apiSnippet {
+  max-height: 300px;
+  white-space: pre;
+  overflow: auto;
+  overflow-wrap: normal;
+}
+
+.equivalentRequest .snippetHeader {
+  border-radius: 10px 10px 0 0;
+  border: 1px solid var(--line-soft);
+}
+
+.equivalentRequest .apiSnippet {
+  border: 1px solid var(--line-soft);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  margin: 0;
+}
+
+.metricsPreview {
+  max-height: 260px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line-soft);
+}
+

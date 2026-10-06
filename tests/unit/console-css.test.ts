@@ -12,6 +12,8 @@ const resourcesCss = readFileSync(join(process.cwd(), 'apps/console/src/componen
 // Operations surfaces (webhooks, scheduled deployments, outcomes) migrated the
 // same way; their rules live in the page-local stylesheet.
 const operationsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/operations.css'), 'utf8');
+// Settings surfaces migrated too; their rules live in the page-local stylesheet.
+const settingsCss = readFileSync(join(process.cwd(), 'apps/console/src/components/pages/settings/settings.css'), 'utf8');
 
 function sessionRuleFor(selector: string): string {
   const match = sessionsCss.match(rulePattern(selector));
@@ -31,29 +33,38 @@ function operationsRuleFor(selector: string): string {
   return match?.[2] ?? '';
 }
 
+function settingsRuleFor(selector: string): string {
+  const match = settingsCss.match(rulePattern(selector));
+  expect(match, `Missing settings CSS rule for ${selector}`).toBeTruthy();
+  return match?.[2] ?? '';
+}
+
+function settingsMediaRuleFor(condition: string, selector: string): string {
+  return mediaRuleFor(condition, selector, settingsCss, 'settings');
+}
+
 describe('Console CSS contracts', () => {
   it('keeps Settings as a responsive two-pane layout that collapses on narrow screens', () => {
-    expect(ruleFor('.settingsShell')).toContain('grid-template-columns: 232px minmax(0, 1fr)');
-    expect(mediaRuleFor('max-width: 1080px', '.settingsShell')).toContain('grid-template-columns: 220px minmax(0, 1fr)');
-    expect(mediaRuleFor('max-width: 760px', '.settingsShell')).toContain('grid-template-columns: 1fr');
-    expect(mediaRuleFor('max-width: 760px', '.settingsNav')).toContain('flex-direction: row');
-    expect(mediaRuleFor('max-width: 760px', '.settingsNav')).toContain('overflow-x: auto');
+    expect(settingsRuleFor('.settingsShell')).toContain('grid-template-columns: 232px minmax(0, 1fr)');
+    expect(settingsMediaRuleFor('max-width: 1080px', '.settingsShell')).toContain('grid-template-columns: 220px minmax(0, 1fr)');
+    expect(settingsMediaRuleFor('max-width: 760px', '.settingsShell')).toContain('grid-template-columns: 1fr');
+    expect(settingsMediaRuleFor('max-width: 760px', '.settingsNav')).toContain('flex-direction: row');
+    expect(settingsMediaRuleFor('max-width: 760px', '.settingsNav')).toContain('overflow-x: auto');
   });
 
   it('keeps the runtime log viewer large enough for operations debugging', () => {
-    expect(ruleFor('.settingsLogsPage .runtimeLogPanel')).toContain('min-height: 520px');
-    expect(ruleFor('.runtimeLogList')).toContain('height: clamp(520px, calc(100vh - 390px), 820px)');
-    expect(ruleFor('.runtimeLogList')).toContain('min-height: 520px');
-    expect(ruleFor('.runtimeLogList')).toContain('overflow: auto');
+    expect(settingsRuleFor('.settingsLogsPage .runtimeLogPanel')).toContain('min-height: 520px');
+    expect(settingsRuleFor('.runtimeLogList')).toContain('height: clamp(520px, calc(100vh - 390px), 820px)');
+    expect(settingsRuleFor('.runtimeLogList')).toContain('min-height: 520px');
+    expect(settingsRuleFor('.runtimeLogList')).toContain('overflow: auto');
   });
 
   it('keeps API reference and form grids responsive instead of forcing horizontal scroll', () => {
-    const mobile = mediaRuleFor('max-width: 760px', '.apiDocsShell');
+    const mobile = settingsMediaRuleFor('max-width: 760px', '.apiDocsShell');
 
-    expect(ruleFor('.apiDocsShell')).toContain('grid-template-columns');
+    expect(settingsRuleFor('.apiDocsShell')).toContain('grid-template-columns');
     expect(mobile).toContain('grid-template-columns: 1fr');
-    expect(mediaRuleFor('max-width: 760px', '.formGrid')).toContain('grid-template-columns: 1fr');
-    expect(mediaRuleFor('max-width: 760px', '.apiParamRow')).toContain('grid-template-columns: 1fr');
+    expect(settingsMediaRuleFor('max-width: 760px', '.apiParamRow')).toContain('grid-template-columns: 1fr');
   });
 
   it('keeps session conversations bounded while the transcript owns vertical scrolling', () => {
@@ -107,20 +118,20 @@ function ruleFor(selector: string): string {
   return match?.[2] ?? '';
 }
 
-function mediaRuleFor(condition: string, selector: string): string {
+function mediaRuleFor(condition: string, selector: string, source: string = css, sourceName = 'CSS'): string {
   const mediaHeader = `@media (${condition})`;
-  let mediaStart = css.indexOf(mediaHeader);
+  let mediaStart = source.indexOf(mediaHeader);
   let match: RegExpMatchArray | null = null;
 
   while (mediaStart >= 0) {
-    const nextMedia = css.indexOf('@media ', mediaStart + mediaHeader.length);
-    const block = css.slice(mediaStart, nextMedia === -1 ? undefined : nextMedia);
+    const nextMedia = source.indexOf('@media ', mediaStart + mediaHeader.length);
+    const block = source.slice(mediaStart, nextMedia === -1 ? undefined : nextMedia);
     match = block.match(rulePattern(selector));
     if (match) return match[2] ?? '';
-    mediaStart = css.indexOf(mediaHeader, mediaStart + mediaHeader.length);
+    mediaStart = source.indexOf(mediaHeader, mediaStart + mediaHeader.length);
   }
 
-  expect(match, `Missing CSS rule for ${selector} inside @media (${condition})`).toBeTruthy();
+  expect(match, `Missing ${sourceName} CSS rule for ${selector} inside @media (${condition})`).toBeTruthy();
   return '';
 }
 

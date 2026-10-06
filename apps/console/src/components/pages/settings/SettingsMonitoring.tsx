@@ -1,8 +1,9 @@
-import { Activity, CirclePlay, Gauge, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { getText } from '../../../api';
 import type { ConsoleData } from '../../../types';
-import { KeyValuePanel, SummaryStrip } from '../../Common';
+import { KeyValuePanel } from '../../Common';
+import { Kpi, KpiStrip, PageHeader } from '../../console-ui';
 
 type ParsedMetrics = {
   disabled: boolean;
@@ -13,6 +14,7 @@ type ParsedMetrics = {
 };
 
 export function SettingsMonitoring({ data }: { data: ConsoleData }) {
+  const { t } = useTranslation('settings');
   const [metricsText, setMetricsText] = useState('');
   const [metricsError, setMetricsError] = useState('');
 
@@ -39,41 +41,36 @@ export function SettingsMonitoring({ data }: { data: ConsoleData }) {
   const averageRequestMs = metrics.httpRequestDurationCount
     ? Math.round(metrics.httpRequestDurationSum / metrics.httpRequestDurationCount)
     : null;
-  const metricsStatus = metricsError || (metricsText ? (metrics.disabled ? 'disabled' : 'enabled') : 'loading');
-  const requestCount = metrics.disabled ? 'disabled' : (metrics.httpRequests ?? 0);
-  const errorCount = metrics.disabled ? 'disabled' : (metrics.httpErrors ?? 0);
-  const requestSamples = metrics.disabled ? 'disabled' : (metrics.httpRequestDurationCount ?? 0);
-  const averageDuration = metrics.disabled ? 'disabled' : (averageRequestMs === null ? 'No samples yet' : `${averageRequestMs} ms`);
+  const metricsStatus = metricsError || (metricsText ? (metrics.disabled ? t('monitoring.disabled') : t('monitoring.enabled')) : t('monitoring.loading'));
+  const requestCount = metrics.disabled ? t('monitoring.disabled') : (metrics.httpRequests ?? 0);
+  const errorCount = metrics.disabled ? t('monitoring.disabled') : (metrics.httpErrors ?? 0);
+  const requestSamples = metrics.disabled ? t('monitoring.disabled') : (metrics.httpRequestDurationCount ?? 0);
+  const averageDuration = metrics.disabled ? t('monitoring.disabled') : (averageRequestMs === null ? t('monitoring.noSamples') : `${averageRequestMs} ms`);
 
   return (
     <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Monitoring</h1>
-          <p>Inspect live runtime counters and session activity for this workspace.</p>
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Sessions', value: data.sessions.length, icon: <MessageSquare size={18} /> },
-        { label: 'Running', value: data.sessions.filter((session) => session.status === 'running').length, icon: <CirclePlay size={18} /> },
-        { label: 'HTTP requests', value: requestCount, icon: <Activity size={18} /> },
-        { label: 'HTTP errors', value: errorCount, icon: <Gauge size={18} /> },
-      ]} />
+      <PageHeader title={t('monitoring.title')} description={t('monitoring.description')} />
+      <KpiStrip label={t('monitoring.title')}>
+        <Kpi label={t('monitoring.kpis.sessions')} value={data.sessions.length} />
+        <Kpi label={t('monitoring.kpis.running')} value={data.sessions.filter((session) => session.status === 'running').length} />
+        <Kpi label={t('monitoring.kpis.httpRequests')} value={requestCount} />
+        <Kpi label={t('monitoring.kpis.httpErrors')} value={errorCount} />
+      </KpiStrip>
       <div className="workspaceGrid">
         <div className="panel subtlePanel">
-          <h2>Runtime metrics</h2>
-          <p>Live process counters from <code>/v1/x/metrics</code>.</p>
+          <h2>{t('monitoring.metricsPanel.title')}</h2>
+          <p><Trans i18nKey="monitoring.metricsPanel.description" ns="settings" components={{ code: <code /> }} /></p>
           <KeyValuePanel rows={[
-            ['Metrics status', metricsStatus],
-            ['Request samples', requestSamples],
-            ['Average request duration', averageDuration],
-            ['Session tokens', tokenTotal],
+            [t('monitoring.metricsPanel.status'), metricsStatus],
+            [t('monitoring.metricsPanel.samples'), requestSamples],
+            [t('monitoring.metricsPanel.avgDuration'), averageDuration],
+            [t('monitoring.metricsPanel.sessionTokens'), tokenTotal],
           ]} />
         </div>
         <div className="panel subtlePanel">
-          <h2>Prometheus endpoint</h2>
-          <p>Raw text returned by the local runtime.</p>
-          <pre className="metricsPreview">{metricsError || metricsText || '# metrics not loaded yet'}</pre>
+          <h2>{t('monitoring.prometheus.title')}</h2>
+          <p>{t('monitoring.prometheus.description')}</p>
+          <pre className="metricsPreview">{metricsError || metricsText || t('monitoring.metricsPlaceholder')}</pre>
         </div>
       </div>
     </section>

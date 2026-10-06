@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Bot, CheckCircle2, KeyRound } from 'lucide-react';
 import { putJson } from '../../../api';
 import { agentModelFieldHint, agentModelUpdateBody, pendingRestartNote, type SetupModelProvider } from '../../../lib/modelSetupGuidance';
@@ -32,8 +33,9 @@ export function SetupAgentModels({
   restartRequired?: boolean;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation('settings');
   const agents = data.agents.filter((agent) => !agent.archived_at);
-  const restartNote = pendingRestartNote(restartRequired, data.settings?.activation_status);
+  const restartNote = pendingRestartNote(restartRequired, data.settings?.activation_status, t);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
@@ -77,7 +79,7 @@ export function SetupAgentModels({
   const save = async (agentId: string) => {
     const agent = data.agents.find((item) => item.id === agentId);
     if (!agent) return;
-    const update = agentModelUpdateBody(agent, draftFor(agent.id, agent.model ?? ''));
+    const update = agentModelUpdateBody(agent, draftFor(agent.id, agent.model ?? ''), t);
     if (!update.ok) {
       setRowState(agentId, { kind: 'error', text: update.error });
       return;
@@ -86,7 +88,7 @@ export function SetupAgentModels({
     setRowState(agentId, undefined);
     try {
       await putJson(`/v1/agents/${encodeURIComponent(agentId)}`, update.body);
-      setRowState(agentId, { kind: 'ok', text: `Saved. ${agent.name} now uses ${update.body.model}.` });
+      setRowState(agentId, { kind: 'ok', text: t('setupModels.savedOk', { name: agent.name, model: update.body.model }) });
       onRefresh();
     } catch (error) {
       setRowState(agentId, {
@@ -104,21 +106,19 @@ export function SetupAgentModels({
   };
 
   const placeholder = provider?.vendor === 'openai_compatible'
-    ? 'the model id this endpoint serves'
-    : 'model id';
+    ? t('setupModels.placeholderCompatible')
+    : t('setupModels.placeholder');
 
   return (
     <div className={`panel subtlePanel setupAgentModels${emphasize ? ' setupAgentModelsNext' : ''}`}>
       <div className="builderSetupHeader">
         <span className="softIcon"><Bot size={18} /></span>
         <div>
-          <h2>Agent models</h2>
-          <p>
-            Each agent names the model the provider is asked for. Set it here — no YAML or agent file needs editing.
-          </p>
+          <h2>{t('setupModels.title')}</h2>
+          <p>{t('setupModels.description')}</p>
         </div>
       </div>
-      <p className="setupAgentHint">{agentModelFieldHint(provider)}</p>
+      <p className="setupAgentHint">{agentModelFieldHint(provider, t)}</p>
       {restartNote ? (
         <div className="setupProviderWarning">
           <AlertTriangle size={15} />
@@ -129,9 +129,9 @@ export function SetupAgentModels({
         <div className="setupProviderWarning">
           <AlertTriangle size={15} />
           <span>
-            The saved provider key comes from {provider.missingKeyVariables.map((name) => `\`${name}\``).join(', ')},
-            which has no value in the runtime's environment. Set it in the environment the runtime was started from, or paste the key
-            itself in the form above. A turn sent before that will fail with an error naming the variable.
+            {t('setupModels.missingKey', {
+              vars: provider.missingKeyVariables.map((name) => `\`${name}\``).join(', '),
+            })}
           </span>
         </div>
       ) : null}
@@ -145,7 +145,7 @@ export function SetupAgentModels({
               <li key={agent.id} className="setupAgentRow">
                 <div className="setupAgentIdentity">
                   <strong>{agent.name}</strong>
-                  <span><KeyRound size={13} />{agent.model || 'no model set'}</span>
+                  <span><KeyRound size={13} />{agent.model || t('setupModels.noModel')}</span>
                 </div>
                 <form
                   className="setupAgentForm"
@@ -154,7 +154,7 @@ export function SetupAgentModels({
                     void save(agent.id);
                   }}
                 >
-                  <label className="srOnly" htmlFor={`agent-model-${agent.id}`}>Model for {agent.name}</label>
+                  <label className="srOnly" htmlFor={`agent-model-${agent.id}`}>{t('setupModels.fieldLabel', { name: agent.name })}</label>
                   <input
                     id={`agent-model-${agent.id}`}
                     value={draft}
@@ -168,13 +168,13 @@ export function SetupAgentModels({
                     }}
                   />
                   <button className="secondaryButton" type="submit" disabled={saving}>
-                    {saving ? 'Saving...' : 'Save model'}
+                    {saving ? t('setupModels.saving') : t('setupModels.save')}
                   </button>
                 </form>
                 {state ? (
                   <div className={`inlineStatus ${state.kind === 'error' ? 'error' : 'neutral'}`}>
                     {state.kind === 'ok' ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                    <span>{state.kind === 'ok' ? 'Saved' : 'Not saved'}</span>
+                    <span>{state.kind === 'ok' ? t('setupModels.savedTag') : t('setupModels.notSavedTag')}</span>
                     <span>{state.text}</span>
                   </div>
                 ) : null}
@@ -183,9 +183,7 @@ export function SetupAgentModels({
           })}
         </ul>
       ) : (
-        <p className="mutedText">
-          No agents yet. Create one from the Agents page — it needs a model id before it can answer.
-        </p>
+        <p className="mutedText">{t('setupModels.empty')}</p>
       )}
     </div>
   );
