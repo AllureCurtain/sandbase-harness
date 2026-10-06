@@ -1,5 +1,6 @@
-import { ChevronDown, Info, Plus } from 'lucide-react';
+import { ChevronRight, Info, Plus } from 'lucide-react';
 import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from 'react';
+import brandIcon from './assets/brand-icon.png';
 import { LoadingState } from './components/Common';
 import { ConsoleRouteView, NAV_GROUPS, SETTINGS_VIEW_IDS } from './components/ConsoleRoutes';
 import { AgentEditModal, AgentModal } from './components/modals/AgentModals';
@@ -58,7 +59,7 @@ export function App() {
       {!isSettingsRoute ? (
         <aside className="sidebar">
           <div className="brand">
-            <span className="brandMark">▣</span>
+            <img className="brandMark" src={brandIcon} alt="" />
             <span>managed-agents</span>
           </div>
           <button className="workspaceSwitch" type="button" onClick={() => setRoute('workspace')}>
@@ -67,7 +68,7 @@ export function App() {
               <strong>{workspaceLabel}</strong>
               <small>{workspaceTarget}</small>
             </span>
-            <ChevronDown size={16} />
+            <ChevronRight size={16} />
           </button>
           <nav className="nav">
             {NAV_GROUPS.map((group) => (

@@ -1,0 +1,276 @@
+/**
+ * Skills and Files surfaces — page-local rules migrated from styles.css
+ * onto the token system.
+ */
+
+.skillsLayout {
+  display: block;
+}
+.skillsLayout.hasDrawer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px);
+  gap: 16px;
+  align-items: start;
+}
+.skill-table-frame {
+  min-height: 480px;
+}
+.skill-table-frame table {
+  min-width: 680px;
+}
+.skill-table-frame tr {
+  height: 58px;
+}
+.skillDrawer {
+  min-height: 480px;
+  max-height: calc(100vh - 188px);
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: none;
+}
+.drawerHeader {
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 12px;
+  align-items: start;
+  padding: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.drawerHeader p {
+  color: var(--fg-muted);
+  margin-top: 8px;
+}
+.drawerBody {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.drawerBody > p {
+  color: var(--fg);
+  line-height: 1.45;
+}
+.drawerMetaGrid {
+  display: grid;
+  grid-template-columns: 126px minmax(0, 1fr);
+  gap: 12px 16px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+}
+.drawerMetaGrid dt {
+  color: var(--fg-muted);
+}
+.drawerMetaGrid dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillVersionSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.skillVersionSection h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.skillVersionList {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.skillVersionRow {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.skillVersionRow:last-child {
+  border-bottom: 0;
+}
+.skillVersionRow small {
+  color: var(--fg-muted);
+}
+.skillVersionRow b {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 12px;
+}
+.skillUploadDropzone {
+  min-height: 148px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  text-align: center;
+  color: var(--fg);
+}
+.skillUploadDropzone.dragActive {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.skillUploadDropzone svg {
+  color: var(--fg-muted);
+}
+.skillUploadDropzone span {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.skillUploadActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.skillUploadFile {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 12px;
+}
+.skillUploadFile strong, .skillUploadFile span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skillUploadFile span {
+  color: var(--fg-muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
+.hiddenFileInput {
+  display: none;
+}
+.formAlert {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  font-weight: 640;
+}
+.formAlert.error {
+  background: var(--red-tint);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+  color: var(--red);
+}
+.fileUploadError {
+  max-width: 720px;
+}
+.skill-table-frame tr.selected-row {
+  background: var(--accent-tint);
+}
+.files-table-frame {
+  min-height: 420px;
+}
+.files-table-frame table {
+  table-layout: fixed;
+}
+.files-table-frame th:nth-child(1), .files-table-frame td:nth-child(1) {
+  width: 16%;
+}
+.files-table-frame th:nth-child(2), .files-table-frame td:nth-child(2) {
+  width: 50%;
+}
+.files-table-frame th:nth-child(3), .files-table-frame td:nth-child(3), .files-table-frame th:nth-child(4), .files-table-frame td:nth-child(4) {
+  width: 14%;
+}
+.files-table-frame th:nth-child(5), .files-table-frame td:nth-child(5) {
+  width: 6%;
+}
+.files-table-frame td {
+  height: 58px;
+}
+.files-table-frame td strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-table-frame {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.skill-table-frame table {
+  border-top: 1px solid var(--line-soft);
+}
+.skill-table-frame th, .skill-table-frame td {
+  padding-left: 0;
+  padding-right: 18px;
+}
+
+@media (max-width: 1080px) {
+.skillsLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.skillDrawer {
+    min-height: auto;
+    max-height: none;
+  }
+}
+
+@media (max-width: 760px) {
+.skillsLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+.skill-table-frame {
+    min-height: auto;
+    max-width: 100%;
+  }
+.skill-table-frame table {
+    min-width: 620px;
+  }
+.skillDrawer {
+    min-height: auto;
+    max-height: none;
+    box-shadow: none;
+  }
+}
+
+
+/* Compatibility notice inside the skill detail drawer. */
+.infoBanner {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+
+.infoBanner strong {
+  color: var(--fg);
+  font-weight: 640;
+}

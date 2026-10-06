@@ -1,17 +1,20 @@
-import { Box, Brain, Copy, Info, Layers, Monitor, Zap } from 'lucide-react';
+import { Box, Copy, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { copyText, pathName, relativeWorkspacePath, workspaceConfigDir } from '../../../lib/format';
 import type { ConsoleData, Workspace } from '../../../types';
-import { KeyValuePanel, SummaryStrip } from '../../Common';
+import { KeyValuePanel } from '../../Common';
+import { Kpi, KpiStrip, PageHeader } from '../../console-ui';
 
 export function WorkspacePathsPanel({ workspace }: { workspace: Workspace | null }) {
+  const { t } = useTranslation('settings');
   const configDir = workspaceConfigDir(workspace);
   const directoryRows = [
-    { label: 'Agent seed directory', path: workspace?.directories?.agents ?? workspace?.agentsDir, defaultLabel: 'agents/', kind: 'directory' as const },
-    { label: 'Skill seed directory', path: workspace?.directories?.skills ?? workspace?.skillsDir, defaultLabel: 'skills/', kind: 'directory' as const },
-    { label: 'Workspace state directory', path: workspace?.directories?.data ?? workspace?.dataDir, defaultLabel: '.managed-agents/', kind: 'directory' as const },
-    { label: 'Config file', path: workspace?.directories?.config ?? workspace?.configPath, defaultLabel: '.managed-agents/config.yaml', kind: 'file' as const },
-    { label: 'Database', path: workspace?.directories?.database ?? workspace?.databasePath, defaultLabel: '.managed-agents/data.db', kind: 'file' as const },
-    { label: 'Runtime log', path: workspace?.directories?.logFile ?? workspace?.logFile, defaultLabel: '.managed-agents/logs/runtime.log', kind: 'file' as const },
+    { label: t('workspace.paths.agentsDir'), path: workspace?.directories?.agents ?? workspace?.agentsDir, defaultLabel: 'agents/', kind: 'directory' as const },
+    { label: t('workspace.paths.skillsDir'), path: workspace?.directories?.skills ?? workspace?.skillsDir, defaultLabel: 'skills/', kind: 'directory' as const },
+    { label: t('workspace.paths.stateDir'), path: workspace?.directories?.data ?? workspace?.dataDir, defaultLabel: '.managed-agents/', kind: 'directory' as const },
+    { label: t('workspace.paths.configFile'), path: workspace?.directories?.config ?? workspace?.configPath, defaultLabel: '.managed-agents/config.yaml', kind: 'file' as const },
+    { label: t('workspace.paths.database'), path: workspace?.directories?.database ?? workspace?.databasePath, defaultLabel: '.managed-agents/data.db', kind: 'file' as const },
+    { label: t('workspace.paths.runtimeLog'), path: workspace?.directories?.logFile ?? workspace?.logFile, defaultLabel: '.managed-agents/logs/runtime.log', kind: 'file' as const },
   ];
 
   return (
@@ -19,11 +22,11 @@ export function WorkspacePathsPanel({ workspace }: { workspace: Workspace | null
       <div className="configFolderHeader">
         <div className="configFolderIcon"><Box size={20} /></div>
         <div>
-          <span>Configuration folder</span>
-          <strong title={configDir}>{pathName(configDir) || workspace?.name || 'workspace'}</strong>
+          <span>{t('workspace.paths.configFolder')}</span>
+          <strong title={configDir}>{pathName(configDir) || workspace?.name || t('workspace.paths.workspaceFallback')}</strong>
         </div>
         {configDir ? (
-          <button className="iconButton quiet" type="button" title={configDir} onClick={() => copyText(configDir)}>
+          <button className="iconButton quiet" type="button" title={t('workspace.paths.copyPath')} aria-label={t('workspace.paths.copyPath')} onClick={() => copyText(configDir)}>
             <Copy size={16} />
           </button>
         ) : null}
@@ -41,42 +44,36 @@ export function WorkspacePathsPanel({ workspace }: { workspace: Workspace | null
 }
 
 export function SettingsWorkspace({ data }: { data: ConsoleData }) {
+  const { t } = useTranslation('settings');
   return (
     <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Workspace</h1>
-          <p>Manage the local workspace that backs this console.</p>
-        </div>
-      </div>
+      <PageHeader title={t('workspace.title')} description={t('workspace.description')} />
       <div className="workspaceNotice">
         <Info size={18} />
         <div>
-          <strong>Single local workspace mode</strong>
-          <span>Start the server with another workspace root to use a different config, database, and log set.</span>
+          <strong>{t('workspace.notice.title')}</strong>
+          <span>{t('workspace.notice.body')}</span>
         </div>
       </div>
-      <SummaryStrip
-        items={[
-          { label: 'Target', value: data.workspace?.target ?? 'local', icon: <Layers size={18} /> },
-          { label: 'Agents', value: data.agents.length, icon: <Monitor size={18} /> },
-          { label: 'Skills', value: data.skills.length, icon: <Zap size={18} /> },
-          { label: 'Memory stores', value: data.memoryStores.length, icon: <Brain size={18} /> },
-        ]}
-      />
+      <KpiStrip label={t('workspace.title')}>
+        <Kpi label={t('workspace.kpis.target')} value={data.workspace?.target ?? 'local'} />
+        <Kpi label={t('workspace.kpis.agents')} value={data.agents.length} />
+        <Kpi label={t('workspace.kpis.skills')} value={data.skills.length} />
+        <Kpi label={t('workspace.kpis.memoryStores')} value={data.memoryStores.length} />
+      </KpiStrip>
       <div className="workspaceGrid">
         <div className="panel subtlePanel">
-          <h2>Current workspace</h2>
-          <p>{data.workspace?.name ?? 'local workspace'}</p>
+          <h2>{t('workspace.current.title')}</h2>
+          <p>{data.workspace?.name ?? t('workspace.current.fallbackName')}</p>
           <KeyValuePanel rows={[
-            ['Target', data.workspace?.target],
-            ['Mode', data.runtime ? 'Runtime connected' : 'Runtime starting'],
-            ['Root folder', pathName(data.workspace?.root) || data.workspace?.name],
+            [t('workspace.current.target'), data.workspace?.target],
+            [t('workspace.current.mode'), data.runtime ? t('workspace.current.modeConnected') : t('workspace.current.modeStarting')],
+            [t('workspace.current.rootFolder'), pathName(data.workspace?.root) || data.workspace?.name],
           ]} />
         </div>
         <div className="panel subtlePanel">
-          <h2>Configuration</h2>
-          <p>Local files used by the runtime.</p>
+          <h2>{t('workspace.config.title')}</h2>
+          <p>{t('workspace.config.description')}</p>
           <WorkspacePathsPanel workspace={data.workspace} />
         </div>
       </div>

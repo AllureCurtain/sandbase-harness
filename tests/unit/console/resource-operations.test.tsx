@@ -235,7 +235,9 @@ describe('the environment pages', () => {
 
     await user.type(screen.getByLabelText(/name/i), 'Docker env');
     await user.click(screen.getByText(/advanced/i));
-    await user.selectOptions(screen.getByLabelText(/hosting type/i), 'docker');
+    // The hosting picker is a headless combobox (ConsoleSelect), not a <select>.
+    await user.click(screen.getByRole('combobox', { name: /hosting type/i }));
+    await user.click(await screen.findByRole('option', { name: /docker container/i }));
     await user.click(screen.getByRole('button', { name: /create environment/i }));
 
     await waitFor(() => {

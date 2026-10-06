@@ -1,22 +1,26 @@
-import { Archive, Copy, FileText, Globe, MoreVertical, Pencil, Plus, Server, Trash2 } from 'lucide-react';
+import { Archive, Copy, Globe, MoreVertical, Pencil, Plus, Server, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { deleteJson, postJson, putJson } from '../../api';
-import { EmptyState, FilterSelect, StatusPill, Toolbar } from '../Common';
+import { EmptyState, PageBody, PageHeader, StatusDot } from '../console-ui';
 import { ConfirmDeleteModal } from '../DangerZone';
+import { ListToolbar, listSummary, SearchField } from '../list-ui';
+import { ConsoleSelect } from '../console-select';
 import { copyText, formatDateShort, shortId } from '../../lib/format';
 import type { ConsoleData, Environment, EnvironmentDraft, MetadataDraft } from '../../types';
 import { CloudEnvironment, ReadonlyTable, SelfHostedEnvironment } from './EnvironmentDetailViews';
 import {
-  effectiveSandboxProvider,
   environmentDraftFromApi,
   environmentHostingType,
-  environmentKind,
   environmentPayloadFromDraft,
-  hostingLabel,
   PACKAGE_MANAGERS,
 } from './EnvironmentPageModel';
+import './resources.css';
 
 export function Environments({ data, onNew, onOpenEnvironment }: { data: ConsoleData; onNew: () => void; onOpenEnvironment: (environment: Environment) => void }) {
+  const { t } = useTranslation('environments');
+  const { t: tPages } = useTranslation('pages');
+  const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const environments = data.environments.filter((environment) => {
@@ -26,86 +30,94 @@ export function Environments({ data, onNew, onOpenEnvironment }: { data: Console
     const matchesQuery = environment.id.toLowerCase().includes(q) || environment.name.toLowerCase().includes(q) || (environment.description ?? '').toLowerCase().includes(q);
     return matchesStatus && matchesQuery;
   });
+  const filtering = Boolean(query) || status !== 'all';
+  const kindLabel = (environment: Environment) => t(`kind.${environmentHostingType(environment)}`);
+  const emptyState = (
+    <EmptyState
+      icon={Server}
+      title={data.environments.length && filtering ? t('list.noMatch') : t('list.empty')}
+      action={query ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button> : null}
+    />
+  );
 
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Environments</h1>
-          <p>Configuration template for containers, such as sessions or code execution.</p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={onNew}>
-            <Plus size={18} />
-            Create environment
-          </button>
-          <button className="iconButton" type="button" title="Documentation">
-            <FileText size={18} />
-          </button>
-        </div>
-      </div>
-      <Toolbar
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search by name or exact ID"
+    <section className="page-section console-page environments-list-page" aria-labelledby="environments-heading">
+      <PageHeader
+        headingId="environments-heading"
+        title={tPages('environments.title')}
+        help={tPages('environments.description')}
         actions={(
-          <FilterSelect
-            label="Status"
+          <button className="button primary" type="button" onClick={onNew}>
+            <Plus size={15} aria-hidden="true" />
+            {tPages('environments.newEnvironment')}
+          </button>
+        )}
+      />
+      <PageBody>
+        <ListToolbar
+          label={t('list.filterLabel')}
+          summary={listSummary(tCommon, environments.length, data.environments.length, { locale: i18n.resolvedLanguage })}
+        >
+          <SearchField value={query} onChange={setQuery} placeholder={t('list.searchPlaceholder')} label={t('list.filterLabel')} />
+          <ConsoleSelect
+            label={t('list.status')}
             value={status}
             onChange={setStatus}
             options={[
-              { value: 'all', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'archived', label: 'Archived' },
+              { value: 'all', label: t('list.statusOptions.all') },
+              { value: 'active', label: t('list.statusOptions.active') },
+              { value: 'archived', label: t('list.statusOptions.archived') },
             ]}
           />
-        )}
-      />
-      <div className="tablePanel environmentsTablePanel">
-        <table className="resourceTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Type</th>
-              <th>Updated at</th>
-            </tr>
-          </thead>
-          <tbody>
-            {environments.map((environment) => (
-              <tr key={environment.id} className="clickableRow" onClick={() => onOpenEnvironment(environment)}>
-                <td><strong className="monoText">{shortId(environment.id)}</strong></td>
-                <td>{environment.name}</td>
-                <td><StatusPill status={environment.archived_at ? 'archived' : 'active'} /></td>
-                <td><span className="softChip inlineChip">{environmentKind(environment)}</span></td>
-                <td>{formatDateShort(environment.updated_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {environments.length === 0 ? <EmptyState icon={<Server size={22} />} title="No environments" /> : null}
-      </div>
-      <div className="mobileResourceList">
-        {environments.map((environment) => (
-          <button className="mobileAgentCard" type="button" key={environment.id} onClick={() => onOpenEnvironment(environment)}>
-            <span className="mobileAgentMain">
-              <strong>{environment.name}</strong>
-              <small className="monoText">{environment.id}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <span>{environmentKind(environment)}</span>
-              <StatusPill status={environment.archived_at ? 'archived' : 'active'} />
-            </span>
-          </button>
-        ))}
-        {environments.length === 0 ? <EmptyState icon={<Server size={22} />} title="No environments" /> : null}
-      </div>
+        </ListToolbar>
+        {environments.length ? (
+          <div className="table-frame environments-table-frame">
+            <table className="data-table" aria-label={tPages('environments.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('list.columns.id')}</th>
+                  <th scope="col">{t('list.columns.name')}</th>
+                  <th scope="col">{t('list.columns.status')}</th>
+                  <th scope="col">{t('list.columns.type')}</th>
+                  <th scope="col">{t('list.columns.updated')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {environments.map((environment) => (
+                  <tr key={environment.id} className="clickable-row" onClick={() => onOpenEnvironment(environment)}>
+                    <td><strong className="monoText">{shortId(environment.id)}</strong></td>
+                    <td>{environment.name}</td>
+                    <td><StatusDot tone={environment.archived_at ? 'neutral' : 'ok'} label={t(environment.archived_at ? 'list.statusOptions.archived' : 'list.statusOptions.active')} /></td>
+                    <td>{kindLabel(environment)}</td>
+                    <td>{formatDateShort(environment.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : emptyState}
+        <div className="mobileResourceList">
+          {environments.map((environment) => (
+            <button className="mobileResourceCard" type="button" key={environment.id} onClick={() => onOpenEnvironment(environment)} aria-label={t('list.open', { name: environment.name })}>
+              <span className="mobileAgentMain">
+                <strong>{environment.name}</strong>
+                <small className="monoText">{environment.id}</small>
+              </span>
+              <span className="mobileAgentMeta">
+                <span>{kindLabel(environment)}</span>
+                <StatusDot tone={environment.archived_at ? 'neutral' : 'ok'} label={t(environment.archived_at ? 'list.statusOptions.archived' : 'list.statusOptions.active')} />
+              </span>
+            </button>
+          ))}
+          {environments.length === 0 ? emptyState : null}
+        </div>
+      </PageBody>
     </section>
   );
 }
 
 export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { environment: Environment; data: ConsoleData; onBack: () => void; onRefresh: () => void }) {
+  const { t } = useTranslation('environments');
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -142,7 +154,7 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
   return (
     <section className="environmentDetail">
       <div className="detailCrumb">
-        <button type="button" className="textButton" onClick={onBack}>Environments</button>
+        <button type="button" className="textButton" onClick={onBack}>{t('detail.back')}</button>
         <span>/</span>
         <strong>{environment.name}</strong>
       </div>
@@ -150,25 +162,25 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
         <div>
           <div className="titleLine">
             <h1>{environment.name}</h1>
-            <span className="softChip inlineChip">{environmentKind(environment)}</span>
+            <span className="softChip inlineChip">{t(`kind.${environmentHostingType(environment)}`)}</span>
             <Globe size={19} className="mutedIcon" />
-            <button className="iconButton" type="button" title="Copy environment id" aria-label="Copy environment id" onClick={() => void copyText(environment.id)}><Copy size={16} /></button>
+            <button className="iconButton" type="button" title={t('detail.copyId')} aria-label={t('detail.copyId')} onClick={() => void copyText(environment.id)}><Copy size={16} /></button>
           </div>
-          <p className="mutedLine"><span className="monoText">{shortId(environment.id)}</span> · Last updated {formatDateShort(environment.updated_at)}</p>
-          <p className="agentDescription">{environment.description || 'No description.'}</p>
+          <p className="mutedLine"><span className="monoText">{shortId(environment.id)}</span> · {t('detail.updatedAgo', { time: formatDateShort(environment.updated_at) })}</p>
+          <p className="agentDescription">{environment.description || t('detail.noDescription')}</p>
         </div>
         <div className="agentHeroActions">
-          <button className="secondaryButton largeAction" type="button" onClick={() => setEditing(true)}>
-            <Pencil size={18} />
-            Edit
+          <button className="button outline largeAction" type="button" onClick={() => setEditing(true)}>
+            <Pencil size={15} />
+            {t('detail.edit')}
           </button>
           <div className="menuWrap">
-            <button className="iconButton" type="button" onClick={() => setMenuOpen((open) => !open)} title="Environment actions">
+            <button className="iconButton" type="button" onClick={() => setMenuOpen((open) => !open)} title={t('detail.actions')}>
               <MoreVertical size={18} />
             </button>
             {menuOpen ? (
               <div className="agentMenu">
-                <button type="button" onClick={() => void archive()}><Archive size={18} />Archive</button>
+                <button type="button" onClick={() => void archive()}><Archive size={18} />{t('detail.archive')}</button>
                 <button
                   type="button"
                   className="dangerMenuItem"
@@ -177,7 +189,7 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
                     setDeleteOpen(true);
                   }}
                 >
-                  <Trash2 size={18} />Delete
+                  <Trash2 size={18} />{t('detail.delete')}
                 </button>
               </div>
             ) : null}
@@ -202,12 +214,13 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
 }
 
 function EnvironmentDeleteModal({ environment, onClose, onDeleted }: { environment: Environment; onClose: () => void; onDeleted: () => void }) {
+  const { t } = useTranslation('environments');
   return (
     <ConfirmDeleteModal
-      title="Delete environment"
+      title={t('detail.deleteTitle')}
       subject={environment.name}
-      consequence="This permanently deletes the environment. Sessions that already ran keep their history, but new sessions can no longer use it."
-      confirmLabel="Delete environment"
+      consequence={t('detail.deleteConsequence')}
+      confirmLabel={t('detail.deleteConfirm')}
       onClose={onClose}
       onConfirm={async () => {
         await deleteJson(`/v1/environments/${environment.id}`);
@@ -218,6 +231,7 @@ function EnvironmentDeleteModal({ environment, onClose, onDeleted }: { environme
 }
 
 function EnvironmentEditor({ environment, data, onCancel, onSaved }: { environment: Environment; data: ConsoleData; onCancel: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('environments');
   const [draft, setDraft] = useState<EnvironmentDraft>(() => environmentDraftFromApi(environment));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -242,7 +256,7 @@ function EnvironmentEditor({ environment, data, onCancel, onSaved }: { environme
   return (
     <section className="environmentDetail editingEnvironment">
       <div className="detailCrumb">
-        <button type="button" className="textButton" onClick={onCancel}>Environments</button>
+        <button type="button" className="textButton" onClick={onCancel}>{t('detail.back')}</button>
         <span>/</span>
         <strong>{environment.name}</strong>
       </div>
@@ -250,18 +264,18 @@ function EnvironmentEditor({ environment, data, onCancel, onSaved }: { environme
       <div className="resourceHero editHero">
         <div className="editTitleGroup">
           <input className="titleInput" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value.slice(0, 50) })} />
-          <span className="softChip inlineChip">{hostingLabel(draft.hostingType)}</span>
+          <span className="softChip inlineChip">{t(`kind.${draft.hostingType}`)}</span>
           <Globe size={19} className="mutedIcon" />
         </div>
         <div className="agentHeroActions">
-          <button className="secondaryButton largeAction" type="button" onClick={onCancel}>Cancel</button>
-          <button className="primaryButton largeAction" type="button" onClick={() => void save()} disabled={saving || !draft.name.trim()}>Save</button>
+          <button className="button outline largeAction" type="button" onClick={onCancel}>{t('detail.cancel')}</button>
+          <button className="button primary largeAction" type="button" onClick={() => void save()} disabled={saving || !draft.name.trim()}>{t('detail.save')}</button>
         </div>
       </div>
 
       <label className="editField">
-        Description
-        <textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Add a description for this environment (optional)" />
+        {t('detail.description')}
+        <textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder={t('detail.descriptionPlaceholder')} />
       </label>
 
       <div className="environmentBody">
@@ -288,11 +302,12 @@ function workspaceDefaultProvider(data: ConsoleData): string {
  * manager's list rather than a flat `{manager, package}` row array.
  */
 export function EnvironmentPackagesEditor({ draft, onDraft }: { draft: EnvironmentDraft; onDraft: (draft: EnvironmentDraft) => void }) {
+  const { t } = useTranslation('environments');
   return (
     <section className="environmentSection">
       <div>
-        <h2>Packages</h2>
-        <p>Pre-installed packages per manager. Separate package names with commas or newlines.</p>
+        <h2>{t('detail.packages.title')}</h2>
+        <p>{t('detail.packages.hint')}</p>
       </div>
       <div className="environmentNestedGrid">
         {PACKAGE_MANAGERS.map(({ id, label }) => (
@@ -311,68 +326,82 @@ export function EnvironmentPackagesEditor({ draft, onDraft }: { draft: Environme
 }
 
 function EnvironmentExecutionEditor({ draft, onDraft, workspaceDefaultProvider }: { draft: EnvironmentDraft; onDraft: (draft: EnvironmentDraft) => void; workspaceDefaultProvider: string }) {
+  const { t } = useTranslation('environments');
   return (
     <section className="environmentSection environmentExecutionSection">
       <div>
-        <h2>Execution</h2>
-        <p>Choose where sessions for this environment execute. Docker and Kubernetes isolate each session in a container.</p>
+        <h2>{t('detail.execution.title')}</h2>
+        <p>{t('detail.execution.hint')}</p>
       </div>
-      <label className="editField">
-        Hosting type
-        <select value={draft.hostingType} onChange={(event) => onDraft({ ...draft, hostingType: event.target.value as EnvironmentDraft['hostingType'] })}>
-          <option value="cloud">Cloud — workspace default backend</option>
-          <option value="local">Local process</option>
-          <option value="docker">Docker container</option>
-          <option value="kubernetes">Kubernetes pod</option>
-          <option value="self_hosted">Self-hosted worker</option>
-        </select>
-      </label>
+      <div className="editField">
+        <span>{t('detail.execution.hostingType')}</span>
+        <ConsoleSelect
+          label={t('detail.execution.hostingType')}
+          value={draft.hostingType}
+          onChange={(value) => onDraft({ ...draft, hostingType: value as EnvironmentDraft['hostingType'] })}
+          options={[
+            { value: 'cloud', label: t('detail.execution.hostingOptions.cloud') },
+            { value: 'local', label: t('detail.execution.hostingOptions.local') },
+            { value: 'docker', label: t('detail.execution.hostingOptions.docker') },
+            { value: 'kubernetes', label: t('detail.execution.hostingOptions.kubernetes') },
+            { value: 'self_hosted', label: t('detail.execution.hostingOptions.self_hosted') },
+          ]}
+        />
+      </div>
       {draft.hostingType === 'cloud' ? (
-        <div className="subtleNotice">Cloud environments run on the workspace default sandbox backend (currently <code>{workspaceDefaultProvider}</code>). Change the default in Settings.</div>
+        <div className="subtleNotice">
+          <Trans
+            i18nKey="detail.execution.cloudNotice"
+            ns="environments"
+            values={{ provider: workspaceDefaultProvider }}
+            components={{ code: <code /> }}
+          />
+        </div>
       ) : null}
       {draft.hostingType === 'local' ? (
-        <div className="warningNotice"><span>Not isolated: tools execute directly on the host machine. Use Docker or Kubernetes for untrusted agent code.</span></div>
+        <div className="warningNotice"><span>{t('detail.execution.localWarning')}</span></div>
       ) : null}
       {draft.hostingType === 'docker' ? (
         <div className="environmentNestedGrid">
           <label className="editField">
-            Docker image
+            {t('detail.execution.dockerImage')}
             <input
               value={draft.dockerImage}
               onChange={(event) => onDraft({ ...draft, dockerImage: event.target.value })}
               placeholder="node:22-slim"
             />
-            <small>Must already be pullable or cached by the local Docker daemon.</small>
+            <small>{t('detail.execution.dockerImageHint')}</small>
           </label>
           <label className="editField">
-            Memory limit
+            {t('detail.execution.memoryLimit')}
             <input
               value={draft.dockerMemory}
               onChange={(event) => onDraft({ ...draft, dockerMemory: event.target.value })}
               placeholder="512m"
             />
-            <small>Optional Docker memory value, for example 512m or 2g.</small>
+            <small>{t('detail.execution.memoryLimitHint')}</small>
           </label>
           <label className="editField">
-            CPU limit
+            {t('detail.execution.cpuLimit')}
             <input
               inputMode="decimal"
               value={draft.dockerCpu}
               onChange={(event) => onDraft({ ...draft, dockerCpu: event.target.value })}
               placeholder="1"
             />
-            <small>Optional number of CPUs available to the container.</small>
+            <small>{t('detail.execution.cpuLimitHint')}</small>
           </label>
         </div>
       ) : null}
       {draft.hostingType === 'self_hosted' ? (
-        <div className="subtleNotice">Self-hosted sessions are pulled by an external worker. Save this environment, then use the setup instructions on the detail page.</div>
+        <div className="subtleNotice">{t('detail.execution.selfHostedNotice')}</div>
       ) : null}
     </section>
   );
 }
 
 function EnvironmentMetadataEditor({ draft, onDraft }: { draft: EnvironmentDraft; onDraft: (draft: EnvironmentDraft) => void }) {
+  const { t } = useTranslation('environments');
   const updateMetadata = (id: string, patch: Partial<MetadataDraft>) => {
     onDraft({ ...draft, metadata: draft.metadata.map((item) => item.id === id ? { ...item, ...patch } : item) });
   };
@@ -380,16 +409,16 @@ function EnvironmentMetadataEditor({ draft, onDraft }: { draft: EnvironmentDraft
       <section className="environmentSection editableListSection">
         <div className="sectionHeaderRow">
           <div>
-            <h2>Metadata</h2>
-            <p>Add custom key-value pairs to tag and organize this environment. Keys must be lowercase.</p>
+            <h2>{t('detail.metadata.title')}</h2>
+            <p>{t('detail.metadata.hint')}</p>
           </div>
-          <button className="iconButton" type="button" onClick={() => onDraft({ ...draft, metadata: [...draft.metadata, { id: newDraftId(), key: '', value: '' }] })}><Plus size={18} /></button>
+          <button className="iconButton" type="button" aria-label={t('detail.metadata.add')} onClick={() => onDraft({ ...draft, metadata: [...draft.metadata, { id: newDraftId(), key: '', value: '' }] })}><Plus size={18} /></button>
         </div>
-        {draft.metadata.length === 0 ? <ReadonlyTable empty="No metadata" rows={[]} columns={['Key', 'Value']} /> : null}
+        {draft.metadata.length === 0 ? <ReadonlyTable empty={t('detail.metadata.empty')} rows={[]} columns={[t('detail.metadata.keyColumn'), t('detail.metadata.valueColumn')]} /> : null}
         {draft.metadata.map((item) => (
           <div className="editableRow metadataRow" key={item.id}>
-            <input value={item.key} onChange={(event) => updateMetadata(item.id, { key: event.target.value.toLowerCase() })} placeholder="client_key..." />
-            <input value={item.value} onChange={(event) => updateMetadata(item.id, { value: event.target.value })} placeholder="Value" />
+            <input value={item.key} onChange={(event) => updateMetadata(item.id, { key: event.target.value.toLowerCase() })} placeholder={t('detail.metadata.keyPlaceholder')} />
+            <input value={item.value} onChange={(event) => updateMetadata(item.id, { value: event.target.value })} placeholder={t('detail.metadata.valuePlaceholder')} />
             <button className="iconButton quiet" type="button" onClick={() => onDraft({ ...draft, metadata: draft.metadata.filter((candidate) => candidate.id !== item.id) })}><Trash2 size={18} /></button>
           </div>
         ))}

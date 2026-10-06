@@ -1,6 +1,8 @@
 import { ChevronDown, Copy, Download, Keyboard, MessageSquare, Search, Info, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { EmptyState, LoadingState } from '../Common';
+import { useTranslation } from 'react-i18next';
+import { LoadingState } from '../Common';
+import { EmptyState } from '../console-ui';
 import { eventKind, eventText, eventTitle, MarkdownMessage, renderEventBody } from './eventRenderers';
 import { downloadJson } from '../../lib/format';
 import { modelErrorHint, sessionErrorCode } from '../../lib/modelErrorHints';
@@ -55,6 +57,7 @@ export function SessionTimeline({
   onSubmitResult: (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => void;
   composer: ReactNode;
 }) {
+  const { t } = useTranslation('sessions');
   const [mode, setMode] = useState<'transcript' | 'debug'>('transcript');
   const [detailMode, setDetailMode] = useState<'rendered' | 'raw'>('rendered');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -67,10 +70,10 @@ export function SessionTimeline({
 
   const allEventKindsSelected = selectedKinds.size === SESSION_EVENT_KINDS.length;
   const eventFilterLabel = allEventKindsSelected
-    ? 'All events'
+    ? t('detail.timeline.filterAll')
     : selectedKinds.size === 0
-      ? 'No events'
-      : `${selectedKinds.size} event${selectedKinds.size === 1 ? '' : 's'}`;
+      ? t('detail.timeline.filterNone')
+      : t('detail.timeline.filterCount', { n: selectedKinds.size, count: selectedKinds.size });
 
   useEffect(() => {
     // Entering a session always starts pinned to the latest message.
@@ -108,8 +111,8 @@ export function SessionTimeline({
     <>
       <div className="sessionToolbar">
         <div className="segment compactSegment">
-          <button type="button" className={mode === 'transcript' ? 'active' : ''} onClick={() => setMode('transcript')}>Transcript</button>
-          <button type="button" className={mode === 'debug' ? 'active' : ''} onClick={() => setMode('debug')}>Debug</button>
+          <button type="button" className={mode === 'transcript' ? 'active' : ''} onClick={() => setMode('transcript')}>{t('detail.timeline.transcript')}</button>
+          <button type="button" className={mode === 'debug' ? 'active' : ''} onClick={() => setMode('debug')}>{t('detail.timeline.debug')}</button>
         </div>
         <div className="filterWrap">
           <button className="filterButton" type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
@@ -117,10 +120,10 @@ export function SessionTimeline({
             <ChevronDown size={15} />
           </button>
           {filterOpen ? (
-            <div className="eventFilterMenu" role="group" aria-label="Event filters">
+            <div className="eventFilterMenu" role="group" aria-label={t('detail.timeline.filterHint')}>
               <div className="eventFilterHeader">
-                <strong>Show events</strong>
-                <span>{selectedKinds.size} of {SESSION_EVENT_KINDS.length}</span>
+                <strong>{t('detail.timeline.showEvents')}</strong>
+                <span>{t('detail.timeline.filterSummary', { n: selectedKinds.size, total: SESSION_EVENT_KINDS.length })}</span>
               </div>
               <div className="eventFilterOptions">
                 {SESSION_EVENT_KINDS.map((kind) => (
@@ -136,20 +139,20 @@ export function SessionTimeline({
                 ))}
               </div>
               <div className="eventFilterFooter">
-                <span>Filter the event stream</span>
-                <button type="button" onClick={() => setSelectedKinds(new Set(SESSION_EVENT_KINDS))}>Reset filters</button>
+                <span>{t('detail.timeline.filterHint')}</span>
+                <button type="button" onClick={() => setSelectedKinds(new Set(SESSION_EVENT_KINDS))}>{t('detail.timeline.resetFilters')}</button>
               </div>
             </div>
           ) : null}
         </div>
         <div className="sessionSearch">
           <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" aria-label="Search events" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('detail.timeline.searchEvents')} aria-label={t('detail.timeline.searchEvents')} />
         </div>
         <div className="sessionIconActions">
-          <button className="iconButton" type="button" title="Keyboard shortcuts"><Keyboard size={18} /></button>
-          <button className="iconButton" type="button" title="Copy session id" onClick={() => void navigator.clipboard?.writeText(sessionId)}><Copy size={18} /></button>
-          <button className="iconButton" type="button" title="Download event JSON" onClick={() => downloadJson(`${sessionId}-events.json`, events)}><Download size={18} /></button>
+          <button className="iconButton" type="button" title={t('detail.timeline.shortcuts')}><Keyboard size={18} /></button>
+          <button className="iconButton" type="button" title={t('detail.timeline.copySessionId')} onClick={() => void navigator.clipboard?.writeText(sessionId)}><Copy size={18} /></button>
+          <button className="iconButton" type="button" title={t('detail.timeline.downloadJson')} onClick={() => downloadJson(`${sessionId}-events.json`, events)}><Download size={18} /></button>
         </div>
       </div>
 
@@ -158,12 +161,12 @@ export function SessionTimeline({
           <div className="conversationPane">
             <div className="conversationHeader">
               <div>
-                <strong>Conversation</strong>
-                <span>{conversationMessages(events).length} messages</span>
+                <strong>{t('detail.timeline.conversation')}</strong>
+                <span>{t('detail.timeline.messageCount', { n: conversationMessages(events).length, count: conversationMessages(events).length })}</span>
               </div>
               <span className={`streamStatus ${streamConnection}`}>
                 <span className="streamStatusDot" />
-                {streamConnection === 'connected' ? 'Live' : streamConnection === 'reconnecting' ? 'Reconnecting' : 'Connecting'}
+                {streamConnection === 'connected' ? t('detail.timeline.live') : streamConnection === 'reconnecting' ? t('detail.timeline.reconnecting') : t('detail.timeline.connecting')}
               </span>
             </div>
             {eventError ? <div className="banner error inlineBanner">{eventError}</div> : null}
@@ -192,7 +195,7 @@ export function SessionTimeline({
                 ) : (
                   <article key={entry.id} className={`conversationMessage ${entry.role}`}>
                     <div className="conversationMessageMeta">
-                      <span>{entry.role === 'user' ? 'You' : entry.role === 'error' ? 'Session' : agentName ?? 'Agent'}</span>
+                      <span>{entry.role === 'user' ? t('detail.timeline.roleYou') : entry.role === 'error' ? t('detail.timeline.roleSession') : agentName ?? t('detail.timeline.roleAgent')}</span>
                       <time>{eventTime(entry.event)}</time>
                     </div>
                     <div className="conversationBubble">
@@ -200,7 +203,7 @@ export function SessionTimeline({
                         ? (
                           <MarkdownMessage text={entry.text} />
                         )
-                        : (entry.text || 'No message content.')}
+                        : (entry.text || t('detail.timeline.noMessageContent'))}
                     </div>
                     {entry.role === 'error' ? <ModelErrorHint event={entry.event} /> : null}
                   </article>
@@ -213,13 +216,13 @@ export function SessionTimeline({
                     .join('');
                   return (
                     <article key={eventId} className="conversationMessage agent streamingMessage">
-                      <div className="conversationMessageMeta"><span>{agentName ?? 'Agent'}</span><span>Generating…</span></div>
-                      <div className="conversationBubble">{text || <span className="typingIndicator" aria-label="Generating"><i /><i /><i /></span>}</div>
+                      <div className="conversationMessageMeta"><span>{agentName ?? t('detail.timeline.roleAgent')}</span><span>{t('detail.timeline.generatingDots')}</span></div>
+                      <div className="conversationBubble">{text || <span className="typingIndicator" aria-label={t('detail.timeline.generating')}><i /><i /><i /></span>}</div>
                     </article>
                   );
                 })}
                 {conversationMessages(events).length === 0 && Object.keys(streamingText).length === 0 ? (
-                  <EmptyState icon={<MessageSquare size={22} />} title="Start the conversation" />
+                  <EmptyState icon={MessageSquare} title={t('detail.timeline.startConversation')} />
                 ) : null}
               </div>
             ) : null}
@@ -227,13 +230,14 @@ export function SessionTimeline({
               <button
                 type="button"
                 className="conversationJumpLatest"
+                aria-label={t('detail.timeline.jumpLatest')}
                 onClick={() => {
                   shouldFollowConversation.current = true;
                   setShowJumpToLatest(false);
                   conversationListRef.current?.scrollTo({ top: conversationListRef.current.scrollHeight, behavior: 'smooth' });
                 }}
               >
-                New messages ↓
+                {t('detail.timeline.newMessages')}
               </button>
             ) : null}
             {composer}
@@ -254,19 +258,19 @@ export function SessionTimeline({
                     <time>{eventTime(event)}</time>
                   </button>
                 ))}
-                {!loadingEvents && visibleEvents.length === 0 ? <EmptyState icon={<MessageSquare size={22} />} title="No events" /> : null}
+                {!loadingEvents && visibleEvents.length === 0 ? <EmptyState icon={MessageSquare} title={t('detail.timeline.noEvents')} /> : null}
               </div>
               <div className="eventInspector">
                 {selectedEvent ? (
                   <>
                     <div className="eventInspectorHeader">
-                      <button className="iconButton" type="button" title="Close selection" onClick={() => onSelectEvent(null)}><X size={18} /></button>
+                      <button className="iconButton" type="button" title={t('detail.timeline.closeSelection')} onClick={() => onSelectEvent(null)}><X size={18} /></button>
                       <div><span className={`eventType ${eventKind(selectedEvent)}`}>{selectedEvent.type}</span><h2>{eventTitle(selectedEvent)}</h2><p>{eventTime(selectedEvent)}</p></div>
-                      <div className="inspectorViewControl"><span>View</span><div className="segment tinySegment"><button type="button" className={detailMode === 'rendered' ? 'active' : ''} onClick={() => setDetailMode('rendered')}>Preview</button><button type="button" className={detailMode === 'raw' ? 'active' : ''} onClick={() => setDetailMode('raw')}>Raw</button></div></div>
+                      <div className="inspectorViewControl"><span>{t('detail.timeline.view')}</span><div className="segment tinySegment"><button type="button" className={detailMode === 'rendered' ? 'active' : ''} onClick={() => setDetailMode('rendered')}>{t('detail.timeline.preview')}</button><button type="button" className={detailMode === 'raw' ? 'active' : ''} onClick={() => setDetailMode('raw')}>{t('detail.timeline.raw')}</button></div></div>
                     </div>
                     {detailMode === 'rendered' ? <DebugEventContent event={selectedEvent} /> : <pre className="rawEvent">{JSON.stringify(selectedEvent, null, 2)}</pre>}
                   </>
-                ) : <EmptyState icon={<MessageSquare size={22} />} title="Select an event" />}
+                ) : <EmptyState icon={MessageSquare} title={t('detail.timeline.selectEvent')} />}
               </div>
             </div>
             {composer}

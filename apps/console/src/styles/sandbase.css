@@ -1,0 +1,1543 @@
+/* SandBase Console — semantic layer for the workflow surfaces the OAC grammar
+ * does not name: split-column dialogs (form + config drawer), the form kit
+ * (kit.tsx), and the config preview drawer. Everything here reads the same
+ * tokens as the vendored styles; the legacy rules these replace are deleted
+ * from styles.css in the same change. */
+
+/* ── Dialog sizes ────────────────────────────────────────────────────────
+   The shared grammar names only the 448px default. `medium` covers the 960px
+   dialogs callers already choose; `workflow` is this console's one
+   split-column surface. */
+
+.modal-card-medium {
+  width: min(960px, 100%);
+}
+
+.modal-card-workflow {
+  width: min(1160px, calc(100vw - 32px));
+  /* Pin the height too: the form column always overflows, so a fixed frame
+     keeps the dialog geometry identical no matter what the preview holds. */
+  height: min(760px, calc(100vh - 40px));
+}
+
+.modal-subtitle {
+  margin: 2px 0 0;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.modal-card-workflow .modal-body {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Workflow dialog: form column + config preview drawer ──────────────── */
+
+.modalWorkflow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* Both min sizes must be 0: without them the serialized preview's intrinsic
+     size leaks through min-width:auto and inflates the drawer's % basis. */
+  min-width: 0;
+  min-height: 0;
+}
+
+.modalSplit {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.modalFormCol {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modalActionsBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.modalActionsBar .spacer {
+  flex: 1;
+}
+
+.compactButton {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ── Config preview drawer ───────────────────────────────────────────────
+   Auto-sized column; the YAML/JSON view gets a wrap toggle, no drag handle. */
+
+.configDrawer {
+  flex: 0 0 clamp(380px, 36%, 460px);
+  border-left: 1px solid var(--line-soft);
+  background: var(--inset);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.configDrawerHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky;
+  top: 0;
+  background: var(--inset);
+  font-size: 12.5px;
+  z-index: 1;
+}
+
+.configDrawerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.configDrawerView {
+  /* flex-basis must be 0: an `auto` basis would leak the serialized text's
+     height into the drawer and the modal would resize on YAML/JSON toggle. */
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre;
+}
+
+.configDrawerView.wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.configDrawerPaste,
+.configDrawerRequest {
+  border-top: 1px solid var(--line-soft);
+  padding: 8px 12px;
+}
+
+.configDrawerPaste summary,
+.configDrawerRequest summary {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.configDrawerPaste textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 90px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.configDrawerPaste .button {
+  margin-top: 6px;
+}
+
+.configDrawerPaste .fieldError {
+  display: block;
+  margin-top: 4px;
+}
+
+.bareEquivalent .apiSnippet {
+  font-size: 11px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+/* Narrow screens: the preview drawer overlays instead of squeezing the form. */
+@media (max-width: 860px) {
+  .modalSplit {
+    position: relative;
+  }
+
+  .configDrawer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(360px, 88%);
+    box-shadow: var(--shadow-overlay);
+  }
+}
+
+/* ── Legacy shields ───────────────────────────────────────────────────────
+   styles.css still carries element-level table chrome for the unmigrated
+   tables: a global `th` background/font-size and block-level `td span` /
+   `td strong` rules. Keep them off the ported grammar so the data-table is
+   correct in dark mode and cell content stays inline. */
+
+.data-table tbody th {
+  background: transparent;
+  font-size: inherit;
+}
+
+.data-table tbody td > span,
+.data-table tbody td > strong {
+  display: inline;
+  margin-top: 0;
+  font-size: inherit;
+}
+
+/* ── Inline banners ───────────────────────────────────────────────────────
+   `.banner` doubles as the app-level top banner (margin) and, with
+   `.inlineBanner`, as an in-modal notice; both roles keep the legacy look. */
+
+.banner {
+  margin: 16px 24px 0;
+  border-radius: var(--radius-window);
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.banner.error {
+  color: var(--red);
+  background: var(--red-tint);
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+}
+
+.inlineBanner {
+  margin: 0;
+}
+
+/* ── Form kit (kit.tsx) ─────────────────────────────────────────────────── */
+
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.formCard:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.formCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formCardHead h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.formCardNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.formCardHint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.45;
+}
+
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldRowLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.requiredMark {
+  color: var(--red);
+}
+
+.optionalPill {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+.fieldHelper {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.45;
+}
+
+.fieldError {
+  font-size: 12px;
+  color: var(--red);
+  font-weight: 600;
+}
+
+.fieldRow input:not([type="checkbox"]):not([type="radio"]),
+.fieldRow textarea,
+.monoInput {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  color: var(--fg);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.fieldRow textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.fieldRow input:focus-visible,
+.fieldRow textarea:focus-visible,
+.monoInput:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-tint);
+}
+
+.monoInput {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fieldGrid .span2 {
+  grid-column: 1 / -1;
+}
+
+.kvEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kvEditorRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.addRowButton {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 4px 2px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+
+.addRowButton:hover {
+  text-decoration-color: var(--fg);
+}
+
+/* Quiet icon button used inside editors and drawer chrome. */
+.iconButton.quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  width: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--fg-muted);
+}
+
+.iconButton.quiet:hover {
+  color: var(--fg);
+  border-color: var(--line);
+}
+
+.iconButton.quiet.active {
+  color: var(--fg);
+  border-color: var(--line);
+  background: var(--inset);
+}
+
+/* Radio cards — mutually-exclusive choices with a consequence line. */
+.radioCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.radioCard {
+  display: flex;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.radioCard:hover {
+  border-color: var(--line-strong);
+}
+
+.radioCard.selected {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.radioCardDot {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 1.5px solid var(--fg-muted);
+}
+
+.radioCard.selected .radioCardDot {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 45%, transparent 50%);
+}
+
+.radioCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.radioCardBody strong {
+  font-size: 13px;
+}
+
+.radioCardBody small {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.radioCardConsequence {
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--fg-muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 4px;
+  margin-top: 2px;
+}
+
+/* Tool chips — checkbox-style capability toggles. */
+.toolChipGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 4px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.toolChip:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.toolChip.selected {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.toolChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolChip small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+/* Pre-submit check. */
+.checkCard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--field);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.checkCardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.checkCardOk {
+  color: var(--green);
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.checkCardWarn {
+  color: var(--orange);
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: 16px minmax(90px, auto) 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.checkState.ok {
+  color: var(--green);
+}
+
+.checkState.blocking {
+  color: var(--orange);
+}
+
+.checkState.advisory {
+  color: var(--accent);
+}
+
+.checkLabel {
+  color: var(--fg-muted);
+}
+
+.checkValue {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkJump {
+  font-size: 12px;
+}
+
+/* Small text links and quiet utilities. */
+.linkButton {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-color: var(--line-strong);
+}
+
+.linkButton:hover {
+  text-decoration-color: var(--fg);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Folded secondary affordances (paste config, equivalent request). */
+.advancedFold {
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.advancedFold summary {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--fg-muted);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.requestFold {
+  border-top: 1px dashed var(--line);
+  padding: 10px 0 4px;
+}
+
+.requestFold summary {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+/* Legacy `.main` paints white while the app shell still carries legacy rules.
+ * Darken just the main column in dark mode so migrated surfaces sit on a dark
+ * canvas; unmigrated pages keep their own light cards inside it. */
+html[data-theme="dark"] .main {
+  background: var(--surface);
+}
+
+/* Shared code-card and metric preview surfaces (ConfigDrawer equivalent request,
+   settings API reference, monitoring). */
+
+.apiEmptyState {
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+  color: var(--fg-muted);
+  font-size: 13px;
+  padding: 12px;
+}
+
+.apiDocsCodeCard .metricsPreview {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  background: #171717;
+  color: #efeeec;
+  overflow-x: auto;
+}
+
+.snippetHeader {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.snippetHeader h2 {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.apiSnippet {
+  max-height: 300px;
+  white-space: pre;
+  overflow: auto;
+  overflow-wrap: normal;
+}
+
+.equivalentRequest .snippetHeader {
+  border-radius: 10px 10px 0 0;
+  border: 1px solid var(--line-soft);
+}
+
+.equivalentRequest .apiSnippet {
+  border: 1px solid var(--line-soft);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  margin: 0;
+}
+
+.metricsPreview {
+  max-height: 260px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line-soft);
+}
+
+
+/* Shared detail-page grammar (crumb, hero, menus, chips) migrated from
+ * styles.css; consumed by every *-detail view. */
+.sourceBadge {
+  display: inline-flex;
+  width: max-content;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 9px;
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 760;
+}
+.sourceBadge.anthropic {
+  background: var(--inset);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.sourceBadge.custom {
+  background: var(--inset);
+  color: var(--fg);
+}
+.titleLine.compact {
+  gap: 10px;
+}
+.titleLine.compact h2 {
+  font-size: 20px;
+}
+.mutedLine, .agentDescription, .emptyInline {
+  color: var(--fg-muted);
+}
+.skillReferenceGrid .mutedLine {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+.monoText {
+  font-family: var(--font-mono);
+}
+.detailCrumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+  margin-bottom: 24px;
+}
+.detailCrumb .textButton {
+  color: var(--fg-muted);
+  font-size: 18px;
+  min-height: auto;
+}
+.agentHero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.titleLine h1 {
+  font-size: 23px;
+  font-weight: 760;
+}
+.mutedLine {
+  margin-top: 10px;
+  font-size: 14px;
+}
+.agentDescription {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.agentHeroActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+.menuWrap {
+  position: relative;
+}
+.agentMenu {
+  position: absolute;
+  right: 0;
+  top: 46px;
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-overlay);
+  padding: 8px;
+  z-index: 10;
+}
+.agentMenu button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--fg);
+  text-align: left;
+}
+.agentMenu button:hover {
+  background: var(--inset);
+}
+.agentMenu button:disabled, .agentMenu button:disabled:hover {
+  color: var(--fg-subtle);
+  background: transparent;
+  cursor: default;
+}
+.agentMenu .dangerMenuItem {
+  color: var(--red);
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.detailStack {
+  padding-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.softChip {
+  border-radius: 999px;
+  background: var(--inset);
+  color: var(--fg);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 680;
+}
+.versionsPanel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+@media (max-width: 760px) {
+.agentHero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+.agentHeroActions {
+    width: 100%;
+  }
+}
+
+/* ── shared console kit (migrated from legacy styles.css) ─────────── */
+
+.codeEditorShell {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111827;
+  overflow: hidden;
+}
+
+.codeEditorInput,
+.codeEditorHighlight {
+  min-height: 280px;
+  width: 100%;
+  margin: 0;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.codeEditorInput {
+  position: relative;
+  z-index: 1;
+  resize: vertical;
+  color: transparent;
+  caret-color: #e5e7eb;
+  outline: 0;
+  overflow: auto;
+}
+
+.codeEditorInput::selection {
+  color: transparent;
+  background: rgb(96 165 250 / 32%);
+}
+
+.codeEditorHighlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  color: #d1d5db;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.codeEditorHighlight .jsonKey {
+  color: #93c5fd;
+}
+
+.codeEditorHighlight .jsonString {
+  color: #86efac;
+}
+
+.codeEditorHighlight .jsonNumber {
+  color: #fbbf24;
+}
+
+.codeEditorHighlight .jsonBoolean {
+  color: #c4b5fd;
+}
+
+.codeEditorHighlight .jsonNull {
+  color: #fca5a5;
+}
+
+.codeEditorHighlight .yamlKey {
+  color: #93c5fd;
+}
+
+.codeEditorHighlight .yamlString {
+  color: #86efac;
+}
+
+.codeEditorHighlight .yamlNumber {
+  color: #fbbf24;
+}
+
+.codeEditorHighlight .yamlBoolean {
+  color: #c4b5fd;
+}
+
+.codeEditorHighlight .yamlNull {
+  color: #fca5a5;
+}
+
+.toolbarActions,
+.modalActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: var(--radius-card);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height);
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.primaryButton {
+  background: var(--fg);
+  color: var(--surface);
+  border-color: var(--fg);
+  box-shadow: none;
+}
+
+.primaryButton:hover {
+  background: var(--fg);
+}
+
+.primaryButton:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.secondaryButton {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.secondaryButton:hover,
+.filterButton:hover {
+  background: var(--inset);
+}
+
+.secondaryButton:disabled,
+.filterButton:disabled {
+  color: var(--fg-subtle);
+  background: var(--inset);
+  border-color: var(--line-soft);
+  cursor: default;
+}
+
+.secondaryButton:disabled:hover,
+.filterButton:disabled:hover {
+  background: var(--inset);
+}
+
+.iconButton.danger {
+  color: var(--red);
+}
+
+.iconButton.danger:hover {
+  background: var(--red-tint);
+}
+
+.panel,
+.tablePanel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+}
+
+pre {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  max-height: 230px;
+  background: #171716;
+  color: #f2f2ef;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.stack {
+  padding: 24px 32px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.toolbarActions {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tablePanel {
+  overflow: auto;
+  box-shadow: none;
+}
+
+.monoValue {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formStack .checkRow {
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.loading {
+  min-height: 170px;
+  border: 0;
+  border-radius: var(--radius-card);
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--surface);
+  text-align: center;
+  padding: 22px;
+}
+
+.loading {
+  margin: 28px;
+  flex-direction: row;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  padding: 20px;
+}
+
+.ghostButton {
+  min-height: 38px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 14px;
+  font-weight: 690;
+  box-shadow: none;
+}
+
+.ghostButton {
+  color: var(--fg);
+}
+
+.formHint {
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+label:not([class]),
+label:is(.editField, .sessionField, .shortField, .compactField, .fieldRow) {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 720;
+  color: var(--fg);
+}
+
+input,
+textarea {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  min-height: 36px;
+  padding: 7px 10px;
+  background: var(--surface);
+  color: var(--fg);
+  outline: 0;
+  font-size: 14px;
+}
+
+textarea {
+  line-height: 1.45;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--fg-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--line-soft) 70%, transparent);
+}
+
+.modalActions {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.modalBody {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 4px;
+}
+
+.dangerButton {
+  border: 1px solid var(--red);
+  border-radius: var(--radius-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height);
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--red);
+  color: #fff;
+  box-shadow: none;
+}
+
+.dangerButton:hover {
+  filter: brightness(0.95);
+}
+
+.filterButton {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.filterButton strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.resourceBadge {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0 10px;
+  font-weight: 640;
+}
+
+.resourceBadge span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceBadge svg {
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.largeAction {
+  min-height: 42px;
+  padding-inline: 16px;
+  font-size: 15px;
+}
+
+.mobileResourceList {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emptyValue {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg-muted);
+  padding: 0 14px;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: var(--radius-card);
+  background: var(--inset);
+  padding: 3px;
+}
+
+.segment button {
+  min-height: 34px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13.5px;
+}
+
+.segment button.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: none;
+}
+
+.stickyActions {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--surface) 35%);
+  padding: 24px 0 0;
+}
+
+.fieldHint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.checkboxLine {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 560;
+}
+
+.checkboxLine input {
+  width: 18px;
+  height: 18px;
+  min-height: auto;
+  margin-top: 2px;
+  padding: 0;
+}
+
+.stack > .tablePanel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.stack > .tablePanel table {
+  border-top: 1px solid var(--line-soft);
+}
+
+.stack > .tablePanel th,
+.stack > .tablePanel td {
+  padding-left: 0;
+  padding-right: 18px;
+}
+
+.panel {
+  box-shadow: none;
+}
+
+.resourceBadge {
+  min-height: 30px;
+  font-weight: 560;
+}
+
+.dangerButton {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--red);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height);
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--red);
+  color: #fff;
+  cursor: pointer;
+}
+
+.dangerButton:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.mutedValue {
+  color: var(--fg-muted);
+}
+
+.mobileAgentList {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobileAgentCard {
+  width: 100%;
+  min-height: 104px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  text-align: left;
+}
+
+.mobileAgentCard:hover {
+  background: var(--inset);
+}
+
+.mobileAgentMain strong,
+.mobileAgentMain small {
+  display: block;
+}
+
+.mobileAgentMain small {
+  margin-top: 4px;
+  color: var(--fg-muted);
+}
+
+.mobileAgentMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobileAgentMeta > span {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.compactSegment {
+  grid-template-columns: repeat(2, auto);
+}
+
+.compactSegment button {
+  min-height: 34px;
+  padding: 0 13px;
+  font-size: 14px;
+}
+
+.compactSegment {
+  display: flex;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.compactSegment button {
+  border: 0;
+  background: none;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.compactSegment button.active {
+  background: var(--inset, #eef1f6);
+  color: var(--fg);
+}
+
+@media (max-width: 760px) {
+  .toolbarActions {
+    width: 100%;
+  }
+
+  .toolbarActions .filterButton {
+    flex: 1 1 170px;
+    justify-content: space-between;
+  }
+
+  .stack {
+    padding: 18px;
+  }
+  .mobileAgentList,
+.mobileResourceList {
+    display: flex;
+  }
+
+  .sectionHeaderRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+}
+
+
+.textButton,
+.iconButton {
+  border-radius: var(--radius-card);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--control-height);
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.textButton {
+  background: transparent;
+  color: var(--fg);
+  padding: 0 4px;
+}
+
+.textButton:hover {
+  color: var(--fg);
+}
+
+.iconButton {
+  width: var(--control-height);
+  padding: 0;
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--line);
+  text-decoration: none;
+  box-shadow: none;
+}
+
+.iconButton:hover {
+  background: var(--inset);
+}

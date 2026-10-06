@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
   RuntimeSettingsEditor,
   applyRuntimeSettingsDefaults,
@@ -185,7 +188,7 @@ describe('Runtime Settings forms', () => {
     expect(html).not.toContain('<table');
   });
 
-  it('renders multiple metadata and artifact storage providers without enabling unavailable adapters', () => {
+  it('renders multiple metadata and artifact storage providers without enabling unavailable adapters', async () => {
     const s3Config: RuntimeSettingsConfig = {
       ...config,
       storage: {
@@ -204,7 +207,8 @@ describe('Runtime Settings forms', () => {
       },
     };
 
-    const html = renderToStaticMarkup(
+    const user = userEvent.setup();
+    render(
       <StorageSettingsForm
         metadataAdapters={metadataStorageAdapters}
         artifactAdapters={artifactStorageAdapters}
@@ -214,22 +218,26 @@ describe('Runtime Settings forms', () => {
       />,
     );
 
-    expect(html).toContain('value="postgres"');
-    expect(html).toContain('Postgres - unavailable');
-    expect(html).toContain('MySQL - unavailable');
-    expect(html).toContain('S3-compatible - unavailable');
-    expect(html).toContain('Connection string');
-    expect(html).toContain('${DATABASE_URL}');
-    expect(html).toContain('Endpoint');
-    expect(html).toContain('Bucket');
-    expect(html).toContain('Region');
-    expect(html).toContain('Access key');
-    expect(html).toContain('Secret key');
-    expect(html).toContain('Path-style requests');
-    expect(html).toContain('Storage adapter availability');
-    expect(html).toMatch(/value="postgres" disabled=""/);
-    expect(html).toMatch(/value="mysql" disabled=""/);
-    expect(html).toMatch(/value="s3" disabled=""/);
+    // The provider pickers are headless comboboxes (ConsoleSelect), not native
+    // <select> elements: open each one and assert the unavailable adapters are
+    // offered but disabled rather than silently dropped.
+    const [metadataSelect, artifactSelect] = screen.getAllByRole('combobox');
+    await user.click(metadataSelect);
+    expect((await screen.findByRole('option', { name: /sqlite/i })).getAttribute('aria-disabled')).not.toBe('true');
+    expect((await screen.findByRole('option', { name: /postgres/i })).getAttribute('aria-disabled')).toBe('true');
+    expect((await screen.findByRole('option', { name: /mysql/i })).getAttribute('aria-disabled')).toBe('true');
+    await user.keyboard('{Escape}');
+    await user.click(artifactSelect);
+    expect((await screen.findByRole('option', { name: /s3/i })).getAttribute('aria-disabled')).toBe('true');
+    await user.keyboard('{Escape}');
+
+    expect(screen.getAllByText('Connection string').length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText('${DATABASE_URL}')).toBeDefined();
+    expect(screen.getByPlaceholderText('${AWS_ACCESS_KEY_ID}')).toBeDefined();
+    expect(screen.getByPlaceholderText('${AWS_SECRET_ACCESS_KEY}')).toBeDefined();
+    expect(screen.getByLabelText('Storage adapter availability')).toBeDefined();
+    expect(screen.getByText('Metadata Postgres: unavailable')).toBeDefined();
+    expect(screen.getByText('Artifacts S3-compatible: unavailable')).toBeDefined();
   });
 
   it('derives option defaults from storage adapter schemas', () => {
@@ -319,15 +327,19 @@ describe('Runtime Settings forms', () => {
     expect(memory).toContain('SQLite');
   });
 
-  it('disables unavailable sandboxes and links to Environments', () => {
+  it('disables unavailable sandboxes and links to Environments', async () => {
     const adapters = [
       { id: 'local', label: 'Local', status: 'available' as const },
       { id: 'docker', label: 'Docker', status: 'unavailable' as const },
       { id: 'mystery', label: 'Unknown sandbox (mystery)', status: 'invalid' as const },
     ];
-    const html = renderToStaticMarkup(<SandboxSettingsForm adapters={adapters} config={config} onChange={() => {}} />);
-    expect(html).toMatch(/value="docker" disabled=""/);
-    expect(html).toMatch(/value="mystery" disabled=""/);
+    const user = userEvent.setup();
+    render(<SandboxSettingsForm adapters={adapters} config={config} onChange={() => {}} />);
+    await user.click(screen.getByRole('combobox'));
+    expect((await screen.findByRole('option', { name: /docker/i })).getAttribute('aria-disabled')).toBe('true');
+    expect((await screen.findByRole('option', { name: /mystery/i })).getAttribute('aria-disabled')).toBe('true');
+    await user.keyboard('{Escape}');
+    const html = document.body.innerHTML;
     expect(html).toContain('href="#environments"');
     expect(html).toContain('Docker: unavailable');
     expect(html).toContain('Unknown sandbox (mystery): invalid');

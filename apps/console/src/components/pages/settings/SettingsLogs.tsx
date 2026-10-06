@@ -1,11 +1,16 @@
-import { Activity, Database, FileText, Gauge, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getPage, postJson } from '../../../api';
-import { SummaryStrip } from '../../Common';
-import { pathName } from '../../../lib/format';
+import { Kpi, KpiStrip, PageHeader } from '../../console-ui';
+import { ConsoleSelect } from '../../console-select';
+import { pathName, uiLocaleTag } from '../../../lib/format';
 import type { ConsoleData, RuntimeLogEntry, RuntimeLogLevel } from '../../../types';
 
+const LOG_LEVELS: Array<RuntimeLogLevel | 'all'> = ['all', 'debug', 'info', 'warn', 'error'];
+
 export function SettingsLogs({ data }: { data: ConsoleData }) {
+  const { t } = useTranslation('settings');
   const [logs, setLogs] = useState<RuntimeLogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState('');
@@ -35,12 +40,12 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
   }, [logLevel]);
 
   const restartRuntime = async () => {
-    if (!window.confirm('Restart the runtime? Active sessions will be interrupted.')) return;
+    if (!window.confirm(t('logs.restartConfirm'))) return;
     setRestarting(true);
-    setRestartStatus('Scheduling runtime restart...');
+    setRestartStatus(t('logs.restarting'));
     try {
       await postJson<{ restarting: boolean; status: string }>('/v1/x/restart', {});
-      setRestartStatus('Restart scheduled. The dashboard will reconnect when the runtime is back.');
+      setRestartStatus(t('logs.restartScheduled'));
     } catch (err) {
       setRestartStatus(err instanceof Error ? err.message : String(err));
       setRestarting(false);
@@ -49,47 +54,41 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
 
   return (
     <section className="stack settingsLogsPage">
-      <div className="pageIntro">
-        <div>
-          <h1>Logs</h1>
-          <p>View recent runtime logs and restart the local process when needed.</p>
-        </div>
-        <div className="topActions">
-          <button className="secondaryButton" type="button" onClick={() => void loadLogs()} disabled={logsLoading}>
-            <RefreshCw size={16} />
-            Refresh logs
-          </button>
-          <button className="primaryButton" type="button" onClick={() => void restartRuntime()} disabled={restarting}>
-            <RefreshCw size={16} />
-            Restart runtime
-          </button>
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Runtime', value: data.runtime?.status ?? 'starting', icon: <Gauge size={18} /> },
-        { label: 'Log lines', value: logs.length, icon: <FileText size={18} /> },
-        { label: 'Errors', value: logs.filter((entry) => entry.level === 'error').length, icon: <Activity size={18} /> },
-        { label: 'Data directory', value: pathName(data.workspace?.dataDir) || 'managed-agents', icon: <Database size={18} /> },
-      ]} />
+      <PageHeader
+        title={t('logs.title')}
+        description={t('logs.description')}
+        actions={(
+          <>
+            <button className="secondaryButton" type="button" onClick={() => void loadLogs()} disabled={logsLoading}>
+              <RefreshCw size={16} />
+              {t('logs.refreshLogs')}
+            </button>
+            <button className="primaryButton" type="button" onClick={() => void restartRuntime()} disabled={restarting}>
+              <RefreshCw size={16} />
+              {t('logs.restartRuntime')}
+            </button>
+          </>
+        )}
+      />
+      <KpiStrip label={t('logs.title')}>
+        <Kpi label={t('logs.kpis.runtime')} value={data.runtime?.status ?? 'starting'} />
+        <Kpi label={t('logs.kpis.logLines')} value={logs.length} />
+        <Kpi label={t('logs.kpis.errors')} value={logs.filter((entry) => entry.level === 'error').length} />
+        <Kpi label={t('logs.kpis.dataDir')} value={pathName(data.workspace?.dataDir) || t('logs.dataDirFallback')} />
+      </KpiStrip>
       <div className="sectionHeaderRow">
         <div>
-          <h2>Runtime logs</h2>
-          <p>Recent structured logs from the current runtime process.</p>
+          <h2>{t('logs.section.title')}</h2>
+          <p>{t('logs.section.description')}</p>
         </div>
         <div className="toolbarActions">
-          <select
-            className="compactSelect"
+          <ConsoleSelect
+            label={t('logs.levelLabel')}
             value={logLevel}
-            onChange={(event) => setLogLevel(event.target.value as RuntimeLogLevel | 'all')}
-            aria-label="Log level"
-          >
-            <option value="all">All levels</option>
-            <option value="debug">Debug and above</option>
-            <option value="info">Info and above</option>
-            <option value="warn">Warn and above</option>
-            <option value="error">Errors only</option>
-          </select>
-          <button className="iconButton" type="button" title="Refresh logs" onClick={() => void loadLogs()} disabled={logsLoading}>
+            onChange={(value) => setLogLevel(value as RuntimeLogLevel | 'all')}
+            options={LOG_LEVELS.map((level) => ({ value: level, label: t(`logs.levels.${level}`) }))}
+          />
+          <button className="iconButton" type="button" title={t('logs.refreshLogs')} aria-label={t('logs.refreshLogs')} onClick={() => void loadLogs()} disabled={logsLoading}>
             <RefreshCw size={16} />
           </button>
         </div>
@@ -98,7 +97,7 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
         {restartStatus ? <div className="runtimeStatus">{restartStatus}</div> : null}
         {logsError ? <div className="runtimeStatus error">{logsError}</div> : null}
         {logs.length === 0 ? (
-          <div className="emptyValue">{logsLoading ? 'Loading logs...' : 'No runtime logs captured yet'}</div>
+          <div className="emptyValue">{logsLoading ? t('logs.loading') : t('logs.empty')}</div>
         ) : (
           <div className="runtimeLogList" role="log" aria-live="polite">
             {logs.map((entry, index) => (
@@ -117,7 +116,7 @@ export function SettingsLogs({ data }: { data: ConsoleData }) {
 function formatRuntimeLogTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return date.toLocaleTimeString(uiLocaleTag(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function formatRuntimeLog(entry: RuntimeLogEntry) {

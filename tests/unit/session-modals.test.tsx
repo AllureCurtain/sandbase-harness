@@ -64,7 +64,7 @@ describe('Session surfaces', () => {
     );
 
     expect(html).toContain('Sessions');
-    expect(html).toContain('Create session');
+    expect(html).toContain('New session');
     expect(html).toContain('No sessions');
   });
 

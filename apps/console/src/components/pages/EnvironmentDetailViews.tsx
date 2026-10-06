@@ -1,5 +1,6 @@
-import { X } from 'lucide-react';
-import { MetricCard } from '../Common';
+import { TriangleAlert, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Kpi, KpiStrip } from '../console-ui';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
 import type { Environment, Session } from '../../types';
 import {
@@ -8,10 +9,10 @@ import {
   environmentKeys,
   environmentHostingType,
   environmentMetadataEntries,
-  hostingLabel,
 } from './EnvironmentPageModel';
 
 export function CloudEnvironment({ environment }: { environment: Environment }) {
+  const { t } = useTranslation('environments');
   const metadata = environmentMetadataEntries(environment);
   const executionType = environmentHostingType(environment);
   const effectiveProvider = effectiveSandboxProvider(environment);
@@ -21,28 +22,29 @@ export function CloudEnvironment({ environment }: { environment: Environment }) 
   return (
     <div className="environmentBody">
       <section className="environmentSection">
-        <h2>Execution</h2>
-        <p>Sessions created with this environment use this sandbox provider.</p>
+        <h2>{t('detail.execution.title')}</h2>
+        <p>{t('detail.execution.readonlyHint')}</p>
         {effectiveProvider === 'local' ? (
           <div className="warningNotice" role="alert">
-            <span>Not isolated: tools execute directly on the host machine. Use a Docker, Kubernetes, or self-hosted backend for untrusted agent code.</span>
+            <TriangleAlert size={18} aria-hidden="true" />
+            <span>{t('detail.execution.readonlyWarning')}</span>
           </div>
         ) : null}
         <div className="readonlyFields">
-          <ReadonlyField label="Hosting type" value={hostingLabel(declaredHostingType(environment))} />
-          <ReadonlyField label="Effective backend" value={effectiveProvider} />
-          {executionType === 'docker' ? <ReadonlyField label="Docker image" value={String(environment.config.image ?? 'node:22-slim')} /> : null}
-          {executionType === 'docker' && resources.memory ? <ReadonlyField label="Memory limit" value={String(resources.memory)} /> : null}
-          {executionType === 'docker' && resources.cpu ? <ReadonlyField label="CPU limit" value={String(resources.cpu)} /> : null}
+          <ReadonlyField label={t('detail.execution.fields.hostingType')} value={t(`kind.${declaredHostingType(environment)}`)} />
+          <ReadonlyField label={t('detail.execution.fields.effectiveBackend')} value={effectiveProvider} />
+          {executionType === 'docker' ? <ReadonlyField label={t('detail.execution.fields.dockerImage')} value={String(environment.config.image ?? 'node:22-slim')} /> : null}
+          {executionType === 'docker' && resources.memory ? <ReadonlyField label={t('detail.execution.fields.memoryLimit')} value={String(resources.memory)} /> : null}
+          {executionType === 'docker' && resources.cpu ? <ReadonlyField label={t('detail.execution.fields.cpuLimit')} value={String(resources.cpu)} /> : null}
         </div>
       </section>
       <section className="environmentSection">
-        <h2>Metadata</h2>
-        <p>Add custom key-value pairs to tag and organize this environment. Keys must be lowercase.</p>
+        <h2>{t('detail.metadata.title')}</h2>
+        <p>{t('detail.metadata.hint')}</p>
         <ReadonlyTable
-          empty="No metadata"
+          empty={t('detail.metadata.empty')}
           rows={metadata}
-          columns={['Key', 'Value']}
+          columns={[t('detail.metadata.keyColumn'), t('detail.metadata.valueColumn')]}
         />
       </section>
     </div>
@@ -50,6 +52,7 @@ export function CloudEnvironment({ environment }: { environment: Environment }) 
 }
 
 export function SelfHostedEnvironment({ environment, sessions }: { environment: Environment; sessions: Session[] }) {
+  const { t } = useTranslation('environments');
   const keys = environmentKeys(environment);
   const idleSessions = sessions.filter((session) => session.status === 'idle');
   const runningSessions = sessions.filter((session) => session.status === 'running');
@@ -58,35 +61,35 @@ export function SelfHostedEnvironment({ environment, sessions }: { environment: 
   return (
     <div className="environmentBody">
       <section className="environmentSection">
-        <h2>Overview</h2>
-        <p>Live session activity for this self-hosted environment. Updates every few seconds.</p>
-        <div className="metricGrid compactMetrics">
-          <MetricCard title="Idle sessions" value={idleSessions.length} />
-          <MetricCard title="Running sessions" value={runningSessions.length} />
-          <MetricCard title="Completed sessions" value={completedSessions.length} />
-          <MetricCard title="Oldest active session" value={oldestActiveSession ? relativeDate(oldestActiveSession.created_at) : 'None'} />
-        </div>
+        <h2>{t('detail.selfHosted.overviewTitle')}</h2>
+        <p>{t('detail.selfHosted.overviewHint')}</p>
+        <KpiStrip label={t('detail.selfHosted.overviewTitle')}>
+          <Kpi label={t('detail.selfHosted.idle')} value={idleSessions.length} />
+          <Kpi label={t('detail.selfHosted.running')} value={runningSessions.length} />
+          <Kpi label={t('detail.selfHosted.completed')} value={completedSessions.length} />
+          <Kpi label={t('detail.selfHosted.oldestActive')} value={oldestActiveSession ? relativeDate(oldestActiveSession.created_at) : t('detail.selfHosted.none')} />
+        </KpiStrip>
       </section>
       <div className="selfHostedGrid">
         <section className="environmentSection">
-          <h2>Environment keys</h2>
-          <p>An environment key lets a runner on your infrastructure connect to this environment and pull jobs. Generate one per host so you can revoke access individually.</p>
+          <h2>{t('detail.selfHosted.keysTitle')}</h2>
+          <p>{t('detail.selfHosted.keysHint')}</p>
           <ReadonlyTable
-            empty="No environment keys"
+            empty={t('detail.selfHosted.keysEmpty')}
             rows={keys.map((key) => [key.name, shortId(key.id), formatDateShort(key.created_at), formatDateShort(key.expires_at)])}
-            columns={['Name', 'ID', 'Created', 'Expires at']}
+            columns={[t('detail.selfHosted.columns.name'), t('detail.selfHosted.columns.id'), t('detail.selfHosted.columns.created'), t('detail.selfHosted.columns.expires')]}
           />
         </section>
         <section className="setupCard">
           <div className="setupHeader">
-            <h2>Set up your self-hosted environment</h2>
-            <button className="iconButton quiet" type="button" title="Dismiss setup"><X size={18} /></button>
+            <h2>{t('detail.selfHosted.setupTitle')}</h2>
+            <button className="iconButton quiet" type="button" title={t('detail.selfHosted.dismiss')}><X size={18} /></button>
           </div>
-          <p>These instructions guide you through a low-code CLI worker setup. Additional options are also available in public documentation.</p>
-          <SetupStep index={1} title="Register an environment key" body="Generate an environment key authenticating your infrastructure with this environment." />
-          <SetupStep index={2} title="Export environment key as env var" body="This authorizes the environment worker to pull for work." code={`export MANAGED_AGENTS_ENVIRONMENT_KEY='env-key-...'`} />
-          <SetupStep index={3} title="Install managed-agents CLI" body="Run this command on the machine where you want the environment worker to run." code={`npm install -g managed-agents`} />
-          <SetupStep index={4} title="Invoke the worker" body="Poll for jobs and execute them locally." code={`managed-agents worker poll \\\n  --environment-id "${environment.id}" \\\n  --workdir "/workspace"`} />
+          <p>{t('detail.selfHosted.setupHint')}</p>
+          <SetupStep index={1} title={t('detail.selfHosted.step1Title')} body={t('detail.selfHosted.step1Body')} />
+          <SetupStep index={2} title={t('detail.selfHosted.step2Title')} body={t('detail.selfHosted.step2Body')} code={`export MANAGED_AGENTS_ENVIRONMENT_KEY='env-key-...'`} />
+          <SetupStep index={3} title={t('detail.selfHosted.step3Title')} body={t('detail.selfHosted.step3Body')} code={`npm install -g managed-agents`} />
+          <SetupStep index={4} title={t('detail.selfHosted.step4Title')} body={t('detail.selfHosted.step4Body')} code={`managed-agents worker poll \\\n  --environment-id "${environment.id}" \\\n  --workdir "/workspace"`} />
         </section>
       </div>
     </div>

@@ -1,0 +1,31 @@
+/*
+ * The console's single stylesheet entry, in cascade order:
+ * 1. Tailwind's theme variables (no preflight: the console keeps its base rules);
+ * 2. IBM Plex Sans and Beautiful UI's foundation — the design tokens every surface uses;
+ * 3. the app chrome (shell.css): sidebar, navigation, and workspace switcher;
+ * 4. the ported OAC base + grammar (style.css, console.css) and the component
+ *    system in Beautiful UI's vocabulary (system.css), plus this console's own
+ *    semantic layer for workflow surfaces (sandbase.css);
+ * 5. Tailwind utilities last, generated only for the vendored components.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource-variable/geist-mono";
+@import "./foundation.css";
+@import "./coss-theme.css";
+@import "./shell.css";
+@import "./style.css";
+@import "./console.css";
+@import "./system.css";
+@import "./sandbase.css";
+@import "tailwindcss/utilities.css" source(none);
+/* Utilities are generated only for the vendored components (coss ui on
+ * @base-ui/react) and their thin console wrappers. The console's own markup
+ * uses semantic classes (`button outline`, `table-frame`); scanning it would
+ * turn names like `outline` or `hidden` into utilities. */
+@source "../components/ui";
+@source "../components/console-select.tsx";
+@source "../components/console-popover.tsx";

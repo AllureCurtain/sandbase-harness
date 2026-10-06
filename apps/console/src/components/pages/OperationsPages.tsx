@@ -1,11 +1,15 @@
 import { Activity, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Play, Plus, RadioTower, Send } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { getJson, postJson } from '../../api';
 import type { ConsoleData, DeploymentRun, Outcome, ScheduledDeployment, Session, Webhook, WebhookDelivery } from '../../types';
-import { EmptyState, RequiredMark, ResourceBadge, StatusPill, SummaryStrip } from '../Common';
+import { RequiredMark } from '../Common';
 import { Modal } from '../Modal';
+import { ConsoleSelect } from '../console-select';
+import { EmptyState, Kpi, KpiStrip, PageBody, PageHeader, StatusDot, type Tone } from '../console-ui';
 import { formatDateShort, truncateMiddle } from '../../lib/format';
 import { WEBHOOK_EVENT_GROUPS } from '../../lib/webhook-events';
+import './operations.css';
 
 type ScheduledDeploymentRun = DeploymentRun;
 
@@ -23,7 +27,16 @@ type OperationsPageProps = {
   onRefresh: () => void;
 };
 
+function statusTone(status: string): Tone {
+  if (status === 'active' || status === 'delivered') return 'ok';
+  if (status === 'failed') return 'danger';
+  if (status === 'pending' || status === 'retrying' || status === 'queued') return 'pending';
+  return 'neutral';
+}
+
 export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
+  const { t } = useTranslation('operations');
+  const { t: tPages } = useTranslation('pages');
   const [testingId, setTestingId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -38,10 +51,10 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
         event: webhook.events[0] ?? 'session.created',
         payload: { source: 'console', dry_run: true },
       });
-      setMessage(`Test delivery ${truncateMiddle(delivery.id, 18)} recorded with ${delivery.status_code ?? 'no'} status.`);
+      setMessage(t('webhooks.notice.tested', { id: truncateMiddle(delivery.id, 18), status: delivery.status_code ?? 'no' }));
       onRefresh();
-    } catch (err: any) {
-      setMessage(err?.message ?? 'Could not test webhook');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t('webhooks.notice.testFailed'));
     } finally {
       setTestingId(null);
     }
@@ -52,87 +65,96 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
     setMessage('');
     try {
       const page = await postJson<{ data: WebhookDelivery[] }>('/v1/webhooks/retry-due', {});
-      setMessage(`Retried ${page.data.length} due webhook deliver${page.data.length === 1 ? 'y' : 'ies'}.`);
+      setMessage(t('webhooks.notice.retried', { n: page.data.length, count: page.data.length }));
       onRefresh();
-    } catch (err: any) {
-      setMessage(err?.message ?? 'Could not retry webhooks');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t('webhooks.notice.retryFailed'));
     } finally {
       setRetrying(false);
     }
   };
 
+  const empty = (
+    <EmptyState
+      icon={RadioTower}
+      title={t('webhooks.empty')}
+      description={t('webhooks.emptyBody')}
+      action={<button className="button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={15} />{t('webhooks.actions.create')}</button>}
+    />
+  );
+
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Webhooks</h1>
-          <p>Persist callback subscriptions for session lifecycle, turn, and operations events. Test records a signed local delivery; Retry due dispatches queued retries.</p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />Create webhook
-          </button>
-          <button className="secondaryButton" type="button" onClick={() => void retryDue()} disabled={retrying || data.webhooks.length === 0}>
-            <Send size={16} /> {retrying ? 'Retrying...' : 'Retry due'}
-          </button>
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Subscriptions', value: data.webhooks.length, icon: <RadioTower size={18} /> },
-        { label: 'Active', value: data.webhooks.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
-        { label: 'Event bindings', value: data.webhooks.reduce((total, item) => total + item.events.length, 0), icon: <Send size={18} /> },
-      ]} />
-      <div className="tablePanel operationTablePanel">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>URL</th><th>Events</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead>
-          <tbody>
-            {data.webhooks.map((webhook) => (
-              <WebhookRow
-                key={webhook.id}
-                webhook={webhook}
-                testingId={testingId}
-                expanded={deliveriesId === webhook.id}
-                onToggleDeliveries={() => setDeliveriesId((current) => current === webhook.id ? null : webhook.id)}
-                onTest={testWebhook}
-              />
-            ))}
-          </tbody>
-        </table>
-        {data.webhooks.length === 0 ? (
-          <EmptyState
-            icon={<RadioTower size={22} />}
-            title="No webhooks"
-            body="Create webhook subscriptions here, then test deliveries and retry due attempts from the same page."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create webhook</button>}
-          />
-        ) : null}
-      </div>
-      <div className="mobileResourceList">
-        {data.webhooks.map((webhook) => (
-          <article className="mobileResourceCard" key={webhook.id}>
-            <span className="mobileAgentMain">
-              <strong>{webhook.name}</strong>
-              <small className="monoText">{truncateMiddle(webhook.url, 42)}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <ResourceBadge>{webhook.events.length} events</ResourceBadge>
-              <StatusPill status={webhook.status} />
-            </span>
-            <button className="ghostButton compactButton" type="button" onClick={() => testWebhook(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
-              <Send size={14} /> {testingId === webhook.id ? 'Testing...' : 'Test'}
+    <section className="page-section console-page webhooks-list-page" aria-labelledby="webhooks-heading">
+      <PageHeader
+        headingId="webhooks-heading"
+        title={tPages('webhooks.title')}
+        help={t('webhooks.description')}
+        actions={(
+          <>
+            <button className="button outline" type="button" onClick={() => void retryDue()} disabled={retrying || data.webhooks.length === 0}>
+              <Send size={15} aria-hidden="true" /> {retrying ? t('webhooks.actions.retrying') : t('webhooks.actions.retryDue')}
             </button>
-          </article>
-        ))}
-        {data.webhooks.length === 0 ? (
-          <EmptyState
-            icon={<RadioTower size={22} />}
-            title="No webhooks"
-            body="Create webhook subscriptions here, then test deliveries and retry due attempts from the same page."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create webhook</button>}
-          />
-        ) : null}
-      </div>
-      {message ? <OperationNotice>{message}</OperationNotice> : null}
+            <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={15} aria-hidden="true" />{t('webhooks.actions.create')}
+            </button>
+          </>
+        )}
+      />
+      <PageBody>
+        <KpiStrip label={tPages('webhooks.title')}>
+          <Kpi label={t('webhooks.kpis.subscriptions')} value={data.webhooks.length} />
+          <Kpi label={t('webhooks.kpis.active')} value={data.webhooks.filter((item) => item.status === 'active').length} />
+          <Kpi label={t('webhooks.kpis.eventBindings')} value={data.webhooks.reduce((total, item) => total + item.events.length, 0)} />
+        </KpiStrip>
+        {data.webhooks.length ? (
+          <div className="table-frame webhooks-table-frame">
+            <table className="data-table" aria-label={tPages('webhooks.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('webhooks.columns.id')}</th>
+                  <th scope="col">{t('webhooks.columns.name')}</th>
+                  <th scope="col">{t('webhooks.columns.url')}</th>
+                  <th scope="col">{t('webhooks.columns.events')}</th>
+                  <th scope="col">{t('webhooks.columns.status')}</th>
+                  <th scope="col">{t('webhooks.columns.updated')}</th>
+                  <th scope="col" className="actionsCol"><span className="visually-hidden">{t('webhooks.columns.action')}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.webhooks.map((webhook) => (
+                  <WebhookRow
+                    key={webhook.id}
+                    webhook={webhook}
+                    testingId={testingId}
+                    expanded={deliveriesId === webhook.id}
+                    onToggleDeliveries={() => setDeliveriesId((current) => current === webhook.id ? null : webhook.id)}
+                    onTest={testWebhook}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : empty}
+        <div className="mobileResourceList">
+          {data.webhooks.map((webhook) => (
+            <article className="mobileResourceCard" key={webhook.id}>
+              <span className="mobileAgentMain">
+                <strong>{webhook.name}</strong>
+                <small className="monoText">{truncateMiddle(webhook.url, 42)}</small>
+              </span>
+              <span className="mobileAgentMeta">
+                <span>{t('webhooks.mobileEvents', { n: webhook.events.length, count: webhook.events.length })}</span>
+                <StatusDot tone={statusTone(webhook.status)} label={webhook.status} />
+              </span>
+              <button className="button ghost" type="button" onClick={() => void testWebhook(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
+                <Send size={14} aria-hidden="true" /> {testingId === webhook.id ? t('webhooks.actions.testing') : t('webhooks.actions.test')}
+              </button>
+            </article>
+          ))}
+          {data.webhooks.length === 0 ? empty : null}
+        </div>
+        {message ? <OperationNotice>{message}</OperationNotice> : null}
+      </PageBody>
       {createOpen ? (
         <WebhookCreateModal
           onClose={() => setCreateOpen(false)}
@@ -147,6 +169,8 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
 }
 
 export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProps) {
+  const { t } = useTranslation('operations');
+  const { t: tPages } = useTranslation('pages');
   const [runningId, setRunningId] = useState<string | null>(null);
   const [runningDue, setRunningDue] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -161,11 +185,11 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
         trigger_type: 'manual',
       });
       setMessage(run.session_id
-        ? `Run ${truncateMiddle(run.id, 18)} created session ${truncateMiddle(run.session_id, 18)}.`
-        : `Run ${truncateMiddle(run.id, 18)} failed: ${run.error?.message ?? 'unknown error'}.`);
+        ? t('scheduled.notice.ranSession', { id: truncateMiddle(run.id, 18), session: truncateMiddle(run.session_id, 18) })
+        : t('scheduled.notice.ranFailed', { id: truncateMiddle(run.id, 18), error: run.error?.message ?? 'unknown error' }));
       onRefresh();
-    } catch (err: any) {
-      setMessage(err?.message ?? 'Could not run schedule');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t('scheduled.notice.runFailed'));
     } finally {
       setRunningId(null);
     }
@@ -176,87 +200,97 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
     setMessage('');
     try {
       const page = await postJson<{ data: ScheduledDeploymentRun[] }>('/v1/scheduled-deployments/run-due', {});
-      setMessage(`Ran ${page.data.length} due scheduled deployment${page.data.length === 1 ? '' : 's'}.`);
+      setMessage(t('scheduled.notice.ranDue', { n: page.data.length, count: page.data.length }));
       onRefresh();
-    } catch (err: any) {
-      setMessage(err?.message ?? 'Could not run due schedules');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t('scheduled.notice.runDueFailed'));
     } finally {
       setRunningDue(false);
     }
   };
 
+  const empty = (
+    <EmptyState
+      icon={CalendarClock}
+      title={t('scheduled.empty')}
+      description={t('scheduled.emptyBody')}
+      action={<button className="button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={15} />{t('scheduled.actions.create')}</button>}
+    />
+  );
+
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Scheduled deployments</h1>
-          <p>Persist cron-style run plans for agents and environments. Run due executes all active schedules whose next run has arrived.</p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />Create schedule
-          </button>
-          <button className="secondaryButton" type="button" onClick={() => void runDueSchedules()} disabled={runningDue || data.scheduledDeployments.length === 0}>
-            <Play size={16} /> {runningDue ? 'Running due...' : 'Run due'}
-          </button>
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Schedules', value: data.scheduledDeployments.length, icon: <CalendarClock size={18} /> },
-        { label: 'Active', value: data.scheduledDeployments.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
-        { label: 'Due candidates', value: data.scheduledDeployments.filter((item) => item.status === 'active' && item.schedule?.upcoming_runs_at?.[0]).length, icon: <Play size={18} /> },
-      ]} />
-      <div className="tablePanel operationTablePanel">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Agent</th><th>Environment</th><th>Cron</th><th>Status</th><th>Next run</th><th>Action</th></tr></thead>
-          <tbody>
-            {data.scheduledDeployments.map((schedule) => (
-              <ScheduleRow
-                key={schedule.id}
-                schedule={schedule}
-                runningId={runningId}
-                expanded={runsId === schedule.id}
-                onToggleRuns={() => setRunsId((current) => current === schedule.id ? null : schedule.id)}
-                onRun={runSchedule}
-              />
-            ))}
-          </tbody>
-        </table>
-        {data.scheduledDeployments.length === 0 ? (
-          <EmptyState
-            icon={<CalendarClock size={22} />}
-            title="No scheduled deployments"
-            body="Create schedules here, then run one schedule or process all due runs from the same page."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create schedule</button>}
-          />
-        ) : null}
-      </div>
-      <div className="mobileResourceList">
-        {data.scheduledDeployments.map((schedule) => (
-          <article className="mobileResourceCard" key={schedule.id}>
-            <span className="mobileAgentMain">
-              <strong>{schedule.name}</strong>
-              <small className="monoText">{schedule.schedule?.expression ?? 'manual'}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <span>{schedule.schedule?.upcoming_runs_at?.[0] ? `Next ${formatDateShort(schedule.schedule.upcoming_runs_at[0])}` : 'No next run'}</span>
-              <StatusPill status={schedule.status} />
-            </span>
-            <button className="ghostButton compactButton" type="button" onClick={() => runSchedule(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
-              <Play size={14} /> {runningId === schedule.id ? 'Running...' : 'Run now'}
+    <section className="page-section console-page schedules-list-page" aria-labelledby="schedules-heading">
+      <PageHeader
+        headingId="schedules-heading"
+        title={tPages('scheduled-deployments.title')}
+        help={t('scheduled.description')}
+        actions={(
+          <>
+            <button className="button outline" type="button" onClick={() => void runDueSchedules()} disabled={runningDue || data.scheduledDeployments.length === 0}>
+              <Play size={15} aria-hidden="true" /> {runningDue ? t('scheduled.actions.runningDue') : t('scheduled.actions.runDue')}
             </button>
-          </article>
-        ))}
-        {data.scheduledDeployments.length === 0 ? (
-          <EmptyState
-            icon={<CalendarClock size={22} />}
-            title="No scheduled deployments"
-            body="Create schedules here, then run one schedule or process all due runs from the same page."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create schedule</button>}
-          />
-        ) : null}
-      </div>
-      {message ? <OperationNotice>{message}</OperationNotice> : null}
+            <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={15} aria-hidden="true" />{t('scheduled.actions.create')}
+            </button>
+          </>
+        )}
+      />
+      <PageBody>
+        <KpiStrip label={tPages('scheduled-deployments.title')}>
+          <Kpi label={t('scheduled.kpis.schedules')} value={data.scheduledDeployments.length} />
+          <Kpi label={t('scheduled.kpis.active')} value={data.scheduledDeployments.filter((item) => item.status === 'active').length} />
+          <Kpi label={t('scheduled.kpis.dueCandidates')} value={data.scheduledDeployments.filter((item) => item.status === 'active' && item.schedule?.upcoming_runs_at?.[0]).length} />
+        </KpiStrip>
+        {data.scheduledDeployments.length ? (
+          <div className="table-frame schedules-table-frame">
+            <table className="data-table" aria-label={tPages('scheduled-deployments.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('scheduled.columns.id')}</th>
+                  <th scope="col">{t('scheduled.columns.name')}</th>
+                  <th scope="col">{t('scheduled.columns.agent')}</th>
+                  <th scope="col">{t('scheduled.columns.environment')}</th>
+                  <th scope="col">{t('scheduled.columns.cron')}</th>
+                  <th scope="col">{t('scheduled.columns.status')}</th>
+                  <th scope="col">{t('scheduled.columns.nextRun')}</th>
+                  <th scope="col" className="actionsCol"><span className="visually-hidden">{t('scheduled.columns.action')}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.scheduledDeployments.map((schedule) => (
+                  <ScheduleRow
+                    key={schedule.id}
+                    schedule={schedule}
+                    runningId={runningId}
+                    expanded={runsId === schedule.id}
+                    onToggleRuns={() => setRunsId((current) => current === schedule.id ? null : schedule.id)}
+                    onRun={runSchedule}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : empty}
+        <div className="mobileResourceList">
+          {data.scheduledDeployments.map((schedule) => (
+            <article className="mobileResourceCard" key={schedule.id}>
+              <span className="mobileAgentMain">
+                <strong>{schedule.name}</strong>
+                <small className="monoText">{schedule.schedule?.expression ?? t('scheduled.runsTable.manual')}</small>
+              </span>
+              <span className="mobileAgentMeta">
+                <span>{schedule.schedule?.upcoming_runs_at?.[0] ? t('scheduled.mobileNext', { time: formatDateShort(schedule.schedule.upcoming_runs_at[0]) }) : t('scheduled.mobileNoNext')}</span>
+                <StatusDot tone={statusTone(schedule.status)} label={schedule.status} />
+              </span>
+              <button className="button ghost" type="button" onClick={() => void runSchedule(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
+                <Play size={14} aria-hidden="true" /> {runningId === schedule.id ? t('scheduled.actions.running') : t('scheduled.actions.runNow')}
+              </button>
+            </article>
+          ))}
+          {data.scheduledDeployments.length === 0 ? empty : null}
+        </div>
+        {message ? <OperationNotice>{message}</OperationNotice> : null}
+      </PageBody>
       {createOpen ? (
         <ScheduledDeploymentCreateModal
           data={data}
@@ -272,6 +306,8 @@ export function ScheduledDeploymentsPage({ data, onRefresh }: OperationsPageProp
 }
 
 export function OutcomesPage({ data, onRefresh }: OperationsPageProps) {
+  const { t } = useTranslation('operations');
+  const { t: tPages } = useTranslation('pages');
   const latestSessionId = useMemo(() => data.sessions[0]?.id ?? '', [data.sessions]);
   const [selectedSessionId, setSelectedSessionId] = useState(latestSessionId);
   const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
@@ -284,7 +320,7 @@ export function OutcomesPage({ data, onRefresh }: OperationsPageProps) {
 
   const evaluateOutcome = async (outcome: Outcome) => {
     if (!selectedSessionId) {
-      setMessage('Create a session before evaluating outcomes.');
+      setMessage(t('outcomes.notice.needSession'));
       return;
     }
     setEvaluatingId(outcome.id);
@@ -293,96 +329,107 @@ export function OutcomesPage({ data, onRefresh }: OperationsPageProps) {
       const result = await postJson<SessionOutcome>(`/v1/sessions/${selectedSessionId}/outcomes/evaluate`, {
         outcome_id: outcome.id,
       });
-      setMessage(`Evaluation ${truncateMiddle(result.id, 18)}: ${result.status}${typeof result.score === 'number' ? ` (${Math.round(result.score * 100)}%)` : ''}.`);
+      setMessage(t('outcomes.notice.evaluated', {
+        id: truncateMiddle(result.id, 18),
+        status: result.status,
+        score: typeof result.score === 'number' ? t('outcomes.notice.scorePart', { pct: Math.round(result.score * 100) }) : '',
+      }));
       onRefresh();
-    } catch (err: any) {
-      setMessage(err?.message ?? 'Could not evaluate outcome');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : t('outcomes.notice.failed'));
     } finally {
       setEvaluatingId(null);
     }
   };
 
+  const empty = (
+    <EmptyState
+      icon={CheckCircle2}
+      title={t('outcomes.empty')}
+      description={t('outcomes.emptyBody')}
+      action={<button className="button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={15} />{t('outcomes.actions.create')}</button>}
+    />
+  );
+
   return (
-    <section className="stack">
-      <div className="pageIntro">
-        <div>
-          <h1>Outcome templates (local)</h1>
-          <p>
-            Local reusable outcome definitions — a SandBase extension, not part of the published
-            event protocol. The official flow declares an outcome inside a session by sending a
-            <code> user.define_outcome </code> event (Session page → Actions → Define outcome);
-            its evaluations surface on the session's <code>outcome_evaluations</code>.
-          </p>
-        </div>
-        <div className="toolbarActions">
-          <button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />Create outcome
-          </button>
-          <SessionPicker sessions={data.sessions} selectedSessionId={selectedSessionId} onChange={setSelectedSessionId} />
-        </div>
-      </div>
-      <SummaryStrip items={[
-        { label: 'Definitions', value: data.outcomes.length, icon: <CheckCircle2 size={18} /> },
-        { label: 'Active', value: data.outcomes.filter((item) => item.status === 'active').length, icon: <Activity size={18} /> },
-        { label: 'Sessions available', value: data.sessions.length, icon: <Play size={18} /> },
-      ]} />
-      <div className="tablePanel operationTablePanel">
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Objective</th><th>Criteria</th><th>Threshold</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead>
-          <tbody>
-            {data.outcomes.map((outcome) => (
-              <tr key={outcome.id}>
-                <td><code>{truncateMiddle(outcome.id, 18)}</code></td>
-                <td><strong>{outcome.name}</strong></td>
-                <td>{outcome.objective}</td>
-                <td><ResourceBadge>{outcome.criteria.length} criteria</ResourceBadge></td>
-                <td><ResourceBadge>{Math.round((outcome.pass_threshold ?? 0.75) * 100)}% · {outcome.evaluator ?? 'deterministic'}</ResourceBadge></td>
-                <td><StatusPill status={outcome.status} /></td>
-                <td>{formatDateShort(outcome.updated_at)}</td>
-                <td>
-                  <button className="ghostButton compactButton" type="button" onClick={() => evaluateOutcome(outcome)} disabled={evaluatingId === outcome.id || outcome.status !== 'active' || !selectedSessionId}>
-                    <CheckCircle2 size={14} /> {evaluatingId === outcome.id ? 'Evaluating...' : 'Evaluate'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {data.outcomes.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircle2 size={22} />}
-            title="No outcomes"
-            body="Create outcome definitions here; local deterministic evaluation is available after a definition exists."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create outcome</button>}
-          />
-        ) : null}
-      </div>
-      <div className="mobileResourceList">
-        {data.outcomes.map((outcome) => (
-          <article className="mobileResourceCard" key={outcome.id}>
-            <span className="mobileAgentMain">
-              <strong>{outcome.name}</strong>
-              <small>{outcome.objective}</small>
-            </span>
-            <span className="mobileAgentMeta">
-              <ResourceBadge>{Math.round((outcome.pass_threshold ?? 0.75) * 100)}% · {outcome.evaluator ?? 'deterministic'}</ResourceBadge>
-              <StatusPill status={outcome.status} />
-            </span>
-            <button className="ghostButton compactButton" type="button" onClick={() => evaluateOutcome(outcome)} disabled={evaluatingId === outcome.id || outcome.status !== 'active' || !selectedSessionId}>
-              <CheckCircle2 size={14} /> {evaluatingId === outcome.id ? 'Evaluating...' : 'Evaluate'}
+    <section className="page-section console-page outcomes-list-page" aria-labelledby="outcomes-heading">
+      <PageHeader
+        headingId="outcomes-heading"
+        title={tPages('outcomes.title')}
+        actions={(
+          <>
+            <SessionPicker sessions={data.sessions} selectedSessionId={selectedSessionId} onChange={setSelectedSessionId} />
+            <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={15} aria-hidden="true" />{t('outcomes.actions.create')}
             </button>
-          </article>
-        ))}
-        {data.outcomes.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircle2 size={22} />}
-            title="No outcomes"
-            body="Create outcome definitions here; local deterministic evaluation is available after a definition exists."
-            action={<button className="primaryButton" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />Create outcome</button>}
-          />
-        ) : null}
-      </div>
-      {message ? <OperationNotice>{message}</OperationNotice> : null}
+          </>
+        )}
+      />
+      <PageBody>
+        <p className="console-page-description">
+          <Trans i18nKey="outcomes.description" ns="operations" components={{ code: <code /> }} />
+        </p>
+        <KpiStrip label={tPages('outcomes.title')}>
+          <Kpi label={t('outcomes.kpis.definitions')} value={data.outcomes.length} />
+          <Kpi label={t('outcomes.kpis.active')} value={data.outcomes.filter((item) => item.status === 'active').length} />
+          <Kpi label={t('outcomes.kpis.sessionsAvailable')} value={data.sessions.length} />
+        </KpiStrip>
+        {data.outcomes.length ? (
+          <div className="table-frame outcomes-table-frame">
+            <table className="data-table" aria-label={tPages('outcomes.title')}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('outcomes.columns.id')}</th>
+                  <th scope="col">{t('outcomes.columns.name')}</th>
+                  <th scope="col">{t('outcomes.columns.objective')}</th>
+                  <th scope="col">{t('outcomes.columns.criteria')}</th>
+                  <th scope="col">{t('outcomes.columns.threshold')}</th>
+                  <th scope="col">{t('outcomes.columns.status')}</th>
+                  <th scope="col">{t('outcomes.columns.updated')}</th>
+                  <th scope="col" className="actionsCol"><span className="visually-hidden">{t('outcomes.columns.action')}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.outcomes.map((outcome) => (
+                  <tr key={outcome.id}>
+                    <td><strong className="monoText">{truncateMiddle(outcome.id, 18)}</strong></td>
+                    <td><strong>{outcome.name}</strong></td>
+                    <td>{outcome.objective}</td>
+                    <td><span className="softChip inlineChip">{t('outcomes.criteriaCount', { n: outcome.criteria.length, count: outcome.criteria.length })}</span></td>
+                    <td><span className="softChip inlineChip">{t('outcomes.thresholdBadge', { pct: Math.round((outcome.pass_threshold ?? 0.75) * 100), evaluator: outcome.evaluator ?? 'deterministic' })}</span></td>
+                    <td><StatusDot tone={statusTone(outcome.status)} label={outcome.status} /></td>
+                    <td>{formatDateShort(outcome.updated_at)}</td>
+                    <td className="actionsCol">
+                      <button className="button ghost" type="button" onClick={() => void evaluateOutcome(outcome)} disabled={evaluatingId === outcome.id || outcome.status !== 'active' || !selectedSessionId}>
+                        <CheckCircle2 size={14} aria-hidden="true" /> {evaluatingId === outcome.id ? t('outcomes.actions.evaluating') : t('outcomes.actions.evaluate')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : empty}
+        <div className="mobileResourceList">
+          {data.outcomes.map((outcome) => (
+            <article className="mobileResourceCard" key={outcome.id}>
+              <span className="mobileAgentMain">
+                <strong>{outcome.name}</strong>
+                <small>{outcome.objective}</small>
+              </span>
+              <span className="mobileAgentMeta">
+                <span>{t('outcomes.thresholdBadge', { pct: Math.round((outcome.pass_threshold ?? 0.75) * 100), evaluator: outcome.evaluator ?? 'deterministic' })}</span>
+                <StatusDot tone={statusTone(outcome.status)} label={outcome.status} />
+              </span>
+              <button className="button ghost" type="button" onClick={() => void evaluateOutcome(outcome)} disabled={evaluatingId === outcome.id || outcome.status !== 'active' || !selectedSessionId}>
+                <CheckCircle2 size={14} aria-hidden="true" /> {evaluatingId === outcome.id ? t('outcomes.actions.evaluating') : t('outcomes.actions.evaluate')}
+              </button>
+            </article>
+          ))}
+          {data.outcomes.length === 0 ? empty : null}
+        </div>
+        {message ? <OperationNotice>{message}</OperationNotice> : null}
+      </PageBody>
       {createOpen ? (
         <OutcomeCreateModal
           onClose={() => setCreateOpen(false)}
@@ -409,23 +456,24 @@ function ScheduleRow({
   onToggleRuns: () => void;
   onRun: (schedule: ScheduledDeployment) => void;
 }) {
+  const { t } = useTranslation('operations');
   return (
     <>
       <tr>
-        <td><code>{truncateMiddle(schedule.id, 18)}</code></td>
+        <td><strong className="monoText">{truncateMiddle(schedule.id, 18)}</strong></td>
         <td><strong>{schedule.name}</strong></td>
-        <td><code>{truncateMiddle(schedule.agent.id, 20)}</code></td>
-        <td>{schedule.environment_id ? <code>{truncateMiddle(schedule.environment_id, 18)}</code> : <span className="mutedValue">default</span>}</td>
-        <td><span className="monoValue">{schedule.schedule?.expression ?? 'manual'}</span></td>
-        <td><StatusPill status={schedule.status} /></td>
+        <td><span className="monoText">{truncateMiddle(schedule.agent.id, 20)}</span></td>
+        <td>{schedule.environment_id ? <span className="monoText">{truncateMiddle(schedule.environment_id, 18)}</span> : <span className="mutedValue">{t('scheduled.runsTable.defaultEnvironment')}</span>}</td>
+        <td><span className="monoValue">{schedule.schedule?.expression ?? t('scheduled.runsTable.manual')}</span></td>
+        <td><StatusDot tone={statusTone(schedule.status)} label={schedule.status} /></td>
         <td>{schedule.schedule?.upcoming_runs_at?.[0] ? formatDateShort(schedule.schedule.upcoming_runs_at[0]) : '-'}</td>
-        <td>
+        <td className="actionsCol">
           <div className="rowActionGroup">
-            <button className="ghostButton compactButton" type="button" onClick={onToggleRuns} aria-expanded={expanded}>
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Runs
+            <button className="button ghost" type="button" onClick={onToggleRuns} aria-expanded={expanded}>
+              {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />} {t('scheduled.actions.runs')}
             </button>
-            <button className="ghostButton compactButton" type="button" onClick={() => onRun(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
-              <Play size={14} /> {runningId === schedule.id ? 'Running...' : 'Run now'}
+            <button className="button ghost" type="button" onClick={() => onRun(schedule)} disabled={runningId === schedule.id || schedule.status !== 'active'}>
+              <Play size={14} aria-hidden="true" /> {runningId === schedule.id ? t('scheduled.actions.running') : t('scheduled.actions.runNow')}
             </button>
           </div>
         </td>
@@ -446,6 +494,7 @@ function ScheduleRow({
  * run's `error.type` is the classified vocabulary the scheduler wrote.
  */
 function DeploymentRuns({ schedule }: { schedule: ScheduledDeployment }) {
+  const { t } = useTranslation('operations');
   const [runs, setRuns] = useState<DeploymentRun[] | null>(null);
   const [error, setError] = useState('');
 
@@ -456,11 +505,11 @@ function DeploymentRuns({ schedule }: { schedule: ScheduledDeployment }) {
         if (!active) return;
         setRuns(Array.isArray(page) ? page : page.data ?? []);
       })
-      .catch((err: any) => {
-        if (active) setError(err?.message ?? 'Could not load runs');
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : t('scheduled.runsTable.loadError'));
       });
     return () => { active = false; };
-  }, [schedule.id]);
+  }, [schedule.id, t]);
 
   const upcoming = schedule.schedule?.upcoming_runs_at ?? [];
 
@@ -468,28 +517,35 @@ function DeploymentRuns({ schedule }: { schedule: ScheduledDeployment }) {
     <div className="deploymentRunsPanel">
       {upcoming.length > 0 ? (
         <p className="mutedValue">
-          Upcoming runs: {upcoming.map((at) => formatDateShort(at)).join(' · ')}
-          {schedule.schedule?.timezone ? ` (${schedule.schedule.timezone})` : ''}
+          {schedule.schedule?.timezone
+            ? t('scheduled.runsTable.upcoming', { list: upcoming.map((at) => formatDateShort(at)).join(' · '), timezone: schedule.schedule.timezone })
+            : t('scheduled.runsTable.upcomingNoTz', { list: upcoming.map((at) => formatDateShort(at)).join(' · ') })}
         </p>
       ) : null}
       {error ? <div className="banner error inlineBanner" role="alert">{error}</div> : null}
-      {!error && runs === null ? <p className="mutedValue">Loading runs…</p> : null}
-      {runs && runs.length === 0 ? <p className="mutedValue">No runs recorded.</p> : null}
+      {!error && runs === null ? <p className="mutedValue">{t('scheduled.runsTable.loading')}</p> : null}
+      {runs && runs.length === 0 ? <p className="mutedValue">{t('scheduled.runsTable.empty')}</p> : null}
       {runs && runs.length > 0 ? (
         <table className="deliveriesTable">
           <thead>
-            <tr><th>Run</th><th>Trigger</th><th>Session</th><th>Error</th><th>Started</th></tr>
+            <tr>
+              <th scope="col">{t('scheduled.runsTable.run')}</th>
+              <th scope="col">{t('scheduled.runsTable.trigger')}</th>
+              <th scope="col">{t('scheduled.runsTable.session')}</th>
+              <th scope="col">{t('scheduled.runsTable.error')}</th>
+              <th scope="col">{t('scheduled.runsTable.started')}</th>
+            </tr>
           </thead>
           <tbody>
             {runs.map((run) => (
               <tr key={run.id}>
-                <td><code>{truncateMiddle(run.id, 18)}</code></td>
+                <td><span className="monoText">{truncateMiddle(run.id, 18)}</span></td>
                 <td>
-                  <code>{run.trigger_context?.type ?? '-'}</code>
-                  {run.trigger_context?.scheduled_at ? <small className="mutedValue"> due {formatDateShort(run.trigger_context.scheduled_at)}</small> : null}
+                  <span className="monoText">{run.trigger_context?.type ?? '-'}</span>
+                  {run.trigger_context?.scheduled_at ? <small className="mutedValue"> {t('scheduled.runsTable.due', { time: formatDateShort(run.trigger_context.scheduled_at) })}</small> : null}
                 </td>
-                <td>{run.session_id ? <code>{truncateMiddle(run.session_id, 18)}</code> : <span className="mutedValue">-</span>}</td>
-                <td>{run.error ? <span className="fieldError"><code>{run.error.type}</code> {run.error.message}</span> : <span className="mutedValue">-</span>}</td>
+                <td>{run.session_id ? <span className="monoText">{truncateMiddle(run.session_id, 18)}</span> : <span className="mutedValue">-</span>}</td>
+                <td>{run.error ? <span className="fieldError"><span className="monoText">{run.error.type}</span> {run.error.message}</span> : <span className="mutedValue">-</span>}</td>
                 <td>{formatDateShort(run.created_at)}</td>
               </tr>
             ))}
@@ -513,22 +569,23 @@ function WebhookRow({
   onToggleDeliveries: () => void;
   onTest: (webhook: Webhook) => void;
 }) {
+  const { t } = useTranslation('operations');
   return (
     <>
       <tr>
-        <td><code>{truncateMiddle(webhook.id, 18)}</code></td>
+        <td><strong className="monoText">{truncateMiddle(webhook.id, 18)}</strong></td>
         <td><strong>{webhook.name}</strong></td>
         <td><span className="monoValue">{truncateMiddle(webhook.url, 42)}</span></td>
-        <td><ResourceBadge>{webhook.events.length} events</ResourceBadge></td>
-        <td><StatusPill status={webhook.status} /></td>
+        <td><span className="softChip inlineChip">{t('webhooks.mobileEvents', { n: webhook.events.length, count: webhook.events.length })}</span></td>
+        <td><StatusDot tone={statusTone(webhook.status)} label={webhook.status} /></td>
         <td>{formatDateShort(webhook.updated_at)}</td>
-        <td>
+        <td className="actionsCol">
           <div className="rowActionGroup">
-            <button className="ghostButton compactButton" type="button" onClick={onToggleDeliveries} aria-expanded={expanded}>
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Deliveries
+            <button className="button ghost" type="button" onClick={onToggleDeliveries} aria-expanded={expanded}>
+              {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />} {t('webhooks.actions.deliveries')}
             </button>
-            <button className="ghostButton compactButton" type="button" onClick={() => onTest(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
-              <Send size={14} /> {testingId === webhook.id ? 'Testing...' : 'Test'}
+            <button className="button ghost" type="button" onClick={() => onTest(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
+              <Send size={14} aria-hidden="true" /> {testingId === webhook.id ? t('webhooks.actions.testing') : t('webhooks.actions.test')}
             </button>
           </div>
         </td>
@@ -548,6 +605,7 @@ function WebhookRow({
  * vault_id? } }` — the resource row the event refers to lives in `data`.
  */
 function WebhookDeliveries({ webhookId }: { webhookId: string }) {
+  const { t } = useTranslation('operations');
   const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null);
   const [error, setError] = useState('');
 
@@ -558,20 +616,27 @@ function WebhookDeliveries({ webhookId }: { webhookId: string }) {
         if (!active) return;
         setDeliveries(Array.isArray(page) ? page : page.data ?? []);
       })
-      .catch((err: any) => {
-        if (active) setError(err?.message ?? 'Could not load deliveries');
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : t('webhooks.deliveriesTable.loadError'));
       });
     return () => { active = false; };
-  }, [webhookId]);
+  }, [webhookId, t]);
 
   if (error) return <div className="banner error inlineBanner" role="alert">{error}</div>;
-  if (!deliveries) return <p className="mutedValue">Loading deliveries…</p>;
-  if (deliveries.length === 0) return <p className="mutedValue">No deliveries recorded.</p>;
+  if (!deliveries) return <p className="mutedValue">{t('webhooks.deliveriesTable.loading')}</p>;
+  if (deliveries.length === 0) return <p className="mutedValue">{t('webhooks.deliveriesTable.empty')}</p>;
 
   return (
     <table className="deliveriesTable">
       <thead>
-        <tr><th>Event</th><th>Subject</th><th>Status</th><th>Attempts</th><th>Created</th><th>Delivered</th></tr>
+        <tr>
+          <th scope="col">{t('webhooks.deliveriesTable.event')}</th>
+          <th scope="col">{t('webhooks.deliveriesTable.subject')}</th>
+          <th scope="col">{t('webhooks.deliveriesTable.status')}</th>
+          <th scope="col">{t('webhooks.deliveriesTable.attempts')}</th>
+          <th scope="col">{t('webhooks.deliveriesTable.created')}</th>
+          <th scope="col">{t('webhooks.deliveriesTable.delivered')}</th>
+        </tr>
       </thead>
       <tbody>
         {deliveries.map((delivery) => {
@@ -579,14 +644,14 @@ function WebhookDeliveries({ webhookId }: { webhookId: string }) {
           const subject = envelope.data;
           return (
             <tr key={delivery.id}>
-              <td><code>{delivery.event}</code></td>
+              <td><span className="monoText">{delivery.event}</span></td>
               <td>
-                {subject?.type ? <code>{subject.type}</code> : <span className="mutedValue">-</span>}
-                {subject?.id ? <code>{truncateMiddle(subject.id, 18)}</code> : null}
-                {subject?.vault_id ? <code>{truncateMiddle(String(subject.vault_id), 14)}</code> : null}
+                {subject?.type ? <span className="monoText">{subject.type}</span> : <span className="mutedValue">-</span>}
+                {subject?.id ? <span className="monoText"> {truncateMiddle(subject.id, 18)}</span> : null}
+                {subject?.vault_id ? <span className="monoText"> {truncateMiddle(String(subject.vault_id), 14)}</span> : null}
               </td>
               <td>
-                <StatusPill status={delivery.status} />
+                <StatusDot tone={statusTone(delivery.status)} label={delivery.status} />
                 {delivery.status_code !== null ? <small className="mutedValue"> {delivery.status_code}</small> : null}
                 {delivery.error ? <small className="fieldError"> {delivery.error}</small> : null}
               </td>
@@ -602,6 +667,7 @@ function WebhookDeliveries({ webhookId }: { webhookId: string }) {
 }
 
 function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('operations');
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<ReadonlySet<string>>(new Set());
@@ -632,28 +698,28 @@ function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
         events: WEBHOOK_EVENT_GROUPS.flatMap((group) => group.events.filter((name) => selectedEvents.has(name))),
       });
       onSaved();
-    } catch (err: any) {
-      setError(err?.message ?? 'Could not create webhook');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('webhooks.create.failed'));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal title="Create webhook" onClose={onClose} size="medium">
+    <Modal title={t('webhooks.create.title')} onClose={onClose} size="medium">
       <form className="modalForm operationCreateForm" onSubmit={submit}>
-        {error ? <div className="banner error">{error}</div> : null}
-        <label>
-          <span>Endpoint URL <RequiredMark /></span>
-          <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/managed-agents/webhook" required />
-          <small>HTTPS endpoints, or http://localhost for a local receiver.</small>
+        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        <label className="editField">
+          {t('webhooks.create.url')} <RequiredMark />
+          <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder={t('webhooks.create.urlPlaceholder')} required />
+          <small>{t('webhooks.create.urlHint')}</small>
         </label>
-        <label>
-          <span>Name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Production callback" />
+        <label className="editField">
+          {t('webhooks.create.name')}
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('webhooks.create.namePlaceholder')} />
         </label>
         <fieldset className="webhookEventPicker">
-          <legend>Events <RequiredMark /></legend>
+          <legend>{t('webhooks.create.events')} <RequiredMark /></legend>
           {WEBHOOK_EVENT_GROUPS.map((group) => (
             <div className="webhookEventGroup" key={group.category}>
               <strong>{group.category}</strong>
@@ -671,15 +737,15 @@ function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
               </div>
             </div>
           ))}
-          {selectedEvents.size === 0 ? <p className="fieldHint">Select at least one event. Wildcards are not part of the published catalog.</p> : null}
+          {selectedEvents.size === 0 ? <p className="fieldHint">{t('webhooks.create.eventsHint')}</p> : null}
         </fieldset>
-        <label>
-          <span>Description</span>
+        <label className="editField">
+          {t('webhooks.create.description')}
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving || !url.trim() || selectedEvents.size === 0}>{saving ? 'Creating...' : 'Create webhook'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('webhooks.create.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !url.trim() || selectedEvents.size === 0}>{saving ? t('webhooks.create.submitting') : t('webhooks.create.submit')}</button>
         </div>
       </form>
     </Modal>
@@ -687,6 +753,7 @@ function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
 }
 
 function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: ConsoleData; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('operations');
   const [name, setName] = useState('');
   const [agentId, setAgentId] = useState(data.agents[0]?.id ?? '');
   const [environmentId, setEnvironmentId] = useState(data.environments[0]?.id ?? 'env_default');
@@ -712,51 +779,60 @@ function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: Cons
         initial_events: [{ type: 'user.message', content: [{ type: 'text', text: prompt }] }],
       });
       onSaved();
-    } catch (err: any) {
-      setError(err?.message ?? 'Could not create schedule');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('scheduled.create.failed'));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal title="Create scheduled deployment" onClose={onClose}>
+    <Modal title={t('scheduled.create.title')} onClose={onClose}>
       <form className="modalForm operationCreateForm" onSubmit={submit}>
-        {error ? <div className="banner error">{error}</div> : null}
-        <label>
-          <span>Name <RequiredMark /></span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Daily review run" required />
+        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        <label className="editField">
+          {t('scheduled.create.name')} <RequiredMark />
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('scheduled.create.namePlaceholder')} required />
         </label>
-        <label>
-          <span>Agent <RequiredMark /></span>
-          <select value={agentId} onChange={(event) => setAgentId(event.target.value)} required>
-            {data.agents.length === 0 ? <option value="">No agents available</option> : null}
-            {data.agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name}</option>)}
-          </select>
+        <div className="editField">
+          <span>{t('scheduled.create.agent')} <RequiredMark /></span>
+          <ConsoleSelect
+            label={t('scheduled.create.agent')}
+            value={agentId}
+            onChange={setAgentId}
+            options={data.agents.length === 0
+              ? [{ value: '', label: t('scheduled.create.noAgents') }]
+              : data.agents.map((agent) => ({ value: agent.id, label: agent.name }))}
+          />
+        </div>
+        <div className="editField">
+          <span>{t('scheduled.create.environment')} <RequiredMark /></span>
+          <ConsoleSelect
+            label={t('scheduled.create.environment')}
+            value={environmentId}
+            onChange={setEnvironmentId}
+            options={[
+              { value: 'env_default', label: t('scheduled.create.defaultEnvironment') },
+              ...data.environments.map((environment) => ({ value: environment.id, label: environment.name })),
+            ]}
+          />
+        </div>
+        <label className="editField">
+          {t('scheduled.create.cron')} <RequiredMark />
+          <input value={expression} onChange={(event) => setExpression(event.target.value)} placeholder={t('scheduled.create.cronPlaceholder')} required />
         </label>
-        <label>
-          <span>Environment <RequiredMark /></span>
-          <select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)} required>
-            <option value="env_default">Default</option>
-            {data.environments.map((environment) => <option value={environment.id} key={environment.id}>{environment.name}</option>)}
-          </select>
+        <label className="editField">
+          {t('scheduled.create.timezone')} <RequiredMark />
+          <input value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder={t('scheduled.create.timezonePlaceholder')} required />
+          <small>{t('scheduled.create.timezoneHint')}</small>
         </label>
-        <label>
-          <span>Cron expression <RequiredMark /></span>
-          <input value={expression} onChange={(event) => setExpression(event.target.value)} placeholder="0 9 * * *" required />
-        </label>
-        <label>
-          <span>Timezone <RequiredMark /></span>
-          <input value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="UTC" required />
-          <small>An IANA zone name such as America/Los_Angeles; the schedule fires in this zone.</small>
-        </label>
-        <label>
-          <span>Prompt <RequiredMark /></span>
-          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} spellCheck={false} placeholder="The user message each scheduled run starts the session with" required />
+        <label className="editField">
+          {t('scheduled.create.prompt')} <RequiredMark />
+          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} spellCheck={false} placeholder={t('scheduled.create.promptPlaceholder')} required />
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving || !name.trim() || !agentId || !expression.trim() || !timezone.trim() || !prompt.trim()}>{saving ? 'Creating...' : 'Create schedule'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('scheduled.create.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !name.trim() || !agentId || !expression.trim() || !timezone.trim() || !prompt.trim()}>{saving ? t('scheduled.create.submitting') : t('scheduled.create.submit')}</button>
         </div>
       </form>
     </Modal>
@@ -764,6 +840,7 @@ function ScheduledDeploymentCreateModal({ data, onClose, onSaved }: { data: Cons
 }
 
 function OutcomeCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation('operations');
   const [name, setName] = useState('');
   const [objective, setObjective] = useState('');
   const [criteria, setCriteria] = useState('');
@@ -786,40 +863,40 @@ function OutcomeCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
         evaluator: 'deterministic',
       });
       onSaved();
-    } catch (err: any) {
-      setError(err?.message ?? 'Could not create outcome');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('outcomes.create.failed'));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal title="Create outcome" onClose={onClose}>
+    <Modal title={t('outcomes.create.title')} onClose={onClose}>
       <form className="modalForm operationCreateForm" onSubmit={submit}>
-        {error ? <div className="banner error">{error}</div> : null}
-        <label>
-          <span>Name <RequiredMark /></span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Deployment-quality response" required />
+        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        <label className="editField">
+          {t('outcomes.create.name')} <RequiredMark />
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('outcomes.create.namePlaceholder')} required />
         </label>
-        <label>
-          <span>Objective <RequiredMark /></span>
+        <label className="editField">
+          {t('outcomes.create.objective')} <RequiredMark />
           <textarea value={objective} onChange={(event) => setObjective(event.target.value)} rows={3} required />
         </label>
-        <label>
-          <span>Criteria</span>
-          <textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={4} placeholder="One criterion per line" />
+        <label className="editField">
+          {t('outcomes.create.criteria')}
+          <textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={4} placeholder={t('outcomes.create.criteriaPlaceholder')} />
         </label>
-        <label>
-          <span>Pass threshold</span>
+        <label className="editField">
+          {t('outcomes.create.threshold')}
           <input value={threshold} onChange={(event) => setThreshold(event.target.value)} inputMode="decimal" />
         </label>
-        <label>
-          <span>Description</span>
+        <label className="editField">
+          {t('outcomes.create.description')}
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
         </label>
         <div className="modalActions">
-          <button className="secondaryButton" type="button" onClick={onClose}>Cancel</button>
-          <button className="primaryButton" type="submit" disabled={saving || !name.trim() || !objective.trim()}>{saving ? 'Creating...' : 'Create outcome'}</button>
+          <button className="button outline" type="button" onClick={onClose}>{t('outcomes.create.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !name.trim() || !objective.trim()}>{saving ? t('outcomes.create.submitting') : t('outcomes.create.submit')}</button>
         </div>
       </form>
     </Modal>
@@ -835,31 +912,21 @@ function OperationNotice({ children }: { children: ReactNode }) {
 }
 
 function SessionPicker({ sessions, selectedSessionId, onChange }: { sessions: Session[]; selectedSessionId: string; onChange: (value: string) => void }) {
+  const { t } = useTranslation('operations');
   return (
-    <label className="inlineSelectControl">
-      <span>Evaluate session</span>
-      <select value={selectedSessionId} onChange={(event) => onChange(event.target.value)} disabled={sessions.length === 0}>
-        {sessions.length === 0 ? <option value="">No sessions</option> : null}
-        {sessions.map((session) => (
-          <option key={session.id} value={session.id}>
-            {session.title || truncateMiddle(session.id, 18)}
-          </option>
-        ))}
-      </select>
-    </label>
+    <span className="inlineSelectControl">
+      <ConsoleSelect
+        label={t('outcomes.evaluateSession')}
+        value={selectedSessionId}
+        onChange={onChange}
+        options={sessions.length === 0
+          ? [{ value: '', label: t('outcomes.noSessions') }]
+          : sessions.map((session) => ({ value: session.id, label: session.title || truncateMiddle(session.id, 18) }))}
+      />
+    </span>
   );
 }
 
 function splitLines(value: string) {
   return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
-}
-
-function parseJsonObject(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return {};
-  const parsed = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('JSON payload must be an object');
-  }
-  return parsed;
 }

@@ -12,7 +12,8 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
-import { EmptyState } from './Common';
+import { EmptyState } from './console-ui';
+import { useTranslation } from 'react-i18next';
 import { AgentDetail, Agents } from './pages/AgentPages';
 import { Files, Skills } from './pages/BuildPages';
 import { CredentialVaultDetail, CredentialVaults } from './pages/CredentialPages';
@@ -101,6 +102,7 @@ export function ConsoleRouteView(props: {
   onNewResource: (kind: 'environment' | 'credential_vault' | 'memory_store') => void;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   switch (props.view) {
     case 'agents':
       return <Agents data={props.data} onNewAgent={() => props.onNewAgent('blank')} onOpenAgent={props.onOpenAgent} />;
@@ -118,7 +120,7 @@ export function ConsoleRouteView(props: {
           onOpenSession={props.onOpenSession}
           onRefresh={props.onRefresh}
         />
-      ) : <EmptyState icon={<Monitor size={22} />} title="No agent selected" body="The selected agent is missing or archived. Return to Agents and choose an active record." />;
+      ) : <EmptyState icon={Monitor} title={t('routes.noAgent.title')} description={t('routes.noAgent.body')} />;
     }
     case 'sessions':
       return <Sessions data={props.data} onNewSession={() => props.onNewSession()} onOpenSession={props.onOpenSession} />;
@@ -133,7 +135,7 @@ export function ConsoleRouteView(props: {
           onOpenAgent={(agent) => props.onOpenAgent(agent)}
           onNewSession={props.onNewSession}
         />
-      ) : <EmptyState icon={<MessageSquare size={22} />} title="No session selected" body="The selected session could not be found. Return to Sessions and choose another run." />;
+      ) : <EmptyState icon={MessageSquare} title={t('routes.noSession.title')} description={t('routes.noSession.body')} />;
     }
     case 'environments':
       return <Environments data={props.data} onNew={() => props.onNewResource('environment')} onOpenEnvironment={props.onOpenEnvironment} />;
@@ -146,7 +148,7 @@ export function ConsoleRouteView(props: {
           onBack={() => props.setView('environments')}
           onRefresh={props.onRefresh}
         />
-      ) : <EmptyState icon={<Server size={22} />} title="No environment selected" body="The selected environment could not be found. Return to Environments and choose another template." />;
+      ) : <EmptyState icon={Server} title={t('routes.noEnvironment.title')} description={t('routes.noEnvironment.body')} />;
     }
     case 'credential-vaults':
       return <CredentialVaults data={props.data} onNew={() => props.onNewResource('credential_vault')} onOpenVault={props.onOpenVault} />;
@@ -159,7 +161,7 @@ export function ConsoleRouteView(props: {
           onRefresh={props.onRefresh}
           onNewCredential={() => props.onNewCredential(vault.id)}
         />
-      ) : <EmptyState icon={<Lock size={22} />} title="No credential vault selected" body="The selected vault could not be found. Return to Credential Vaults and choose another vault." />;
+      ) : <EmptyState icon={Lock} title={t('routes.noVault.title')} description={t('routes.noVault.body')} />;
     }
     case 'memory-stores':
       return <MemoryStores data={props.data} onNew={() => props.onNewResource('memory_store')} onOpenMemoryStore={props.onOpenMemoryStore} />;
@@ -172,7 +174,7 @@ export function ConsoleRouteView(props: {
           onRefresh={props.onRefresh}
           onNewMemory={() => props.onNewMemory(store.id)}
         />
-      ) : <EmptyState icon={<Database size={22} />} title="No memory store selected" body="The selected memory store could not be found. Return to Memory Stores and choose another store." />;
+      ) : <EmptyState icon={Database} title={t('routes.noMemoryStore.title')} description={t('routes.noMemoryStore.body')} />;
     }
     case 'skills':
       return <Skills data={props.data} onRefresh={props.onRefresh} />;

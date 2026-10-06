@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { safeMarkdownUrl } from '../../apps/console/src/lib/markdown.js';
 
-const css = readFileSync('apps/console/src/styles.css', 'utf8');
+const css = readFileSync('apps/console/src/components/pages/sessions.css', 'utf8');
 // The markdown pipeline lives with the event render table since the
 // eventRenderers split — the contract is unchanged, only the file moved.
 const sessionPage = readFileSync('apps/console/src/components/session/eventRenderers.tsx', 'utf8');
@@ -20,7 +20,7 @@ describe('Console Markdown contracts', () => {
     expect(sessionPage).toContain('skipHtml');
     expect(sessionPage).toContain('urlTransform={safeMarkdownUrl}');
     expect(sessionPage).toContain('components={{ code: MarkdownCode, pre: MarkdownPre, a: MarkdownLink }}');
-    expect(sessionPage).toContain('Copy code');
+    expect(sessionPage).toContain('copyCode');
     expect(css).toMatch(/\.markdownCodeBlock\s*\{[^}]*background:\s*var\(--surface\)/s);
     expect(css).toMatch(/\.markdownCodeBlock pre\s*\{[^}]*background:\s*transparent/s);
     expect(css).not.toMatch(/\.conversationBubble pre\s*\{[^}]*color:\s*#e6edf7/s);

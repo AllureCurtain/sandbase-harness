@@ -1,18 +1,26 @@
 import type { Session, Workspace } from '../types';
 
+/** Missing figures render as an em dash — never a fabricated zero. */
+export const MISSING = '—';
+
+/** Dates follow the UI language (`<html lang>`), never the raw browser locale. */
+export function uiLocaleTag(): string {
+  return (typeof document !== 'undefined' ? document.documentElement.lang : '') || 'en';
+}
+
 export function formatDate(value: string | null | undefined) {
   if (!value) return 'never';
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+  return new Intl.DateTimeFormat(uiLocaleTag(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
 export function formatDateShort(value: string | null | undefined) {
   if (!value) return 'never';
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat(uiLocaleTag(), { month: 'short', day: 'numeric' }).format(new Date(value));
 }
 
 export function formatDateWithYear(value: string | null | undefined) {
   if (!value) return 'never';
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat(uiLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
 }
 
 export function relativeDate(value: string | null | undefined) {

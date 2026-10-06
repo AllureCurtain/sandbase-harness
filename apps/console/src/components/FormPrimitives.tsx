@@ -47,32 +47,6 @@ export function InlineStatus({ tone = 'neutral', children }: { tone?: 'neutral' 
   return <div className={`inlineStatus ${tone}`}>{children}</div>;
 }
 
-export function SegmentedControl<TValue extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: TValue;
-  options: Array<{ value: TValue; label: string }>;
-  onChange: (value: TValue) => void;
-}) {
-  return (
-    <div className="segmentedControl">
-      {options.map((option) => (
-        <button
-          type="button"
-          className={value === option.value ? 'active' : ''}
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-          key={option.value}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function FormActions({ children }: { children: ReactNode }) {
   return <div className="formActions">{children}</div>;
 }

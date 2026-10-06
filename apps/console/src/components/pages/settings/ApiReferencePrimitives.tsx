@@ -1,4 +1,5 @@
 import { Copy } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { copyText } from '../../../lib/format';
 import type { ApiReferenceEndpoint, ApiReferenceField } from './apiReferenceTypes';
 
@@ -13,6 +14,7 @@ export function ApiParamSection({
   emptyLabel: string;
   response?: boolean;
 }) {
+  const { t } = useTranslation('settings');
   return (
     <section className="apiDocsSection">
       <h3>{title}</h3>
@@ -22,7 +24,7 @@ export function ApiParamSection({
             <div className="apiParamRow" key={field.name}>
               <div>
                 <strong>{field.name}</strong>
-                {response ? <span>{field.type}</span> : <span>{field.required ? 'required' : 'optional'}</span>}
+                {response ? <span>{field.type}</span> : <span>{field.required ? t('apiReference.required') : t('apiReference.optional')}</span>}
               </div>
               <p>{response ? field.description : <><code>{field.type}</code> {field.description}</>}</p>
             </div>

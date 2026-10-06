@@ -1,6 +1,7 @@
 import { type ReactNode, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import i18n from '../../i18n';
 import type { SessionEvent, ToolPermission } from '../../types';
 import { shortId, titleCase, truncateMiddle } from '../../lib/format';
 
@@ -13,6 +14,11 @@ import {
 } from '../../lib/eventTypes';
 
 export type EventKind = 'user' | 'agent' | 'tool' | 'error' | 'system';
+
+// Renderer chrome (fact labels, code-block affordances) reads the sessions
+// namespace directly — these bodies render inside components that already
+// re-render on language change.
+const tEvents = (key: string, options?: Record<string, unknown>): string => i18n.t(`sessions:detail.events.${key}` as never, options);
 
 /**
  * How one event type is presented. `kind` drives the colored tag and the
@@ -32,194 +38,194 @@ function fallbackTitle(type: string): string {
   return titleCase(type.replaceAll('.', ' ').replaceAll('_', ' '));
 }
 
-const sessionStatusTitle = (event: SessionEvent) => `Session ${titleCase(event.type.replace('session.status_', ''))}`;
-const threadStatusTitle = (event: SessionEvent) => `Thread ${titleCase(event.type.replace('session.thread_status_', ''))}`;
+const sessionStatusTitle = (event: SessionEvent) => tEvents('titles.sessionStatus', { status: tEvents(`statusNames.${event.type.replace('session.status_', '')}`) });
+const threadStatusTitle = (event: SessionEvent) => tEvents('titles.threadStatus', { status: tEvents(`statusNames.${event.type.replace('session.thread_status_', '')}`) });
 
 export const EVENT_RENDERERS: Record<SessionEventType, EventRenderer> = {
   'user.message': {
     kind: 'user',
-    title: (event) => eventText(event) || 'User message',
-    summary: () => 'A message the operator sent into the session.',
+    title: (event) => eventText(event) || tEvents('titles.userMessage'),
+    summary: () => tEvents('summaries.userMessage'),
   },
   'user.interrupt': {
     kind: 'user',
-    title: () => 'Interrupted',
-    summary: () => 'The operator interrupted the running turn.',
+    title: () => tEvents('titles.interrupted'),
+    summary: () => tEvents('summaries.interrupted'),
   },
   'user.tool_confirmation': {
     kind: 'user',
-    title: () => 'Tool confirmation',
-    summary: () => 'Tool confirmation decision recorded.',
+    title: () => tEvents('titles.toolConfirmation'),
+    summary: () => tEvents('summaries.toolConfirmation'),
   },
   'user.tool_result': {
     kind: 'user',
-    title: () => 'Tool result supplied by caller',
-    summary: () => 'A caller-supplied result answered a tool call.',
+    title: () => tEvents('titles.toolResultSupplied'),
+    summary: () => tEvents('summaries.toolResultSupplied'),
   },
   'user.custom_tool_result': {
     kind: 'user',
-    title: () => 'Custom tool result',
-    summary: () => 'The caller supplied a result for a custom tool call.',
+    title: () => tEvents('titles.customToolResult'),
+    summary: () => tEvents('summaries.customToolResult'),
   },
   'user.define_outcome': {
     kind: 'user',
-    title: () => 'Outcome defined',
-    summary: (event) => typeof event.description === 'string' && event.description ? event.description : 'An outcome definition was declared for this session.',
+    title: () => tEvents('titles.outcomeDefined'),
+    summary: (event) => typeof event.description === 'string' && event.description ? event.description : tEvents('summaries.outcomeDefined'),
   },
   'agent.message': {
     kind: 'agent',
-    title: () => 'Agent message',
-    summary: () => 'A message the agent produced.',
+    title: () => tEvents('titles.agentMessage'),
+    summary: () => tEvents('summaries.agentMessage'),
     body: (event) => <div className="conversationBubble debugConversationBubble"><MarkdownMessage text={eventText(event)} /></div>,
   },
   'agent.thinking': {
     kind: 'agent',
-    title: () => 'Thinking',
-    summary: () => 'Agent reasoning trace.',
+    title: () => tEvents('titles.thinking'),
+    summary: () => tEvents('summaries.thinking'),
     body: (event) => <div className="conversationBubble debugConversationBubble"><MarkdownMessage text={eventText(event)} /></div>,
   },
   'agent.tool_use': {
     kind: 'tool',
     title: (event) => toolUseDetails(event).toolName,
-    summary: (event) => `Tool call: ${toolUseDetails(event).toolName}.`,
+    summary: (event) => tEvents('summaries.toolCall', { tool: toolUseDetails(event).toolName }),
     body: toolBody,
   },
   'agent.mcp_tool_use': {
     kind: 'tool',
     title: (event) => toolUseDetails(event).toolName,
-    summary: (event) => `MCP tool call: ${toolUseDetails(event).toolName}.`,
+    summary: (event) => tEvents('summaries.mcpToolCall', { tool: toolUseDetails(event).toolName }),
     body: toolBody,
   },
   'agent.custom_tool_use': {
     kind: 'tool',
-    title: (event) => `Custom tool: ${toolUseDetails(event).toolName}`,
-    summary: (event) => `The agent invoked custom tool "${toolUseDetails(event).toolName}" and is parked for a caller-supplied result.`,
+    title: (event) => tEvents('titles.customTool', { tool: toolUseDetails(event).toolName }),
+    summary: (event) => tEvents('summaries.customToolParked', { tool: toolUseDetails(event).toolName }),
     body: toolBody,
   },
   'agent.tool_result': {
     kind: 'tool',
-    title: () => 'Tool result',
-    summary: (event) => toolResultText(event) ? 'Tool call returned a result.' : 'Tool call returned no output.',
+    title: () => tEvents('titles.toolResult'),
+    summary: (event) => tEvents(toolResultText(event) ? 'summaries.toolResult' : 'summaries.toolResultEmpty'),
     body: toolBody,
   },
   'agent.mcp_tool_result': {
     kind: 'tool',
-    title: () => 'MCP tool result',
-    summary: () => 'An MCP tool call returned a result.',
+    title: () => tEvents('titles.mcpToolResult'),
+    summary: () => tEvents('summaries.mcpToolResult'),
     body: toolBody,
   },
   'agent.thread_message_received': {
     kind: 'agent',
-    title: () => 'Thread message received',
-    summary: () => 'The agent received a message on a thread.',
+    title: () => tEvents('titles.threadMessageReceived'),
+    summary: () => tEvents('summaries.threadMessageReceived'),
   },
   'agent.thread_message_sent': {
     kind: 'agent',
-    title: () => 'Thread message sent',
-    summary: () => 'The agent sent a message on a thread.',
+    title: () => tEvents('titles.threadMessageSent'),
+    summary: () => tEvents('summaries.threadMessageSent'),
   },
   'agent.thread_context_compacted': {
     kind: 'system',
-    title: () => 'Context compacted',
-    summary: () => 'Earlier context was compacted into a boundary summary.',
+    title: () => tEvents('titles.contextCompacted'),
+    summary: () => tEvents('summaries.contextCompacted'),
   },
   'session.error': {
     kind: 'error',
-    title: (event) => event.error?.message || eventText(event) || 'Session error',
-    summary: () => 'The session recorded an error.',
+    title: (event) => event.error?.message || eventText(event) || tEvents('titles.sessionError'),
+    summary: () => tEvents('summaries.sessionError'),
     body: sessionErrorBody,
   },
   'session.status_running': {
     kind: 'system',
     title: sessionStatusTitle,
-    summary: () => 'Session lifecycle update: Running.',
+    summary: () => tEvents('summaries.sessionRunning'),
   },
   'session.status_idle': {
     kind: 'system',
     title: sessionStatusTitle,
-    summary: () => 'Session lifecycle update: Idle.',
+    summary: () => tEvents('summaries.sessionIdle'),
   },
   'session.status_rescheduled': {
     kind: 'system',
     title: sessionStatusTitle,
-    summary: () => 'Session lifecycle update: Rescheduled — the turn will be retried.',
+    summary: () => tEvents('summaries.sessionRescheduled'),
   },
   'session.status_terminated': {
     kind: 'system',
     title: sessionStatusTitle,
-    summary: () => 'Session lifecycle update: Terminated.',
+    summary: () => tEvents('summaries.sessionTerminated'),
   },
   'session.thread_created': {
     kind: 'system',
-    title: () => 'Thread created',
-    summary: () => 'A session thread was created.',
+    title: () => tEvents('titles.threadCreated'),
+    summary: () => tEvents('summaries.threadCreated'),
   },
   'session.thread_status_running': {
     kind: 'system',
     title: threadStatusTitle,
-    summary: () => 'Thread lifecycle update: Running.',
+    summary: () => tEvents('summaries.threadRunning'),
   },
   'session.thread_status_idle': {
     kind: 'system',
     title: threadStatusTitle,
-    summary: () => 'Thread lifecycle update: Idle.',
+    summary: () => tEvents('summaries.threadIdle'),
   },
   'session.thread_status_rescheduled': {
     kind: 'system',
     title: threadStatusTitle,
-    summary: () => 'Thread lifecycle update: Rescheduled.',
+    summary: () => tEvents('summaries.threadRescheduled'),
   },
   'session.thread_status_terminated': {
     kind: 'system',
     title: threadStatusTitle,
-    summary: () => 'Thread lifecycle update: Terminated.',
+    summary: () => tEvents('summaries.threadTerminated'),
   },
   'session.updated': {
     kind: 'system',
-    title: () => 'Session updated',
-    summary: () => 'Session settings were updated.',
+    title: () => tEvents('titles.sessionUpdated'),
+    summary: () => tEvents('summaries.sessionUpdated'),
   },
   'session.usage': {
     kind: 'system',
-    title: () => 'Usage snapshot',
-    summary: () => 'The session reported a usage snapshot.',
+    title: () => tEvents('titles.usageSnapshot'),
+    summary: () => tEvents('summaries.usageSnapshot'),
     body: sessionUsageBody,
   },
   'system.message': {
     kind: 'system',
-    title: () => 'System message',
-    summary: () => 'A system message was recorded.',
+    title: () => tEvents('titles.systemMessage'),
+    summary: () => tEvents('summaries.systemMessage'),
     body: (event) => <div className="conversationBubble debugConversationBubble"><MarkdownMessage text={eventText(event)} /></div>,
   },
   'span.model_request_start': {
     kind: 'system',
-    title: () => 'Model request start',
-    summary: () => 'Model request started and is being processed.',
+    title: () => tEvents('titles.modelRequestStart'),
+    summary: () => tEvents('summaries.modelRequestStart'),
   },
   'span.model_request_end': {
     kind: 'system',
     title: (event) => {
       const text = eventText(event);
-      if (text) return `Model request stop (${text})`;
-      return event.model_used ? `Model request stop (${event.model_used})` : 'Model request stop';
+      if (text) return tEvents('titles.modelRequestStopWithDetail', { detail: text });
+      return event.model_used ? tEvents('titles.modelRequestStopWithDetail', { detail: event.model_used }) : tEvents('titles.modelRequestStop');
     },
-    summary: (event) => event.is_error ? 'Model request ended in an error.' : 'Model request completed.',
+    summary: (event) => tEvents(event.is_error ? 'summaries.modelRequestError' : 'summaries.modelRequestDone'),
     body: modelRequestEndBody,
   },
   'span.outcome_evaluation_start': {
     kind: 'system',
-    title: () => 'Outcome evaluation started',
-    summary: () => 'An outcome evaluation began.',
+    title: () => tEvents('titles.outcomeEvalStart'),
+    summary: () => tEvents('summaries.outcomeEvalStart'),
   },
   'span.outcome_evaluation_ongoing': {
     kind: 'system',
-    title: () => 'Outcome evaluation ongoing',
-    summary: () => 'An outcome evaluation reported progress.',
+    title: () => tEvents('titles.outcomeEvalOngoing'),
+    summary: () => tEvents('summaries.outcomeEvalOngoing'),
   },
   'span.outcome_evaluation_end': {
     kind: 'system',
-    title: () => 'Outcome evaluation ended',
-    summary: () => 'An outcome evaluation finished.',
+    title: () => tEvents('titles.outcomeEvalEnd'),
+    summary: () => tEvents('summaries.outcomeEvalEnd'),
   },
 };
 
@@ -231,25 +237,25 @@ export const EVENT_RENDERERS: Record<SessionEventType, EventRenderer> = {
 const LOCAL_RENDERERS: Record<string, EventRenderer> = {
   'session.deleted': {
     kind: 'system',
-    title: () => 'Session deleted',
-    summary: () => 'The session was deleted.',
+    title: () => tEvents('titles.sessionDeleted'),
+    summary: () => tEvents('summaries.sessionDeleted'),
   },
   'user.steer': {
     kind: 'user',
-    title: () => 'Steer',
-    summary: () => 'The operator steered the running turn.',
+    title: () => tEvents('titles.steer'),
+    summary: () => tEvents('summaries.steer'),
   },
   'turn_complete': {
     kind: 'system',
-    title: () => 'Turn complete',
-    summary: () => 'The turn completed.',
+    title: () => tEvents('titles.turnComplete'),
+    summary: () => tEvents('summaries.turnComplete'),
   },
 };
 
 const GENERIC_RENDERER: EventRenderer = {
   kind: 'system',
   title: (event) => fallbackTitle(event.type),
-  summary: (event) => `Event recorded as ${titleCase(event.type.replaceAll('.', ' ').replaceAll('_', ' '))}.`,
+  summary: (event) => tEvents('summaries.generic', { type: titleCase(event.type.replaceAll('.', ' ').replaceAll('_', ' ')) }),
 };
 
 export function describeEvent(event: SessionEvent): EventRenderer {
@@ -323,8 +329,8 @@ function sessionErrorBody(event: SessionEvent): ReactNode {
     <div className="renderedEvent debugEventSummary">
       {error?.type ? <p><code>{error.type}</code></p> : null}
       <p>{error?.message || eventText(event) || eventSummary(event)}</p>
-      {retrying ? <p className="fieldHint">Retrying — the runtime is attempting the request again.</p> : null}
-      {error?.retry_status && !retrying ? <p className="fieldHint">Retry status: <code>{error.retry_status.type}</code></p> : null}
+      {retrying ? <p className="fieldHint">{tEvents('retrying')}</p> : null}
+      {error?.retry_status && !retrying ? <p className="fieldHint">{tEvents('retryStatus')}: <code>{error.retry_status.type}</code></p> : null}
       {facts.length ? (
         <dl className="debugEventFacts">
           {facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
@@ -342,14 +348,14 @@ function modelRequestEndBody(event: SessionEvent): ReactNode {
       <p>{eventText(event) || eventSummary(event)}</p>
       {usage ? (
         <dl className="debugEventFacts">
-          <div><dt>Input tokens</dt><dd>{usage.input_tokens}</dd></div>
-          <div><dt>Output tokens</dt><dd>{usage.output_tokens}</dd></div>
-          {usage.cache_read_input_tokens ? <div><dt>Cache read</dt><dd>{usage.cache_read_input_tokens}</dd></div> : null}
-          {usage.cache_creation_input_tokens ? <div><dt>Cache write</dt><dd>{usage.cache_creation_input_tokens}</dd></div> : null}
-          {usage.speed ? <div><dt>Speed</dt><dd>{usage.speed}</dd></div> : null}
+          <div><dt>{tEvents('inputTokens')}</dt><dd>{usage.input_tokens}</dd></div>
+          <div><dt>{tEvents('outputTokens')}</dt><dd>{usage.output_tokens}</dd></div>
+          {usage.cache_read_input_tokens ? <div><dt>{tEvents('cacheRead')}</dt><dd>{usage.cache_read_input_tokens}</dd></div> : null}
+          {usage.cache_creation_input_tokens ? <div><dt>{tEvents('cacheWrite')}</dt><dd>{usage.cache_creation_input_tokens}</dd></div> : null}
+          {usage.speed ? <div><dt>{tEvents('speed')}</dt><dd>{usage.speed}</dd></div> : null}
         </dl>
       ) : null}
-      {event.model_request_start_id ? <p className="fieldHint">Closes <code>{truncateMiddle(event.model_request_start_id, 18)}</code></p> : null}
+      {event.model_request_start_id ? <p className="fieldHint">{tEvents('closesRequest', { id: truncateMiddle(event.model_request_start_id, 18) })}</p> : null}
       {facts.length ? (
         <dl className="debugEventFacts">
           {facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
@@ -365,13 +371,13 @@ function sessionUsageBody(event: SessionEvent): ReactNode {
   return (
     <div className="renderedEvent debugEventSummary">
       <dl className="debugEventFacts">
-        <div><dt>Input tokens</dt><dd>{usage.input_tokens ?? 0}</dd></div>
-        <div><dt>Output tokens</dt><dd>{usage.output_tokens ?? 0}</dd></div>
-        {usage.cache_read_input_tokens ? <div><dt>Cache read</dt><dd>{usage.cache_read_input_tokens}</dd></div> : null}
-        {usage.cache_creation?.ephemeral_5m_input_tokens ? <div><dt>Cache write (5m)</dt><dd>{usage.cache_creation.ephemeral_5m_input_tokens}</dd></div> : null}
-        {usage.cache_creation?.ephemeral_1h_input_tokens ? <div><dt>Cache write (1h)</dt><dd>{usage.cache_creation.ephemeral_1h_input_tokens}</dd></div> : null}
-        {usage.active_seconds !== undefined ? <div><dt>Active</dt><dd>{formatSeconds(usage.active_seconds)}</dd></div> : null}
-        {usage.list_cost ? <div><dt>List cost</dt><dd>{usage.list_cost.amount} {usage.list_cost.currency}¢</dd></div> : null}
+        <div><dt>{tEvents('inputTokens')}</dt><dd>{usage.input_tokens ?? 0}</dd></div>
+        <div><dt>{tEvents('outputTokens')}</dt><dd>{usage.output_tokens ?? 0}</dd></div>
+        {usage.cache_read_input_tokens ? <div><dt>{tEvents('cacheRead')}</dt><dd>{usage.cache_read_input_tokens}</dd></div> : null}
+        {usage.cache_creation?.ephemeral_5m_input_tokens ? <div><dt>{tEvents('cacheWrite5m')}</dt><dd>{usage.cache_creation.ephemeral_5m_input_tokens}</dd></div> : null}
+        {usage.cache_creation?.ephemeral_1h_input_tokens ? <div><dt>{tEvents('cacheWrite1h')}</dt><dd>{usage.cache_creation.ephemeral_1h_input_tokens}</dd></div> : null}
+        {usage.active_seconds !== undefined ? <div><dt>{tEvents('active')}</dt><dd>{formatSeconds(usage.active_seconds)}</dd></div> : null}
+        {usage.list_cost ? <div><dt>{tEvents('listCost')}</dt><dd>{usage.list_cost.amount} {usage.list_cost.currency}¢</dd></div> : null}
       </dl>
     </div>
   );
@@ -379,15 +385,15 @@ function sessionUsageBody(event: SessionEvent): ReactNode {
 
 export function eventFacts(event: SessionEvent): Array<[string, string]> {
   const facts: Array<[string, string]> = [];
-  if (event.model_used) facts.push(['Model', event.model_used]);
-  if (event.duration_ms !== undefined) facts.push(['Duration', formatMilliseconds(event.duration_ms)]);
+  if (event.model_used) facts.push([tEvents('model'), event.model_used]);
+  if (event.duration_ms !== undefined) facts.push([tEvents('duration'), formatMilliseconds(event.duration_ms)]);
   if (event.tokens_in !== undefined || event.tokens_out !== undefined) {
-    facts.push(['Tokens', `${event.tokens_in ?? 0} in · ${event.tokens_out ?? 0} out`]);
+    facts.push([tEvents('tokens'), tEvents('tokensInOut', { in: event.tokens_in ?? 0, out: event.tokens_out ?? 0 })]);
   }
   // A model-derived stop reason is a string; a session.status_idle one is the
   // object the session contract publishes — only its `type` reads sensibly.
-  if (event.stop_reason) facts.push(['Stop reason', typeof event.stop_reason === 'string' ? event.stop_reason : event.stop_reason.type]);
-  if (event.parent_event_id) facts.push(['Parent event', shortId(event.parent_event_id)]);
+  if (event.stop_reason) facts.push([tEvents('stopReason'), typeof event.stop_reason === 'string' ? event.stop_reason : event.stop_reason.type]);
+  if (event.parent_event_id) facts.push([tEvents('parentEvent'), shortId(event.parent_event_id)]);
   return facts;
 }
 
@@ -495,7 +501,7 @@ export function formatToolText(value: unknown): string {
 }
 
 export function formatToolValue(value: unknown): string {
-  if (value === undefined) return 'No parameters.';
+  if (value === undefined) return tEvents('noParameters');
   if (typeof value === 'string') return value;
   try {
     return JSON.stringify(value, null, 2) ?? String(value);
@@ -581,9 +587,9 @@ function MarkdownPre(props: { children?: ReactNode }) {
   return (
     <div className="markdownCodeBlock">
       <div className="markdownCodeHeader">
-        <span>Code</span>
-        <button type="button" onClick={() => void copy()} aria-label="Copy code">
-          {copied ? 'Copied' : 'Copy'}
+        <span>{tEvents('code')}</span>
+        <button type="button" onClick={() => void copy()} aria-label={tEvents('copyCode')}>
+          {copied ? tEvents('copied') : tEvents('copy')}
         </button>
       </div>
       <pre ref={preRef}>{props.children}</pre>
@@ -613,7 +619,7 @@ export function MarkdownMessage({ text }: { text: string }) {
       urlTransform={safeMarkdownUrl}
       components={{ code: MarkdownCode, pre: MarkdownPre, a: MarkdownLink }}
     >
-      {normalizedText || 'No message content.'}
+      {normalizedText || i18n.t('sessions:detail.timeline.noMessageContent')}
     </ReactMarkdown>
   );
 }

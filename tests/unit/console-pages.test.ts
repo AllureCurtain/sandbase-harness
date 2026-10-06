@@ -9,7 +9,8 @@ import { EnvironmentDetail, Environments } from '../../apps/console/src/componen
 import { MemoryStoreDetail, MemoryStores } from '../../apps/console/src/components/pages/MemoryPages.js';
 import { OutcomesPage, ScheduledDeploymentsPage, WebhooksPage } from '../../apps/console/src/components/pages/OperationsPages.js';
 import { SessionDetail, Sessions } from '../../apps/console/src/components/pages/SessionPages.js';
-import { Observability, SettingsLogs } from '../../apps/console/src/components/pages/settings/OperationsSettings.js';
+import { SettingsLogs } from '../../apps/console/src/components/pages/settings/SettingsLogs.js';
+import { SettingsMonitoring } from '../../apps/console/src/components/pages/settings/SettingsMonitoring.js';
 import { SettingsView } from '../../apps/console/src/components/pages/settings/SettingsView.js';
 import type { SettingsSection } from '../../apps/console/src/components/pages/settings/navigation.js';
 import type { ConsoleData, RuntimeSettings, RuntimeSettingsConfig } from '../../apps/console/src/types.js';
@@ -600,13 +601,13 @@ describe('Console page static coverage', () => {
     expect(operationsPage).toContain('disabled={retrying || data.webhooks.length === 0}');
     expect(operationsPage).toContain('disabled={runningDue || data.scheduledDeployments.length === 0}');
     expect(operationsPage.match(/mobileResourceList/g)?.length).toBeGreaterThanOrEqual(3);
-    const operationsSettings = readFileSync('apps/console/src/components/pages/settings/OperationsSettings.tsx', 'utf8');
-    expect(operationsSettings).toContain('No runtime logs');
-    expect(operationsSettings).toContain('Refresh metrics');
-    expect(operationsSettings).toContain('loadMetrics');
-    expect(operationsSettings).toContain('Logs truth model');
-    expect(operationsSettings).toContain('Monitoring truth model');
-    expect(operationsSettings).toContain('Monitoring is read-only');
+    const settingsLogs = readFileSync('apps/console/src/components/pages/settings/SettingsLogs.tsx', 'utf8');
+    expect(settingsLogs).toContain("useTranslation('settings')");
+    expect(settingsLogs).toContain('ConsoleSelect');
+    expect(settingsLogs).not.toContain('<select');
+    const settingsMonitoring = readFileSync('apps/console/src/components/pages/settings/SettingsMonitoring.tsx', 'utf8');
+    expect(settingsMonitoring).toContain("useTranslation('settings')");
+    expect(settingsMonitoring).toContain('/v1/x/metrics');
     const buildPages = readFileSync('apps/console/src/components/pages/BuildPages.tsx', 'utf8');
     expect(buildPages).toContain('fileUploadDropzone');
     expect(buildPages).toContain('Drop files here to upload');
@@ -645,48 +646,46 @@ describe('Console page static coverage', () => {
     const data = populatedConsoleData();
     const agentsHtml = renderToString(React.createElement(Agents, { data, onNewAgent: () => {}, onOpenAgent: () => {} }));
     expect(agentsHtml).toContain('Review Agent');
-    expect(agentsHtml).toContain('class="stack"');
-    expect(agentsHtml).toContain('class="pageIntro"');
-    expect(agentsHtml).toContain('agentsTablePanel');
-    expect(agentsHtml).toContain('mobileAgentCard');
+    expect(agentsHtml).toContain('console-page-header');
+    expect(agentsHtml).toContain('list-toolbar');
+    expect(agentsHtml).toContain('data-table');
+    expect(agentsHtml).toContain('agent-card');
     expect(agentsHtml).not.toContain('mobileResourceCard');
 
     const sessionsHtml = renderToString(React.createElement(Sessions, { data, onNewSession: () => {}, onOpenSession: () => {} }));
     expect(sessionsHtml).toContain('Dashboard pass');
-    expect(sessionsHtml).toContain('class="stack"');
-    expect(sessionsHtml).toContain('class="pageIntro"');
-    expect(sessionsHtml).toContain('sessionsTablePanel');
-    expect(sessionsHtml).toContain('mobileAgentCard');
+    expect(sessionsHtml).toContain('console-page-header');
+    expect(sessionsHtml).toContain('list-toolbar');
+    expect(sessionsHtml).toContain('data-table');
+    expect(sessionsHtml).toContain('session-card');
 
     const environmentsHtml = renderToString(React.createElement(Environments, { data, onNew: () => {}, onOpenEnvironment: () => {} }));
     expect(environmentsHtml).toContain('Local sandbox');
-    expect(environmentsHtml).toContain('class="stack"');
-    expect(environmentsHtml).toContain('class="pageIntro"');
-    expect(environmentsHtml).toContain('environmentsTablePanel');
-    expect(environmentsHtml).toContain('mobileResourceList');
+    expect(environmentsHtml).toContain('console-page-header');
+    expect(environmentsHtml).toContain('list-toolbar');
+    expect(environmentsHtml).toContain('data-table');
+    expect(environmentsHtml).toContain('environments-table-frame');
     expect(environmentsHtml).toContain('mobileResourceList');
 
     const filesHtml = renderToString(React.createElement(Files, { data, onRefresh: () => {} }));
     expect(filesHtml).toContain('notes.md');
-    expect(filesHtml).toContain('class="stack filesView claudeFilesView"');
-    expect(filesHtml).toContain('filesTablePanel');
+    expect(filesHtml).toContain('console-page-header');
+    expect(filesHtml).toContain('data-table');
+    expect(filesHtml).toContain('files-table-frame');
 
     const webhooksHtml = renderToString(React.createElement(WebhooksPage, { data, onRefresh: () => {} }));
     expect(webhooksHtml).toContain('UI events');
-    expect(webhooksHtml).toContain('operationTablePanel');
-    expect(webhooksHtml).toContain('mobileResourceList');
+    expect(webhooksHtml).toContain('webhooks-table-frame');
     expect(webhooksHtml).toContain('mobileResourceList');
 
     const schedulesHtml = renderToString(React.createElement(ScheduledDeploymentsPage, { data, onRefresh: () => {} }));
     expect(schedulesHtml).toContain('Nightly review');
-    expect(schedulesHtml).toContain('operationTablePanel');
-    expect(schedulesHtml).toContain('mobileResourceList');
+    expect(schedulesHtml).toContain('schedules-table-frame');
     expect(schedulesHtml).toContain('mobileResourceList');
 
     const outcomesHtml = renderToString(React.createElement(OutcomesPage, { data, onRefresh: () => {} }));
     expect(outcomesHtml).toContain('Polished UI');
-    expect(outcomesHtml).toContain('operationTablePanel');
-    expect(outcomesHtml).toContain('mobileResourceList');
+    expect(outcomesHtml).toContain('outcomes-table-frame');
     expect(outcomesHtml).toContain('mobileResourceList');
   });
 
@@ -837,7 +836,7 @@ describe('Console page static coverage', () => {
       data,
       onNew: () => {},
       onOpenVault: () => {},
-    }))).toContain('<th>Credentials</th>');
+    }))).toContain('scope="col">Credentials');
     const html = renderToString(React.createElement(CredentialVaultDetail, {
       vault: data.vaults[0],
       onBack: () => {},
@@ -846,7 +845,7 @@ describe('Console page static coverage', () => {
     }));
     expect(html).toContain('Runtime token');
     expect(html).toContain('Last used');
-    expect(html).toContain('credentialTablePanel');
+    expect(html).toContain('credential-table-frame');
     expect(html).toContain('mobileResourceList');
   });
 
@@ -919,6 +918,6 @@ describe('Console page static coverage', () => {
     const data = populatedConsoleData();
     expect(renderToString(React.createElement(SettingsView, { data, section: 'api-reference', onRefresh: () => {}, setView: () => {} }))).toContain('Copy endpoint');
     expect(renderToString(React.createElement(SettingsLogs, { data }))).toContain('Runtime logs');
-    expect(renderToString(React.createElement(Observability, { data }))).toContain('Runtime summary');
+    expect(renderToString(React.createElement(SettingsMonitoring, { data }))).toContain('Runtime metrics');
   });
 });
