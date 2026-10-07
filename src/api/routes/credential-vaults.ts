@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { nanoid } from 'nanoid';
 import type { ServerDeps } from '../server.js';
-import { unsupportedMcpOAuthValidation } from './unsupported-official.js';
+import { validateMcpCredential } from '@/core/credentials/mcp-oauth-validate.js';
 import { cursorPageOf, cursorQueryMismatch, decodeCursor, encodeCursor, normalizeCollectionFilter } from '../standard.js';
 import { encryptSecret } from '@/core/security/secrets.js';
 import { normalizeCredentialNetworkPolicy } from '@/core/credentials/policy.js';
@@ -68,7 +68,36 @@ type ResourceKind = 'credential_vault';
 
 export function credentialVaultRoutes(deps: ServerDeps) {
   const app = new Hono();
-  app.post('/:id/credentials/:credentialId/mcp_oauth_validate', unsupportedMcpOAuthValidation);
+
+  // The published live probe: run the MCP `initialize` handshake against the
+  // credential's declared server with its stored secret, refresh once on a
+  // 401 the way the injection boundary does, and answer the verdict as a
+  // `vault_credential_validation`. The endpoint takes no body — the official
+  // params are the two path ids — so the request body is never read.
+  app.post('/:id/credentials/:credentialId/mcp_oauth_validate', async (c) => {
+    const vaultId = c.req.param('id');
+    const credentialId = c.req.param('credentialId');
+    const vault = deps.db.prepare('SELECT id FROM credential_vaults WHERE id = ? AND archived_at IS NULL').get(vaultId);
+    if (!vault) return notFound(c, 'Credential vault not found');
+    const row = liveCredential(deps, vaultId, credentialId);
+    if (!row) return notFound(c, 'Credential not found');
+    const outcome = await validateMcpCredential(deps.db, row, {
+      dataDir: deps.workspace?.dataDir,
+      publish: (event) => publishOperationEvent(deps, event),
+    });
+    if (!outcome.ok) return invalid(c, outcome.message, outcome.code);
+    const result = outcome.result;
+    return c.json({
+      type: 'vault_credential_validation',
+      credential_id: row.id,
+      vault_id: row.vault_id,
+      validated_at: result.validated_at,
+      has_refresh_token: result.has_refresh_token,
+      status: result.status,
+      mcp_probe: result.mcp_probe,
+      refresh: result.refresh,
+    });
+  });
 
   // Paths in this router are **relative to its mount**, because the resource is
   // served under two prefixes: the published `/v1/vaults` the contract addresses

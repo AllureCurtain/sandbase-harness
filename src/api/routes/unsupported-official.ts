@@ -10,10 +10,6 @@ function rejectCapability(id: string, reason: string): Handler {
   }, 400);
 }
 
-export const unsupportedMcpOAuthValidation = rejectCapability(
-  'mcp-oauth-validation', 'MCP OAuth tokens refresh at the injection boundary; a dedicated validation endpoint is not implemented.',
-);
-
 export function unsupportedOfficialRoutes(): Hono {
   const app = new Hono();
   const tunnels = rejectCapability('mcp-tunnel', 'MCP tunnels require hosted connectivity outside the local-first scope.');

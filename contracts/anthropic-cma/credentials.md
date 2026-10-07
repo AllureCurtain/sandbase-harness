@@ -1,18 +1,19 @@
 # CMA Contract — credentials and vaults
 
 Contract area: `/v1/vaults` and vault credentials.
-Status: `supported` for the wire profile, rotation, injection execution, and
-`mcp_oauth` token refresh.
+Status: `supported` for the wire profile, rotation, injection execution,
+`mcp_oauth` token refresh, and `mcp_oauth_validate`.
 Source: `src/core/credentials/canonical-credential.ts`,
 `src/api/routes/credential-vaults.ts`, `src/core/credentials/policy.ts`,
 `src/core/credentials/injection.ts`, `src/core/credentials/oauth-refresh.ts`,
-`src/core/net/egress-proxy.ts`.
+`src/core/credentials/mcp-oauth-validate.ts`, `src/core/net/egress-proxy.ts`.
 
 <!-- capability-status
 canonical-credential-wire-profile: supported
 credential-rotation: supported
 credential-injection-execution: supported
 oauth-refresh: supported
+mcp-oauth-validation: supported
 -->
 
 ---
@@ -44,6 +45,13 @@ oauth-refresh: supported
     should be omitted instead.
   - At least one position must be enabled.
   - The response always returns both fields resolved.
+- `mcp_oauth_validate` probes a credential against its declared MCP server:
+  the `initialize` handshake runs with the stored token, an authorization
+  rejection triggers the recorded refresh exchange, and the answer is a
+  `vault_credential_validation` whose `status` is `valid`, `invalid`
+  (authorization rejected and unrecovered — the caller should re-authorize),
+  or `unknown` (transient failure — retry later), with `mcp_probe` and
+  `refresh` diagnostic blocks.
 
 ## 2. Current SandBase shape
 
@@ -169,6 +177,40 @@ OAuth refresh state and execution:
   `vault_credential.refresh_failed`; the dedup window on `last_refresh_at`
   (60 seconds) keeps concurrent sessions and reconnect storms from repeating
   the attempt.
+
+Validation:
+
+- `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate`
+  (and the same path under `/v1/credential-vaults`) runs the published
+  `vault_credential_validation` probe
+  (`src/core/credentials/mcp-oauth-validate.ts`): the credential's network
+  policy is checked before anything is decrypted, the stored access token is
+  decrypted only in memory, and a real `initialize` handshake is attempted
+  against the declared `mcp_server_url` through the same
+  `SSEClientTransport` path a session connect uses — with the probe's fetch
+  wrapped so a failed HTTP exchange is captured as `mcp_probe.http_response`
+  (`status_code`, `content_type`, a body truncated past ~4 KB, token material
+  scrubbed to `••••`).
+- A completed handshake is `valid`. An HTTP 401 is the recovery path: when
+  the credential carries a refresh configuration the same exchange the
+  injection boundary runs is attempted once — deliberately **without**
+  consulting the 60-second dedup window, because operator-initiated
+  diagnosis must report a refresh that actually ran — and a success is
+  re-probed once with the persisted token. The outcome is reported in
+  `refresh` (`succeeded`, `no_refresh_token`, `failed`, or `connect_error`)
+  with its own `http_response` capture on a failed exchange. A 4xx refresh
+  rejection is `invalid`, `no_refresh_token` after a 401 is `invalid`, and
+  transport failure, a 5xx/429 probe or refresh response, a malformed
+  handshake, and any timeout are `unknown` — transient is never reported as
+  a rejection.
+- The response carries `type`, `credential_id`, `vault_id`, `validated_at`,
+  `has_refresh_token`, `status`, `mcp_probe`, and `refresh`, and appends a
+  `validate` credential audit event recording the verdict. A missing or
+  archived-vault credential is a `404`, a non-MCP-typed credential or an
+  `mcp_oauth` row without `mcp_server_url` is a `400`, and a network policy
+  that does not cover the server host is refused before any wire traffic —
+  the probe is the one path where the secret touches the wire, and it follows
+  the same rules the injection boundary does.
 
 Locked fields:
 
@@ -357,7 +399,7 @@ their own boundary.
 | Difference | Detail |
 | --- | --- |
 | Credential exposure in the sandbox | Closed for backends with an egress boundary: the local and docker providers run a per-session egress proxy, and environment credentials enter processes only as `__cred_<id>__` placeholders the proxy replaces on the wire toward a host the credential's own `allowed_hosts` covers. Two residual limits, both recorded rather than hidden: substitution happens on the proxy's HTTP forward path only — a CONNECT tunnel is opaque, so a placeholder inside an HTTPS request is sent literally and fails closed — and a backend with no boundary (`kubernetes`, `self-hosted`) has nowhere to substitute, so it keeps the plaintext materialization it always had. On those backends `vault_ids` still means "export these secrets into the process". |
-| OAuth refresh | Implemented for `mcp_oauth` at the injection boundary: when a url-transport MCP connect resolves its headers, a credential whose `expires_at` is past (minus a 30-second skew) is refreshed against its `token_endpoint` before the bundle is built — the transport only ever sees the resulting access token. Token-endpoint authentication follows `token_endpoint_auth.type` (`client_secret_basic` default, `client_secret_post`, `none`), a rotated `refresh_token` is persisted encrypted in place, and a response without one keeps the stored token. A failure stamps the row's `oauth_state` (`last_refresh_at`, status, a sanitized error — never token material), appends a `refresh_failed` audit event, publishes `vault_credential.refresh_failed`, and still lets the connect proceed with the stored value; a 60-second per-credential window deduplicates attempts so concurrent sessions and reconnect storms cannot hammer the endpoint. A credential with no `expires_at` or no refresh token is used until replaced — the runtime cannot know it is due, and the create/update response says so. The official `mcp_oauth_validate` endpoint still returns HTTP 400 `unsupported_capability` under both vault prefixes: validation is not refresh. |
+| OAuth refresh | Implemented for `mcp_oauth` at the injection boundary: when a url-transport MCP connect resolves its headers, a credential whose `expires_at` is past (minus a 30-second skew) is refreshed against its `token_endpoint` before the bundle is built — the transport only ever sees the resulting access token. Token-endpoint authentication follows `token_endpoint_auth.type` (`client_secret_basic` default, `client_secret_post`, `none`), a rotated `refresh_token` is persisted encrypted in place, and a response without one keeps the stored token. A failure stamps the row's `oauth_state` (`last_refresh_at`, status, a sanitized error — never token material), appends a `refresh_failed` audit event, publishes `vault_credential.refresh_failed`, and still lets the connect proceed with the stored value; a 60-second per-credential window deduplicates attempts so concurrent sessions and reconnect storms cannot hammer the endpoint. A credential with no `expires_at` or no refresh token is used until replaced — the runtime cannot know it is due, and the create/update response says so. `mcp_oauth_validate` reuses the same exchange: a 401 probe triggers one refresh attempt under the same audit/publish bookkeeping, deliberately ignoring the dedup window because a diagnostic must report a refresh that ran. |
 | Legacy ingress | The flat `auth_type` spelling and the `injection_locations` token list are accepted for backward compatibility. The published contract defines neither. |
 | Read projection | The canonical `auth` object is additive on read: it is returned beside the local `auth_type` / `name` / `variable_name` / `injection_locations` fields. The Console credential pages render and search on those local fields (`CredentialPages.tsx`, `CredentialVaultPages.tsx`) and `tests/integration/api.test.ts` asserts them, so dropping them is a Console migration rather than a wire change. |
 | Local network policy | `networking` normalization uses the same shared normalizer the runtime policy uses, so a stored policy and an enforced policy cannot disagree. The published contract states the field and its meaning, not the normalization detail. |
@@ -496,6 +538,7 @@ substitution, delegated vault inheritance, and model request headers, with
 the CONNECT-opacity and boundary-less-backend residuals recorded in §4 — and
 `mcp_oauth` refresh: expiry-tracked tokens refreshed at the connect boundary,
 rotated refresh tokens persisted, failures audited, stamped, and published.
-The `mcp_oauth_validate` endpoint remains `unsupported_capability` — refresh
-is not validation — and a credential that never declared `expires_at` is used
-until replaced, because nothing can know it is due.
+`mcp_oauth_validate` is `supported` under both prefixes — a live
+`initialize` probe with refresh recovery, reported as the published
+`vault_credential_validation` — and a credential that never declared
+`expires_at` is used until replaced, because nothing can know it is due.

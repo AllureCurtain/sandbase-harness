@@ -26,7 +26,6 @@ mcp-tunnel: not_applicable
 | --- | --- | --- |
 | MCP tunnel | `not_applicable` | Not implemented; a hosted connectivity feature outside local-first scope. Official SDK tunnel, certificate, and token routes explicitly refuse it. |
 | Hosted user profiles | `not_applicable` | Hosted user management is outside the single-tenant scope; official SDK profile routes explicitly refuse it. |
-| MCP OAuth validation endpoint | `unavailable` | Token refresh runs at the MCP connect boundary (see [`credentials.md`](./credentials.md)); the dedicated `mcp_oauth_validate` endpoint is not implemented and explicitly refuses the capability. |
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
@@ -68,7 +67,7 @@ unsupported capability and its reason, and separating "not implemented" from
 | --- | --- |
 | Scope decisions | MCP tunnel and session-budget alerts are `not_applicable`: SandBase is local-first and single-tenant, so a hosted connectivity or billing-notification feature has no local analogue. The published contract describes them as available capabilities. |
 | Failure envelope | `unsupported_capability` with `details.capabilities` is a SandBase error shape. The published contract requires the refusal, not this envelope. |
-| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution moved out of this file once a provider-backed adapter shipped, and dreams moved out when the session-backed pipeline shipped; OAuth refresh remains `unavailable`: it has no safe local design, so marking it `planned` would imply an implementation is coming. |
+| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution moved out of this file once a provider-backed adapter shipped, dreams moved out when the session-backed pipeline shipped, and `mcp_oauth_validate` moved out when the live `initialize` probe shipped (see [`credentials.md`](./credentials.md)). |
 | Coverage moved out of this file | Session budget was implemented, so it now has its own contract file. Threads, coordinator, and advisor were never implemented and also have their own file, so this file does not have to speak for a surface it cannot describe. |
 
 ## 5. Reason for the difference
@@ -104,8 +103,9 @@ unsupported capability and its reason, and separating "not implemented" from
 
 Mixed, per the table in §2. Two entries are `not_applicable` by design and the
 rest are `unavailable`. Every one is recorded in the capability matrix with its
-reason rather than being omitted. Three entries that used to be here are no
-longer: session budget, `web_search` execution, and dreams each have their own
-coverage because they were implemented. Threads, the coordinator, and the
+reason rather than being omitted. Four entries that used to be here are no
+longer: session budget, `web_search` execution, dreams, and
+`mcp_oauth_validate` each have their own coverage because they were
+implemented. Threads, the coordinator, and the
 advisor stayed out: they are `unavailable`, not `partial`, and they too have
 their own file rather than a paragraph in this one.

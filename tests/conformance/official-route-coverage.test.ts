@@ -104,6 +104,7 @@ describe('official SDK route coverage', () => {
     for (const notFoundProbe of [
       client.beta.dreams.retrieve('x_probe'),
       anonymous.beta.environments.work.retrieve('x_probe', { environment_id: 'x_probe' }),
+      client.beta.vaults.credentials.mcpOAuthValidate('x_probe', { vault_id: 'x_probe' }),
     ]) {
       await expect(notFoundProbe).rejects.toMatchObject({
         status: 404, error: { error: { type: 'not_found' } },
@@ -111,21 +112,23 @@ describe('official SDK route coverage', () => {
     }
     await expect(client.beta.tunnels.retrieve('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.userProfiles.retrieve('x_probe')).rejects.toMatchObject(expected);
-    await expect(client.beta.vaults.credentials.mcpOAuthValidate('x_probe', { vault_id: 'x_probe' })).rejects.toMatchObject(expected);
     await expect(client.beta.sessions.threads.list('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.sessions.threads.retrieve('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
     await expect(client.beta.sessions.threads.archive('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
     await expect(client.beta.sessions.threads.events.list('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
   });
 
-  it('preserves the vault alias for OAuth refusal without reading its body', async () => {
+  it('serves the OAuth validation probe under both vault prefixes without reading its body', async () => {
     const { app } = context();
     for (const prefix of ['/v1/vaults', '/v1/credential-vaults']) {
+      // The endpoint's published params are the two path ids: a malformed body
+      // is never parsed, so both prefixes answer the same 404 for a missing
+      // vault rather than a body error or a capability refusal.
       const response = await app.request(`${prefix}/x_probe/credentials/x_probe/mcp_oauth_validate`, {
         method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: '{',
       });
-      expect(response.status).toBe(400);
-      expect((await response.json() as { error: { type: string } }).error.type).toBe('unsupported_capability');
+      expect(response.status).toBe(404);
+      expect((await response.json() as { error: { type: string } }).error.type).toBe('not_found');
     }
   });
 
