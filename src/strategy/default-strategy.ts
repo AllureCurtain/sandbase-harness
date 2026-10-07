@@ -49,7 +49,7 @@ import type { CustomToolCallSubmitter } from '@/sandbox/self-hosted-provider.js'
  * Kept as a named export because existing callers and tests read it from this
  * module; the value itself has one definition.
  */
-export { LOCAL_TOOL_RESULT_MAX_CHARS as MAX_TOOL_RESULT_CHARS } from '@/core/session/tool-output-overflow.js';
+export { DEFAULT_TOOL_RESULT_MAX_CHARS as MAX_TOOL_RESULT_CHARS } from '@/core/session/tool-output-overflow.js';
 import { spillToolOutput } from '@/core/session/tool-output-overflow.js';
 
 /**
@@ -612,7 +612,11 @@ export class DefaultStrategy implements AgentStrategy {
               // short preview plus the path it can read back from. Slicing
               // inline here is what the contract forbids — one spill format, in
               // one module, for every tool.
-              const overflow = await spillToolOutput(raw, { sessionId: session.id, sandbox: context.sandbox });
+              const overflow = await spillToolOutput(raw, {
+                sessionId: session.id,
+                sandbox: context.sandbox,
+                limit: config.toolResultMaxChars,
+              });
               const toolResultEvent = eventLog.append(session.id, {
                 type: isMcp ? 'agent.mcp_tool_result' : 'agent.tool_result',
                 content: [{

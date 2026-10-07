@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Database } from '@/core/db/database.js';
 import { describeSettingsAdapters, availabilityFromDescriptors } from '@/core/settings/adapters.js';
-import { validateRuntimeSettings, type RuntimeSettings } from '@/core/settings/schema.js';
+import { runtimeSettingsSchema, validateRuntimeSettings, type RuntimeSettings } from '@/core/settings/schema.js';
 import { getOrSeedRuntimeSettings, saveRuntimeSettings } from '@/core/settings/store.js';
 
 describe('runtime settings schema', () => {
@@ -52,7 +52,7 @@ describe('runtime settings schema', () => {
     const config: RuntimeSettings = {
       schema_version: 1,
       model: { vendor: 'anthropic', api_key: 'test-key', options: {} },
-      loop_engine: { provider: 'harness', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'harness', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
       memory: { enabled: true, provider: 'mem0', options: { api_key: '${MEM0_API_KEY}' } },
       storage: {
         metadata: { provider: 'postgres', options: { connection_string: '${DATABASE_URL}' } },
@@ -88,7 +88,7 @@ describe('runtime settings schema', () => {
       },
       loop_engine: {
         provider: 'builtin',
-        options: { default_max_steps: 1 },
+        options: { default_max_steps: 1, tool_result_max_chars: 100_000 },
       },
       sandbox: {
         provider: 'local',
@@ -115,5 +115,50 @@ describe('runtime settings schema', () => {
       },
     });
     expect(JSON.stringify(saved.record)).not.toContain('sk-test');
+  });
+
+  it('defaults the tool-result overflow threshold to the published 100,000', () => {
+    const parsed = runtimeSettingsSchema.safeParse({
+      schema_version: 1,
+      model: { vendor: 'anthropic', api_key: 'test-key', options: {} },
+      loop_engine: { provider: 'builtin', options: { default_max_steps: 25 } },
+      storage: {
+        metadata: { provider: 'sqlite', options: {} },
+        artifacts: { provider: 'local', options: {} },
+      },
+      memory: { enabled: true, provider: 'sqlite', options: {} },
+      sandbox: { provider: 'local', options: { timeout_seconds: 300 } },
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.loop_engine.options.tool_result_max_chars).toBe(100_000);
+  });
+
+  it('accepts a configured overflow threshold and refuses unusable ones', () => {
+    const base = {
+      schema_version: 1,
+      model: { vendor: 'anthropic', api_key: 'test-key', options: {} },
+      storage: {
+        metadata: { provider: 'sqlite', options: {} },
+        artifacts: { provider: 'local', options: {} },
+      },
+      memory: { enabled: true, provider: 'sqlite', options: {} },
+      sandbox: { provider: 'local', options: { timeout_seconds: 300 } },
+    };
+    const withThreshold = (tool_result_max_chars: unknown) => ({
+      ...base,
+      loop_engine: {
+        provider: 'builtin',
+        options: { default_max_steps: 25, tool_result_max_chars },
+      },
+    });
+
+    for (const accepted of [1_000, 200_000, 10_000_000]) {
+      expect(runtimeSettingsSchema.safeParse(withThreshold(accepted)).success).toBe(true);
+    }
+    for (const refused of [0, 999, 100_000.5, '100000', 10_000_001]) {
+      expect(runtimeSettingsSchema.safeParse(withThreshold(refused)).success).toBe(false);
+    }
   });
 });

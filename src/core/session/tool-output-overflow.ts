@@ -20,29 +20,28 @@
  *   never written would be a fabricated promise, which is worse than a shorter
  *   preview.
  *
- * The local profile keeps a smaller {@link LOCAL_TOOL_RESULT_MAX_CHARS} ceiling
- * than the published 100,000. That keeps a runaway result from being persisted
- * in full on a developer machine whose SQLite log has no size budget, and the
- * capability matrix records the gap as `partial` rather than `supported`.
+ * The enforced default is the published 100,000, kept configurable as
+ * `loop_engine.options.tool_result_max_chars` in the runtime settings so an
+ * operator can bound what one session log can grow to without touching this
+ * module.
  */
 
 import { nanoid } from 'nanoid';
 import type { SandboxInstance } from '@/types/sandbox.ts';
 
-/** Published overflow threshold, retained for reference and capability reporting. */
+/** Published overflow threshold — the default the runtime enforces. */
 export const CANONICAL_TOOL_RESULT_MAX_CHARS = 100_000;
 
 /** Characters kept in the preview handed back to the model. */
 export const TOOL_OVERFLOW_PREVIEW_CHARS = 2_000;
 
 /**
- * Local spill threshold.
+ * Effective spill threshold when no configured limit reaches the call.
  *
- * Smaller than the published value on purpose: a local runtime persists every
- * event into SQLite, so the ceiling also bounds what one session log can grow
- * to. Recorded as a `partial` deviation in the capability matrix.
+ * Equal to the published value; `loop_engine.options.tool_result_max_chars` is
+ * the operator-facing override and the strategies pass it down as `limit`.
  */
-export const LOCAL_TOOL_RESULT_MAX_CHARS = 50_000;
+export const DEFAULT_TOOL_RESULT_MAX_CHARS = CANONICAL_TOOL_RESULT_MAX_CHARS;
 
 /** Sandbox directory overflow files are written under. */
 export const TOOL_OUTPUT_DIR = '/mnt/session/tool_outputs';
@@ -76,7 +75,7 @@ export interface SpillToolOutputDeps {
 }
 
 /** Whether this output must be spilled rather than passed through. */
-export function exceedsToolOutputLimit(value: string, limit = LOCAL_TOOL_RESULT_MAX_CHARS): boolean {
+export function exceedsToolOutputLimit(value: string, limit = DEFAULT_TOOL_RESULT_MAX_CHARS): boolean {
   return value.length > limit;
 }
 
@@ -91,7 +90,7 @@ export async function spillToolOutput(
   output: string,
   deps: SpillToolOutputDeps,
 ): Promise<ToolOutputOverflow> {
-  const limit = deps.limit ?? LOCAL_TOOL_RESULT_MAX_CHARS;
+  const limit = deps.limit ?? DEFAULT_TOOL_RESULT_MAX_CHARS;
   if (!exceedsToolOutputLimit(output, limit)) return { preview: output };
 
   const makeId = deps.idFactory ?? (() => nanoid(10));
@@ -127,7 +126,7 @@ export interface OverflowPreviewOptions {
  * caller compose the exact same string.
  */
 export function overflowPreview(output: string, options: OverflowPreviewOptions = {}): string {
-  const limit = options.limit ?? LOCAL_TOOL_RESULT_MAX_CHARS;
+  const limit = options.limit ?? DEFAULT_TOOL_RESULT_MAX_CHARS;
   const kept = output.slice(0, Math.min(TOOL_OVERFLOW_PREVIEW_CHARS, limit));
   const lines = [
     TOOL_OVERFLOW_MARKER,

@@ -97,6 +97,13 @@ export interface AgentStrategyConfig {
    * thrown error or unreadable answer reads as `ask` — never `allow`.
    */
   evaluateToolPermission?: AutoPermissionEvaluator;
+  /**
+   * Tool-result overflow threshold in characters, resolved from the runtime
+   * settings (`loop_engine.options.tool_result_max_chars`). Absent means the
+   * published 100,000; a strategy passes it to `spillToolOutput` as `limit` so
+   * every tool result shares the one bound.
+   */
+  toolResultMaxChars?: number;
   /** Called by the strategy when a tool call needs user confirmation — the
    *  session should transition to requires_action and await user.tool_confirmation. */
   onRequiresAction?: () => void;

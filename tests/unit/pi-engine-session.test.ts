@@ -27,7 +27,7 @@ const directories: string[] = [];
 const piSettings: RuntimeSettings = {
   schema_version: 1,
   model: { vendor: 'openai', api_key: 'test-key', options: {} },
-  loop_engine: { provider: 'pi', options: { default_max_steps: 25 } },
+  loop_engine: { provider: 'pi', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
   storage: {
     metadata: { provider: 'sqlite', options: {} },
     artifacts: { provider: 'local', options: { base_path: 'files' } },

@@ -29,7 +29,7 @@ import { SandboxProviderRegistry } from '@/sandbox/registry.js';
 import { ModelRegistry } from '@/model/registry.js';
 import { createServer } from '@/api/server.js';
 import {
-  LOCAL_TOOL_RESULT_MAX_CHARS,
+  DEFAULT_TOOL_RESULT_MAX_CHARS,
   spillToolOutput,
 } from '@/core/session/tool-output-overflow.js';
 import { SESSION_OUTPUT_ROOT } from '@/core/session/session-outputs.js';
@@ -288,7 +288,7 @@ describe('canonical in-sandbox roots on the local backend', () => {
 
   it('reads back a spilled tool output at the canonical path it was given', async () => {
     const sandbox = await sandboxFor('sess_spill');
-    const output = 'x'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1);
+    const output = 'x'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1);
 
     const spilled = await spillToolOutput(output, { sessionId: 'sess_spill', sandbox });
     expect(spilled.file).toBeDefined();

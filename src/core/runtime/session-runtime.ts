@@ -61,6 +61,8 @@ export interface RuntimeSessionServicesOptions {
   memoryMount?: MemoryMountAdapter;
   artifactStore: ArtifactStore;
   defaultMaxSteps: number;
+  /** Effective tool-result overflow threshold; absent means the published 100,000. */
+  toolResultMaxChars?: number;
   /**
    * Resolve a session's vault credentials for a turn.
    *
@@ -182,6 +184,7 @@ export function createRuntimeSessionServices(options: RuntimeSessionServicesOpti
     memoryMount: options.memoryMount ?? new SqliteMemoryMountAdapter(options.db),
     snapshots,
     defaultMaxSteps: options.defaultMaxSteps,
+    toolResultMaxChars: options.toolResultMaxChars,
     // Passed through rather than defaulted: the executor resolves a session's
     // vault per turn only when the host that assembled these services supplied a
     // credential store, so an embedder with none keeps running sessions that hold

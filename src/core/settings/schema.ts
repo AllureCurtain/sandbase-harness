@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MINIMAX_PROVIDER } from '@/core/model/minimax.js';
+import { CANONICAL_TOOL_RESULT_MAX_CHARS } from '@/core/session/tool-output-overflow.js';
 import { PI_APPROVAL_MODES } from '@/strategy/pi/approval-mode.js';
 
 const optionsSchema = z.record(z.string(), z.unknown()).default({});
@@ -50,6 +51,11 @@ export const runtimeSettingsSchema = z.object({
       // wait. The upper bound is 30 days — a typo guard, not a policy, since a
       // bound an operator sets has to be one they could plausibly mean.
       requires_action_timeout_seconds: z.number().int().min(1).max(2_592_000).optional(),
+      // Tool-result overflow threshold (`tool-output-overflow.ts`). Defaults to
+      // the published 100,000 so an untouched deployment conforms; both bounds
+      // are typo guards — under a thousand characters nearly every result would
+      // spill, and tens of millions would defeat the point of the bound.
+      tool_result_max_chars: z.number().int().min(1_000).max(10_000_000).default(CANONICAL_TOOL_RESULT_MAX_CHARS),
     }).catchall(z.unknown()),
   }).strict(),
   storage: z.object({

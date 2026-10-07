@@ -17,7 +17,7 @@ import { MINIMAX_ENDPOINTS } from '@/core/model/minimax.js';
 const validConfig: RuntimeSettings = {
   schema_version: 1,
   model: { vendor: 'openai', api_key: '${OPENAI_API_KEY}', options: {} },
-  loop_engine: { provider: 'builtin', options: { default_max_steps: 25 } },
+  loop_engine: { provider: 'builtin', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
   storage: {
     metadata: { provider: 'sqlite', options: {} },
     artifacts: { provider: 'local', options: { base_path: 'files' } },
@@ -42,7 +42,7 @@ describe('Settings V2 schema', () => {
   it('rejects adapters that are planned but unavailable', () => {
     const result = validateRuntimeSettings({
       ...validConfig,
-      loop_engine: { provider: 'codex', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'codex', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
       memory: { enabled: true, provider: 'mem0', options: {} },
     });
     expect(result.valid).toBe(false);
@@ -55,7 +55,7 @@ describe('Settings V2 schema', () => {
   it('resolves only complete model base URL references and validates their host values', () => {
     const config: RuntimeSettings = {
       ...validConfig,
-      loop_engine: { provider: 'pi', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'pi', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
       model: {
         vendor: 'openai_compatible',
         base_url: '${PI_MODEL_BASE_URL}',
@@ -501,7 +501,7 @@ describe('Settings V2 activation', () => {
     const changed = {
       ...initial.saved_config,
       model: { ...initial.saved_config.model, api_key: 'model-secret' },
-      loop_engine: { provider: 'builtin' as const, options: { default_max_steps: 64 } },
+      loop_engine: { provider: 'builtin' as const, options: { default_max_steps: 64, tool_result_max_chars: 100_000 } },
     };
     const saved = saveRuntimeSettings(db, changed, initial.revision, directory);
     expect(saved.ok).toBe(true);
@@ -520,7 +520,7 @@ describe('Settings V2 activation', () => {
     const initial = getOrSeedRuntimeSettings(db);
     const invalidSaved = {
       ...initial.saved_config,
-      loop_engine: { provider: 'missing-engine', options: { default_max_steps: 64 } },
+      loop_engine: { provider: 'missing-engine', options: { default_max_steps: 64, tool_result_max_chars: 100_000 } },
     };
     db.prepare(`
       UPDATE runtime_settings
@@ -579,7 +579,7 @@ describe('Settings V2 activation', () => {
     const initial = getOrSeedRuntimeSettings(db);
     const invalidSaved = {
       ...initial.saved_config,
-      loop_engine: { provider: 'codex', options: { default_max_steps: 64 } },
+      loop_engine: { provider: 'codex', options: { default_max_steps: 64, tool_result_max_chars: 100_000 } },
     };
     db.prepare(`
       UPDATE runtime_settings
@@ -613,7 +613,7 @@ describe('Settings V2 activation', () => {
       WHERE id = 'default'
     `).run(JSON.stringify({
       ...initial.saved_config,
-      loop_engine: { provider: 'codex', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'codex', options: { default_max_steps: 25, tool_result_max_chars: 100_000 } },
     }));
     const failed = activateRuntimeSettings(db, {}, directory);
     expect(failed.activation_status).toBe('failed');
@@ -622,7 +622,7 @@ describe('Settings V2 activation', () => {
     const repaired = saveRuntimeSettings(db, {
       ...failed.effective_config,
       model: { ...failed.effective_config.model, api_key: 'repaired-model-secret' },
-      loop_engine: { provider: 'builtin', options: { default_max_steps: 77 } },
+      loop_engine: { provider: 'builtin', options: { default_max_steps: 77, tool_result_max_chars: 100_000 } },
     }, failed.revision, directory);
 
     expect(repaired.ok).toBe(true);

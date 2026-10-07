@@ -3181,9 +3181,13 @@ One spill format serves every tool. The built-in tool path, the MCP tool path, a
 the Pi stdout translator all call the same contract, so no tool can invent its own
 truncation marker or its own retained-size accounting.
 
-The local ceiling is 50,000 characters rather than the published 100,000. A local
-runtime persists every event into SQLite, so the ceiling also bounds what one
-session log can grow to.
+The enforced ceiling is the published 100,000 characters. An operator can bound
+it through `loop_engine.options.tool_result_max_chars` in the runtime settings
+(an integer between 1,000 and 10,000,000), which is useful where a local
+runtime's session log or a smaller model's context window cannot absorb a full
+published-size result. The key is platform-owned: it lives in the workspace
+settings, so an agent definition cannot raise its own result budget, and both
+loop engines enforce the same configured bound.
 
 ### Executing web_fetch
 

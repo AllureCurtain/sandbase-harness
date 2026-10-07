@@ -5,6 +5,7 @@ import { PiLauncher } from '@/strategy/pi-launcher.js';
 import { PiAdapter } from '@/strategy/pi/pi-adapter.js';
 import { PiInteractionStore } from '@/strategy/pi/interaction-store.js';
 import { PI_APPROVAL_MODE_DEFAULT, piPreauthorizedRuleFor } from '@/strategy/pi/approval-mode.js';
+import { CANONICAL_TOOL_RESULT_MAX_CHARS } from '@/core/session/tool-output-overflow.js';
 import type { RuntimeSettings } from '@/core/settings/schema.js';
 import type { AgentStrategy } from '@/types/strategy.js';
 import type { SessionLoopEngine } from '@/types/session.js';
@@ -17,6 +18,8 @@ export interface RuntimeLoopEngine {
   /** Strategies retained so resumed sessions keep their persisted provider. */
   strategies: Partial<Record<SessionLoopEngine, AgentStrategy>>;
   defaultMaxSteps: number;
+  /** Effective tool-result overflow threshold handed to every strategy. */
+  toolResultMaxChars: number;
 }
 
 export interface RuntimeLoopEngineBootstrapOptions {
@@ -97,5 +100,10 @@ export function bootstrapRuntimeLoopEngine(
     provider,
     strategies,
     defaultMaxSteps: settings.loop_engine.options.default_max_steps,
+    // The schema default is the published 100,000; the `??` guards fixtures and
+    // embedders that build a settings object without running it through
+    // `runtimeSettingsSchema`.
+    toolResultMaxChars:
+      settings.loop_engine.options.tool_result_max_chars ?? CANONICAL_TOOL_RESULT_MAX_CHARS,
   };
 }
