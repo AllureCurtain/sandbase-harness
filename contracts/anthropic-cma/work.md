@@ -9,6 +9,7 @@ carries documented deltas (item granularity, per-item TTL, forced stop, the
 stats' lease-based meaning), not because any route is refused.
 Source: `src/api/routes/environment-work.ts`,
 `src/core/auth/session-work-tokens.ts`,
+`src/core/auth/session-work-scope.ts`,
 `src/core/auth/environment-worker-keys.ts`,
 `src/sandbox/self-hosted-provider.ts`.
 
@@ -95,6 +96,22 @@ and `session_work_tokens`, the per-claim bearer table.
   and `stats` refuse it outright, while the item routes — `ack`,
   `heartbeat`, `update`, `stop`, and `retrieve` — admit it only for its own
   session's items.
+- Beyond the work family the same `mawt_` bearer is the worker's
+  session-level credential — the published worker flow holds nothing else.
+  `src/core/auth/session-work-scope.ts` admits it on exactly the calls the
+  runner makes: `GET /v1/sessions/{id}` for its own session (the `resources`
+  list is what tells the worker which stores to materialize), the session's
+  event list and stream (`GET .../events`, `GET .../events/stream`), the
+  event answer channel (`POST .../events`, fenced in the route to
+  `user.tool_result` and `user.custom_tool_result` — the token cannot steer,
+  speak for the user, or declare an outcome), and the `memories`
+  sub-resources of every memory store the session attached
+  (`/v1/memory_stores/{id}/memories[/{memoryId}]`). A store attached
+  `access: "read_only"` admits the reads and refuses the writes with `403
+  permission_error`; every other route — a different session, an unattached
+  store, the store-level memory routes, or anything else — answers `401`,
+  and the token stops authenticating the moment its session reaches a
+  terminal state.
 
 ## 3. Alignment
 
@@ -103,8 +120,10 @@ state enum, `204` on an empty poll, per-claim `secret` in the `BetaWorkSecret`
 shape, `NO_HEARTBEAT` lease claiming, `expected_last_heartbeat` optimistic
 concurrency with a `412` the official runner decodes, metadata merge
 semantics, `{data, next_page}` cursor listing the SDK's `PageCursor`
-iterates, the `work_queue_stats` field set, and environment-scoped
-worker-key authentication.
+iterates, the `work_queue_stats` field set, environment-scoped worker-key
+authentication, and the per-item `sessions_token` authorizing the runner's
+session-level calls (session retrieve, event list/stream/answers, attached
+memory stores with `read_only` enforced).
 
 ## 4. Differences
 
@@ -153,6 +172,12 @@ worker-key authentication.
   case, retrieve scoping, session-token item vs queue authority, the stats
   counters' lease-based meaning, and the SDK's `list`/`retrieve`/`stats`
   decoders.
+- `tests/integration/session-work-token-scope.test.ts` — the token's
+  session-level scope: its own session's retrieve, event list, and stream;
+  tool-answer events admitted while steer/message/outcome refuse `403`;
+  attached store list/read/write with `read_only` refusing writes; another
+  session's routes and unattached stores refused `401`; and the token dead
+  the moment its session ends.
 - `tests/integration/self-hosted.test.ts` — the queue semantics the
   projection rests on: lease, accept, reclaim, stop, and the `unknown` sweep.
 - `tests/conformance/official-route-coverage.test.ts` — every official route

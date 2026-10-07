@@ -249,6 +249,14 @@ The session-level `stop_reason` (`toApiEvent`):
   `events.stop_reason` column. The two shapes share the field name because both
   published shapes spell it `stop_reason`; they are distinguished by event type
   and a status event has no model response behind it.
+- A claimed work item's session work token (the `mawt_` bearer from
+  `work/poll`; see [`work.md`](./work.md)) reaches this family too: it may
+  retrieve its own session, list and stream its events, and post to
+  `/events` — but only the tool-answer types `user.tool_result` and
+  `user.custom_tool_result` a worker legitimately sends. Any other event
+  type from that credential answers `403 permission_error`; the path fence
+  lives in `src/core/auth/session-work-scope.ts` and the type fence in the
+  route itself.
 
 `initial_events`:
 

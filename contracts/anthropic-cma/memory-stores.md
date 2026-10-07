@@ -165,6 +165,16 @@ The enforcement lives at the tool layer because that is the only place that sees
 the path before the sandbox does. A check performed later would have to undo a
 write that already happened.
 
+The same `access` mode also fences the self-hosted worker's session work
+token (the `mawt_` bearer inside a claimed work item's `secret`; see
+[`work.md`](./work.md)). That token lists, reads, creates, updates, and
+deletes memories only on stores its session attached — an unattached store,
+or a store attached to a different session, is `401` — and a store attached
+`access: "read_only"` refuses its writes and deletes with `403
+permission_error`. The check reads the session's own `resources` record, so
+the fence and the session retrieve a worker uses to discover its mounts can
+never disagree about which stores are reachable.
+
 Audit:
 
 - Every memory write records a row in `memory_versions`, listable per store and
@@ -245,6 +255,10 @@ version auditing.
   semantics (name bound, description clear, metadata merge), the PUT alias, the
   in-use and archived write refusals, and the delete cascade over
   `memory_records` and `memory_versions`.
+- `tests/integration/session-work-token-scope.test.ts` — the session work
+  token's access to attached stores: list/read/write on `read_write`,
+  `403 permission_error` on `read_only` writes and deletes, `401` on an
+  unattached store or another session's store.
 - `tests/conformance/memory-store-update-delete.test.ts` — the official SDK's
   `memoryStores.update` / `.delete` driven against a live runtime, including
   the archived-store refusal as a `ConflictError`.

@@ -22,6 +22,21 @@ export interface AuthConfig {
   hasApiKeys?: () => boolean;
   /** Dynamic key validator, used for database-managed API keys. */
   validateApiKey?: (key: string) => boolean;
+  /**
+   * Session work token (`mawt_...`) scope check. A claimed work item's secret
+   * authorizes a narrow set of session-level calls — its own session's
+   * retrieve/events and its attached memory stores — resolved by
+   * `authorizeSessionWorkCall` in core/auth/session-work-scope.ts. Absent
+   * means the token resolves to nothing and is refused like any other bad
+   * bearer.
+   */
+  authorizeSessionWork?: (
+    token: string,
+    method: string,
+    path: string,
+  ) =>
+    | { ok: true; sessionId: string; environmentId: string }
+    | { ok: false; status: 401 | 403; type: string; message: string };
 }
 
 const PUBLIC_PATHS = new Set(['/', '/dashboard', '/ui', '/v1/x/health', '/v1/x/metrics']);
@@ -83,10 +98,27 @@ export function createAuthMiddleware(config: AuthConfig): MiddlewareHandler {
     const hasInvalidCredential = (authorization !== undefined && !bearerToken)
       || (xApiKeyHeader !== undefined && !xApiKey);
     const token = bearerToken ?? xApiKey;
-    const valid = !hasInvalidCredential && token !== undefined
+    const apiKeyValid = !hasInvalidCredential && token !== undefined
       ? keys.has(token) || Boolean(config.validateApiKey?.(token))
       : false;
-    if (!valid) {
+
+    // A `mawt_` bearer that is not an API key is a session work token: its
+    // scope is checked centrally before it reaches a route. Checked after
+    // the API-key families so a managed key that happens to collide keeps
+    // the broader authority, matching the Work API resolver.
+    if (!apiKeyValid && token !== undefined && token.startsWith('mawt_')) {
+      const scoped = config.authorizeSessionWork?.(token, c.req.method, c.req.path)
+        ?? { ok: false as const, status: 401 as const, type: 'authentication_error', message: INVALID_CREDENTIAL_MESSAGE };
+      if (!scoped.ok) {
+        return c.json(
+          { error: { type: scoped.type, message: scoped.message } },
+          scoped.status,
+        );
+      }
+      return next();
+    }
+
+    if (!apiKeyValid) {
       return c.json(
         {
           error: {

@@ -30,7 +30,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import type { Database } from '@/core/db/database.js';
 import { isTerminal } from '@/core/session/state-machine.js';
-import type { SessionStatus } from '@/types/session.js';
+import { SESSION_TRANSITIONS, type SessionStatus } from '@/types/session.js';
 
 export type SessionWorkTokenValidation =
   | { ok: true; sessionId: string; environmentId: string }
@@ -70,7 +70,12 @@ export function validateSessionWorkToken(
   const session = db.prepare('SELECT status FROM sessions WHERE id = ?').get(row.session_id) as
     | { status: SessionStatus }
     | undefined;
-  if (!session || isTerminal(session.status)) return { ok: false };
+  // Fail closed on a status outside the state machine: `sessions.status` has
+  // no CHECK constraint, and a credential check must never throw on a row a
+  // migration or external writer left in an unexpected shape.
+  if (!session || !(session.status in SESSION_TRANSITIONS) || isTerminal(session.status)) {
+    return { ok: false };
+  }
   db.prepare("UPDATE session_work_tokens SET last_seen_at = datetime('now') WHERE id = ?").run(row.id);
   return { ok: true, sessionId: row.session_id, environmentId: row.environment_id };
 }

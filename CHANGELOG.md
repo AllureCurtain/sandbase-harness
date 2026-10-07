@@ -4,6 +4,17 @@
 
 ### Added
 
+- The `mawt_...` session work token inside a claimed work item's `secret`
+  now authorizes the worker's session-level calls, matching the published
+  worker flow that holds no other credential: `GET /v1/sessions/{id}` and
+  the event list/stream for its own session, `POST
+  /v1/sessions/{id}/events` fenced to the `user.tool_result` and
+  `user.custom_tool_result` answer types, and the `memories` sub-resources
+  of every memory store that session attached — reads always, writes only
+  on `read_write` attachments (`access: "read_only"` answers `403
+  permission_error`). A different session, an unattached store, or any other
+  route answers `401`, and the token stops authenticating the moment its
+  session reaches a terminal state.
 - `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` (and
   the `/v1/credential-vaults` spelling) replaces the `unsupported_capability`
   refusal with the published live probe: the credential's network policy is
