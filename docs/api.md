@@ -2274,6 +2274,18 @@ the runner's downstream calls stay local — and its hash is all that is
 persisted. A token whose session has ended stops authenticating, and one
 that names a different environment is refused.
 
+The `sessions_token` is also the worker's session-level credential — the
+only bearer the published worker flow holds for everything outside the work
+family. It admits exactly the calls the runner makes: `GET
+/v1/sessions/{id}` for its own session (whose `resources` list tells the
+worker which memory stores to materialize), the session's event list and
+stream, `POST /v1/sessions/{id}/events` limited to the tool-answer types
+`user.tool_result` and `user.custom_tool_result`, and the `memories`
+sub-resources of every store that session attached. A store attached
+`access: "read_only"` admits reads and refuses writes and deletes with `403
+permission_error`; a different session, an unattached store, or any other
+route answers `401`.
+
 The projection's honest edges: `data` is always the session variant because
 every queue item belongs to a session and the per-call payload stays on the
 local `/v1/x/worker` channel; `started_at` equals `acknowledged_at`;

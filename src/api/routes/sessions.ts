@@ -41,6 +41,7 @@ import { createSessionEventQueue, isMessageStreamTerminalEvent } from './session
 import type { OutcomeEventRow, StatusEventTick } from '@/core/session/event-logger.js';
 import { activeSecondsFromEvents, activeSecondsFromTicks } from '@/core/session/session-usage.js';
 import { outcomeEvaluationsFromEvents } from '@/core/outcomes/session-outcomes.js';
+import { SESSION_WORK_SENDABLE_EVENTS, sessionWorkAuthFromHeader } from '@/core/auth/session-work-scope.js';
 import { parseIncludeArchived, rejectUnexpectedQueryParams } from './query-params.js';
 import { normalizeDefineOutcome, normalizeInitialEvents } from './initial-events.js';
 import { isBudgetError, parseSessionBudget, BUDGET_ERROR_CODES } from '@/core/session/session-budget.js';
@@ -433,6 +434,28 @@ export function sessionsRoutes(deps: ServerDeps) {
     const events = Array.isArray(body.events) ? body.events : null;
     if (!events) {
       return c.json({ error: { type: 'invalid_request_error', message: 'events must be an array' } }, 400);
+    }
+
+    // A session work token answers parked calls; it is not a session's
+    // operator. The token's path scope is checked in the auth middleware, and
+    // the batch is further fenced here to the answer types a worker
+    // legitimately posts — a leaked per-claim credential cannot steer the
+    // session, speak for its user, or declare outcomes.
+    if (sessionWorkAuthFromHeader(deps.db, c.req.header('Authorization'))) {
+      for (const event of events) {
+        const type = (event as { type?: unknown } | null)?.type;
+        if (!SESSION_WORK_SENDABLE_EVENTS.has(typeof type === 'string' ? type : '')) {
+          return c.json(
+            {
+              error: {
+                type: 'permission_error',
+                message: `A session work token may only post tool-answer events (${[...SESSION_WORK_SENDABLE_EVENTS].join(', ')}); got "${String(type)}"`,
+              },
+            },
+            403,
+          );
+        }
+      }
     }
 
     // Validate every event carries a string `type` before touching the log

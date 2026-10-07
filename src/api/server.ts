@@ -23,6 +23,7 @@ import { unsupportedOfficialRoutes } from './routes/unsupported-official.js';
 import { environmentWorkRoutes } from './routes/environment-work.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
+import { authorizeSessionWorkCall } from '@/core/auth/session-work-scope.js';
 import { createCmaRequestAdmissionMiddleware } from './cma-admission.js';
 import { notFound } from './routes/resource-utils.js';
 import {
@@ -162,6 +163,7 @@ export function createServer(deps: ServerDeps) {
     apiKeys: deps.apiKeys,
     hasApiKeys: deps.hasApiKeys,
     validateApiKey: deps.validateApiKey,
+    authorizeSessionWork: (token, method, path) => authorizeSessionWorkCall(deps.db, token, method, path),
   }));
 
   // Throttling follows authentication. The callback is evaluated per request
