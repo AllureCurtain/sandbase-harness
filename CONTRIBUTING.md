@@ -166,9 +166,10 @@ npm run test:e2e
 ```
 
 It starts the conformance stub model, a real runtime, and the Vite dev server,
-then drives one ordered scenario — create an agent, approve a gated `bash`
-call, read the reply, archive the session — through Chromium. CI runs it as a
-separate `E2E` job so `release:check` never needs a browser download.
+then drives two ordered scenarios through Chromium: create an agent, approve a
+gated `bash` call, read the reply, archive the session; and create → message →
+reload → log replay → a turn failed through the real retry loop. CI runs it as
+a separate `E2E` job so `release:check` never needs a browser download.
 
 CI runs the test suite on Ubuntu only. Windows compatibility is not checked in
 CI; for changes that can behave differently on Windows it is checked by
