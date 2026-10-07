@@ -4,6 +4,17 @@
 
 ### Added
 
+- `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` (and
+  the `/v1/credential-vaults` spelling) replaces the `unsupported_capability`
+  refusal with the published live probe: the credential's network policy is
+  checked before its secret is decrypted, the `initialize` handshake runs
+  against the declared `mcp_server_url` through the same transport a session
+  connect uses, and a 401 runs the recorded refresh exchange once and
+  re-probes on success. The answer is a `vault_credential_validation` —
+  `valid`, `invalid` (rejected and unrecovered), or `unknown` (transient) —
+  with `mcp_probe` and `refresh` diagnostic blocks whose captured bodies are
+  scrubbed of every secret the exchange carried, and the attempt appends a
+  `validate` credential audit event.
 - The Dreams resource is served: `GET`/`POST /v1/dreams`, `GET
   /v1/dreams/{id}`, `POST /v1/dreams/{id}/archive`, and `POST
   /v1/dreams/{id}/cancel`. A dream validates its inputs (exactly one

@@ -89,7 +89,6 @@ its family is now implemented, not refused.
 | `/v1/tunnels` and certificate/token actions | `mcp-tunnel` | Hosted connectivity is outside the local-first scope. |
 | `/v1/user_profiles` and enrollment actions | `user-profiles` | Hosted user management is outside the single-tenant scope. |
 | `/v1/sessions/{id}/threads` and its official actions | `threads-and-coordinator` | Session threads are part of the multiagent surface this runtime does not implement; see `contracts/anthropic-cma/threads.md`. |
-| `POST /v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` | `mcp-oauth-validation` | Token refresh is implemented at the injection boundary; a dedicated validation endpoint is not. |
 
 ### Route Coverage Guard
 
@@ -99,8 +98,9 @@ organization administration are excluded from this managed-agent inventory.
 Unrecognized SDK request syntax fails rather than silently losing routes.
 
 Verified on October 5, 2026 with SDK `0.129.0`: 110 distinct method/path pairs.
-The split is now 89 resource mounts and 21 explicit refusals — the entire
-Work family (data and management planes) is mounted, and nothing in it
+The split is now 90 resource mounts and 20 explicit refusals — the entire
+Work family (data and management planes) is mounted, and `mcp_oauth_validate`
+answers a live `initialize` probe, so nothing in the vault or work families
 remains a refusal — and no deferred mounts. The
 deferral list was tracked in
 [issue #706](https://github.com/sandbaseai/sandbase-harness/issues/706) and is

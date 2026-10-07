@@ -88,7 +88,7 @@ export interface McpOAuthRefreshOptions {
   publish?: (event: { type: string; subjectId: string; extra?: Record<string, unknown> }) => Promise<void> | void;
 }
 
-type CredentialRow = {
+export type CredentialRow = {
   id: string;
   vault_id: string;
   auth_type: string;
@@ -111,6 +111,27 @@ type TokenEndpointResponse = {
   expires_in?: unknown;
   expires_at?: unknown;
 };
+
+/**
+ * The HTTP detail a validation report may publish about a failed exchange or
+ * probe — the published `http_response` shape. The body is truncated and
+ * scrubbed of every secret the request carried before it is recorded.
+ */
+export interface CapturedHttpResponse {
+  status_code: number;
+  content_type: string;
+  body: string;
+  body_truncated: boolean;
+}
+
+/**
+ * The published `refresh` object a `vault_credential_validation` reports:
+ * the outcome of the exchange a 401 probe triggered.
+ */
+export interface ValidationRefreshOutcome {
+  status: 'succeeded' | 'failed' | 'connect_error' | 'no_refresh_token';
+  httpResponse: CapturedHttpResponse | null;
+}
 
 /**
  * In-flight refreshes keyed by credential id. Two sessions sharing a vault can
@@ -233,6 +254,30 @@ async function requestAccessToken(
   clientSecret: string,
   opts: McpOAuthRefreshOptions,
 ): Promise<TokenEndpointResponse> {
+  const exchange = await exchangeRefreshGrant(state, refreshToken, clientSecret, opts.fetchImpl);
+  if (!exchange.response.ok) {
+    // Status and endpoint only: a token endpoint's error body can echo request
+    // material back, so nothing from it is carried into the failure record.
+    throw new Error(`token endpoint responded ${exchange.response.status}`);
+  }
+  const payload = parseJson(exchange.bodyText) as TokenEndpointResponse | undefined;
+  const accessToken = typeof payload?.access_token === 'string' && payload.access_token ? payload.access_token : undefined;
+  if (!accessToken) throw new Error('token endpoint response carried no access_token');
+  return payload!;
+}
+
+/**
+ * The wire half of the refresh grant, shared by the injection-boundary
+ * refresher and the validation endpoint: one POST, one captured body. The
+ * response body is returned as text so a caller that reports the exchange can
+ * publish it (scrubbed) instead of losing the detail a JSON parse would keep.
+ */
+async function exchangeRefreshGrant(
+  state: OAuthStateRecord,
+  refreshToken: string,
+  clientSecret: string,
+  fetchImpl?: typeof fetch,
+): Promise<{ response: Response; bodyText: string }> {
   const body = new URLSearchParams();
   body.set('grant_type', 'refresh_token');
   body.set('refresh_token', refreshToken);
@@ -251,20 +296,110 @@ async function requestAccessToken(
     }
   }
 
-  const response = await (opts.fetchImpl ?? fetch)(state.tokenEndpoint!, {
+  const response = await (fetchImpl ?? fetch)(state.tokenEndpoint!, {
     method: 'POST',
     headers,
     body: body.toString(),
   });
-  if (!response.ok) {
-    // Status and endpoint only: a token endpoint's error body can echo request
-    // material back, so nothing from it is carried into the failure record.
-    throw new Error(`token endpoint responded ${response.status}`);
+  return { response, bodyText: await response.text() };
+}
+
+/**
+ * The refresh half of `mcp_oauth_validate`: run the exchange a 401 probe calls
+ * for and report it in the published `refresh` shape.
+ *
+ * The bookkeeping is identical to the injection-boundary refresher — a success
+ * persists the new access token (and a rotated refresh token) through
+ * `commitRefreshSuccess`, a failure stamps `oauth_state`, appends a
+ * `refresh_failed` audit row, and publishes `vault_credential.refresh_failed`.
+ * The deduplicating retry window is deliberately not consulted: this refresh
+ * is operator-initiated diagnosis, not a connect storm, and suppressing it
+ * would report a refresh that never ran. An in-flight boundary refresh is
+ * still joined first: two grants against a provider that rotates refresh
+ * tokens would invalidate each other's answer.
+ */
+export async function refreshMcpOauthCredentialForValidation(
+  db: Database,
+  row: CredentialRow,
+  opts: Pick<McpOAuthRefreshOptions, 'dataDir' | 'fetchImpl' | 'now' | 'publish'> & {
+    /** Secrets the captured error body must never echo back. */
+    scrubSecrets?: string[];
+  },
+): Promise<ValidationRefreshOutcome> {
+  const now = opts.now ?? (() => new Date());
+  const running = inflightRefreshes.get(row.id);
+  if (running) {
+    // The boundary refresh owns the commit path; if it lands, the validation
+    // verdict only needs to know a fresh token now exists.
+    if ((await running.catch(() => 'failed' as const)) === 'refreshed') {
+      return { status: 'succeeded', httpResponse: null };
+    }
   }
-  const payload = (await response.json().catch(() => undefined)) as TokenEndpointResponse | undefined;
-  const accessToken = typeof payload?.access_token === 'string' && payload.access_token ? payload.access_token : undefined;
-  if (!accessToken) throw new Error('token endpoint response carried no access_token');
-  return payload!;
+  const state = parseOAuthState(row.oauth_state);
+  if (!state.tokenEndpoint || !state.hasRefreshToken) {
+    return { status: 'no_refresh_token', httpResponse: null };
+  }
+  const refreshToken = decryptColumn(row, 'refresh_token', opts.dataDir);
+  const clientSecret = decryptColumn(row, 'client_secret', opts.dataDir);
+  const scrub = [refreshToken, clientSecret, ...(opts.scrubSecrets ?? [])].filter(Boolean);
+  if (!refreshToken) {
+    await recordRefreshFailure(db, row, state, opts, now, 'stored refresh token could not be decrypted');
+    return { status: 'failed', httpResponse: null };
+  }
+
+  try {
+    const exchange = await exchangeRefreshGrant(state, refreshToken, clientSecret, opts.fetchImpl);
+    const httpResponse = captureHttpResponse(exchange.response, exchange.bodyText, scrub);
+    if (!exchange.response.ok) {
+      await recordRefreshFailure(db, row, state, opts, now, `token endpoint responded ${exchange.response.status}`);
+      return { status: 'failed', httpResponse };
+    }
+    const payload = parseJson(exchange.bodyText) as TokenEndpointResponse | undefined;
+    const accessToken = typeof payload?.access_token === 'string' && payload.access_token ? payload.access_token : undefined;
+    if (!accessToken) {
+      await recordRefreshFailure(db, row, state, opts, now, 'token endpoint response carried no access_token');
+      return { status: 'failed', httpResponse };
+    }
+    commitRefreshSuccess(db, row, state, payload!, now, opts.dataDir);
+    appendCredentialAuditEvent(db, {
+      vaultId: row.vault_id,
+      credentialId: row.id,
+      action: 'refresh',
+      actor: 'runtime',
+      metadata: { reason: 'mcp_oauth_validate' },
+    });
+    return { status: 'succeeded', httpResponse: null };
+  } catch (err) {
+    await recordRefreshFailure(db, row, state, opts, now, sanitizeRefreshError(err));
+    return { status: 'connect_error', httpResponse: null };
+  }
+}
+
+/** The published `http_response` shape, with secrets scrubbed before truncation. */
+export function captureHttpResponse(
+  response: Pick<Response, 'status' | 'headers'>,
+  bodyText: string,
+  scrubSecrets: string[] = [],
+): CapturedHttpResponse {
+  let body = bodyText;
+  for (const secret of scrubSecrets) {
+    if (secret) body = body.split(secret).join('••••');
+  }
+  const truncated = body.length > 4_000;
+  return {
+    status_code: response.status,
+    content_type: response.headers.get('content-type') ?? '',
+    body: truncated ? body.slice(0, 4_000) : body,
+    body_truncated: truncated,
+  };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -327,7 +462,7 @@ async function recordRefreshFailure(
   db: Database,
   row: CredentialRow,
   state: OAuthStateRecord,
-  opts: McpOAuthRefreshOptions,
+  opts: Pick<McpOAuthRefreshOptions, 'publish'>,
   now: () => Date,
   error: string,
 ): Promise<OAuthRefreshOutcome> {

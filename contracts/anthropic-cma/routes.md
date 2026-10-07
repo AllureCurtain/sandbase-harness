@@ -67,6 +67,7 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/credential-vaults/{id}/credentials/{credentialId}/archive` | `src/api/routes/credential-vaults.ts` |
 | GET | `/v1/credential-vaults/{id}/credentials/{credentialId}/audit` | `src/api/routes/credential-vaults.ts` |
 | POST | `/v1/credential-vaults/{id}/credentials/{credentialId}/mark-used` | `src/api/routes/credential-vaults.ts` |
+| POST | `/v1/credential-vaults/{id}/credentials/{credentialId}/mcp_oauth_validate` | `src/api/routes/credential-vaults.ts` |
 | POST | `/v1/credential-vaults/{id}/credentials/{credentialId}/rotate` | `src/api/routes/credential-vaults.ts` |
 | GET | `/v1/vaults` | `src/api/routes/credential-vaults.ts` |
 | POST | `/v1/vaults` | `src/api/routes/credential-vaults.ts` |
@@ -83,6 +84,7 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/vaults/{id}/credentials/{credentialId}/archive` | `src/api/routes/credential-vaults.ts` |
 | GET | `/v1/vaults/{id}/credentials/{credentialId}/audit` | `src/api/routes/credential-vaults.ts` |
 | POST | `/v1/vaults/{id}/credentials/{credentialId}/mark-used` | `src/api/routes/credential-vaults.ts` |
+| POST | `/v1/vaults/{id}/credentials/{credentialId}/mcp_oauth_validate` | `src/api/routes/credential-vaults.ts` |
 | POST | `/v1/vaults/{id}/credentials/{credentialId}/rotate` | `src/api/routes/credential-vaults.ts` |
 | GET | `/v1/environments` | `src/api/routes/environments.ts` |
 | POST | `/v1/environments` | `src/api/routes/environments.ts` |
@@ -267,8 +269,6 @@ remain unserved. See [`unsupported.md`](./unsupported.md).
 | POST | `/v1/user_profiles` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/user_profiles/{id}` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/user_profiles/{id}/enrollment_url` | `src/api/routes/unsupported-official.ts` |
-| POST | `/v1/vaults/{id}/credentials/{credentialId}/mcp_oauth_validate` | `src/api/routes/credential-vaults.ts` |
-| POST | `/v1/credential-vaults/{id}/credentials/{credentialId}/mcp_oauth_validate` | `src/api/routes/credential-vaults.ts` |
 
 ## 3. Alignment
 

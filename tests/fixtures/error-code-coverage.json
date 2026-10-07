@@ -127,6 +127,7 @@
       "tests/conformance/official-route-coverage.test.ts",
       "tests/conformance/unserved-route-envelope.test.ts",
       "tests/integration/agent-versions-pagination.test.ts",
+      "tests/integration/credential-mcp-oauth-validate.test.ts",
       "tests/integration/deployment-archived-event.test.ts",
       "tests/integration/deployment-path-aliases.test.ts",
       "tests/integration/deployment-runs-collection.test.ts",
@@ -295,6 +296,9 @@
       "tests/integration/worker-poll-cli.test.ts",
       "tests/unit/session-error-shape.test.ts"
     ],
+    "work_lease_precondition_failed": [
+      "tests/integration/environment-work-data-plane.test.ts"
+    ],
     "work_outcome_unknown": [
       "tests/integration/self-hosted.test.ts",
       "tests/integration/session-error-paths.test.ts",
@@ -304,9 +308,6 @@
       "tests/integration/self-hosted.test.ts",
       "tests/integration/session-error-paths.test.ts",
       "tests/unit/session-error-shape.test.ts"
-    ],
-    "work_lease_precondition_failed": [
-      "tests/integration/environment-work-data-plane.test.ts"
     ]
   }
 }

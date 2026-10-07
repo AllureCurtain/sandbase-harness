@@ -177,9 +177,9 @@ Known unsupported official SDK operations instead return HTTP 400 with
 `error.type: "unsupported_capability"`, a message pointing to
 `docs/api-matrix.md#unsupported-official-routes`, and
 `error.details.capabilities` containing the capability id and reason. These
-explicit refusals cover MCP tunnels, hosted user profiles,
-session threads (the unimplemented multiagent surface),
-and MCP OAuth validation; they do not create resources or
+explicit refusals cover MCP tunnels, hosted user profiles, and
+session threads (the unimplemented multiagent surface); they do not create
+resources or
 execute work. Authentication, throttling, and compatibility admission still run
 first. Only the documented official methods and paths are registered; unrelated
 paths or verbs keep the normal not-found behavior. See the
@@ -188,8 +188,7 @@ paths or verbs keep the normal not-found behavior. See the
 ### Unsupported Official Operations
 
 All operations in this table return HTTP 400 `unsupported_capability`, not a
-resource response. The MCP OAuth refusal is mounted through the shared vault
-router, so both vault spellings preserve the same behavior.
+resource response.
 
 | Method | Path |
 | --- | --- |
@@ -209,8 +208,6 @@ router, so both vault spellings preserve the same behavior.
 | GET | `/v1/sessions/{id}/threads/{thread_id}/events` |
 | GET | `/v1/sessions/{id}/threads/{thread_id}/stream` |
 | POST | `/v1/sessions/{id}/threads/{thread_id}/archive` |
-| POST | `/v1/vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` |
-| POST | `/v1/credential-vaults/{id}/credentials/{credential_id}/mcp_oauth_validate` |
 
 A query parameter a route does not implement is refused rather than ignored:
 
@@ -2340,6 +2337,7 @@ being advertised.
 | `GET` | `/v1/vaults/{vault_id}/credentials/{credential_id}/audit`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/audit` | List credential audit events. |
 | `GET` | `/v1/vaults/{vault_id}/audit`, `/v1/credential-vaults/{vault_id}/audit` | List every credential audit event in a vault. |
 | `POST` | `/v1/vaults/{vault_id}/credentials/{credential_id}/archive`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/archive` | Archive a credential. |
+| `POST` | `/v1/vaults/{vault_id}/credentials/{credential_id}/mcp_oauth_validate`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}/mcp_oauth_validate` | Live-probe an MCP credential: the `initialize` handshake runs against the declared `mcp_server_url` with the stored token, a 401 triggers the recorded refresh exchange once and a re-probe, and the answer is a `vault_credential_validation` (`valid` / `invalid` / `unknown` with `mcp_probe` and `refresh` diagnostics). |
 | `DELETE` | `/v1/vaults/{vault_id}/credentials/{credential_id}`, `/v1/credential-vaults/{vault_id}/credentials/{credential_id}` | Physically delete a credential; returns `{id, type: "vault_credential_deleted"}`. The audit trail survives at vault scope. |
 
 Credential `auth_type` values:

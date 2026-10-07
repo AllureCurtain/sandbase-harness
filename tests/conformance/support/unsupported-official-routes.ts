@@ -13,7 +13,6 @@ export interface UnsupportedOfficialRoute {
 export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<UnsupportedOfficialRoute> = [
   { pattern: /^\/v1\/tunnels(?:\/|$)/, reason: 'MCP tunnels require hosted connectivity outside the local-first scope.' },
   { pattern: /^\/v1\/user_profiles(?:\/|$)/, reason: 'Hosted user profile management is outside the single-tenant runtime scope.' },
-  { pattern: /^\/v1\/vaults\/[^/]+\/credentials\/[^/]+\/mcp_oauth_validate$/, reason: 'MCP OAuth tokens refresh at the injection boundary; a dedicated validation endpoint is not implemented.' },
   { pattern: /^\/v1\/sessions\/[^/]+\/threads(?:\/|$)/, reason: 'Session threads belong to the multiagent surface this runtime does not implement.' },
 ];
 
