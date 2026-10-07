@@ -259,8 +259,8 @@ describe('capability matrix', () => {
 
   it('returns copies so a consumer cannot mutate the matrix', () => {
     const first = capabilityEntry('dreams');
-    first.status = 'supported';
-    expect(capabilityEntry('dreams').status).toBe('unavailable');
+    first.status = 'unavailable';
+    expect(capabilityEntry('dreams').status).toBe('supported');
   });
 });
 

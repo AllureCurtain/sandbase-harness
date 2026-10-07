@@ -50,6 +50,7 @@ that every Claude hosted capability exists locally.
 | Vault credentials | `/v1/vaults/{id}/credentials` and `/v1/credential-vaults/{id}/credentials` | Supported | Create/list/retrieve/update/archive/delete credentials with secret redaction, replace a stored secret by rotation, and mark one used. `POST /{credential_id}` is the published update: `display_name`/`metadata` patch plus a type-discriminated `auth` partial update where `auth.type` is immutable, structural fields are locked, a secret value re-encrypts and writes a `rotate` audit event, and `expires_at`/`refresh` answer with warnings rather than persisting. A create write accepts the canonical nested `auth` object or the flat legacy spelling, and a read carries the canonical `display_name` / `auth` projection beside the local fields — never the secret material. `DELETE` is physical and returns the `vault_credential_deleted` tombstone while the audit trail survives at vault scope. |
 | Credential audit | `/v1/credential-vaults/{id}/audit` and `/v1/credential-vaults/{id}/credentials/{credential_id}/audit` | Supported | Lists rotation, use, injection and denial events at vault or credential scope, newest first, without secret material; the trail survives deletion. |
 | Memory stores | `/v1/memory_stores` | Supported | Create/list/retrieve/update/archive/delete stores. |
+| Dreams | `/v1/dreams` | Supported | Memory-consolidation jobs (`drm_` ids) with create/list/retrieve/cancel/archive and a `pending → running → completed/failed/canceled` lifecycle. `inputs` names exactly one memory store — mounted read-only into the pipeline, never modified by default — plus 1–100 session ids whose transcripts are packed into the dream context. The pipeline runs as an internal session exposed on `dream.session_id` (its event stream stays auditable after archival), executes on the existing operations tick rather than a dedicated worker, and writes into a new store seeded as a copy of the input under `create_new` (the default) or into the input store under `update_existing`. `POST` accepts `model` (string or `{id, speed}`) with precedence over the `dreams.model` runtime setting, which itself overrides the workspace default. A failed or canceled dream keeps its partial output store; cancel stops and archives the pipeline session; archive is terminal-only. Archived dreams leave default listings unless `include_archived=true`. The `dreaming-2026-04-21` family beta is admitted on the resource without being required, so the official SDK's dreams client reaches the route. See `contracts/anthropic-cma/dreams.md`. |
 | Memory records | `/v1/memory_stores/{id}/memories` | Supported | Create/list/retrieve/update/delete memory records under the published object shape (`memory_store_id`, `content_sha256`, `memory_version_id`). Content is capped at 100 kB measured in bytes, a store holds at most 10,000 memories, `path_prefix` and `depth` scope a list, `view` selects the `basic`/`full` projection with the published per-endpoint default, a `content_sha256` precondition refuses a stale write with `memory_precondition_failed_error` and reports the current hash, a path collision is a `memory_path_conflict_error`, delete answers `{id, type: "memory_deleted"}` and accepts `expected_content_sha256`, and `POST` is the published update verb with `PUT` as a deprecated alias. Versions list by `memory_id`/`operation`/`view` and a non-head version can be redacted (`memory_version_is_head` refuses the head). |
 | Session memory mounts | Session creation `resources[]` | Supported | Mount up to eight memory stores at whole-segment paths; file tools persist mounted reads/writes through `memory_records`, read-only mounts reject writes, and existing-file updates require a content precondition. |
 | Skills | `/v1/skills` | Supported | List built-in/custom skills and upload validated custom ZIPs. Versions are first-class under `/v1/skills/{id}/versions`: upload a new package with the same format as skill creation (the frontmatter `name` must match the skill's, `409` otherwise), list newest first, retrieve metadata, download the stored package as a zip archive, and delete a version (`skill_version_deleted`) with the only remaining version refused at `409`. The skill's `latest_version`/`latest_version_id` repoints at the newest survivor on deletion, and an agent skill reference can pin `version`; a pin naming a deleted version mounts nothing. Built-in `anthropic` skills answer version metadata read-only. |
@@ -75,15 +76,15 @@ The mounted method/path inventory is listed in
 [`contracts/anthropic-cma/routes.md`](../contracts/anthropic-cma/routes.md);
 unknown methods or paths are not broadly intercepted.
 
-Dreams, tunnels, and user profiles recognize the SDK's native
-`dreaming-2026-04-21`, `mcp-tunnels-2026-06-22`, and
-`user-profiles-2026-08-18` betas respectively, as well as the canonical
-managed-agents beta. These native betas are scoped to their refusal resource
-families and do not admit a supported resource or bypass version validation.
+Tunnels and user profiles recognize the SDK's native
+`mcp-tunnels-2026-06-22` and `user-profiles-2026-08-18` betas respectively, as
+well as the canonical managed-agents beta. These native betas are scoped to
+their refusal resource families and do not admit a supported resource or
+bypass version validation. The dreams family beta is handled the same way but
+its family is now implemented, not refused.
 
 | Official resource | Capability id | Reason |
 | --- | --- | --- |
-| `/v1/dreams` and its official actions | `dreams` | The memory-consolidation pipeline is unavailable in this phase; this is not a claim that it cannot exist locally. |
 | `/v1/tunnels` and certificate/token actions | `mcp-tunnel` | Hosted connectivity is outside the local-first scope. |
 | `/v1/user_profiles` and enrollment actions | `user-profiles` | Hosted user management is outside the single-tenant scope. |
 | `/v1/environments/{id}/work` and its official actions | `environment-work` | The hosted Work API is not the local `/work-items` and `/v1/x/worker` queue API. |
@@ -98,7 +99,7 @@ organization administration are excluded from this managed-agent inventory.
 Unrecognized SDK request syntax fails rather than silently losing routes.
 
 Verified on October 5, 2026 with SDK `0.129.0`: 110 distinct method/path pairs,
-76 existing resource mounts, 34 explicit refusals, and no deferred mounts — the
+81 existing resource mounts, 29 explicit refusals, and no deferred mounts — the
 last five (the multi-agent thread routes) are now mounted refusals. The
 deferral list was tracked in
 [issue #706](https://github.com/sandbaseai/sandbase-harness/issues/706) and is

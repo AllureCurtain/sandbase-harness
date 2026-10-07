@@ -49,6 +49,7 @@ deviation. If the reason stops being true, the difference should be removed.
 | [`custom-tools.md`](./custom-tools.md) | Caller-executed tool declarations |
 | [`system-message.md`](./system-message.md) | The `system.message` event domain |
 | [`memory-stores.md`](./memory-stores.md) | Memory stores, scoping, limits, versions |
+| [`dreams.md`](./dreams.md) | Dreams — session-backed memory-consolidation jobs |
 | [`files.md`](./files.md) | Files and file session resources |
 | [`credentials.md`](./credentials.md) | Vaults, credential wire profile, rotation |
 | [`environments.md`](./environments.md) | Execution environments, the published `config` shape, network policy |

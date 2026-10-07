@@ -1338,6 +1338,42 @@ const M059_WEBHOOK_ROTATION_WINDOW_SINCE = `
 ALTER TABLE webhooks ADD COLUMN secret_previous_since TEXT;
 `;
 
+// Dreams: session-backed memory-consolidation jobs (`drm_*`).
+//
+// `inputs`, `model`, and `output_behavior` persist the validated request
+// semantics verbatim so the API echo is exactly what the caller was admitted
+// with. `input_store_id` is denormalized out of `inputs` so the
+// update_existing single-active-writer check is an indexed lookup rather than
+// a JSON scan. Token counters mirror the pipeline session's usage while the
+// dream runs and freeze at its terminal state.
+const M060_DREAMS = `
+CREATE TABLE dreams (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  inputs TEXT NOT NULL,
+  instructions TEXT,
+  model TEXT NOT NULL,
+  output_behavior TEXT NOT NULL,
+  input_store_id TEXT NOT NULL,
+  output_store_id TEXT,
+  session_id TEXT,
+  error_type TEXT,
+  error_message TEXT,
+  usage_input_tokens INTEGER NOT NULL DEFAULT 0,
+  usage_output_tokens INTEGER NOT NULL DEFAULT 0,
+  usage_cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+  usage_cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at TEXT,
+  archived_at TEXT
+);
+
+CREATE INDEX idx_dreams_created_at ON dreams(created_at DESC);
+CREATE INDEX idx_dreams_status ON dreams(status) WHERE archived_at IS NULL;
+CREATE INDEX idx_dreams_session_id ON dreams(session_id);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1398,4 +1434,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 57, name: '057_model_request_speed', sql: M057_MODEL_REQUEST_SPEED },
   { version: 58, name: '058_credential_oauth_refresh', sql: M058_CREDENTIAL_OAUTH_REFRESH },
   { version: 59, name: '059_webhook_rotation_window_since', sql: M059_WEBHOOK_ROTATION_WINDOW_SINCE },
+  { version: 60, name: '060_dreams', sql: M060_DREAMS },
 ];

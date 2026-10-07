@@ -563,6 +563,11 @@ export type RuntimeSettingsConfig = {
    * `options.api_key` round-trips masked, like every other settings secret.
    */
   web_search?: { provider: 'tavily' | 'brave' | 'exa' | 'searxng'; options: Record<string, unknown> };
+  /**
+   * Optional dream-pipeline override: `model` is the model id a dream runs on
+   * when its POST body does not name one. Absent means the workspace model.
+   */
+  dreams?: { model?: string };
 };
 
 export type RuntimeSettings = {

@@ -54,6 +54,7 @@ export const CAPABILITY_AREAS = [
   'custom-tools',
   'system-message',
   'memory-stores',
+  'dreams',
   'files',
   'credentials',
   'environments',
@@ -430,11 +431,11 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     contract: 'contracts/anthropic-cma/routes.md',
   },
   {
-    area: 'unsupported',
+    area: 'dreams',
     id: 'dreams',
-    status: 'unavailable',
-    reason: 'Dreams are a memory-consolidation pipeline: they read memory stores and historical sessions and produce new, reorganized stores. This phase deliberately does not implement it; official SDK routes explicitly refuse it with unsupported_capability. Unavailable rather than not_applicable because the feature belongs in a local-first runtime — what it needs is a scheduled background worker and archived-session corpora, not a hosted service.',
-    contract: 'contracts/anthropic-cma/unsupported.md',
+    status: 'supported',
+    reason: 'Dreams are session-backed memory-consolidation jobs: POST /v1/dreams starts an internal pipeline session that reads one memory store (mounted read-only) and the selected session transcripts, then writes consolidated records into a new store seeded as a copy of the input — or into the input store itself under update_existing. Lifecycle is pending → running → completed/failed/canceled; cancel interrupts the pipeline session and archive is terminal-only. dream.session_id exposes the pipeline session for event streaming and audit, usage mirrors its token counters, and a failed or canceled dream keeps the partial output store. No dreaming-* beta gate: local extensions are directly usable. Console UI is not implemented.',
+    contract: 'contracts/anthropic-cma/dreams.md',
   },
   {
     area: 'threads',

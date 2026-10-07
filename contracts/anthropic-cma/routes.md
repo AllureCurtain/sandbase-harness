@@ -95,6 +95,11 @@ every row is mounted, and every mounted route has a row.
 | POST | `/v1/environments/{id}/worker-keys` | `src/api/routes/environments.ts` |
 | POST | `/v1/environments/{id}/worker-keys/{keyId}/revoke` | `src/api/routes/environments.ts` |
 | GET | `/v1/environments/{id}/work-items` | `src/api/routes/environments.ts` |
+| GET | `/v1/dreams` | `src/api/routes/dreams.ts` |
+| POST | `/v1/dreams` | `src/api/routes/dreams.ts` |
+| GET | `/v1/dreams/{id}` | `src/api/routes/dreams.ts` |
+| POST | `/v1/dreams/{id}/archive` | `src/api/routes/dreams.ts` |
+| POST | `/v1/dreams/{id}/cancel` | `src/api/routes/dreams.ts` |
 | GET | `/v1/files` | `src/api/routes/files.ts` |
 | POST | `/v1/files` | `src/api/routes/files.ts` |
 | DELETE | `/v1/files/{id}` | `src/api/routes/files.ts` |
@@ -234,8 +239,6 @@ remain unserved. See [`unsupported.md`](./unsupported.md).
 
 | Method | Path | Registered by |
 | --- | --- | --- |
-| GET | `/v1/dreams` | `src/api/routes/unsupported-official.ts` |
-| GET | `/v1/dreams/{id}` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/environments/{id}/work` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/environments/{id}/work/{workId}` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/environments/{id}/work/poll` | `src/api/routes/unsupported-official.ts` |
@@ -250,9 +253,6 @@ remain unserved. See [`unsupported.md`](./unsupported.md).
 | GET | `/v1/tunnels/{id}/certificates/{certificateId}` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/user_profiles` | `src/api/routes/unsupported-official.ts` |
 | GET | `/v1/user_profiles/{id}` | `src/api/routes/unsupported-official.ts` |
-| POST | `/v1/dreams` | `src/api/routes/unsupported-official.ts` |
-| POST | `/v1/dreams/{id}/archive` | `src/api/routes/unsupported-official.ts` |
-| POST | `/v1/dreams/{id}/cancel` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/environments/{id}/work/{workId}` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/environments/{id}/work/{workId}/ack` | `src/api/routes/unsupported-official.ts` |
 | POST | `/v1/environments/{id}/work/{workId}/heartbeat` | `src/api/routes/unsupported-official.ts` |

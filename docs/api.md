@@ -76,11 +76,17 @@ anthropic-beta: agent-memory-2026-07-22
 ```
 
 The explicitly refused SDK resources also recognize their native beta:
-`dreaming-2026-04-21` for `/v1/dreams`, `mcp-tunnels-2026-06-22` for
-`/v1/tunnels`, and `user-profiles-2026-08-18` for `/v1/user_profiles`.
+`mcp-tunnels-2026-06-22` for `/v1/tunnels` and
+`user-profiles-2026-08-18` for `/v1/user_profiles`.
 This lets unmodified SDK methods reach `unsupported_capability`; it does not
 enable these capabilities or admit these betas on other resources. The canonical
 managed-agents beta remains accepted on the refusal paths.
+
+`/v1/dreams` is implemented, not refused, and admits `dreaming-2026-04-21` as
+its resource-family beta for the same reason: the official SDK's dreams client
+sends it. The managed-agents beta is accepted there as well, and no beta gate
+is enforced — a bearer caller without compatibility headers uses the same
+routes.
 
 Do not combine that beta with `managed-agents-2026-04-01` on a memory-store
 request: admission rejects the pair with `400 invalid_request_error`. The documented
@@ -171,7 +177,7 @@ Known unsupported official SDK operations instead return HTTP 400 with
 `error.type: "unsupported_capability"`, a message pointing to
 `docs/api-matrix.md#unsupported-official-routes`, and
 `error.details.capabilities` containing the capability id and reason. These
-explicit refusals cover Dreams, MCP tunnels, hosted user profiles, the hosted
+explicit refusals cover MCP tunnels, hosted user profiles, the hosted
 environment Work API, session threads (the unimplemented multiagent surface),
 and MCP OAuth validation; they do not create resources or
 execute work. Authentication, throttling, and compatibility admission still run
@@ -187,10 +193,6 @@ router, so both vault spellings preserve the same behavior.
 
 | Method | Path |
 | --- | --- |
-| GET, POST | `/v1/dreams` |
-| GET | `/v1/dreams/{id}` |
-| POST | `/v1/dreams/{id}/archive` |
-| POST | `/v1/dreams/{id}/cancel` |
 | GET, POST | `/v1/tunnels` |
 | GET | `/v1/tunnels/{id}` |
 | POST | `/v1/tunnels/{id}/archive` |
@@ -2508,6 +2510,60 @@ curl -X POST http://127.0.0.1:3000/v1/memory_stores/STORE_ID/memories \
 ```
 
 Memory paths must start with `/` and must not end with `/`.
+
+## Dreams
+
+A dream is an asynchronous memory-consolidation job (`drm_` ids). It reads one
+memory store and the transcripts of selected sessions, then writes consolidated
+memory records into an output store. The lifecycle is
+`pending → running → completed/failed/canceled`.
+
+```bash
+curl -X POST http://127.0.0.1:3000/v1/dreams \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inputs": [
+      { "type": "memory_store", "memory_store_id": "mem_..." },
+      { "type": "sessions", "session_ids": ["ses_..."] }
+    ],
+    "instructions": "Summarize durable user preferences.",
+    "output_behavior": { "type": "create_new" }
+  }'
+```
+
+- `inputs` must contain exactly one `memory_store` entry and one `sessions`
+  entry with 1–100 unique session ids. Referenced stores and sessions must
+  exist, and the store must not be archived.
+- `instructions` is optional guidance of 1–4096 characters.
+- `model` is a string id or `{id, speed}` — only `standard` speed is executed
+  locally. Resolution order: request `model`, then the `dreams.model` runtime
+  setting, then the workspace default model. `null` means "not overridden".
+- `output_behavior` defaults to `{type: "create_new"}`, which seeds a new
+  memory store as a copy of the input. `{type: "update_existing",
+  memory_store_id}` may only target the input store itself and is refused with
+  `409` while another `update_existing` dream on that store is still active.
+- Unknown top-level fields are refused with `400` rather than dropped.
+
+The pipeline runs in an internal session that mounts the input store read-only.
+`dream.session_id` exposes that session, so its event stream stays auditable —
+including after the dream ends, when the session is archived. `dream.outputs`
+names the output store once the pipeline session exists, and `dream.usage`
+mirrors its token counters. The input store is never modified under
+`create_new`; a failed or canceled dream keeps whatever its output store
+already holds.
+
+`POST /v1/dreams` starts the job immediately and answers `201` with the dream —
+`status` is `running` once the pipeline session exists, or `failed` with
+`error` populated if startup could not run. Reads reconcile the dream against
+its session before answering, so a finished run reports its real state.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/dreams` | List dreams newest first. `include_archived=true` includes archived ones; `statuses` (repeatable) filters by lifecycle state; `created_at[gt]`/`created_at[lt]` bound the created window; `limit`/`page` paginate. |
+| `POST` | `/v1/dreams` | Create and start a dream. |
+| `GET` | `/v1/dreams/{id}` | Retrieve a dream. Archived dreams remain retrievable. |
+| `POST` | `/v1/dreams/{id}/cancel` | Cancel a pending or running dream: it flips to `canceled`, the pipeline session is interrupted and archived, and the output store keeps partial content. A terminal dream answers `400`. |
+| `POST` | `/v1/dreams/{id}/archive` | Archive a terminal dream. `400` while pending or running — cancel first. Idempotent once archived. |
 
 ## Operations
 

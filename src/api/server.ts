@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { sessionsRoutes } from './routes/sessions.js';
 import { runsRoutes } from './routes/runs.js';
 import { agentsRoutes } from './routes/agents.js';
+import { dreamRoutes } from './routes/dreams.js';
 import { resourceRoutes } from './routes/resources.js';
 import { skillsRoutes } from './routes/skills.js';
 import { apiKeysRoutes } from './routes/api-keys.js';
@@ -183,6 +184,7 @@ export function createServer(deps: ServerDeps) {
   app.route('/v1/sessions', sessionsRoutes(deps));
 app.route('/v1/runs', runsRoutes(deps));
   app.route('/v1/agents', agentsRoutes(deps));
+  app.route('/v1/dreams', dreamRoutes(deps));
   app.route('/v1', resourceRoutes(deps));
   app.route('/v1/skills', skillsRoutes(deps));
   app.route('/v1/api-keys', apiKeysRoutes(deps));

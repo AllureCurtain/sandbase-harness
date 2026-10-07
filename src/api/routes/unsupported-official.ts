@@ -16,7 +16,6 @@ export const unsupportedMcpOAuthValidation = rejectCapability(
 
 export function unsupportedOfficialRoutes(): Hono {
   const app = new Hono();
-  const dreams = rejectCapability('dreams', 'The memory-consolidation pipeline is not implemented in this phase.');
   const tunnels = rejectCapability('mcp-tunnel', 'MCP tunnels require hosted connectivity outside the local-first scope.');
   const profiles = rejectCapability('user-profiles', 'Hosted user profile management is outside the single-tenant runtime scope.');
   const work = rejectCapability('environment-work', 'The hosted Work API is not the local worker queue API.');
@@ -24,12 +23,6 @@ export function unsupportedOfficialRoutes(): Hono {
     'threads-and-coordinator',
     'Session threads belong to the multiagent surface this runtime does not implement; a request reaches a mounted refusal rather than a 404.',
   );
-
-  app.get('/dreams', dreams);
-  app.post('/dreams', dreams);
-  app.get('/dreams/:id', dreams);
-  app.post('/dreams/:id/archive', dreams);
-  app.post('/dreams/:id/cancel', dreams);
 
   app.get('/tunnels', tunnels);
   app.post('/tunnels', tunnels);

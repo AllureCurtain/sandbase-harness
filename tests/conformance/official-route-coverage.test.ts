@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer } from '@/api/server.js';
 import { SessionManager } from '@/core/session/session-manager.js';
-import { CMA_ANTHROPIC_VERSION, CMA_MANAGED_AGENTS_BETA, CMA_REFUSED_RESOURCE_BETAS } from '@/core/cma/compatibility.js';
+import { CMA_ANTHROPIC_VERSION, CMA_MANAGED_AGENTS_BETA, CMA_RESOURCE_FAMILY_BETAS } from '@/core/cma/compatibility.js';
 import { disposeConformanceContexts, makeConformanceApp, type ConformanceContext } from './support/app.js';
 import { loadOfficialRoutes, missingOfficialRoutes, mountedOfficialRoutes, probeOfficialRoute, routeKey } from './support/official-routes.js';
 import { PENDING_OFFICIAL_ROUTES, UNSUPPORTED_OFFICIAL_ROUTES } from './support/unsupported-official-routes.js';
@@ -86,7 +86,11 @@ describe('official SDK route coverage', () => {
       maxRetries: 0, fetch: async (input, init) => app.request(input, init),
     });
     const expected = { status: 400, error: { error: { type: 'unsupported_capability' } } };
-    await expect(client.beta.dreams.retrieve('x_probe')).rejects.toMatchObject(expected);
+    // Dreams are served, not refused: an unknown id decodes the real route's
+    // 404 rather than the unsupported-capability envelope.
+    await expect(client.beta.dreams.retrieve('x_probe')).rejects.toMatchObject({
+      status: 404, error: { error: { type: 'not_found' } },
+    });
     await expect(client.beta.tunnels.retrieve('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.userProfiles.retrieve('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.environments.work.retrieve('x_probe', { environment_id: 'x_probe' })).rejects.toMatchObject(expected);
@@ -114,7 +118,7 @@ describe('official SDK route coverage', () => {
       db, sessionManager: new SessionManager(db), agents: [], reloadAgents: () => ({ agents: [], errors: [] }),
       apiKeys: ['route-test-key'], inboundRateLimit: { enabled: true, readPerMinute: 2, writePerMinute: 2 },
     });
-    const path = '/v1/dreams';
+    const path = '/v1/tunnels';
     expect((await app.request(path, { headers })).status).toBe(401);
     const unauthorizedBeta = await app.request(path, { headers: { ...headers, 'x-api-key': 'route-test-key', 'anthropic-beta': 'wrong-beta' } });
     expect((await unauthorizedBeta.json() as { error: { code: string } }).error.code).toBe('unsupported_anthropic_beta');
@@ -122,7 +126,7 @@ describe('official SDK route coverage', () => {
     expect((await app.request(path, { headers: { ...headers, 'x-api-key': 'route-test-key' } })).status).toBe(429);
   });
 
-  it.each(Object.values(CMA_REFUSED_RESOURCE_BETAS))('never admits a supported resource under refusal beta %s', async (beta) => {
+  it.each(Object.values(CMA_RESOURCE_FAMILY_BETAS))('never admits an unrelated resource under family beta %s', async (beta) => {
     const { app } = context();
     for (const path of ['/v1/agents', '/v1/memory_stores', '/v1/dreamscape']) {
       const response = await app.request(path, { headers: { ...headers, 'anthropic-beta': beta } });
@@ -131,7 +135,7 @@ describe('official SDK route coverage', () => {
     }
   });
 
-  it.each(Object.entries(CMA_REFUSED_RESOURCE_BETAS))('still validates version and beta headers on %s', async (path, beta) => {
+  it.each(Object.entries(CMA_RESOURCE_FAMILY_BETAS))('still validates version and beta headers on %s', async (path, beta) => {
     const { app } = context();
     for (const [requestHeaders, code] of [
       [{ 'anthropic-beta': beta }, 'missing_anthropic_version'],

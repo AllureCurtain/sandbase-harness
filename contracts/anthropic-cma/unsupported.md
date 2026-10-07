@@ -6,7 +6,6 @@ Source: `src/core/capabilities/matrix.ts`, `src/api/capability-errors.ts`,
 `src/core/capabilities/registry.ts`, `src/api/routes/unsupported-official.ts`.
 
 <!-- capability-status
-dreams: unavailable
 session-budget-alerts: not_applicable
 mcp-tunnel: not_applicable
 -->
@@ -25,7 +24,6 @@ mcp-tunnel: not_applicable
 
 | Capability | Status | Behaviour |
 | --- | --- | --- |
-| Dreams | `unavailable` | A memory-consolidation pipeline (read memory stores and historical sessions, produce reorganized stores). Not implemented in this phase; official SDK routes explicitly refuse it with HTTP 400 `unsupported_capability`. |
 | MCP tunnel | `not_applicable` | Not implemented; a hosted connectivity feature outside local-first scope. Official SDK tunnel, certificate, and token routes explicitly refuse it. |
 | Hosted user profiles | `not_applicable` | Hosted user management is outside the single-tenant scope; official SDK profile routes explicitly refuse it. |
 | Hosted environment Work API | `not_applicable` | Not the local worker queue API; official SDK Work routes explicitly refuse it without changing `/work-items` or worker endpoints. |
@@ -33,6 +31,8 @@ mcp-tunnel: not_applicable
 | Session budget alerts | `not_applicable` | Not implemented; notifiability is a hosted billing feature with no local analogue. |
 
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
+Dreams are implemented too — a session-backed memory-consolidation job — and
+have their own file, [`dreams.md`](./dreams.md).
 Threads, the coordinator, the advisor, and the canonical `multiagent` roster are
 **not** implemented either; they have their own file,
 [`threads.md`](./threads.md), which records the gap and the refusal that keeps a
@@ -68,9 +68,8 @@ unsupported capability and its reason, and separating "not implemented" from
 | Difference | Detail |
 | --- | --- |
 | Scope decisions | MCP tunnel and session-budget alerts are `not_applicable`: SandBase is local-first and single-tenant, so a hosted connectivity or billing-notification feature has no local analogue. The published contract describes them as available capabilities. |
-| Dreams | `unavailable`, not `not_applicable`: a workspace-scoped pipeline over archived sessions and memory stores belongs in a local-first runtime. What is missing is a scheduled background worker and the archived-session corpora, and this phase does not build them. |
 | Failure envelope | `unsupported_capability` with `details.capabilities` is a SandBase error shape. The published contract requires the refusal, not this envelope. |
-| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution moved out of this file once a provider-backed adapter shipped; OAuth refresh remains `unavailable`: it has no safe local design, so marking it `planned` would imply an implementation is coming. |
+| Planned vs. unavailable | Nothing in this file is `planned` any more. `web_search` execution moved out of this file once a provider-backed adapter shipped, and dreams moved out when the session-backed pipeline shipped; OAuth refresh remains `unavailable`: it has no safe local design, so marking it `planned` would imply an implementation is coming. |
 | Coverage moved out of this file | Session budget was implemented, so it now has its own contract file. Threads, coordinator, and advisor were never implemented and also have their own file, so this file does not have to speak for a surface it cannot describe. |
 
 ## 5. Reason for the difference
@@ -78,10 +77,10 @@ unsupported capability and its reason, and separating "not implemented" from
 - `not_applicable` entries are decisions, not gaps. Recording them in the matrix
   prevents them from being counted as missing work in a coverage report, which
   is the failure mode a single "done / not done" flag produces.
-- Dreams is `unavailable` rather than `not_applicable` because the earlier
-  "cloud scheduling" label was wrong: the feature is a local consolidation
-  pipeline, so the honest record is "we have not built it", not "it does not
-  apply here".
+- Dreams used to sit here as `unavailable`: the earlier "cloud scheduling"
+  label was wrong — the feature is a local consolidation pipeline — and once
+  that pipeline shipped the entry moved to
+  [`dreams.md`](./dreams.md).
 - `web_search` execution used to sit here: no adapter existed, and marking it
   `planned` would have implied one was coming. A provider-backed implementation
   now ships, so the entry moved to [`tools.md`](./tools.md) — an unconfigured
@@ -105,10 +104,9 @@ unsupported capability and its reason, and separating "not implemented" from
 ## 7. Status
 
 Mixed, per the table in §2. Two entries are `not_applicable` by design and the
-rest are `unavailable`; Dreams moved here from `not_applicable` once its reason
-was corrected. Every one is recorded in the capability matrix with its reason
-rather than being omitted. Two entries that used to be here are no longer:
-session budget and `web_search` execution each have their own coverage because
-they were implemented. Threads, the coordinator, and the advisor stayed
-out: they are `unavailable`, not `partial`, and they too have their own file
-rather than a paragraph in this one.
+rest are `unavailable`. Every one is recorded in the capability matrix with its
+reason rather than being omitted. Three entries that used to be here are no
+longer: session budget, `web_search` execution, and dreams each have their own
+coverage because they were implemented. Threads, the coordinator, and the
+advisor stayed out: they are `unavailable`, not `partial`, and they too have
+their own file rather than a paragraph in this one.

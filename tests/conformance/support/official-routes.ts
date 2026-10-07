@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import type { createServer } from '@/api/server.js';
-import { CMA_AGENT_MEMORY_BETA, CMA_ANTHROPIC_VERSION, CMA_MANAGED_AGENTS_BETA, CMA_REFUSED_RESOURCE_BETAS } from '@/core/cma/compatibility.js';
+import { CMA_AGENT_MEMORY_BETA, CMA_ANTHROPIC_VERSION, CMA_MANAGED_AGENTS_BETA, CMA_RESOURCE_FAMILY_BETAS } from '@/core/cma/compatibility.js';
 
 export interface OfficialRoute {
   method: string;
@@ -65,14 +65,14 @@ export function missingOfficialRoutes(
 }
 
 export async function probeOfficialRoute(app: ReturnType<typeof createServer>, route: OfficialRoute): Promise<Response> {
-  const refusedResourceBeta = Object.entries(CMA_REFUSED_RESOURCE_BETAS)
+  const familyBeta = Object.entries(CMA_RESOURCE_FAMILY_BETAS)
     .find(([prefix]) => route.path === prefix || route.path.startsWith(`${prefix}/`))?.[1];
   return app.request(route.path.replaceAll(':id', 'x_probe'), {
     method: route.method,
     headers: {
       'content-type': 'application/json',
       'anthropic-version': CMA_ANTHROPIC_VERSION,
-      'anthropic-beta': refusedResourceBeta ?? (route.path.startsWith('/v1/memory_stores') ? CMA_AGENT_MEMORY_BETA : CMA_MANAGED_AGENTS_BETA),
+      'anthropic-beta': familyBeta ?? (route.path.startsWith('/v1/memory_stores') ? CMA_AGENT_MEMORY_BETA : CMA_MANAGED_AGENTS_BETA),
     },
     ...(['POST', 'PUT', 'PATCH'].includes(route.method) ? { body: '{}' } : {}),
   });
