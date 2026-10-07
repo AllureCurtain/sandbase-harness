@@ -17,7 +17,15 @@ export const CMA_MANAGED_AGENTS_BETA = 'managed-agents-2026-04-01';
 /** `anthropic-beta` for memory-store resources. Mutually exclusive with the above. */
 export const CMA_AGENT_MEMORY_BETA = 'agent-memory-2026-07-22';
 
-export const CMA_REFUSED_RESOURCE_BETAS: Readonly<Record<string, string>> = {
+/**
+ * Resource-family betas admitted on their own path family instead of
+ * `managed-agents-2026-04-01`, so the official SDK's per-resource beta
+ * headers reach the route. A family in this map is not necessarily a
+ * refusal: `/v1/dreams` is implemented and admits `dreaming-2026-04-21`
+ * because the SDK's dreams client sends it, while the tunnel and profile
+ * families remain mounted refusals.
+ */
+export const CMA_RESOURCE_FAMILY_BETAS: Readonly<Record<string, string>> = {
   '/v1/dreams': 'dreaming-2026-04-21',
   '/v1/tunnels': 'mcp-tunnels-2026-06-22',
   '/v1/user_profiles': 'user-profiles-2026-08-18',

@@ -4,6 +4,19 @@
 
 ### Added
 
+- The Dreams resource is served: `GET`/`POST /v1/dreams`, `GET
+  /v1/dreams/{id}`, `POST /v1/dreams/{id}/archive`, and `POST
+  /v1/dreams/{id}/cancel`. A dream validates its inputs (exactly one
+  `memory_store` and one `sessions` input), persists `pending`, and is run by
+  the operations timer through a dedicated internal session that reads the
+  declared session transcripts and consolidates memory — into a new store by
+  default, or into the input store under `output_behavior: update_existing`
+  (guarded by a `409 conflict_error` + `x-should-retry: false` while an active
+  dream already targets it). Model resolves request `model` →
+  `settings.dreams.model` → the workspace default; failure and cancellation
+  keep the partial output store, and the internal `session_id` is exposed on
+  the dream object. Admitted by `dreaming-2026-04-21` or the managed-agents
+  beta.
 - A second Playwright E2E scenario (`tests/e2e/console-session-events.spec.ts`)
   covers the session lifecycle the smoke test does not: a session created over
   the real API is opened in the Console and messaged through the live stream,

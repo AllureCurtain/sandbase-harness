@@ -60,6 +60,7 @@
     "session_archived",
     "store_full",
     "store_unavailable",
+    "target_store_held",
     "too_many_initial_events",
     "too_many_stores",
     "unresolved_env_reference",

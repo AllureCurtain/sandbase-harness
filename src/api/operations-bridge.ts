@@ -28,6 +28,7 @@ import {
 } from '@/core/operations/webhook-events.js';
 import { rearmScheduledDeployments, runDueScheduledDeployments } from '@/core/operations/scheduler.js';
 import { sweepExpiredParkedWaits } from '@/core/operations/parked-wait-sweep.js';
+import { sweepDreams } from '@/core/dreams/runner.js';
 
 export type OperationsBridgeOptions = {
   db: Database;
@@ -243,6 +244,18 @@ export function startOperationsTimers(opts: OperationsBridgeOptions): () => void
     } catch {
       // A session this pass failed to end is still parked, which is the state it
       // was already in; the next tick retries it.
+    }
+    try {
+      // Dream reconciliation: start pending dreams a restart stranded, and fold
+      // finished pipeline sessions back onto their rows, so a dream nobody is
+      // polling still terminalizes and releases its sandbox.
+      void sweepDreams({
+        db: opts.db,
+        sessionManager: opts.sessionManager,
+        dataDir: opts.dataDir,
+      }).catch(() => undefined);
+    } catch {
+      // A failed sweep leaves the dream in its prior state; the next tick retries.
     }
   }, intervalMs);
   // An operations timer must never keep a process alive on its own: shutdown is

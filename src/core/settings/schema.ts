@@ -90,6 +90,18 @@ export const runtimeSettingsSchema = z.object({
     provider: z.enum(WEB_SEARCH_PROVIDER_IDS),
     options: optionsSchema,
   }).strict().optional(),
+  /**
+   * Dream pipeline defaults.
+   *
+   * Optional for the same reason `web_search` is: a settings row persisted
+   * before this section existed must still parse, and an absent section is the
+   * honest spelling of "no dream-specific model" — a dream request without a
+   * `model` then falls back to the workspace default.
+   */
+  dreams: z.object({
+    // A model registry reference, same vocabulary as an agent's `model` field.
+    model: z.string().min(1).max(256).optional(),
+  }).strict().optional(),
 }).strict();
 
 export type RuntimeSettings = z.infer<typeof runtimeSettingsSchema>;

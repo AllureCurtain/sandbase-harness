@@ -163,6 +163,13 @@ export interface CreateSessionParams {
    * defined; a rejected override throws before the session row exists.
    */
   agentOverrides?: AgentOverrides;
+  /**
+   * Internal sessions (the dream pipeline) carry their agent definition rather
+   * than naming the durable roster: no `agents` row exists for them, so this
+   * snapshot resolves in place of the table lookup and is always frozen into
+   * `agent_definition`. Public creation paths never set it.
+   */
+  agentSnapshot?: { id: string; name: string; version: number; definition: AgentDefinition };
 }
 
 /**

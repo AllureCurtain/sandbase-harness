@@ -773,7 +773,7 @@ export class SessionManager {
     const loopEngine = resolveRequestedLoopEngine(params.loopEngine) ?? this.defaultLoopEngine;
     assertLoopEngineExecutable(loopEngine, this.isLoopEngineExecutable);
 
-    const agentSnapshot = this.resolveAgentSnapshot(params.agent, params.agentVersion);
+    const agentSnapshot = params.agentSnapshot ?? this.resolveAgentSnapshot(params.agent, params.agentVersion);
     if (!agentSnapshot) {
       throw new Error(`Agent not found: ${params.agent}`);
     }
@@ -827,7 +827,7 @@ export class SessionManager {
     // can differ from the durable agent's: a version pin already did, and an
     // override does too. A session that pins nothing and overrides nothing keeps
     // following the current agent, which is the documented unpinned behaviour.
-    const frozenDefinition = params.agentVersion !== undefined || params.agentOverrides !== undefined
+    const frozenDefinition = params.agentVersion !== undefined || params.agentOverrides !== undefined || params.agentSnapshot !== undefined
       ? JSON.stringify(effectiveDefinition)
       : null;
 

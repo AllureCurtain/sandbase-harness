@@ -1,0 +1,137 @@
+[
+  {
+    "id": "dreams-list",
+    "group": "Dreams",
+    "title": "List dreams",
+    "method": "GET",
+    "path": "/v1/dreams",
+    "summary": "List memory-consolidation dream jobs, newest first. Archived dreams are excluded unless include_archived=true is passed. statuses (repeatable) filters by lifecycle state; created_at[gt] / created_at[lt] bound the created window; limit and page drive cursor pagination.",
+    "parameters": [
+      {
+        "name": "include_archived",
+        "type": "boolean",
+        "description": "Optional. Pass true to include archived dreams. Any other non-boolean value is a 400."
+      },
+      {
+        "name": "statuses",
+        "type": "string[]",
+        "description": "Optional. Repeat to filter by lifecycle state: pending, running, completed, failed, canceled. statuses[] is accepted as the SDK spelling."
+      },
+      {
+        "name": "created_at[gt]",
+        "type": "string",
+        "description": "Optional RFC 3339 timestamp; only dreams created strictly after it are returned."
+      },
+      {
+        "name": "created_at[lt]",
+        "type": "string",
+        "description": "Optional RFC 3339 timestamp; only dreams created strictly before it are returned."
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "Optional page size."
+      },
+      {
+        "name": "page",
+        "type": "string",
+        "description": "Optional opaque continuation cursor from a previous response's next_page."
+      }
+    ],
+    "response": [
+      {
+        "name": "data",
+        "type": "Dream[]",
+        "description": "Dream resources with status, inputs, outputs, session_id, usage, and lifecycle timestamps."
+      },
+      {
+        "name": "next_page",
+        "type": "string | null",
+        "description": "Continuation cursor for the next page, or null when the list is exhausted."
+      }
+    ]
+  },
+  {
+    "id": "dreams-create",
+    "group": "Dreams",
+    "title": "Create dream",
+    "method": "POST",
+    "path": "/v1/dreams",
+    "summary": "Create and start a memory-consolidation dream. inputs must name exactly one memory_store entry and one sessions entry with 1-100 unique session ids. The pipeline runs in an internal session (session_id); output_behavior defaults to create_new, which seeds a new store as a copy of the input. update_existing writes into the input store and conflicts while another such dream on the same store is still active.",
+    "parameters": [
+      {
+        "name": "inputs",
+        "type": "object[]",
+        "required": true,
+        "description": "Exactly one {type:'memory_store', memory_store_id} and one {type:'sessions', session_ids} entry."
+      },
+      {
+        "name": "instructions",
+        "type": "string | null",
+        "description": "Optional consolidation guidance, 1-4096 characters when supplied."
+      },
+      {
+        "name": "model",
+        "type": "string | object",
+        "description": "Optional model id, or {id, speed:'standard'}. Resolution order: request model, then the dreams.model runtime setting, then the workspace default model."
+      },
+      {
+        "name": "output_behavior",
+        "type": "object",
+        "description": "Optional. {type:'create_new'} (default) or {type:'update_existing', memory_store_id} targeting the input store."
+      }
+    ],
+    "response": [
+      {
+        "name": "dream",
+        "type": "object",
+        "description": "The created dream (HTTP 201). status is running once the pipeline session exists, or failed with error populated if startup could not run."
+      }
+    ]
+  },
+  {
+    "id": "dreams-get",
+    "group": "Dreams",
+    "title": "Retrieve dream",
+    "method": "GET",
+    "path": "/v1/dreams/{id}",
+    "summary": "Retrieve one dream by id. Reads reconcile status from the pipeline session before projecting, so a finished run reports its real state. Archived dreams remain retrievable.",
+    "response": [
+      {
+        "name": "dream",
+        "type": "object",
+        "description": "The dream resource: status, inputs, outputs (the output memory store once recorded), session_id for the pipeline session, usage counters, error, and lifecycle timestamps."
+      }
+    ]
+  },
+  {
+    "id": "dreams-cancel",
+    "group": "Dreams",
+    "title": "Cancel dream",
+    "method": "POST",
+    "path": "/v1/dreams/{id}/cancel",
+    "summary": "Cancel a pending or running dream: the dream flips to canceled, the pipeline session is interrupted and archived, and the output store keeps whatever it already holds. Cancel on a terminal dream is a 400.",
+    "response": [
+      {
+        "name": "dream",
+        "type": "object",
+        "description": "The canceled dream."
+      }
+    ]
+  },
+  {
+    "id": "dreams-archive",
+    "group": "Dreams",
+    "title": "Archive dream",
+    "method": "POST",
+    "path": "/v1/dreams/{id}/archive",
+    "summary": "Archive a terminal dream (completed, failed, or canceled). Archiving a pending or running dream is a 400 — cancel it first. The call is idempotent for an already archived dream.",
+    "response": [
+      {
+        "name": "dream",
+        "type": "object",
+        "description": "The archived dream, with archived_at set."
+      }
+    ]
+  }
+]

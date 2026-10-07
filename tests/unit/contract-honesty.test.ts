@@ -591,10 +591,10 @@ describe('documented capability decisions', () => {
     expect(parseDocumentedRoutes(threads)).toEqual([]);
   });
 
-  it('reports Dreams as unavailable for the memory-consolidation pipeline it is', () => {
-    expect(entry('dreams').status).toBe('unavailable');
-    expect(entry('dreams').reason).toMatch(/memory-consolidation pipeline/);
-    expect(entry('dreams').reason).toMatch(/does not implement/);
+  it('reports Dreams as the session-backed memory-consolidation jobs they are', () => {
+    expect(entry('dreams').status).toBe('supported');
+    expect(entry('dreams').reason).toMatch(/memory-consolidation/);
+    expect(entry('dreams').reason).toMatch(/session_id/);
   });
 
   it('reports web_fetch execution as implemented with limits, and never as unavailable', () => {

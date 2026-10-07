@@ -1,5 +1,4 @@
 export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
-  { pattern: /^\/v1\/dreams(?:\/|$)/, reason: 'The memory-consolidation pipeline is not implemented in this phase.' },
   { pattern: /^\/v1\/tunnels(?:\/|$)/, reason: 'MCP tunnels require hosted connectivity outside the local-first scope.' },
   { pattern: /^\/v1\/user_profiles(?:\/|$)/, reason: 'Hosted user profile management is outside the single-tenant runtime scope.' },
   { pattern: /^\/v1\/environments\/[^/]+\/work(?:\/|$)/, reason: 'The hosted Work API is not the local worker queue API.' },

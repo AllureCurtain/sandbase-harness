@@ -7,6 +7,7 @@ import files from './api-reference/files.json';
 import environments from './api-reference/environments.json';
 import credential_vaults from './api-reference/credential-vaults.json';
 import memory_stores from './api-reference/memory-stores.json';
+import dreams from './api-reference/dreams.json';
 import runtime_settings from './api-reference/runtime-settings.json';
 import api_keys from './api-reference/api-keys.json';
 import operations from './api-reference/operations.json';
@@ -59,6 +60,7 @@ export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(credential_vaults as unknown as ApiReferenceEndpoint[]),
   ...publishedAliasDocs(credential_vaults as unknown as ApiReferenceEndpoint[], CANONICAL_VAULT_PREFIX, PUBLISHED_VAULT_PREFIX, 'Vaults (published path)'),
   ...(memory_stores as unknown as ApiReferenceEndpoint[]),
+  ...(dreams as unknown as ApiReferenceEndpoint[]),
   ...(runtime_settings as unknown as ApiReferenceEndpoint[]),
   ...(api_keys as unknown as ApiReferenceEndpoint[]),
   ...(operations as unknown as ApiReferenceEndpoint[]),
