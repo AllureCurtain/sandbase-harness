@@ -4,6 +4,15 @@
 
 ### Added
 
+- The tool-result overflow threshold now defaults to the published 100,000
+  characters — results at or under it pass through untouched and larger ones
+  are spilled to `/mnt/session/tool_outputs` with the shared preview — and is
+  adjustable through `loop_engine.options.tool_result_max_chars` in the
+  runtime settings (an integer between 1,000 and 10,000,000). The bound is
+  platform-owned, reaches both loop engines through the strategy config, and
+  is discoverable on each engine's adapter `options_schema`; the previous
+  local 50,000-character ceiling is replaced rather than kept as a default,
+  so an untouched deployment now conforms to the published contract.
 - On self-hosted environments a session's parked custom tool call is now
   answered by the environment's own workers: persisting `agent.custom_tool_use`
   enqueues a `custom_tool` work item carrying `{tool_name, tool_use_id, input}`

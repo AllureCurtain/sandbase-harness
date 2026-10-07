@@ -2,6 +2,7 @@ import type { Database } from '@/core/db/database.js';
 import { relative, resolve, sep } from 'node:path';
 import { resolveEnvVars } from '@/core/config/env-resolver.js';
 import { defaultSettingsAvailability, runtimeSettingsSchema, validateRuntimeSettings, validateRuntimeSettingsCredentials, type RuntimeSettings } from './schema.js';
+import { CANONICAL_TOOL_RESULT_MAX_CHARS } from '@/core/session/tool-output-overflow.js';
 import { MINIMAX_PROVIDER, miniMaxModelId, miniMaxOpenAiBaseUrl } from '@/core/model/minimax.js';
 import { parseEnvironmentConfig, sandboxSettingForProvider, workspaceDefaultSettingForEnvironmentConfig } from '@/sandbox/provider-names.js';
 import type { ModelConfig } from '@/types/model.js';
@@ -314,7 +315,14 @@ function legacySettingsSeed(db: Database, seed: RuntimeSettingsSeed): RuntimeSet
       ...(model?.api_key ? { api_key: model.api_key } : {}),
       options: {},
     },
-    loop_engine: { provider: 'builtin', options: { default_max_steps: 25, approval_mode: 'interactive' } },
+    loop_engine: {
+      provider: 'builtin',
+      options: {
+        default_max_steps: 25,
+        approval_mode: 'interactive',
+        tool_result_max_chars: CANONICAL_TOOL_RESULT_MAX_CHARS,
+      },
+    },
     storage: seed.storage ?? {
       metadata: { provider: 'sqlite', options: {} },
       artifacts: { provider: 'local', options: { base_path: 'files' } },

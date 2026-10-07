@@ -4,8 +4,7 @@ Contract area: built-in tools — availability, web tool domain policy, MCP
 toolset approval, the `auto` per-call permission evaluation, and tool output
 overflow.
 Status: `partial` — every built-in executes, web_search included, but
-web_fetch keeps documented limits and the local overflow threshold differs,
-see §4.
+web_fetch keeps documented limits; see §4.
 Source: `src/core/capabilities/registry.ts`, `src/core/agent/web-tool-policy.ts`,
 `src/core/agent/standard.ts`, `src/core/mcp/tool-naming.ts`,
 `src/core/session/auto-permission.ts`, `src/core/session/pi-native-tools.ts`,
@@ -19,7 +18,7 @@ builtin-tool-execution: supported
 web-fetch-execution: partial
 web-search-execution: supported
 web-tool-domain-policy: supported
-tool-output-overflow: partial
+tool-output-overflow: supported
 mcp-tool-approval-gate: supported
 auto-permission-policy: supported
 -->
@@ -133,8 +132,11 @@ Tool output overflow (`tool-output-overflow.ts`):
 
 - One entry point (`spillToolOutput`) handles every overflow, so no tool
   invents its own truncation format.
-- Canonical threshold 100,000 chars is recorded for reference and capability
-  reporting; the enforced local limit is 50,000.
+- The enforced threshold is the published 100,000 characters. It is
+  adjustable through `loop_engine.options.tool_result_max_chars` in the
+  runtime settings — validated between 1,000 and 10,000,000 — and the
+  configured value reaches every tool result through the strategies' shared
+  `limit`, so no tool can carry a different bound.
 - Overflow files go to `/mnt/session/tool_outputs`, and every overflowed result
   carries `TOOL_OVERFLOW_MARKER` so a reader can tell a preview from a complete
   output.
@@ -226,7 +228,8 @@ Tool event fields (`src/api/standard.ts`):
 
 Aligned for: the domain grammar and exclusivity rules, the empty-list rejection,
 the refusal to accept configuration the runtime cannot execute, a single
-unified overflow path rather than per-tool truncation, the
+unified overflow path rather than per-tool truncation at the published
+100,000-character threshold, the
 `always_allow` / `always_ask` split by toolset kind including dynamically
 discovered tools, the `auto` per-call evaluation with its three verdicts and
 fail-closed degradation, and the projected tool-event field names the published
@@ -239,7 +242,7 @@ client loop reads — `evaluated_permission` and `evaluation` included.
 | `web_search` provider | The published service runs search against Anthropic-operated infrastructure; SandBase runs it against the provider an operator configures in Settings. With none configured, a `configs` entry that *names* `web_search` still fails before a session is persisted, and a bare `agent_toolset_20260401`'s implicit enable is accepted but never offered to the model — the refusal semantics are unchanged, only the boundary moved from "never" to "until configured". |
 | `web_fetch` content types | Only text-like content is converted. An image, PDF, or other binary response is reported as its media type and size instead of being inlined, so the model is told what it did not receive. |
 | `web_fetch` content budget | `max_content_tokens` is enforced through a chars-per-token estimate, and the truncation marker says so. The published contract describes a token budget without fixing the unit. |
-| Overflow threshold | 50,000 local chars versus the published 100,000. The published value is recorded rather than silently replaced. |
+| Overflow threshold override | The default is the published 100,000 characters. `loop_engine.options.tool_result_max_chars` is a local extension that lets an operator bound it (1,000–10,000,000); the published contract fixes the threshold and defines no override. |
 | Overflow file location | `/mnt/session/tool_outputs`. The published contract states "a sandbox file" without fixing the directory. |
 | Per-tool config shape | SandBase accepts named per-tool config blocks in a toolset. Field names inside the web policy follow the published ones. |
 
@@ -254,9 +257,14 @@ client loop reads — `evaluated_permission` and `evaluation` included.
   would make the simplest published shape un-creatable. No keyless fallback
   exists: an implicit third-party endpoint would be spend and a trust decision
   the operator never made.
-- The lower local overflow threshold keeps a single tool result from dominating
-  a local model's context window, where a hosted runtime has more headroom. The
-  canonical constant is kept in the code so the divergence is visible.
+- The overflow threshold is operator-adjustable because a local runtime's cost
+  model is not the hosted one: a runaway result is persisted in full to the
+  sandbox and every preview rides on the session log, so a deployment may need
+  a bound below 100,000 to keep one result from dominating a smaller model's
+  context window. It stays a platform-owned setting — no agent definition can
+  reach `loop_engine.options`, so an agent cannot raise its own result budget
+  — and the default is the published value so an untouched deployment
+  conforms.
 - A fixed overflow directory makes retrieval predictable for a follow-up `read`
   call without the model having to parse a path out of prose.
 
@@ -330,7 +338,8 @@ client loop reads — `evaluated_permission` and `evaluation` included.
 `partial` — configuration validation matches the published rules, `web_fetch`
 executes behind the address guard, `web_search` executes against the provider
 an operator configures (admission still refuses it when none does), and the
-MCP toolset approval default applies to dynamically discovered tools. Only
-text-like fetch content is converted, the fetch content budget is a character
-estimate, and the local overflow threshold differs from the published one; all
-three are recorded in the capability matrix.
+MCP toolset approval default applies to dynamically discovered tools. Tool
+output overflows at the published 100,000-character threshold, operator-tunable
+through `loop_engine.options.tool_result_max_chars`. Only text-like fetch
+content is converted and the fetch content budget is a character estimate; both
+are recorded in the capability matrix.

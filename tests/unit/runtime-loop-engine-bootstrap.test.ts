@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { bootstrapRuntimeLoopEngine } from '@/core/runtime/loop-engine-bootstrap.js';
+import { CANONICAL_TOOL_RESULT_MAX_CHARS } from '@/core/session/tool-output-overflow.js';
+import type { RuntimeSettings } from '@/core/settings/schema.js';
 import { piPreauthorizedRuleFor } from '@/strategy/pi/approval-mode.js';
 import type { PiInteractionRecord } from '@/strategy/pi/interaction-store.js';
 
 const settings = {
   schema_version: 1,
   model: { vendor: 'openai', api_key: '${OPENAI_API_KEY}', options: {} },
-  loop_engine: { provider: 'builtin', options: { default_max_steps: 42 } },
+  loop_engine: { provider: 'builtin', options: { default_max_steps: 42, tool_result_max_chars: 42_000 } },
   storage: {
     metadata: { provider: 'sqlite', options: {} },
     artifacts: { provider: 'local', options: { base_path: 'files' } },
@@ -36,10 +38,28 @@ describe('runtime loop engine bootstrap', () => {
     expect(engine.strategy.execute).toBeTypeOf('function');
   });
 
+  it('exposes the configured tool-result overflow threshold', () => {
+    const engine = bootstrapRuntimeLoopEngine(settings);
+    expect(engine.toolResultMaxChars).toBe(42_000);
+  });
+
+  it('falls back to the published threshold when a fixture omits the option', () => {
+    const engine = bootstrapRuntimeLoopEngine({
+      ...settings,
+      loop_engine: {
+        provider: 'builtin',
+        // A pre-option settings row still parses; the bootstrap resolves the
+        // published default rather than handing the strategy `undefined`.
+        options: { default_max_steps: 42 } as RuntimeSettings['loop_engine']['options'],
+      },
+    });
+    expect(engine.toolResultMaxChars).toBe(CANONICAL_TOOL_RESULT_MAX_CHARS);
+  });
+
   it('creates the Pi strategy when runtime data are available', () => {
     const engine = bootstrapRuntimeLoopEngine({
       ...settings,
-      loop_engine: { provider: 'pi', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'pi', options: { default_max_steps: 25, tool_result_max_chars: 42_000 } },
     }, {
       dataDir: '/runtime-data',
     });
@@ -55,7 +75,7 @@ describe('runtime loop engine bootstrap', () => {
       ...settings,
       loop_engine: {
         provider: 'pi',
-        options: { default_max_steps: 25, approval_mode: 'preauthorized_once' },
+        options: { default_max_steps: 25, approval_mode: 'preauthorized_once', tool_result_max_chars: 42_000 },
       },
     }, {
       dataDir: '/runtime-data',
@@ -77,7 +97,7 @@ describe('runtime loop engine bootstrap', () => {
   it('rejects unavailable loop engines', () => {
     expect(() => bootstrapRuntimeLoopEngine({
       ...settings,
-      loop_engine: { provider: 'codex', options: { default_max_steps: 25 } },
+      loop_engine: { provider: 'codex', options: { default_max_steps: 25, tool_result_max_chars: 42_000 } },
     })).toThrow(/not available/);
   });
 });

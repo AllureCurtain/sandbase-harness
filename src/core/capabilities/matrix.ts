@@ -258,8 +258,8 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'tools',
     id: 'tool-output-overflow',
-    status: 'partial',
-    reason: 'Overflow has one unified contract (spill path, preview, marker, retrieval), but the local threshold is 50,000 chars rather than the published 100,000.',
+    status: 'supported',
+    reason: 'Overflow has one unified contract (spill path, preview, marker, retrieval) enforced at the published 100,000-char threshold, operator-tunable via loop_engine.options.tool_result_max_chars.',
     contract: 'contracts/anthropic-cma/tools.md',
   },
   {

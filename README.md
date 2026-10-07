@@ -175,7 +175,7 @@ test fails when it drifts from the matrix.
 | tools | `builtin-tool-execution` | Supported |  |
 | tools | `web-fetch-execution` | Partial | WebFetch executes over HTTP/HTTPS with domain policy, per-redirect revalidation, private-address rejection, timeout and byte caps, HTML text extraction, and a max_content_tokens budget; it converts text-like content only (no image or PDF rendering), the token budget is a character estimate, and TLS hostnames are verified but content is not sandboxed beyond redaction. |
 | tools | `web-tool-domain-policy` | Supported |  |
-| tools | `tool-output-overflow` | Partial | Overflow has one unified contract (spill path, preview, marker, retrieval), but the local threshold is 50,000 chars rather than the published 100,000. |
+| tools | `tool-output-overflow` | Supported |  |
 | tools | `mcp-tool-approval-gate` | Supported |  |
 | tools | `auto-permission-policy` | Supported |  |
 | custom-tools | `custom-tool-declaration` | Supported |  |

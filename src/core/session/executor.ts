@@ -115,6 +115,8 @@ export interface ExecutorDeps {
   snapshots?: SnapshotManager;
   /** Workspace fallback when an agent does not set max_turns. */
   defaultMaxSteps?: number;
+  /** Effective tool-result overflow threshold from the runtime settings. */
+  toolResultMaxChars?: number;
   /**
    * WebFetch transport overrides (resolver, address guard, limits).
    *
@@ -442,6 +444,12 @@ export class DefaultSessionExecutor implements SessionExecutor {
             : agent.model,
         ),
         temperature: agent.temperature ?? 0.7,
+        // The overflow threshold is platform-owned, so it rides the config
+        // rather than the agent definition: an agent cannot raise its own
+        // result budget.
+        ...(this.deps.toolResultMaxChars !== undefined
+          ? { toolResultMaxChars: this.deps.toolResultMaxChars }
+          : {}),
         confirmTools,
         ...(autoTools.length > 0 ? { autoTools } : {}),
         onRequiresAction: options?.onRequiresAction,

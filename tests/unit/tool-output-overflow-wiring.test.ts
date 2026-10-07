@@ -65,6 +65,19 @@ describe('shared spill call sites', () => {
     expect(piTranslator).not.toContain(markerLiteral);
   });
 
+  it('hands the configured threshold to both spill call sites', () => {
+    // The limit is platform-owned: it arrives through `StrategyContext.config`,
+    // never through the agent definition, so an agent cannot raise its own
+    // result budget. If either call site drops the `limit`, the runtime falls
+    // back to the module default and the operator's setting silently does
+    // nothing — that is exactly what this pin exists to catch.
+    const builtin = read('src/strategy/default-strategy.ts');
+    const pi = read('src/strategy/pi-strategy.ts');
+
+    expect(builtin).toContain('limit: config.toolResultMaxChars');
+    expect(pi).toContain('limit: context.config.toolResultMaxChars');
+  });
+
   it('records the overflow path only when a file was actually written', () => {
     const source = read('src/strategy/default-strategy.ts');
 

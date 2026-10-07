@@ -151,6 +151,7 @@ async function startServer(opts: StartServerOptions) {
     memory,
     artifactStore,
     defaultMaxSteps: loopEngine.defaultMaxSteps,
+    toolResultMaxChars: loopEngine.toolResultMaxChars,
     // The turn's injection boundary: a session that attaches a vault gets its
     // unrestricted environment variables in the sandbox command environment, and
     // its `limited` ones only where the policy can name a host. A shell command

@@ -1,17 +1,17 @@
 /**
  * Tool output overflow contract.
  *
- * The published contract says an oversized tool result is written into the
- * sandbox and the model keeps a preview plus the path back to the full text.
- * The local ceiling is smaller, so what actually needs testing is the shape of
- * the spill: one marker, a real path only when a file was really written, and
- * the same preview no matter which strategy produced the bytes.
+ * The published contract says a tool result over 100,000 characters is written
+ * into the sandbox and the model keeps a preview plus the path back to the full
+ * text. The enforced default is that published value, so what needs testing is
+ * the shape of the spill: one marker, a real path only when a file was really
+ * written, and the same preview no matter which strategy produced the bytes.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import {
   CANONICAL_TOOL_RESULT_MAX_CHARS,
-  LOCAL_TOOL_RESULT_MAX_CHARS,
+  DEFAULT_TOOL_RESULT_MAX_CHARS,
   TOOL_OVERFLOW_MARKER,
   TOOL_OUTPUT_DIR,
   exceedsToolOutputLimit,
@@ -35,15 +35,15 @@ function fakeSandbox(overrides: Partial<SandboxInstance> = {}) {
 }
 
 describe('overflow threshold', () => {
-  it('keeps the published threshold as a separate reference constant', () => {
+  it('enforces the published threshold by default', () => {
     expect(CANONICAL_TOOL_RESULT_MAX_CHARS).toBe(100_000);
-    // The local profile must stay strictly smaller, or the honest `partial`
-    // capability status would be a lie.
-    expect(LOCAL_TOOL_RESULT_MAX_CHARS).toBeLessThan(CANONICAL_TOOL_RESULT_MAX_CHARS);
+    // The default is the published value itself — anything smaller would make
+    // the `supported` capability status a lie.
+    expect(DEFAULT_TOOL_RESULT_MAX_CHARS).toBe(CANONICAL_TOOL_RESULT_MAX_CHARS);
   });
 
   it('does not treat a result at the limit as overflow', () => {
-    const atLimit = 'x'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS);
+    const atLimit = 'x'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS);
     expect(exceedsToolOutputLimit(atLimit)).toBe(false);
     expect(exceedsToolOutputLimit(atLimit + 'x')).toBe(true);
   });
@@ -66,7 +66,7 @@ describe('spillToolOutput', () => {
 
   it('writes the full output to the sandbox and reports that path', async () => {
     const { sandbox, writeFile } = fakeSandbox();
-    const output = 'y'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 500);
+    const output = 'y'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 500);
     const result = await spillToolOutput(output, { sessionId: 'sess_1', sandbox });
 
     expect(writeFile).toHaveBeenCalledTimes(1);
@@ -82,26 +82,26 @@ describe('spillToolOutput', () => {
 
   it('opens the preview with the single shared marker', async () => {
     const { sandbox } = fakeSandbox();
-    const result = await spillToolOutput('z'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 10), {
+    const result = await spillToolOutput('z'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 10), {
       sessionId: 'sess_1',
       sandbox,
     });
 
     expect(result.preview.startsWith(TOOL_OVERFLOW_MARKER)).toBe(true);
     expect(result.preview).toContain(`file: ${result.file!.path}`);
-    expect(result.preview).toContain(`original_chars: ${LOCAL_TOOL_RESULT_MAX_CHARS + 10}`);
+    expect(result.preview).toContain(`original_chars: ${DEFAULT_TOOL_RESULT_MAX_CHARS + 10}`);
   });
 
   it('makes the preview far smaller than the original output', async () => {
     const { sandbox } = fakeSandbox();
-    const output = 'a'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1);
+    const output = 'a'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1);
     const result = await spillToolOutput(output, { sessionId: 'sess_1', sandbox });
 
     expect(result.preview.length).toBeLessThan(5_000);
   });
 
   it('does not claim a file path when no sandbox was available', async () => {
-    const output = 'b'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1);
+    const output = 'b'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1);
     const result = await spillToolOutput(output, { sessionId: 'sess_1' });
 
     expect(result.file).toBeUndefined();
@@ -115,7 +115,7 @@ describe('spillToolOutput', () => {
       throw new Error('sandbox gone');
     });
     const { sandbox } = fakeSandbox({ writeFile } as Partial<SandboxInstance>);
-    const output = 'c'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1);
+    const output = 'c'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1);
     const result = await spillToolOutput(output, { sessionId: 'sess_1', sandbox });
 
     // A failed spill must not fail the turn, and must not promise a file.
@@ -126,7 +126,7 @@ describe('spillToolOutput', () => {
 
   it('keeps the file name a single path segment for an odd session id', async () => {
     const { sandbox, writeFile } = fakeSandbox();
-    await spillToolOutput('d'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1), {
+    await spillToolOutput('d'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1), {
       sessionId: '../../etc/passwd',
       sandbox,
       idFactory: () => 'fixed',
@@ -140,7 +140,7 @@ describe('spillToolOutput', () => {
 
   it('names the overflow file deterministically when an id factory is supplied', async () => {
     const { sandbox, writeFile } = fakeSandbox();
-    await spillToolOutput('e'.repeat(LOCAL_TOOL_RESULT_MAX_CHARS + 1), {
+    await spillToolOutput('e'.repeat(DEFAULT_TOOL_RESULT_MAX_CHARS + 1), {
       sessionId: 'sess_1',
       sandbox,
       idFactory: () => 'abc123',

@@ -108,6 +108,23 @@ const REQUIRES_ACTION_TIMEOUT_SCHEMA = {
 } as const;
 
 /**
+ * Persisted settings key for the tool-result overflow threshold.
+ *
+ * Offered on both engines because both enforce the same spill contract: the
+ * builtin loop spills tool output itself, and the Pi translator receives the
+ * same configured limit through its sink.
+ */
+export const TOOL_RESULT_MAX_CHARS_OPTION = 'tool_result_max_chars';
+
+/** Shared schema fragment for the overflow threshold, in characters. */
+const TOOL_RESULT_MAX_CHARS_SCHEMA = {
+  type: 'integer',
+  minimum: 1_000,
+  maximum: 10_000_000,
+  default: 100_000,
+} as const;
+
+/**
  * Single engine-discovery source of truth.
  *
  * Settings, session-creation admission, and the API reference all read this
@@ -118,6 +135,7 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
     descriptor('builtin', 'Default', true, 'runtime', objectSchema({
       default_max_steps: { type: 'integer', minimum: 1, maximum: 1000, default: 25 },
       [REQUIRES_ACTION_TIMEOUT_OPTION]: REQUIRES_ACTION_TIMEOUT_SCHEMA,
+      [TOOL_RESULT_MAX_CHARS_OPTION]: TOOL_RESULT_MAX_CHARS_SCHEMA,
     }), {
       capabilities: ['harness-tool-loop', 'tool-confirmation', 'sandbox-providers'],
     }),
@@ -135,6 +153,7 @@ export function describeLoopEngineAdapters(): AdapterDescriptor[] {
         default: PI_APPROVAL_MODE_DEFAULT,
       },
       [REQUIRES_ACTION_TIMEOUT_OPTION]: REQUIRES_ACTION_TIMEOUT_SCHEMA,
+      [TOOL_RESULT_MAX_CHARS_OPTION]: TOOL_RESULT_MAX_CHARS_SCHEMA,
     }), {
       reason: PI_LOOP_ENGINE_REASON,
       requirements: [...PI_ADAPTER_REQUIREMENTS],
