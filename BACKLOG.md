@@ -6,13 +6,6 @@ project-owned features only.
 ## Near Term
 
 - Improve API compatibility coverage and documented response shapes.
-- Complete the exact deferred official SDK route mounts tracked in
-  [#706](https://github.com/sandbaseai/sandbase-harness/issues/706), removing each
-  entry from `PENDING_OFFICIAL_ROUTES` when its focused implementation lands.
-- Add end-to-end dashboard tests for session creation, messaging, event replay,
-  and error states.
-- Add SDK helpers for common chat and inspection workflows.
-- Add CLI session commands for create, list, message, tail, logs, and inspect.
 - Improve template validation and authoring commands.
 - Add richer runtime metrics for model usage, tool duration, and session state.
 
