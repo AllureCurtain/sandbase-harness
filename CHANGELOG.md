@@ -4,6 +4,22 @@
 
 ### Added
 
+- On self-hosted environments a session's parked custom tool call is now
+  answered by the environment's own workers: persisting `agent.custom_tool_use`
+  enqueues a `custom_tool` work item carrying `{tool_name, tool_use_id, input}`
+  (the call's `tool_use` block id, never a session reference the worker could
+  aim at another call), and the worker executes it through the module passed to
+  the new `managed-agents worker poll --tools <module>` flag — default export
+  `{tool_name: handler}`, where a string result becomes a text block, a
+  `{content: [...]}` object passes its blocks through, anything else folds into
+  a JSON text block, and a throw or an undeclared name answers `is_error`
+  rather than leaving the call parked. The completion is injected back as a
+  `user.custom_tool_result` through `SessionManager.sendEvent`, so the answer
+  faces the same admission a caller's does — one answer per call, refused after
+  the session ends — and resolving the last parked call resumes the turn; a
+  completion the queue records `failed` reaches the session as an error result
+  too, because a parked call must end with an answer. Every other provider
+  enqueues nothing and the caller answers exactly as before.
 - The `mawt_...` session work token inside a claimed work item's `secret`
   now authorizes the worker's session-level calls, matching the published
   worker flow that holds no other credential: `GET /v1/sessions/{id}` and

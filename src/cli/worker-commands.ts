@@ -80,6 +80,7 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /** Below this, polling a queue is indistinguishable from hammering the server. */
 const MIN_POLL_INTERVAL_MS = 250;
@@ -176,6 +177,7 @@ export type WorkerPollOptions = {
   environmentKey?: string;
   workerId?: string;
   workdir: string;
+  tools?: string;
   once?: boolean;
   intervalMs?: string;
   heartbeatMs?: string;
@@ -193,6 +195,7 @@ export type ResolvedWorkerPollOptions = {
   environmentKey?: string;
   workerId: string;
   root: string;
+  toolsPath?: string;
   once: boolean;
   intervalMs: number;
   heartbeatMs: number;
@@ -266,6 +269,7 @@ export function resolveWorkerPollOptions(opts: WorkerPollOptions): ResolvedWorke
     environmentKey: opts.environmentKey,
     workerId: opts.workerId ?? `worker_${process.pid}`,
     root: resolve(opts.workdir),
+    toolsPath: opts.tools ? resolve(opts.tools) : undefined,
     once: opts.once === true,
     intervalMs,
     heartbeatMs,
@@ -280,12 +284,59 @@ type WorkerItem = {
   id: string;
   sessionId?: string;
   session_id?: string;
-  kind: 'exec' | 'read' | 'write' | 'list';
+  kind: 'exec' | 'read' | 'write' | 'list' | 'custom_tool';
   payload: Record<string, unknown>;
 };
 
+/**
+ * A worker-declared custom tool: the handler is invoked with the call's
+ * `input` and reports its outcome as the tool's result content. A string is a
+ * text block, `{content: [...]}` is the block list verbatim (with an optional
+ * `is_error` flag), and any other value is folded into a JSON text block.
+ * Throwing marks the result `is_error` - that is the tool's own answer, which
+ * is why it is recorded `applied` rather than `failed`: `failed` is reserved
+ * for work the worker could not perform at all.
+ */
+export type WorkerCustomToolHandler = (
+  input: unknown,
+  context: { toolUseId: string; signal?: AbortSignal },
+) => unknown | Promise<unknown>;
+
+export type WorkerCustomTools = Record<string, WorkerCustomToolHandler>;
+
+/**
+ * Load the `--tools` module: the worker's declared custom tools, keyed by tool
+ * name. The module's default export is the map; a named `tools` export is
+ * accepted as the alternative spelling. Every value must be a handler - a
+ * module that names a tool it does not implement is refused at startup, where
+ * the operator is still reading, rather than mid-session where a call would
+ * answer "not declared" for a tool that was meant to exist.
+ */
+export async function loadWorkerTools(toolsPath: string | undefined): Promise<WorkerCustomTools> {
+  if (!toolsPath) return {};
+  let mod: Record<string, unknown>;
+  try {
+    mod = (await import(pathToFileURL(toolsPath).href)) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(`Could not load --tools module "${toolsPath}": ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const table = (isRecord(mod.default) ? mod.default : isRecord(mod.tools) ? mod.tools : undefined) as Record<string, unknown> | undefined;
+  if (!table) {
+    throw new Error(`Invalid --tools module "${toolsPath}": expected a default export of the form { tool_name: handler }`);
+  }
+  const tools: WorkerCustomTools = {};
+  for (const [name, handler] of Object.entries(table)) {
+    if (typeof handler !== 'function') {
+      throw new Error(`Invalid --tools module "${toolsPath}": "${name}" is not a function`);
+    }
+    tools[name] = handler as WorkerCustomToolHandler;
+  }
+  return tools;
+}
+
 export async function workerPollCommand(opts: WorkerPollOptions) {
   const config = resolveWorkerPollOptions(opts);
+  const customTools = await loadWorkerTools(config.toolsPath);
   console.log(`Polling self-hosted work as ${config.workerId} in ${config.root}`);
   for (;;) {
     // The claim is the one step that can stop the worker on its own, and until this was
@@ -342,7 +393,7 @@ export async function workerPollCommand(opts: WorkerPollOptions) {
       try {
         outcome = {
           status: 'fulfilled',
-          value: await renewWhileRunning(config, item.id, (signal) => executeWorkItem(item, config.root, signal)),
+          value: await renewWhileRunning(config, item.id, (signal) => executeWorkItem(item, config.root, signal, customTools)),
         };
       } catch (error) {
         outcome = { status: 'rejected', reason: error };
@@ -715,7 +766,15 @@ function stoppedWorkCode(body: string): boolean {
   }
 }
 
-export async function executeWorkItem(item: WorkerItem, root: string, signal?: AbortSignal): Promise<unknown> {
+export async function executeWorkItem(
+  item: WorkerItem,
+  root: string,
+  signal?: AbortSignal,
+  customTools?: WorkerCustomTools,
+): Promise<unknown> {
+  if (item.kind === 'custom_tool') {
+    return executeCustomToolWorkItem(item, customTools ?? {}, signal);
+  }
   if (item.kind === 'read') {
     return readFile(safePath(root, stringPayload(item.payload.path, 'path')), 'utf8');
   }
@@ -740,6 +799,65 @@ export async function executeWorkItem(item: WorkerItem, root: string, signal?: A
     });
   }
   throw new Error(`Unsupported work item kind: ${item.kind}`);
+}
+
+/**
+ * Run a `custom_tool` item against the worker's declared tools.
+ *
+ * The result is always the tool's answer rather than a thrown failure, for the
+ * same reason the file kinds return their data rather than throwing: the queue
+ * records `applied` when the worker did the work it was handed, and the
+ * outcome — success, a thrown error, an undeclared name — belongs to the
+ * session as the `user.custom_tool_result` the parked call resolves on. A
+ * call for a tool this worker does not declare gets the answer it is owed
+ * anyway, so the session does not hang on a misconfigured deployment.
+ */
+async function executeCustomToolWorkItem(
+  item: WorkerItem,
+  tools: WorkerCustomTools,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const name = stringPayload(item.payload.tool_name, 'tool_name');
+  const toolUseId = stringPayload(item.payload.tool_use_id, 'tool_use_id');
+  const handler = tools[name];
+  if (typeof handler !== 'function') {
+    return {
+      is_error: true,
+      content: [{ type: 'text', text: `Custom tool "${name}" is not declared by this worker.` }],
+    };
+  }
+  try {
+    const value = await handler(item.payload.input, { toolUseId, signal });
+    return toToolResultPayload(value);
+  } catch (error) {
+    return {
+      is_error: true,
+      content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
+    };
+  }
+}
+
+/**
+ * Normalize whatever a handler returned into the `{content, is_error?}` shape
+ * the session-side result event expects. A handler may return a raw block
+ * list through `{content: [...]}` — blocks that fail the session's own
+ * validation are refused there, the same as a caller's — so this only gives
+ * the common shapes a canonical form.
+ */
+function toToolResultPayload(value: unknown): { content: unknown[]; is_error?: boolean } {
+  if (typeof value === 'string') {
+    return { content: [{ type: 'text', text: value }] };
+  }
+  if (isRecord(value) && Array.isArray(value.content) && value.content.every((block) => isRecord(block))) {
+    return value.is_error === true
+      ? { content: value.content, is_error: true }
+      : { content: value.content };
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(value ?? null) }] };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 async function claimWorkItem(opts: ResolvedWorkerPollOptions): Promise<WorkerItem | null> {

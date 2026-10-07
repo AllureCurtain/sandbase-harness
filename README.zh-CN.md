@@ -166,6 +166,7 @@ node dist/index.js start --host 0.0.0.0
 | tools | `mcp-tool-approval-gate` | Supported |  |
 | tools | `auto-permission-policy` | Supported |  |
 | custom-tools | `custom-tool-declaration` | Supported |  |
+| custom-tools | `custom-tool-worker-execution` | Supported |  |
 | system-message | `system-message-events` | Supported |  |
 | memory-stores | `memory-crud` | Supported |  |
 | memory-stores | `memory-limits-and-preconditions` | Supported |  |

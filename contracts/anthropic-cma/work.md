@@ -112,8 +112,13 @@ and `session_work_tokens`, the per-claim bearer table.
   store, the store-level memory routes, or anything else — answers `401`,
   and the token stops authenticating the moment its session reaches a
   terminal state.
-
-## 3. Alignment
+- The queue also carries a fifth kind beside `exec`/`read`/`write`/`list`:
+  `custom_tool`. When a session on a self-hosted environment persists
+  `agent.custom_tool_use`, the session's sandbox enqueues the call as work —
+  payload `{tool_name, tool_use_id, input}` — and a worker runs it through
+  the tools it was started with; the recorded completion is injected back
+  into the session as the call's `user.custom_tool_result`. See
+  [`custom-tools.md`](./custom-tools.md).
 
 Aligned for: all eight published routes and their wire shapes, the published
 state enum, `204` on an empty poll, per-claim `secret` in the `BetaWorkSecret`
@@ -172,6 +177,10 @@ memory stores with `read_only` enforced).
   case, retrieve scoping, session-token item vs queue authority, the stats
   counters' lease-based meaning, and the SDK's `list`/`retrieve`/`stats`
   decoders.
+- `tests/integration/worker-custom-tools.test.ts` — the `custom_tool` kind
+  end to end: enqueue on persisted `agent.custom_tool_use`, claim/complete
+  through the worker routes, `user.custom_tool_result` injection and resume,
+  error/duplicate/ended-session behavior, and worker-side tool registry.
 - `tests/integration/session-work-token-scope.test.ts` — the token's
   session-level scope: its own session's retrieve, event list, and stream;
   tool-answer events admitted while steer/message/outcome refuse `403`;

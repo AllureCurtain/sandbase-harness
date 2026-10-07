@@ -24,7 +24,33 @@ import {
   type ExecResult,
 } from '@/types/sandbox.js';
 
-export type WorkItemKind = 'exec' | 'write' | 'read' | 'list';
+export type WorkItemKind = 'exec' | 'write' | 'read' | 'list' | 'custom_tool';
+
+/**
+ * A `custom_tool` work item carries the persisted call, not a recipe for
+ * building one: `tool_name` and `input` are what the model asked for, and
+ * `tool_use_id` is the `tool_use` block id the recorded
+ * `agent.custom_tool_use` event parked the call under. The worker answers the
+ * item with the tool's outcome, and the completion is injected back into the
+ * session as a `user.custom_tool_result` for that block id — the worker never
+ * names a session or a call itself, because the row already binds both.
+ */
+export interface CustomToolWorkPayload {
+  tool_name: string;
+  tool_use_id: string;
+  input: unknown;
+}
+
+/**
+ * The sandbox capability a self-hosted instance exposes on top of
+ * `SandboxInstance`: a session-level `agent.custom_tool_use` is surfaced to the
+ * environment's workers by enqueueing it rather than by waiting on a caller.
+ * Local and isolated providers do not implement it — on those the call stays
+ * parked for the caller's `user.custom_tool_result`, unchanged.
+ */
+export interface CustomToolCallSubmitter {
+  enqueueCustomToolCall(call: { name: string; toolUseId: string; input: unknown }): string;
+}
 
 export interface WorkItem {
   id: string;
@@ -456,11 +482,33 @@ export class WorkQueue {
    * a result arriving later cannot un-tell the queue that the effect was uncertain when it was
    * handed on.
    */
+  /**
+   * Called after `complete` records an outcome, with the row as it now stands.
+   *
+   * The hook exists so a `custom_tool` item's completion can be handed back to
+   * the session that parked the call, which the queue itself has no business
+   * knowing about. It runs for every kind — the hook decides which ones it
+   * answers — and it fires only when this completion won the conditional
+   * UPDATE, so a refused late write cannot deliver a second result. It must
+   * not throw: the row's `applied`/`failed` status is already the record.
+   */
+  onItemCompleted?: (item: WorkItem) => void;
+
   complete(id: string, workerId: string, result: unknown, failed = false): WorkCompletionResult {
     const update = this.db
       .prepare("UPDATE work_items SET status = ?, result = ?, completed_at = datetime('now') WHERE id = ? AND status IN ('queued', 'accepted') AND claimed_by = ?")
       .run(failed ? 'failed' : 'applied', JSON.stringify(result), id, workerId) as { changes: number };
-    if (update.changes === 1) return 'completed';
+    if (update.changes === 1) {
+      const item = this.get(id);
+      if (item) {
+        try {
+          this.onItemCompleted?.(item);
+        } catch {
+          // A completion is already recorded; a hook must not un-record it.
+        }
+      }
+      return 'completed';
+    }
     return this.get(id) ? 'not_claimed_by_worker' : 'not_found';
   }
 
@@ -1038,6 +1086,24 @@ class SelfHostedSandboxInstance implements SandboxInstance {
   async listFiles(path: string): Promise<string[]> {
     const id = this.queue.enqueue(this.sessionId, 'list', { path });
     return (await this.queue.await(id, { timeoutMs: this.timeoutMs })) as string[];
+  }
+
+  /**
+   * Surface a persisted `agent.custom_tool_use` to the environment's workers.
+   *
+   * Unlike the sandbox verbs this does not await: the call stays parked in the
+   * session until the worker's completion is injected back as a
+   * `user.custom_tool_result` by the queue's completion hook, which is the same
+   * answer a caller would have posted. There is deliberately no
+   * `awaitCustomToolCall` here — the session resumes through the parked-call
+   * mechanism, not through a promise this object resolves.
+   */
+  enqueueCustomToolCall(call: { name: string; toolUseId: string; input: unknown }): string {
+    return this.queue.enqueue(this.sessionId, 'custom_tool', {
+      tool_name: call.name,
+      tool_use_id: call.toolUseId,
+      input: call.input ?? {},
+    } satisfies CustomToolWorkPayload);
   }
 
   async cleanup(): Promise<void> {

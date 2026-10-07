@@ -381,6 +381,10 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
     )
     .option('--worker-id <id>', 'Worker identity reported to the runtime (default: worker_<pid>)')
     .option('-w, --workdir <dir>', 'Directory work items are executed inside', '.')
+    .option(
+      '--tools <module>',
+      'JS module declaring this worker\'s custom tools (default export: { tool_name: handler })',
+    )
     .option('--once', 'Claim and run at most one item, then exit', false)
     .option('--interval-ms <ms>', 'Delay between polls when the queue is empty', '1000')
     .option(

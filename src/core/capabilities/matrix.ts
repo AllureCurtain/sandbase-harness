@@ -284,6 +284,13 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
     contract: 'contracts/anthropic-cma/custom-tools.md',
   },
   {
+    area: 'custom-tools',
+    id: 'custom-tool-worker-execution',
+    status: 'supported',
+    reason: 'On self-hosted environments a persisted agent.custom_tool_use is enqueued as a custom_tool work item; a worker executes the declared tool and the completion is injected as a user.custom_tool_result through the same admission rules as a caller answer, resolving the parked call and resuming the turn.',
+    contract: 'contracts/anthropic-cma/custom-tools.md',
+  },
+  {
     area: 'system-message',
     id: 'system-message-events',
     status: 'supported',

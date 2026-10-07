@@ -21,6 +21,7 @@ import { extendedRoutes } from './routes/extended.js';
 import { sessionResourceRoutes } from './routes/session-resources.js';
 import { unsupportedOfficialRoutes } from './routes/unsupported-official.js';
 import { environmentWorkRoutes } from './routes/environment-work.js';
+import { deliverCustomToolWorkResult } from '@/core/session/custom-tool-work.js';
 import { streamRoutes } from './routes/stream.js';
 import { createAuthMiddleware } from './auth.js';
 import { authorizeSessionWorkCall } from '@/core/auth/session-work-scope.js';
@@ -221,6 +222,23 @@ app.route('/v1/runs', runsRoutes(deps));
     // `db` is passed so a claim presenting an `environment_key` is scoped to
     // the issuing environment rather than being unscoped.
     app.route('/v1/x/worker', workerRoutes(deps.workQueue, deps.db));
+    // A `custom_tool` item's completion is the parked call's answer: the queue
+    // records it, then this hook hands it to the session through the same
+    // `sendEvent` a caller's `user.custom_tool_result` takes. The delivery is
+    // fire-and-forget by design — the queue row is the record of the work, and
+    // a refused answer (call already answered, session ended) is logged, not
+    // retried into a different outcome.
+    const sessionManager = deps.sessionManager;
+    deps.workQueue.onItemCompleted = (item) => {
+      if (item.kind !== 'custom_tool') return;
+      void deliverCustomToolWorkResult(
+        {
+          sendEvent: (sessionId, event) => sessionManager.sendEvent(sessionId, event),
+          warn: (message, fields) => deps.logger?.warn(message, fields),
+        },
+        item,
+      );
+    };
   }
 
   // Root health check (JSON - used by SDK/clients)

@@ -179,6 +179,7 @@ test fails when it drifts from the matrix.
 | tools | `mcp-tool-approval-gate` | Supported |  |
 | tools | `auto-permission-policy` | Supported |  |
 | custom-tools | `custom-tool-declaration` | Supported |  |
+| custom-tools | `custom-tool-worker-execution` | Supported |  |
 | system-message | `system-message-events` | Supported |  |
 | memory-stores | `memory-crud` | Supported |  |
 | memory-stores | `memory-limits-and-preconditions` | Supported |  |
