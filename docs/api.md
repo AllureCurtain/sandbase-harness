@@ -2054,6 +2054,43 @@ managed-agents worker poll \
 Worker polling is scoped by the environment key when supplied. The worker can
 execute `exec`, `read`, `write`, and `list` work items inside `--workdir`.
 
+A fifth kind, `custom_tool`, is how a session's persisted `agent.custom_tool_use`
+reaches a worker: the item's payload carries `{tool_name, tool_use_id, input}`
+from the recorded call — never a session id or an answer destination, because
+the row binds both — and the worker executes the tool through a module it was
+started with:
+
+```bash
+managed-agents worker poll \
+  --environment-id ENV_ID \
+  --workdir /path/to/worker/root \
+  --tools /path/to/tools.mjs
+```
+
+The module's default export (or a named `tools` export) maps tool names to
+handlers:
+
+```js
+export default {
+  lookup_customer: async (input, { toolUseId, signal }) => {
+    const row = await db.query('SELECT ... WHERE id = ?', input.customer_id);
+    return JSON.stringify(row);
+  },
+};
+```
+
+A handler may return a string (one text block), `{content: [...]}` (a block
+list, with optional `is_error: true`), or any other value (folded into a JSON
+text block). Throwing marks the result `is_error` — that is the tool's own
+answer, so the item is recorded `applied`, the same as a tool that returned
+normally. A call naming a tool the worker does not declare is answered with an
+error result rather than left hanging. The completion is injected back into
+the session as a `user.custom_tool_result` addressed to the call's `tool_use`
+block id, through the same admission and resume path a caller's answer takes —
+a completion recorded `failed` reaches the session as an error result too,
+because the parked call needs an answer and "the executor failed" is the
+honest one.
+
 Pass `--once` to claim and run at most one item and exit, which is also what makes
 the command usable from a test or a cron job; without it the worker polls until it
 is stopped. `--interval-ms` sets the delay between polls when the queue is empty

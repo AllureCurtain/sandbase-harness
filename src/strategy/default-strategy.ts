@@ -41,6 +41,7 @@ import {
 } from '@/strategy/in-loop-context.js';
 import { splitModelRequestUsage } from './model-usage.js';
 import { createAiSdkV4ExecutionGuard } from './ai-sdk-v4-execution-guard.js';
+import type { CustomToolCallSubmitter } from '@/sandbox/self-hosted-provider.js';
 
 /**
  * Local tool-result ceiling, re-exported from the overflow contract.
@@ -778,6 +779,21 @@ export class DefaultStrategy implements AgentStrategy {
           metadata: { custom_tool: true },
         });
         broadcast(customUseEvent);
+        // A self-hosted environment's worker answers the call itself: the
+        // sandbox instance owns the queue, and the event must already be on
+        // the log so the worker's completion can resolve the parked call by
+        // its tool_use block id. Providers without the capability leave the
+        // call parked for the caller, and a queue write that fails does the
+        // same - the parked event is the honest record in both cases.
+        try {
+          (_sandbox as Partial<CustomToolCallSubmitter>).enqueueCustomToolCall?.({
+            name: pendingCall.toolName,
+            toolUseId: pendingCall.toolCallId,
+            input: authority.value,
+          });
+        } catch {
+          // Enqueueing is best-effort; the parked event is the record.
+        }
       }
 
       for (const pendingCall of pendingConfirmationCalls) {

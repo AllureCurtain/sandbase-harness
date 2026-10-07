@@ -424,6 +424,7 @@ describe('CLI program', () => {
       '--interval-ms',
       '--once',
       '--port',
+      '--tools',
       '--workdir',
       '--worker-id',
     ]);

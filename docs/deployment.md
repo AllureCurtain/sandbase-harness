@@ -244,7 +244,15 @@ Generate and revoke environment worker keys from the Console or the
 The worker executes `exec`, `read`, `write`, and `list` items inside `--workdir`
 and reports each result back to the runtime under the same worker identity it
 claimed with, so an item whose command fails is recorded as `failed` rather than
-being left claimed. Useful flags:
+being left claimed. A fifth kind, `custom_tool`, surfaces a session's
+`agent.custom_tool_use` to the worker: the payload carries `{tool_name,
+tool_use_id, input}` and the worker runs the handler declared under that name in
+the module passed to `--tools` (default export `{tool_name: handler}`; a string
+result becomes a text block, `{content: [...]}` a block list, anything else a
+JSON text block, a throw an `is_error` result). The completion is injected back
+into the session as a `user.custom_tool_result` for that call, which resolves
+the parked call and resumes the turn — a call for a tool the worker does not
+declare is answered with an error result rather than left hanging. Useful flags:
 
 | Flag | Purpose |
 | --- | --- |
@@ -256,6 +264,7 @@ being left claimed. Useful flags:
 | `--complete-timeout-ms <ms>` | How long to wait for an outcome to be recorded before reporting it as unconfirmed (default `10000`, minimum `1`). |
 | `--ack-timeout-ms <ms>` | How long to wait for the runtime to confirm a claim before giving up on the item (default `10000`, minimum `1`). |
 | `--worker-id <id>` | Identity reported on the claim and the completion (default `worker_<pid>`). |
+| `--tools <module>` | JS module declaring this worker's custom tools, used for `custom_tool` items. |
 
 A claim carries a lease window (60s by default), so a worker that executed a long
 item silently would have it reclaimed and handed to a second worker while the first

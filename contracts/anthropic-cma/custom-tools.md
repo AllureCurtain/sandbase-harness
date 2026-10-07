@@ -7,6 +7,7 @@ Source: `src/types/agent.ts` (`CanonicalCustomTool`),
 
 <!-- capability-status
 custom-tool-declaration: supported
+custom-tool-worker-execution: supported
 -->
 
 ---
@@ -57,7 +58,26 @@ is `src/api/routes/session-normalizers.ts`.
   and an approval-gated call parked in the same step are answered independently
   and in either order; each answer is recorded as it arrives and the session
   stays in `requires_action` until none is left. Answering only some of them does
-  not start a turn, does not fail the session, and leaves the rest listed.
+  not start a turn, does not fail a session, and leaves the rest listed.
+- On a **self-hosted** environment there is a second way for the call to be
+  answered, and it is the same answer by a different hand. After the
+  `agent.custom_tool_use` event is persisted, the session's sandbox enqueues a
+  `custom_tool` work item on the environment's work queue — payload
+  `{tool_name, tool_use_id, input}`, where `tool_use_id` is the call's
+  `tool_use` block id — and a worker claims, executes, and completes it through
+  the same `/v1/x/worker` routes as every other kind. The completed outcome is
+  injected back as a `user.custom_tool_result` addressed to that block id,
+  through `SessionManager.sendEvent`, so the parked-call rules still apply: a
+  second answer — from the caller or from a late completion — is refused, a
+  result for a session that has ended is refused, and the last parked answer
+  resumes the turn through the normal execution chain. The worker declares its
+  tools in a local module (`managed-agents worker poll --tools <module>`): a
+  call naming a tool the worker does not declare is answered with an
+  `is_error` result, a thrown handler the same, and a completion the queue
+  records `failed` also reaches the session as an error result, because a
+  parked call must end with an answer. On every other provider nothing is
+  enqueued and the caller answers as before; a self-hosted session may also be
+  answered by the caller in the published way, whichever arrives first.
 
 ## 3. Alignment
 
@@ -70,6 +90,7 @@ name, and the absence of a runtime-side permission policy on the declaration.
 | --- | --- |
 | Legacy ingress | `custom_toolset` and `parameters` are accepted on write for backward compatibility. The published contract defines neither. |
 | Canonical projection | Only the canonical shape is returned. A legacy grouping is not echoed back as written. |
+| Worker execution | On self-hosted environments the runtime's own workers can execute the call: the persisted call becomes a `custom_tool` work item and its completion is injected as the `user.custom_tool_result`. The published contract has the environment worker performing this role; here it is the local worker over the local queue — same parked-call semantics, different transport. On non-self-hosted providers the caller answers as published. |
 
 ## 5. Reason for the difference
 
@@ -99,8 +120,18 @@ name, and the absence of a runtime-side permission policy on the declaration.
   the session in `requires_action` with no `session.error` and starts no turn,
   and the remaining answers resume it with every call paired.
 - `tests/integration/api.test.ts` — agent round-trip carrying a custom tool.
+- `tests/integration/worker-custom-tools.test.ts` — the self-hosted path end to
+  end: the persisted call enqueues a `custom_tool` item, a worker's completion
+  through the real routes resolves the parked call and resumes the turn, an
+  `is_error` result and a `failed` completion both reach the session as error
+  results, a second completion cannot answer twice, a completion after the
+  session ended injects nothing, a local environment enqueues nothing, and the
+  worker-side registry covers declared, undeclared, and throwing handlers plus
+  `--tools` module loading.
 
 ## 7. Status
 
 `supported` — the canonical declaration is parsed, projected, and covered by
-tests.
+tests; on self-hosted environments the environment's own workers can execute
+the parked call through the work queue, with the completion injected under the
+same admission rules as a caller's answer.
