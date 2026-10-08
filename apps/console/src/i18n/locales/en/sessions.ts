@@ -256,6 +256,9 @@ export const sessions = {
       environmentPlaceholder: "Select an environment",
       environmentSearch: "Search environments by name or exact ID",
       environmentManage: "Manage environments",
+      engine: "Loop engine",
+      engineDefault: "Runtime default ({{engine}})",
+      engineLocalSandbox: "This engine requires the local sandbox provider.",
     },
     credentials: {
       title: "Credential access",

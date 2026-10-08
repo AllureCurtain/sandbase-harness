@@ -13,6 +13,17 @@
   row per tool), appear on the agent detail as caller-executed cards, list in
   version diffs, and fail pre-save checks when a name, description, or schema
   is missing or the schema text does not parse.
+- The Console's create-session modal now offers a per-session loop-engine
+  picker populated from the runtime's adapter inventory: the default option
+  follows the Settings provider and omits `loop_engine` from the create body,
+  while picking an engine freezes the session on it exactly as the published
+  `POST /v1/sessions` field does. Only adapters the runtime reports as
+  executable are listed — roadmap engines stay out of the picker rather than
+  failing at submit time — and picking an engine whose requirements name the
+  local sandbox shows an inline warning when the saved sandbox provider is
+  not `local`. The session detail header now shows the engine each session
+  was frozen on next to its agent and environment badges.
+
 - The tool-result overflow threshold now defaults to the published 100,000
   characters — results at or under it pass through untouched and larger ones
   are spilled to `/mnt/session/tool_outputs` with the shared preview — and is
