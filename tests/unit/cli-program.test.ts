@@ -153,6 +153,7 @@ describe('CLI program', () => {
     // invocation answered `unknown command 'worker'`.
     expect(program.commands.find((command) => command.name() === 'worker')?.commands.map((command) => command.name())).toEqual([
       'poll',
+      'run',
     ]);
   });
 
@@ -422,6 +423,7 @@ describe('CLI program', () => {
       '--heartbeat-ms',
       '--heartbeat-timeout-ms',
       '--interval-ms',
+      '--on-work',
       '--once',
       '--port',
       '--tools',

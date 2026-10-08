@@ -265,6 +265,7 @@ declare is answered with an error result rather than left hanging. Useful flags:
 | Flag | Purpose |
 | --- | --- |
 | `--once` | Claim and run at most one item, then exit. |
+| `--on-work <command>` | Hand each claimed item to this command instead of executing it in-process — the spawn hook below. |
 | `--interval-ms <ms>` | Delay between polls when the queue is empty (default `1000`, minimum `250`). |
 | `--claim-timeout-ms <ms>` | How long to wait for a claim to be answered before polling again (default `10000`, minimum `1`). |
 | `--heartbeat-ms <ms>` | Renew the claim on this interval while an item runs (default `20000`, minimum `25`). |
@@ -273,6 +274,65 @@ declare is answered with an error result rather than left hanging. Useful flags:
 | `--ack-timeout-ms <ms>` | How long to wait for the runtime to confirm a claim before giving up on the item (default `10000`, minimum `1`). |
 | `--worker-id <id>` | Identity reported on the claim and the completion (default `worker_<pid>`). |
 | `--tools <module>` | JS module declaring this worker's custom tools, used for `custom_tool` items. |
+
+### Spawning a fresh sandbox per claim: `--on-work` and `worker run`
+
+`worker poll` can run every item in-process, which is the simple mode. The
+stronger mode — the one the published worker contract is built around — keeps
+the poller as a thin launcher and gives each claim its own clean sandbox:
+
+```bash
+managed-agents worker poll \
+  --port 3000 \
+  --environment-id env_self_hosted \
+  --on-work ./spawn-docker.sh
+```
+
+For every claimed item the poller runs the command once and hands the item's
+whole lifecycle to it — it never accepts, executes, or completes the item
+itself. The command receives the claimed work item as JSON on its standard
+input and this environment:
+
+| Variable | Contents |
+| --- | --- |
+| `MANAGED_AGENTS_WORK_ID` | The claimed work item's id. |
+| `MANAGED_AGENTS_SESSION_ID` | The session the item belongs to. |
+| `MANAGED_AGENTS_ENVIRONMENT_ID` | The environment the poller claims for, when set. |
+| `MANAGED_AGENTS_ENVIRONMENT_KEY` | The environment worker key, when configured. |
+| `MANAGED_AGENTS_WORKER_ID` | The poller's worker identity — the spawned worker must report under it, because the claim is held in that name. |
+| `MANAGED_AGENTS_BASE_URL` | The runtime address the poller resolved; re-point it at the host when the handler spawns a container. |
+| `MANAGED_AGENTS_API_KEY` | The poller's API key, when the runtime has auth enabled. |
+
+The item JSON on stdin carries `id`, `sessionId`, `kind`, `payload`, and —
+when the runtime can bind the item to an environment — `secret`: a base64url
+`{sessions_token, api_base_url}` envelope around a per-claim `mawt_` token.
+Forward it into the spawned sandbox (conventionally as
+`MANAGED_AGENTS_WORK_SECRET`) and nowhere else: it is a per-session credential,
+so it must never land in logs or in a sibling claim's sandbox.
+
+If the command cannot be spawned or exits non-zero, the poller logs the exit
+and moves on: the item was never accepted, so its claim lease lapses and the
+queue hands it to the next claim — a failed spawn is reclaimable intent, not a
+failed result.
+
+The intended spawn target is `worker run`, this CLI's single-shot sibling:
+
+```bash
+docker run --rm -i \
+  -e MANAGED_AGENTS_SESSION_ID -e MANAGED_AGENTS_WORKER_ID \
+  -e MANAGED_AGENTS_BASE_URL -e MANAGED_AGENTS_ENVIRONMENT_KEY \
+  -v "$WORKSPACE:/workspace" -w /workspace \
+  sandbase-worker managed-agents worker run
+```
+
+`worker run` reads the handed item from stdin, accepts the claim under the
+forwarded worker id, executes it inside its own `--workdir`, and then keeps
+claiming that session's queued items — one sandbox serves one session. It
+exits when the session ends (read through the `sessions_token`, whose
+authority dies with the session) or when the queue stays empty for
+`--max-idle-ms` (default `60000`); the next claim then spawns a fresh sandbox.
+Its settings come from the forwarded environment rather than `--port`; the
+timeout flags are shared with `worker poll`.
 
 A claim carries a lease window (60s by default), so a worker that executed a long
 item silently would have it reclaimed and handed to a second worker while the first

@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto';
 import type { Database } from '@/core/db/database.js';
 import type { WorkQueue } from '@/sandbox/self-hosted-provider.js';
 import { validateEnvironmentWorkerKey } from '@/core/auth/environment-worker-keys.js';
+import { issueSessionWorkToken } from '@/core/auth/session-work-tokens.js';
 
 export function workerRoutes(queue: WorkQueue, db?: Database) {
   const app = new Hono();
@@ -53,6 +54,19 @@ export function workerRoutes(queue: WorkQueue, db?: Database) {
       auth.environmentId ?? requestedEnvironmentId,
     );
     if (!item) return c.body(null, 204);
+    // A claimed item carries a per-claim `secret` — the published
+    // `BetaWorkSecret` envelope around a `mawt_` bearer — so a `--on-work`
+    // handler can forward it into the sandbox that serves this session without
+    // ever seeing the environment key. Minting needs the item's environment
+    // (joined through its session) and the db handle; without either, the item
+    // goes out with no secret and the spawned worker falls back to the
+    // forwarded environment key.
+    const environmentId = queue.environmentOf(item.id);
+    if (db && environmentId) {
+      const sessionsToken = issueSessionWorkToken(db, item.sessionId, environmentId);
+      const payload = { sessions_token: sessionsToken, api_base_url: new URL(c.req.url).origin };
+      return c.json({ ...item, secret: Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url') });
+    }
     return c.json(item);
   });
 
