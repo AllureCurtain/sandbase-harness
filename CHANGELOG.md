@@ -13,6 +13,14 @@
   no published parameter on these collections, so it still applies to
   loaded rows only — the summary count now says "of N loaded" while more
   pages exist.
+- The session detail actions menu gains two diagnostics surfaces. MCP
+  status reads `GET /v1/x/mcp/status?session_id=…` and lists each server's
+  connection state, tool count, and recorded error. Handoff bundles lists
+  the session's `GET /v1/x/handoff-bundles` rows, exports a new bundle
+  through `POST /v1/x/sessions/{id}/handoff-bundle` with the published
+  `label`/`include_message_content`/`include_file_content` flags
+  (digest-only by default, as the route intends), and downloads a
+  bundle's full payload via `GET /v1/x/handoff-bundles/{id}`.
 - The environment detail actions menu gains a read-only Work queue view
   that reads `GET /v1/x/environments/{id}/work/stats` and the paged
   `/work` listing, so an operator can watch depth, pending items, the
