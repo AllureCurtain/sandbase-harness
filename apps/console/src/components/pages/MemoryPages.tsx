@@ -35,6 +35,7 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
   const paged = usePagedCollection<MemoryStore>(
     `/v1/memory_stores?limit=50${status === 'active' ? '' : '&include_archived=true'}`,
     data.memoryStores,
+    data.memoryStores,
   );
   const stores = paged.items.filter((store) => {
     const q = query.toLowerCase();

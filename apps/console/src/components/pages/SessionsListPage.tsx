@@ -56,11 +56,21 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
   const [status, setStatus] = useState('active');
   const [showArchived, setShowArchived] = useState(false);
   const [agentId, setAgentId] = useState('all');
-  // `data.sessions` as the refresh key re-runs the current filters' first page
-  // after any silent refresh (session created, archived, terminated).
+  // `data.sessions` seeds the first paint and re-runs the current filters'
+  // first page after any silent refresh (session created, archived,
+  // terminated). The seed passes the same predicates the path encodes so the
+  // pre-fetch paint never shows rows the current filter would exclude.
+  const seedSessions = data.sessions.filter((session) => {
+    if (!showArchived && session.archived_at) return false;
+    if (status === 'active' && !(ACTIVE_SESSION_STATUSES as readonly string[]).includes(session.status)) return false;
+    if (status !== 'active' && status !== 'all' && session.status !== status) return false;
+    if (agentId !== 'all' && session.agent.id !== agentId) return false;
+    return true;
+  });
   const paged = usePagedCollection<Session>(
     sessionListPath(status, agentId, showArchived),
     data.sessions,
+    seedSessions,
   );
   const sessions = paged.items.filter((session) => {
     const q = query.toLowerCase();

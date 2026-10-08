@@ -48,6 +48,7 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
   const paged = usePagedCollection<Vault>(
     `/v1/credential-vaults?limit=50${status === 'active' ? '' : '&include_archived=true'}`,
     data.vaults,
+    data.vaults,
   );
   const vaults = paged.items.filter((vault) => {
     const q = query.toLowerCase();
