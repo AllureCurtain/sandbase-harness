@@ -18,6 +18,17 @@
   Update and delete failures surface inside the dialogs instead of
   closing them.
 
+- The webhooks page now edits subscriptions in place. Each row's Edit
+  action opens the endpoint's current fields — url, name, the grouped
+  official event catalog, description — plus a status selector that maps
+  to the published `active`/`disabled` pair, so an endpoint disabled by
+  sustained failures can be re-enabled (which clears its reason and
+  restarts the failure window server-side). The same dialog manages the
+  signing secret: Rotate secret arms then confirms, and displays the
+  returned `secret_key` with a shown-once note since the API never
+  returns it again; Retire secret ends the rotation window after the
+  same two-step confirmation.
+
 - The session detail page now has a Resources & artifacts dialog that
   manages the session after creation. It lists the live resource
   instances from `GET /v1/sessions/{id}/resources` — not the frozen

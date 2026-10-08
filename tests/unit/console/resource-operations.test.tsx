@@ -346,6 +346,81 @@ describe('the webhooks page', () => {
     expect(screen.getByText('sess_1')).toBeDefined();
     expect(screen.getByText('session')).toBeDefined();
   });
+
+  it('edits a subscription through the published PUT fields', async () => {
+    const user = userEvent.setup();
+    onApiRequest(() => webhook);
+    renderConsole(<WebhooksPage data={data} onRefresh={() => {}} />);
+
+    // The desktop row and the mobile card both render an Edit affordance.
+    await user.click(screen.getAllByRole('button', { name: /^edit$/i })[0]);
+    const dialog = await screen.findByRole('dialog', { name: /edit webhook/i });
+    const urlInput = within(dialog).getByLabelText(/endpoint url/i) as HTMLInputElement;
+    expect(urlInput.value).toBe('http://localhost:8123/hook');
+    // Existing selections carry over into the editor.
+    expect((within(dialog).getByLabelText('session.created') as HTMLInputElement).checked).toBe(true);
+
+    await user.clear(urlInput);
+    await user.type(urlInput, 'https://example.com/hooks/ops');
+    await user.click(within(dialog).getByLabelText('memory_store.created'));
+    await user.click(within(dialog).getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      const request = apiRequests().find((item) => item.method === 'PUT' && item.path === '/v1/webhooks/wh_1');
+      expect(request).toBeDefined();
+      expect(request?.body).toMatchObject({
+        url: 'https://example.com/hooks/ops',
+        status: 'active',
+        events: ['session.created', 'session.status_terminated', 'memory_store.created'],
+      });
+    });
+  });
+
+  it('rotates the signing secret and shows the returned key once', async () => {
+    const user = userEvent.setup();
+    onApiRequest((request) => {
+      if (request.path.endsWith('/rotate-secret')) {
+        return { ...webhook, secret_key: 'whsec_new_123' };
+      }
+      return webhook;
+    });
+    renderConsole(<WebhooksPage data={data} onRefresh={() => {}} />);
+
+    // The desktop row and the mobile card both render an Edit affordance.
+    await user.click(screen.getAllByRole('button', { name: /^edit$/i })[0]);
+    const dialog = await screen.findByRole('dialog', { name: /edit webhook/i });
+
+    // The rotate button arms first; a second click performs the call.
+    await user.click(within(dialog).getByRole('button', { name: /rotate secret/i }));
+    expect(apiRequests().some((item) => item.path.endsWith('/rotate-secret'))).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: /confirm rotate/i }));
+
+    await waitFor(() => {
+      const request = apiRequests().find((item) => item.method === 'POST' && item.path.endsWith('/rotate-secret'));
+      expect(request).toBeDefined();
+    });
+    await waitFor(() => expect(within(dialog).getByText('whsec_new_123')).toBeDefined());
+  });
+
+  it('retires the signing secret through the published route after confirming', async () => {
+    const user = userEvent.setup();
+    onApiRequest(() => webhook);
+    renderConsole(<WebhooksPage data={data} onRefresh={() => {}} />);
+
+    // The desktop row and the mobile card both render an Edit affordance.
+    await user.click(screen.getAllByRole('button', { name: /^edit$/i })[0]);
+    const dialog = await screen.findByRole('dialog', { name: /edit webhook/i });
+
+    await user.click(within(dialog).getByRole('button', { name: /retire secret/i }));
+    expect(apiRequests().some((item) => item.path.endsWith('/retire-secret'))).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: /confirm retire/i }));
+
+    await waitFor(() => {
+      const request = apiRequests().find((item) => item.method === 'POST' && item.path.endsWith('/retire-secret'));
+      expect(request).toBeDefined();
+      expect(request?.body).toEqual({});
+    });
+  });
 });
 
 describe('the scheduled deployments page', () => {
