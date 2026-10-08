@@ -28,9 +28,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /** Enabled built-in tool names plus one entry per MCP toolset, sorted. */
 export function agentToolList(agent: Agent): string[] {
   const names: string[] = [];
-  for (const toolset of agent.tools ?? []) {
+  // The union widens past AgentToolset so a draft carrying the legacy grouped
+  // `custom_toolset` shape still diffs honestly instead of dropping silently.
+  for (const toolset of (agent.tools ?? []) as Array<Agent['tools'][number] | { type: 'custom_toolset'; configs?: unknown[] }>) {
+    if (toolset.type === 'custom') {
+      names.push(`${toolset.name} (custom)`);
+      continue;
+    }
     if (toolset.type === 'mcp_toolset') {
       names.push(`${toolset.mcp_server_name} (mcp)`);
+      continue;
+    }
+    if (toolset.type === 'custom_toolset') {
+      for (const config of toolset.configs ?? []) {
+        if (isPlainObject(config) && typeof config.name === 'string') names.push(`${config.name} (custom)`);
+      }
       continue;
     }
     for (const [name, config] of Object.entries(toolset.configs ?? {})) {
@@ -58,6 +70,25 @@ function agentMetadataList(agent: Agent): string[] {
 
 function modelSpeed(agent: Agent): string {
   return agent.model_config?.speed ?? 'standard';
+}
+
+const CUSTOM_TOOL_NAME = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+/** One custom tool shape — shared by the canonical entry and custom_toolset configs. */
+function validateCustomToolShape(tool: unknown, label: string, issues: string[]): void {
+  if (!isPlainObject(tool)) {
+    issues.push(`${label} must be an object.`);
+    return;
+  }
+  if (typeof tool.name !== 'string' || !CUSTOM_TOOL_NAME.test(tool.name)) {
+    issues.push(`${label} needs a name starting with a letter (letters, numbers, underscores, hyphens only).`);
+  }
+  if (typeof tool.description !== 'string' || !tool.description.trim()) {
+    issues.push(`${label} needs a description.`);
+  }
+  if (!isPlainObject(tool.input_schema) && !isPlainObject(tool.parameters)) {
+    issues.push(`${label} needs an input_schema JSON object.`);
+  }
 }
 
 function kindFor(base: string, next: string): AgentDiffKind {
@@ -109,8 +140,22 @@ export function validateAgentDraft(draft: unknown): string[] {
       issues.push('tools must be a list of toolsets.');
     } else {
       draft.tools.forEach((toolset, index) => {
-        if (!isPlainObject(toolset) || (toolset.type !== 'agent_toolset_20260401' && toolset.type !== 'mcp_toolset')) {
-          issues.push(`tools[${index}] must be an agent_toolset_20260401 or mcp_toolset entry.`);
+        if (!isPlainObject(toolset)) {
+          issues.push(`tools[${index}] must be a toolset or custom tool entry.`);
+          return;
+        }
+        if (toolset.type === 'custom') {
+          validateCustomToolShape(toolset, `tools[${index}]`, issues);
+          return;
+        }
+        if (toolset.type === 'custom_toolset') {
+          const configs = Array.isArray(toolset.configs) ? toolset.configs : [];
+          if (!configs.length) issues.push(`tools[${index}] (custom_toolset) must declare at least one tool.`);
+          configs.forEach((config, configIndex) => validateCustomToolShape(config, `tools[${index}].configs[${configIndex}]`, issues));
+          return;
+        }
+        if (toolset.type !== 'agent_toolset_20260401' && toolset.type !== 'mcp_toolset') {
+          issues.push(`tools[${index}] must be an agent_toolset_20260401, mcp_toolset, custom_toolset, or custom entry.`);
           return;
         }
         if (toolset.type === 'mcp_toolset' && (typeof toolset.mcp_server_name !== 'string' || !toolset.mcp_server_name)) {
