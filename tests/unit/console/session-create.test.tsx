@@ -127,6 +127,103 @@ describe('the interactive Console harness', () => {
     });
   });
 
+  describe('engine picker', () => {
+    const settingsData = {
+      ...data,
+      settings: {
+        saved_config: {
+          loop_engine: { provider: 'builtin', options: {} },
+          sandbox: { provider: 'local', options: {} },
+        },
+        adapters: {
+          loop_engine: [
+            { id: 'builtin', label: 'Default', status: 'available' },
+            { id: 'pi', label: 'Pi CLI', status: 'available', requirements: ['Pi CLI available on PATH', 'local sandbox provider'] },
+            { id: 'codex', label: 'Codex', status: 'unavailable' },
+            { id: 'harness', label: 'Harness', status: 'unavailable' },
+            { id: 'claude', label: 'Claude', status: 'unavailable' },
+          ],
+        },
+      },
+    } as unknown as ConsoleData;
+
+    async function pickAgentAndEnvironment(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getAllByRole('button', { name: /select an agent/i })[0]);
+      await user.click(screen.getByRole('option', { name: /echo agent/i }));
+      await user.click(screen.getAllByRole('button', { name: /select an environment/i })[0]);
+      await user.click(screen.getByRole('option', { name: /local/i }));
+    }
+
+    it('omits loop_engine when the runtime default is kept', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={settingsData} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      const create = apiRequests().find((request) => request.path === '/v1/sessions');
+      expect(create?.body).toMatchObject({ agent: 'agent_echo', environment_id: 'env_local' });
+      expect(create?.body).not.toHaveProperty('loop_engine');
+    });
+
+    it('sends loop_engine when an executable engine is picked', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={settingsData} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await pickConsoleSelect(user, /loop engine/i, 'Pi CLI');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      const create = apiRequests().find((request) => request.path === '/v1/sessions');
+      expect(create?.body).toMatchObject({ loop_engine: 'pi' });
+    });
+
+    it('offers only executable engines, never roadmap adapters', async () => {
+      const user = userEvent.setup();
+
+      renderConsole(
+        <SessionModal data={settingsData} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await user.click(screen.getByRole('combobox', { name: /loop engine/i }));
+
+      const options = screen.getAllByRole('option').map((option) => option.textContent);
+      expect(options).toEqual(expect.arrayContaining(['Default', 'Pi CLI']));
+      for (const roadmap of ['Codex', 'Harness', 'Claude']) {
+        expect(options).not.toContain(roadmap);
+      }
+    });
+
+    it('warns when a picked engine requires the local sandbox', async () => {
+      const nonLocalData = {
+        ...settingsData,
+        settings: {
+          ...(settingsData.settings as unknown as Record<string, unknown>),
+          saved_config: {
+            loop_engine: { provider: 'builtin', options: {} },
+            sandbox: { provider: 'docker', options: {} },
+          },
+        },
+      } as unknown as ConsoleData;
+      const user = userEvent.setup();
+
+      renderConsole(
+        <SessionModal data={nonLocalData} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickConsoleSelect(user, /loop engine/i, 'Pi CLI');
+      expect(screen.getByText(/requires the local sandbox/i)).toBeDefined();
+    });
+  });
+
   it('shows the checkout value input only after the operator picks a mode', async () => {
     const user = userEvent.setup();
     onApiRequest(() => ({ id: 'sess_new', type: 'session' }));

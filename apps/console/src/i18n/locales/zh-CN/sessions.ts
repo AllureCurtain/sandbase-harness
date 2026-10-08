@@ -256,6 +256,9 @@ export const sessions = {
       environmentPlaceholder: "选择环境",
       environmentSearch: "按名称或精确 ID 搜索环境",
       environmentManage: "管理环境",
+      engine: "循环引擎",
+      engineDefault: "运行时默认（{{engine}}）",
+      engineLocalSandbox: "该引擎需要 local 沙箱 provider。",
     },
     credentials: {
       title: "凭据访问",

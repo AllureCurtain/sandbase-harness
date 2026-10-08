@@ -78,6 +78,8 @@ export type Session = {
   budget: { type: 'limit'; max_list_cost: { amount: string; currency: 'USD' } } | null;
   usage: { input_tokens: number; output_tokens: number };
   stats: { active_seconds: number; duration_seconds: number };
+  /** Engine the session was frozen on at creation — the API always emits it; optional only for older fixtures. */
+  loop_engine?: string;
   /** Declared outcomes and their evaluation state, in declaration order. */
   outcome_evaluations: Array<{
     type: 'outcome_evaluation';
@@ -535,13 +537,16 @@ export type SettingsAdapterDescriptor = {
   status: 'available' | 'unavailable' | 'invalid';
   restart_policy: 'none' | 'runtime';
   options_schema: Record<string, unknown>;
+  reason?: string;
+  requirements?: string[];
+  capabilities?: string[];
 };
 
 export type RuntimeSettingsConfig = {
   schema_version: 1;
   model: { vendor: 'openai' | 'anthropic' | 'openai_compatible' | 'minimax'; base_url?: string; api_key?: string; options: Record<string, unknown> };
   loop_engine: {
-    provider: 'builtin' | 'harness' | 'codex' | 'claude';
+    provider: 'builtin' | 'pi' | 'harness' | 'codex' | 'claude';
     options: {
       default_max_steps: number;
       /**
