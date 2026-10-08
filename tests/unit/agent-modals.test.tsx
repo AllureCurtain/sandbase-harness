@@ -1,8 +1,9 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AgentEditModal, AgentModal } from '../../apps/console/src/components/modals/AgentModals';
+import { AgentEditModal, AgentModal, agentDefinitionObject } from '../../apps/console/src/components/modals/AgentModals';
 import { sendsModelConfig } from '../../apps/console/src/lib/agentModelConfig';
+import { validateAgentDraft } from '../../apps/console/src/lib/agentVersionDiff';
 import type { Agent, ConsoleData, Template } from '../../apps/console/src/types';
 
 const template: Template = {
@@ -76,6 +77,79 @@ describe('Agent modals', () => {
 
     expect(html).toContain('effort: high');
     expect(html).toContain('model_config');
+  });
+});
+
+describe('Console custom tool declarations', () => {
+  it('emits canonical custom entries for each declared tool row', () => {
+    const definition = agentDefinitionObject(
+      { name: 'A', model: 'm', system: 's', tools: [{ type: 'agent_toolset_20260401' }] },
+      [],
+      [{ id: 'c1', name: 'lookup_ticket', description: 'Find a ticket', schemaText: '{"type":"object"}', rest: {} }],
+      [],
+    );
+
+    expect(definition.tools).toEqual([
+      { type: 'agent_toolset_20260401' },
+      { type: 'custom', name: 'lookup_ticket', description: 'Find a ticket', input_schema: { type: 'object' } },
+    ]);
+  });
+
+  it('keeps an unparseable schema visible so the draft validator blocks the save', () => {
+    const definition = agentDefinitionObject(
+      { name: 'A', model: 'm', system: 's' },
+      [],
+      [{ id: 'c1', name: 'broken', description: 'x', schemaText: '{not json', rest: {} }],
+      [],
+    );
+
+    const issues = validateAgentDraft(definition);
+    expect(issues.some((issue) => issue.includes('input_schema'))).toBe(true);
+  });
+
+  it('accepts the canonical and legacy custom tool shapes in pasted definitions', () => {
+    expect(validateAgentDraft({
+      name: 'A', model: 'm', system: 's',
+      tools: [{ type: 'custom', name: 'lookup_ticket', description: 'Find a ticket', input_schema: { type: 'object' } }],
+    })).toEqual([]);
+    expect(validateAgentDraft({
+      name: 'A', model: 'm', system: 's',
+      tools: [{ type: 'custom_toolset', configs: [{ name: 'lookup_ticket', description: 'Find a ticket', parameters: { type: 'object' } }] }],
+    })).toEqual([]);
+    expect(validateAgentDraft({
+      name: 'A', model: 'm', system: 's',
+      tools: [{ type: 'custom', name: 'lookup_ticket' }],
+    }).length).toBeGreaterThan(0);
+  });
+
+  it('prefills stored custom tools in the edit form', () => {
+    const agent = {
+      id: 'agent_1',
+      type: 'agent',
+      name: 'Custom tool agent',
+      description: '',
+      system: 'You are a test agent.',
+      model: 'gpt-4o',
+      tools: [
+        { type: 'agent_toolset_20260401' },
+        { type: 'custom', name: 'lookup_ticket', description: 'Find a ticket', input_schema: { type: 'object' } },
+      ],
+      skills: [],
+      mcp_servers: [],
+      metadata: {},
+      status: 'active',
+      version: 1,
+      created_at: null,
+      updated_at: null,
+      archived_at: null,
+    } as unknown as Agent;
+
+    const html = renderToStaticMarkup(
+      <AgentEditModal agent={agent} onClose={() => {}} onSaved={() => {}} />,
+    );
+
+    expect(html).toContain('lookup_ticket');
+    expect(html).toContain('Find a ticket');
   });
 });
 

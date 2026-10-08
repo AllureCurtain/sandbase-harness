@@ -10,7 +10,7 @@ import { ConfigPreviewDrawer, DrawerToggle, type ConfigFormat } from '../ConfigD
 import { CheckCard, FieldRow, KvRowEditor, RadioCardGroup, SectionCard, kvRowsFromObject, type CheckItem, type KvRow } from '../kit';
 import { Modal } from '../Modal';
 import { ConsoleSelect } from '../console-select';
-import type { Agent, AgentToolset, BuiltinToolset, ConsoleData, McpToolset, SkillRef, Template } from '../../types';
+import type { Agent, AgentToolset, BuiltinToolset, ConsoleData, CustomToolEntry, McpToolset, SkillRef, Template } from '../../types';
 
 /**
  * Agent create/edit, rebuilt on the workflow register: the form is the primary
@@ -31,6 +31,7 @@ export type AgentDraft = {
 };
 
 type McpRow = { id: string; name: string; url: string; rest: Record<string, unknown>; origName: string };
+type CustomToolRow = { id: string; name: string; description: string; schemaText: string; rest: Record<string, unknown> };
 
 const BUILTIN_NAMES = ['bash', 'edit', 'read', 'write', 'glob', 'grep', 'web_fetch', 'web_search'] as const;
 const SPEED_OPTIONS = ['standard', 'fast', 'extended'] as const;
@@ -38,6 +39,40 @@ const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 const PERMISSION_VALUES = ['always_ask', 'always_allow', 'never_allow', 'auto'] as const;
 
 let mcpRowSeq = 0;
+let customToolRowSeq = 0;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function customToolRowFrom(value: unknown): CustomToolRow {
+  const entry = isRecord(value) ? value : {};
+  const { name, description, input_schema, ...rest } = entry;
+  delete rest.type;
+  return {
+    id: `custom_${++customToolRowSeq}`,
+    name: typeof name === 'string' ? name : '',
+    description: typeof description === 'string' ? description : '',
+    // `parameters` is the legacy alias; the canonical field wins when both exist.
+    schemaText: JSON.stringify(input_schema ?? entry.parameters ?? {}, null, 2),
+    rest,
+  };
+}
+
+function customToolRowsFromDraft(draft: AgentDraft): CustomToolRow[] {
+  const rows: CustomToolRow[] = [];
+  for (const toolset of draft.tools ?? []) {
+    const entry = toolset as Record<string, unknown>;
+    if (entry.type === 'custom') {
+      rows.push(customToolRowFrom(entry));
+    } else if (entry.type === 'custom_toolset') {
+      // Legacy grouped shape — expand each config into its own canonical row.
+      const configs = Array.isArray(entry.configs) ? entry.configs : [];
+      for (const config of configs) rows.push(customToolRowFrom(config));
+    }
+  }
+  return rows;
+}
 
 function mcpRowsFromDraft(draft: AgentDraft): McpRow[] {
   return (draft.mcp_servers ?? []).map((server) => ({
@@ -53,10 +88,25 @@ function builtinToolsetOf(tools: AgentToolset[] | undefined): BuiltinToolset | u
   return tools?.find((toolset): toolset is BuiltinToolset => toolset.type === 'agent_toolset_20260401');
 }
 
+/**
+ * The schema textarea edits text, not objects: a row being typed may hold
+ * invalid JSON, so the definition emits the parsed object when it parses and
+ * the raw text when it does not — `validateAgentDraft` then flags the same
+ * row the check card does instead of silently saving an empty schema.
+ */
+function parseSchemaText(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /** Serialize the form state into the definition the API expects. */
 export function agentDefinitionObject(
   draft: AgentDraft,
   mcpRows: McpRow[],
+  customToolRows: CustomToolRow[],
   metadataRows: KvRow[],
 ): Record<string, unknown> {
   const { name, description, model, model_config, system, mcp_servers, tools, skills, metadata, ...extras } = draft as AgentDraft & Record<string, unknown>;
@@ -70,6 +120,15 @@ export function agentDefinitionObject(
       (toolset) => toolset.mcp_server_name === row.origName || toolset.mcp_server_name === row.name,
     );
     toolsets.push({ ...(existing ?? { type: 'mcp_toolset', mcp_server_name: '' }), type: 'mcp_toolset', mcp_server_name: row.name });
+  }
+  for (const row of customToolRows) {
+    toolsets.push({
+      type: 'custom',
+      name: row.name.trim(),
+      description: row.description.trim(),
+      input_schema: parseSchemaText(row.schemaText),
+      ...row.rest,
+    } as AgentToolset);
   }
 
   const metadataObj: Record<string, string> = {};
@@ -97,6 +156,8 @@ function AgentDefinitionForm({
   setDraft,
   mcpRows,
   setMcpRows,
+  customToolRows,
+  setCustomToolRows,
   metadataRows,
   setMetadataRows,
   data,
@@ -106,6 +167,8 @@ function AgentDefinitionForm({
   setDraft: (draft: AgentDraft) => void;
   mcpRows: McpRow[];
   setMcpRows: (rows: McpRow[]) => void;
+  customToolRows: CustomToolRow[];
+  setCustomToolRows: (rows: CustomToolRow[]) => void;
   metadataRows: KvRow[];
   setMetadataRows: (rows: KvRow[]) => void;
   data?: ConsoleData;
@@ -153,6 +216,9 @@ function AgentDefinitionForm({
 
   const patchMcpRow = (id: string, patch: Partial<McpRow>) =>
     setMcpRows(mcpRows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+
+  const patchCustomToolRow = (id: string, patch: Partial<CustomToolRow>) =>
+    setCustomToolRows(customToolRows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
 
   const skillIds = new Set((draft.skills ?? []).map((skill) => skill.skill_id));
   const toggleSkill = (skill_id: string, source: 'custom' | 'anthropic') => {
@@ -270,6 +336,53 @@ function AgentDefinitionForm({
             options={PERMISSION_VALUES.map((value) => ({ value, label: t(`modal.tools.permissionOptions.${value}`) }))}
           />
         </FieldRow>
+        <FieldRow
+          label={t('modal.tools.customTitle')}
+          optional={t('modal.tools.customOptional')}
+          helper={t('modal.tools.customHint')}
+        >
+          <div className="customToolList">
+            {customToolRows.map((row) => {
+              const nameInvalid = !row.name.trim() || !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(row.name.trim());
+              const schemaInvalid = !(parseSchemaText(row.schemaText) instanceof Object) || Array.isArray(parseSchemaText(row.schemaText));
+              return (
+                <div className="customToolRow" key={row.id}>
+                  <div className="customToolRowHead">
+                    <input
+                      className="monoInput"
+                      value={row.name}
+                      placeholder={t('modal.tools.customName')}
+                      aria-invalid={nameInvalid}
+                      onChange={(event) => patchCustomToolRow(row.id, { name: event.target.value })}
+                    />
+                    <button className="iconButton quiet" type="button" aria-label={t('modal.tools.customRemove')}
+                      onClick={() => setCustomToolRows(customToolRows.filter((candidate) => candidate.id !== row.id))}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <input
+                    value={row.description}
+                    placeholder={t('modal.tools.customDescription')}
+                    aria-invalid={!row.description.trim()}
+                    onChange={(event) => patchCustomToolRow(row.id, { description: event.target.value })}
+                  />
+                  <textarea
+                    className="monoInput customToolSchema"
+                    value={row.schemaText}
+                    placeholder={t('modal.tools.customSchemaPlaceholder')}
+                    aria-invalid={schemaInvalid}
+                    aria-label={t('modal.tools.customSchema')}
+                    onChange={(event) => patchCustomToolRow(row.id, { schemaText: event.target.value })}
+                  />
+                </div>
+              );
+            })}
+            <button className="addRowButton" type="button"
+              onClick={() => setCustomToolRows([...customToolRows, { id: `custom_${++customToolRowSeq}`, name: '', description: '', schemaText: '{\n  "type": "object",\n  "properties": {}\n}', rest: {} }])}>
+              <Plus size={13} /> {t('modal.tools.customAdd')}
+            </button>
+          </div>
+        </FieldRow>
       </SectionCard>
 
       <SectionCard n={4} title={t('modal.integrations.title')}>
@@ -337,7 +450,7 @@ function AgentDefinitionForm({
   );
 }
 
-function useAgentDraftChecks(draft: AgentDraft, mcpRows: McpRow[], metadataRows: KvRow[], idPrefix: string): CheckItem[] {
+function useAgentDraftChecks(draft: AgentDraft, mcpRows: McpRow[], customToolRows: CustomToolRow[], metadataRows: KvRow[], idPrefix: string): CheckItem[] {
   const { t } = useTranslation('agents');
   return useMemo(() => {
     const duplicateKeys = new Set<string>();
@@ -347,15 +460,25 @@ function useAgentDraftChecks(draft: AgentDraft, mcpRows: McpRow[], metadataRows:
       seen.add(row.key.trim());
     }
     const emptyMcp = mcpRows.filter((row) => !row.name.trim() || !row.url.trim());
+    const invalidCustom = customToolRows.filter((row) => {
+      const schema = parseSchemaText(row.schemaText);
+      return !row.name.trim()
+        || !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(row.name.trim())
+        || !row.description.trim()
+        || typeof schema !== 'object'
+        || schema === null
+        || Array.isArray(schema);
+    });
     const items: CheckItem[] = [
       { label: t('modal.check.name'), value: draft.name.trim() || t('modal.check.missing'), state: draft.name.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-name` },
       { label: t('modal.check.model'), value: draft.model.trim() || t('modal.check.missing'), state: draft.model.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-model` },
       { label: t('modal.check.system'), value: draft.system.trim() ? t('modal.check.systemChars', { n: draft.system.trim().length }) : t('modal.check.missing'), state: draft.system.trim() ? 'ok' : 'blocking', targetId: `${idPrefix}-system` },
       { label: t('modal.check.mcpServers'), value: `${mcpRows.length}`, state: emptyMcp.length ? 'blocking' : 'ok', },
+      { label: t('modal.check.customTools'), value: invalidCustom.length ? t('modal.check.customToolsInvalid', { n: invalidCustom.length }) : `${customToolRows.length}`, state: invalidCustom.length ? 'blocking' : 'ok' },
       { label: t('modal.check.metadata'), value: duplicateKeys.size ? t('modal.check.metadataDuplicates', { keys: [...duplicateKeys].join(', ') }) : t('modal.check.metadataEntries', { n: metadataRows.filter((row) => row.key.trim()).length }), state: duplicateKeys.size ? 'blocking' : 'ok' },
     ];
     return items;
-  }, [draft, mcpRows, metadataRows, idPrefix, t]);
+  }, [draft, mcpRows, customToolRows, metadataRows, idPrefix, t]);
 }
 
 function serializeDraft(value: unknown, format: ConfigFormat): string {
@@ -382,6 +505,7 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
   const [draft, setDraft] = useState<AgentDraft>(() => (initialTemplate?.agent as AgentDraft) ?? defaultAgentDraft(data));
   const [selected, setSelected] = useState<Template | undefined>(initialTemplate);
   const [mcpRows, setMcpRows] = useState<McpRow[]>(() => mcpRowsFromDraft((initialTemplate?.agent as AgentDraft) ?? defaultAgentDraft(data)));
+  const [customToolRows, setCustomToolRows] = useState<CustomToolRow[]>(() => customToolRowsFromDraft((initialTemplate?.agent as AgentDraft) ?? defaultAgentDraft(data)));
   const [metadataRows, setMetadataRows] = useState<KvRow[]>(() => kvRowsFromObject((initialTemplate?.agent?.metadata as Record<string, unknown>) ?? {}));
   const [format, setFormat] = useState<ConfigFormat>('yaml');
   const [drawerOpen, setDrawerOpen] = useState(drawerFitsViewport);
@@ -396,13 +520,14 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
     const agent = next.agent as AgentDraft;
     setDraft(agent);
     setMcpRows(mcpRowsFromDraft(agent));
+    setCustomToolRows(customToolRowsFromDraft(agent));
     setMetadataRows(kvRowsFromObject(agent.metadata));
     setParseError('');
   };
 
-  const definition = useMemo(() => agentDefinitionObject(draft, mcpRows, metadataRows), [draft, mcpRows, metadataRows]);
+  const definition = useMemo(() => agentDefinitionObject(draft, mcpRows, customToolRows, metadataRows), [draft, mcpRows, customToolRows, metadataRows]);
   const previewText = useMemo(() => serializeDraft(definition, format), [definition, format]);
-  const checks = useAgentDraftChecks(draft, mcpRows, metadataRows, 'create-agent');
+  const checks = useAgentDraftChecks(draft, mcpRows, customToolRows, metadataRows, 'create-agent');
   const issues = useMemo(() => validateAgentDraft(definition), [definition]);
   const blocked = checks.some((item) => item.state === 'blocking') || issues.length > 0;
 
@@ -411,6 +536,7 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
       const parsed = parseDraftText(text);
       setDraft(parsed);
       setMcpRows(mcpRowsFromDraft(parsed));
+      setCustomToolRows(customToolRowsFromDraft(parsed));
       setMetadataRows(kvRowsFromObject(parsed.metadata));
       setParseError('');
     } catch (err) {
@@ -455,6 +581,8 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
               setDraft={setDraft}
               mcpRows={mcpRows}
               setMcpRows={setMcpRows}
+              customToolRows={customToolRows}
+              setCustomToolRows={setCustomToolRows}
               metadataRows={metadataRows}
               setMetadataRows={setMetadataRows}
               data={data}
@@ -500,6 +628,7 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
   const source = agentDraftFromApi(initialDraft ?? agent);
   const [draft, setDraft] = useState<AgentDraft>(source);
   const [mcpRows, setMcpRows] = useState<McpRow[]>(() => mcpRowsFromDraft(source));
+  const [customToolRows, setCustomToolRows] = useState<CustomToolRow[]>(() => customToolRowsFromDraft(source));
   const [metadataRows, setMetadataRows] = useState<KvRow[]>(() => kvRowsFromObject(source.metadata));
   const [format, setFormat] = useState<ConfigFormat>('yaml');
   const [drawerOpen, setDrawerOpen] = useState(drawerFitsViewport);
@@ -507,9 +636,9 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const definition = useMemo(() => agentDefinitionObject(draft, mcpRows, metadataRows), [draft, mcpRows, metadataRows]);
+  const definition = useMemo(() => agentDefinitionObject(draft, mcpRows, customToolRows, metadataRows), [draft, mcpRows, customToolRows, metadataRows]);
   const previewText = useMemo(() => serializeDraft(definition, format), [definition, format]);
-  const checks = useAgentDraftChecks(draft, mcpRows, metadataRows, 'edit-agent');
+  const checks = useAgentDraftChecks(draft, mcpRows, customToolRows, metadataRows, 'edit-agent');
   const issues = useMemo(() => validateAgentDraft(definition), [definition]);
   const blocked = checks.some((item) => item.state === 'blocking') || issues.length > 0;
 
@@ -518,6 +647,7 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
       const parsed = parseDraftText(text);
       setDraft(parsed);
       setMcpRows(mcpRowsFromDraft(parsed));
+      setCustomToolRows(customToolRowsFromDraft(parsed));
       setMetadataRows(kvRowsFromObject(parsed.metadata));
       setParseError('');
     } catch (err) {
@@ -555,6 +685,8 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
               setDraft={setDraft}
               mcpRows={mcpRows}
               setMcpRows={setMcpRows}
+              customToolRows={customToolRows}
+              setCustomToolRows={setCustomToolRows}
               metadataRows={metadataRows}
               setMetadataRows={setMetadataRows}
               data={data}

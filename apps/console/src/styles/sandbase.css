@@ -392,6 +392,33 @@
   text-decoration-color: var(--fg);
 }
 
+.customToolList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.customToolRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+}
+
+.customToolRowHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.customToolSchema {
+  min-height: 72px;
+  resize: vertical;
+}
+
 /* Quiet icon button used inside editors and drawer chrome. */
 .iconButton.quiet {
   display: inline-flex;
