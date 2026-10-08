@@ -520,6 +520,32 @@ describe('the credential vault page', () => {
     await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('in use by an active session'));
   });
 
+  it('runs the published MCP probe from the credential row and renders the verdict', async () => {
+    const user = userEvent.setup();
+    onApiRequest(() => ({
+      type: 'vault_credential_validation',
+      credential_id: 'cred_1',
+      vault_id: 'vault_1',
+      validated_at: now,
+      has_refresh_token: false,
+      status: 'valid',
+      mcp_probe: { method: 'initialize', http_response: { status_code: 200 } },
+      refresh: null,
+    }));
+    renderConsole(<CredentialVaultDetail vault={vault} onBack={() => {}} onRefresh={() => {}} onNewCredential={() => {}} />);
+
+    await user.click(screen.getAllByTitle('Credential actions')[0]);
+    await user.click(screen.getAllByRole('button', { name: /^validate$/i })[0]);
+
+    const dialog = await screen.findByRole('dialog', { name: /validate credential/i });
+    await waitFor(() => {
+      const request = apiRequests().find((item) => item.method === 'POST' && item.path === '/v1/credential-vaults/vault_1/credentials/cred_1/mcp_oauth_validate');
+      expect(request).toBeDefined();
+    });
+    expect(await within(dialog).findByText('Valid')).toBeDefined();
+    expect(within(dialog).getByText(/HTTP 200/)).toBeDefined();
+  });
+
   it('edits a bearer credential through the published auth patch', async () => {
     const user = userEvent.setup();
     onApiRequest(() => vault);

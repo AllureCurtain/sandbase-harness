@@ -1,5 +1,5 @@
-import { Archive, FileText, Info, KeyRound, Lock, MoreVertical, Pencil, Plus, RefreshCw, Search, Shield, Trash2 } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { Archive, FileText, Info, KeyRound, Lock, MoreVertical, Pencil, Plus, RefreshCw, Search, Shield, ShieldCheck, Trash2 } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { deleteJson, postJson } from '../../api';
@@ -10,7 +10,7 @@ import { Modal } from '../Modal';
 import { ListToolbar, listSummary, SearchField } from '../list-ui';
 import { ConsoleSelect } from '../console-select';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
-import type { ConsoleData, CredentialAuthType, Vault, VaultCredential } from '../../types';
+import type { ConsoleData, CredentialAuthType, CredentialValidation, Vault, VaultCredential } from '../../types';
 import './resources.css';
 
 const MCP_REGISTRY_OPTIONS = [
@@ -158,6 +158,7 @@ export function CredentialVaultDetail({
   const [menuOpen, setMenuOpen] = useState(false);
   const [credentialMenuId, setCredentialMenuId] = useState<string | null>(null);
   const [rotatingCredential, setRotatingCredential] = useState<VaultCredential | null>(null);
+  const [validatingCredential, setValidatingCredential] = useState<VaultCredential | null>(null);
   const [editingCredential, setEditingCredential] = useState<VaultCredential | null>(null);
   const [editVaultOpen, setEditVaultOpen] = useState(false);
   const [deleteVaultOpen, setDeleteVaultOpen] = useState(false);
@@ -220,6 +221,17 @@ export function CredentialVaultDetail({
       >
         <Pencil size={18} />{t('detail.rowActions.edit')}
       </button>
+      {credential.auth_type === 'mcp_oauth' || credential.auth_type === 'bearer_token' ? (
+        <button
+          type="button"
+          onClick={() => {
+            setValidatingCredential(credential);
+            setCredentialMenuId(null);
+          }}
+        >
+          <ShieldCheck size={18} />{t('detail.rowActions.validate')}
+        </button>
+      ) : null}
       {credential.auth_type !== 'mcp_oauth' ? (
         <button
           type="button"
@@ -382,6 +394,13 @@ export function CredentialVaultDetail({
           {credentials.length === 0 ? credentialsEmpty : null}
         </div>
       </div>
+      {validatingCredential ? (
+        <ValidateCredentialModal
+          vaultId={vault.id}
+          credential={validatingCredential}
+          onClose={() => setValidatingCredential(null)}
+        />
+      ) : null}
       {rotatingCredential ? (
         <RotateCredentialModal
           vaultId={vault.id}
@@ -816,6 +835,96 @@ function RotateCredentialModal({
           <button className="button primary" type="submit" disabled={!canSubmit}>{saving ? t('modals.rotating') : t('modals.rotateSubmit')}</button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/**
+ * Runs the published live probe — the MCP `initialize` handshake against the
+ * credential's declared server — and renders the `vault_credential_validation`
+ * verdict. Fires once on mount; a refused probe (e.g. the network policy
+ * denies the declared host) surfaces the API error verbatim.
+ */
+function ValidateCredentialModal({
+  vaultId,
+  credential,
+  onClose,
+}: {
+  vaultId: string;
+  credential: VaultCredential;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation('credentials');
+  const [result, setResult] = useState<CredentialValidation | null>(null);
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(true);
+
+  const run = async () => {
+    setPending(true);
+    setError('');
+    setResult(null);
+    try {
+      const validation = await postJson<CredentialValidation>(
+        `/v1/credential-vaults/${vaultId}/credentials/${credential.id}/mcp_oauth_validate`,
+        {},
+      );
+      setResult(validation);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // The probe is a live network call; run it once when the modal opens, not
+  // on every render.
+  useEffect(() => {
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const statusToneFor = (status: CredentialValidation['status']): Tone =>
+    status === 'valid' ? 'ok' : status === 'invalid' ? 'danger' : 'warning';
+
+  return (
+    <Modal title={t('modals.validateTitle')} subtitle={t('modals.validateSubtitle')} onClose={onClose} size="medium">
+      <div className="credentialForm">
+        {pending ? <p className="mutedLine">{t('modals.validating')}</p> : null}
+        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        {result ? (
+          <div className="readonlyFields modalFactGrid">
+            <div className="readonlyField"><strong>{t('modals.validateFields.credential')}</strong><span>{credential.name || credential.id}</span></div>
+            <div className="readonlyField">
+              <strong>{t('modals.validateFields.status')}</strong>
+              <StatusDot tone={statusToneFor(result.status)} label={t(`modals.validateStatus.${result.status}`)} />
+            </div>
+            <div className="readonlyField"><strong>{t('modals.validateFields.validatedAt')}</strong><span>{formatDateShort(result.validated_at)}</span></div>
+            <div className="readonlyField"><strong>{t('modals.validateFields.hasRefreshToken')}</strong><span>{result.has_refresh_token ? t('modals.yes') : t('modals.no')}</span></div>
+            {result.mcp_probe ? (
+              <div className="readonlyField">
+                <strong>{t('modals.validateFields.probe')}</strong>
+                <span>
+                  {result.mcp_probe.method}
+                  {result.mcp_probe.http_response ? ` · HTTP ${result.mcp_probe.http_response.status_code}` : ` · ${t('modals.validateFields.probeNoResponse')}`}
+                </span>
+              </div>
+            ) : null}
+            {result.refresh ? (
+              <div className="readonlyField">
+                <strong>{t('modals.validateFields.refresh')}</strong>
+                <span>
+                  {result.refresh.status}
+                  {result.refresh.http_response ? ` · HTTP ${result.refresh.http_response.status_code}` : ''}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="modalActions">
+          {error ? <button className="button outline" type="button" onClick={() => void run()}>{t('modals.validateRetry')}</button> : null}
+          <button className="button primary" type="button" onClick={onClose}>{t('modals.close')}</button>
+        </div>
+      </div>
     </Modal>
   );
 }

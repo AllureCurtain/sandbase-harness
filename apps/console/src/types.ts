@@ -271,6 +271,18 @@ export type Vault = {
 
 export type CredentialAuthType = 'mcp_oauth' | 'bearer_token' | 'environment_variable';
 
+/** The published `vault_credential_validation` verdict returned by the MCP OAuth probe. */
+export type CredentialValidation = {
+  type: 'vault_credential_validation';
+  credential_id: string;
+  vault_id: string;
+  validated_at: string;
+  has_refresh_token: boolean;
+  status: 'valid' | 'invalid' | 'unknown';
+  mcp_probe: { method: 'initialize'; http_response: { status_code: number } | null } | null;
+  refresh: { status: string; http_response: { status_code: number } | null } | null;
+};
+
 export type VaultCredential = {
   id: string;
   type: 'credential';

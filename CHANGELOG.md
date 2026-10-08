@@ -4,6 +4,17 @@
 
 ### Added
 
+- The credential vault detail page now offers a Validate row action on
+  `mcp_oauth` and `bearer_token` credentials — the two auth types the
+  published `mcp_oauth_validate` probe can reach — which posts the live
+  MCP `initialize` handshake and renders the `vault_credential_validation`
+  verdict in a dialog: the `valid` / `invalid` / `unknown` status, the
+  validation time, whether a refresh token is held, the probe's HTTP
+  outcome, and the token-refresh exchange when a 401 triggered one. A
+  refused probe (an unprobeable auth type, a network-policy denial, or an
+  undecryptable secret) surfaces the API error verbatim with a retry,
+  matching the refusal boundary the route itself draws.
+
 - The Console's create-session modal now offers a per-session loop-engine
   picker populated from the runtime's adapter inventory: the default option
   follows the Settings provider and omits `loop_engine` from the create body,
