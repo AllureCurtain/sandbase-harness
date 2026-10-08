@@ -4,6 +4,14 @@
 
 ### Added
 
+- The create-session dialog can now override part of the agent definition
+  for a single session. Enabling the new overrides section in Session
+  details switches the request to the published
+  `agent: {type: "agent_with_overrides", ...}` reference and exposes the
+  five supported fields — model, system prompt, tools, MCP servers, and
+  skills. Structured fields are entered as JSON, validated locally before
+  submit, and omitted entirely when left blank, so sessions still send a
+  bare agent id when nothing is overridden.
 - The agent create/edit forms now expose the two execution controls the
   published agent schema already accepts: a turn cap that serializes as
   `max_turns` (blank clears a stored cap on update by sending `null`) and an

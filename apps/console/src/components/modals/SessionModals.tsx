@@ -38,6 +38,12 @@ export function SessionModal({
   const [outcomeDescription, setOutcomeDescription] = useState('');
   const [outcomeRubric, setOutcomeRubric] = useState('');
   const [outcomeMaxIterations, setOutcomeMaxIterations] = useState('');
+  const [overridesOn, setOverridesOn] = useState(false);
+  const [overrideModel, setOverrideModel] = useState('');
+  const [overrideSystem, setOverrideSystem] = useState('');
+  const [overrideTools, setOverrideTools] = useState('');
+  const [overrideMcp, setOverrideMcp] = useState('');
+  const [overrideSkills, setOverrideSkills] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -59,10 +65,36 @@ export function SessionModal({
   const outcomeComplete = Boolean(outcomeDescription.trim() && outcomeRubric.trim());
   const outcomeMax = outcomeMaxIterations.trim() ? Number(outcomeMaxIterations) : undefined;
 
+  // `agent_with_overrides` carries exactly the fields the operator filled —
+  // each enabled textarea parses before it joins the body, and a field that
+  // fails to parse names itself so submit can refuse instead of sending a
+  // malformed override the route would reject anyway.
+  const overridesResult = useMemo(() => {
+    if (!overridesOn) return { ok: true as const, overrides: undefined };
+    const overrides: Record<string, unknown> = {};
+    const malformed: string[] = [];
+    if (overrideModel.trim()) overrides.model = overrideModel.trim();
+    if (overrideSystem.trim()) overrides.system = overrideSystem;
+    for (const [key, raw] of [['tools', overrideTools], ['mcp_servers', overrideMcp], ['skills', overrideSkills]] as const) {
+      const text = raw.trim();
+      if (!text) continue;
+      try {
+        overrides[key] = JSON.parse(text);
+      } catch {
+        malformed.push(key);
+      }
+    }
+    return malformed.length
+      ? { ok: false as const, malformed }
+      : { ok: true as const, overrides };
+  }, [overridesOn, overrideModel, overrideSystem, overrideTools, overrideMcp, overrideSkills]);
+
   // One body object feeds both the submit below and the equivalent-request
   // panel — the panel is only honest if it cannot drift from what is sent.
   const createBody = useMemo(() => ({
-    agent,
+    agent: overridesOn
+      ? { type: 'agent_with_overrides', id: agent, ...(overridesResult.ok && overridesResult.overrides ? overridesResult.overrides : {}) }
+      : agent,
     environment_id: environment,
     title: title || undefined,
     ...(engine ? { loop_engine: engine } : {}),
@@ -77,7 +109,7 @@ export function SessionModal({
     } : {}),
     resources: resources.map(toSessionResourcePayload),
     vault_ids: Array.from(vaultIds),
-  }), [agent, environment, engine, title, budgetCents, outcomeComplete, outcomeDescription, outcomeRubric, outcomeMax, resources, vaultIds]);
+  }), [agent, overridesOn, overridesResult, environment, engine, title, budgetCents, outcomeComplete, outcomeDescription, outcomeRubric, outcomeMax, resources, vaultIds]);
 
   // Only engines the runtime can execute are offered; roadmap adapters carry
   // status 'unavailable' and stay out of the picker entirely.
@@ -106,6 +138,10 @@ export function SessionModal({
     }
     if (outcomeComplete && outcomeMax !== undefined && (!Number.isInteger(outcomeMax) || outcomeMax < 1 || outcomeMax > 20)) {
       setError(t('modal.outcome.errorMaxIterations'));
+      return;
+    }
+    if (!overridesResult.ok) {
+      setError(t('modal.overrides.errorJson', { fields: overridesResult.malformed.join(', ') }));
       return;
     }
     setSaving(true);
@@ -184,6 +220,60 @@ export function SessionModal({
                   <small>{t('modal.details.engineLocalSandbox')}</small>
                 ) : null}
               </label>
+              <label className="checkboxLine">
+                <input
+                  type="checkbox"
+                  checked={overridesOn}
+                  onChange={(event) => setOverridesOn(event.target.checked)}
+                  aria-label={t('modal.overrides.enable')}
+                />
+                <span>{t('modal.overrides.enable')}</span>
+              </label>
+              {overridesOn ? (
+                <div className="sessionOverrides">
+                  <p className="mutedLine">{t('modal.overrides.hint')}</p>
+                  <label className="sessionField">
+                    <span>{t('modal.overrides.model')} <small className="optionalPill">{t('modal.details.optional')}</small></span>
+                    <input
+                      value={overrideModel}
+                      onChange={(event) => setOverrideModel(event.target.value)}
+                      placeholder={t('modal.overrides.modelPlaceholder')}
+                      aria-label={t('modal.overrides.model')}
+                    />
+                  </label>
+                  <label className="sessionField">
+                    <span>{t('modal.overrides.system')} <small className="optionalPill">{t('modal.details.optional')}</small></span>
+                    <textarea
+                      value={overrideSystem}
+                      onChange={(event) => setOverrideSystem(event.target.value)}
+                      rows={3}
+                      spellCheck={false}
+                      aria-label={t('modal.overrides.system')}
+                    />
+                  </label>
+                  {([
+                    { key: 'tools', label: t('modal.overrides.tools'), value: overrideTools, setter: setOverrideTools },
+                    { key: 'mcp_servers', label: t('modal.overrides.mcpServers'), value: overrideMcp, setter: setOverrideMcp },
+                    { key: 'skills', label: t('modal.overrides.skills'), value: overrideSkills, setter: setOverrideSkills },
+                  ]).map(({ key, label, value, setter }) => (
+                    <label className="sessionField" key={key}>
+                        <span>{label} <small className="optionalPill">{t('modal.details.optional')}</small></span>
+                        <textarea
+                          className="monoInput"
+                          value={value}
+                          onChange={(event) => setter(event.target.value)}
+                          rows={3}
+                          spellCheck={false}
+                          placeholder={t('modal.overrides.jsonPlaceholder')}
+                          aria-label={label}
+                        />
+                        {!overridesResult.ok && overridesResult.malformed.includes(key) ? (
+                          <small className="fieldError">{t('modal.overrides.fieldInvalid')}</small>
+                        ) : null}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
             </section>
 
             <section className="sessionSectionCard">
