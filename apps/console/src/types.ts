@@ -781,3 +781,55 @@ export type ViewId =
   | 'settings';
 
 export type AgentTab = 'agent' | 'sessions' | 'deployments' | 'observability';
+
+/** One server's connection row from `GET /v1/x/mcp/status?session_id=…`. */
+export type McpServerStatus = {
+  name: string;
+  type: 'stdio' | 'url';
+  connected: boolean;
+  toolCount: number;
+  error?: string;
+};
+
+/** `GET /v1/x/handoff-bundles` row: everything except the payload itself. */
+export type HandoffBundleSummary = {
+  id: string;
+  type: 'handoff_bundle';
+  session_id: string;
+  label: string | null;
+  schema_version: string;
+  replay_mode: string;
+  includes_message_content: boolean;
+  includes_file_content: boolean;
+  event_count: number;
+  file_count: number;
+  payload_sha256: string;
+  signature_key_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+/** One work item in an environment's queue (`GET /v1/x/environments/{id}/work`). */
+export type EnvironmentWorkItem = {
+  type: 'work';
+  id: string;
+  environment_id: string;
+  state: 'queued' | 'starting' | 'active' | 'stopping' | 'stopped';
+  data: { type: string; id: string };
+  created_at: string;
+  acknowledged_at: string | null;
+  started_at: string | null;
+  latest_heartbeat_at: string | null;
+  stop_requested_at: string | null;
+  stopped_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+/** Queue depth summary (`GET /v1/x/environments/{id}/work/stats`). */
+export type EnvironmentWorkStats = {
+  type: 'work_queue_stats';
+  depth: number;
+  pending: number;
+  oldest_queued_at: string | null;
+  workers_polling: number;
+};

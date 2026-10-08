@@ -1,4 +1,4 @@
-import { Archive, ChevronDown, Clock, Cloud, Cpu, Monitor, Paperclip, PauseCircle, Settings, Square, Target, Trash2 } from 'lucide-react';
+import { Archive, ChevronDown, Clock, Cloud, Cpu, FolderDown, Monitor, Paperclip, PauseCircle, Plug, Settings, Square, Target, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ResourceBadge } from '../Common';
@@ -38,6 +38,8 @@ export function SessionHero({
   onSettings,
   onDefineOutcome,
   onResources,
+  onMcpStatus,
+  onHandoffs,
   onInterrupt,
   onArchive,
   onDelete,
@@ -52,6 +54,8 @@ export function SessionHero({
   onSettings: () => void;
   onDefineOutcome: () => void;
   onResources: () => void;
+  onMcpStatus: () => void;
+  onHandoffs: () => void;
   onInterrupt: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -94,6 +98,8 @@ export function SessionHero({
                   <button type="button" onClick={() => { setActionsOpen(false); onDefineOutcome(); }}><Target size={18} />{t('detail.menu.defineOutcome')}</button>
                 ) : null}
                 <button type="button" onClick={() => { setActionsOpen(false); onResources(); }}><Paperclip size={18} />{t('detail.menu.resources')}</button>
+                <button type="button" onClick={() => { setActionsOpen(false); onMcpStatus(); }}><Plug size={18} />{t('detail.menu.mcpStatus')}</button>
+                <button type="button" onClick={() => { setActionsOpen(false); onHandoffs(); }}><FolderDown size={18} />{t('detail.menu.handoffs')}</button>
                 <button type="button" onClick={() => { setActionsOpen(false); onInterrupt(); }}><Square size={18} />{t('detail.menu.interrupt')}</button>
                 {!session.archived_at ? (
                   <button type="button" onClick={() => { setActionsOpen(false); onArchive(); }}><Archive size={18} />{t('detail.menu.archive')}</button>
