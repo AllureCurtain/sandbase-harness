@@ -29,6 +29,7 @@ export function SessionModal({
   const { t: tCommon } = useTranslation();
   const [agent, setAgent] = useState(initialAgentId ?? '');
   const [environment, setEnvironment] = useState('');
+  const [engine, setEngine] = useState('');
   const [title, setTitle] = useState('');
   const [vaultIds, setVaultIds] = useState<Set<string>>(new Set());
   const [resources, setResources] = useState<SessionResourceDraft[]>([]);
@@ -42,9 +43,21 @@ export function SessionModal({
     agent,
     environment_id: environment,
     title: title || undefined,
+    ...(engine ? { loop_engine: engine } : {}),
     resources: resources.map(toSessionResourcePayload),
     vault_ids: Array.from(vaultIds),
-  }), [agent, environment, title, resources, vaultIds]);
+  }), [agent, environment, engine, title, resources, vaultIds]);
+
+  // Only engines the runtime can execute are offered; roadmap adapters carry
+  // status 'unavailable' and stay out of the picker entirely.
+  const executableEngines = (data.settings?.adapters.loop_engine ?? []).filter(
+    (adapter) => adapter.status === 'available',
+  );
+  const defaultEngine = data.settings?.saved_config.loop_engine.provider ?? 'builtin';
+  const engineNeedsLocalSandbox = executableEngines
+    .find((adapter) => adapter.id === engine)
+    ?.requirements?.includes('local sandbox provider') ?? false;
+  const sandboxIsLocal = data.settings?.saved_config.sandbox.provider === 'local';
   const createRequest = useMemo(
     () => ({ method: 'POST' as const, path: '/v1/sessions', body: createBody }),
     [createBody],
@@ -113,6 +126,21 @@ export function SessionModal({
                   options={data.environments.map((item) => ({ id: item.id, title: item.name, subtitle: formatDateShort(item.created_at), badge: environmentKind(item) }))}
                 />
               </div>
+              <label className="sessionField">
+                <span>{t('modal.details.engine')}</span>
+                <ConsoleSelect
+                  label={t('modal.details.engine')}
+                  value={engine}
+                  onChange={setEngine}
+                  options={[
+                    { value: '', label: t('modal.details.engineDefault', { engine: defaultEngine }) },
+                    ...executableEngines.map((adapter) => ({ value: adapter.id, label: adapter.label })),
+                  ]}
+                />
+                {engineNeedsLocalSandbox && !sandboxIsLocal && data.settings ? (
+                  <small>{t('modal.details.engineLocalSandbox')}</small>
+                ) : null}
+              </label>
             </section>
 
             <section className="sessionSectionCard">

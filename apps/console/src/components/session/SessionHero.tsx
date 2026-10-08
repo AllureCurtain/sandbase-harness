@@ -1,4 +1,4 @@
-import { Archive, ChevronDown, Clock, Cloud, Monitor, PauseCircle, Settings, Square, Target, Trash2 } from 'lucide-react';
+import { Archive, ChevronDown, Clock, Cloud, Cpu, Monitor, PauseCircle, Settings, Square, Target, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ResourceBadge } from '../Common';
@@ -76,6 +76,7 @@ export function SessionHero({
               {session.agent.name}
             </button>
             <ResourceBadge icon={<Cloud size={15} />} label={environmentName ?? session.environment_id} />
+            <ResourceBadge icon={<Cpu size={15} />} label={session.loop_engine ?? 'builtin'} />
             <span className="sessionTimeMeta"><Clock size={15} /><span>{relativeDate(session.created_at)} · {formatDuration(session.created_at, session.updated_at)}</span></span>
           </div>
         </div>
