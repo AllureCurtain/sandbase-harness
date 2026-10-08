@@ -129,7 +129,7 @@ full response-shape, lifecycle, or provider conformance.
 | --- | --- |
 | `managed-agents init/start/list/reload/chat` | Core local lifecycle and chat workflows. |
 | `managed-agents session ...` | Create, list, message, tail, inspect, and logs. |
-| `managed-agents worker poll` | Advanced self-hosted environment worker queue execution. |
+| `managed-agents worker poll` / `worker run` | Advanced self-hosted environment worker queue execution. `--on-work` spawns a per-claim sandbox handler; `worker run` is the single-session in-sandbox counterpart. |
 | `managed-agents settings ...` | Get, set model boundary, and validate canonical runtime settings. |
 | `managed-agents environments ...` | List, inspect, create, update, archive, and list worker keys. |
 | `managed-agents workspace ...` | Create, open/register, list, resolve, and remove local workspace registry entries. |
