@@ -1,7 +1,7 @@
-import { Activity, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Play, Plus, RadioTower, Send } from 'lucide-react';
+import { Activity, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, KeyRound, Pencil, Play, Plus, RadioTower, Send } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { getJson, postJson } from '../../api';
+import { getJson, postJson, putJson } from '../../api';
 import type { ConsoleData, DeploymentRun, Outcome, ScheduledDeployment, Session, Webhook, WebhookDelivery } from '../../types';
 import { RequiredMark } from '../Common';
 import { Modal } from '../Modal';
@@ -40,6 +40,7 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<Webhook | null>(null);
   const [deliveriesId, setDeliveriesId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
 
@@ -129,6 +130,7 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
                     expanded={deliveriesId === webhook.id}
                     onToggleDeliveries={() => setDeliveriesId((current) => current === webhook.id ? null : webhook.id)}
                     onTest={testWebhook}
+                    onEdit={() => setEditing(webhook)}
                   />
                 ))}
               </tbody>
@@ -149,6 +151,9 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
               <button className="button ghost" type="button" onClick={() => void testWebhook(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
                 <Send size={14} aria-hidden="true" /> {testingId === webhook.id ? t('webhooks.actions.testing') : t('webhooks.actions.test')}
               </button>
+              <button className="button ghost" type="button" onClick={() => setEditing(webhook)}>
+                <Pencil size={14} aria-hidden="true" /> {t('webhooks.actions.edit')}
+              </button>
             </article>
           ))}
           {data.webhooks.length === 0 ? empty : null}
@@ -162,6 +167,17 @@ export function WebhooksPage({ data, onRefresh }: OperationsPageProps) {
             setCreateOpen(false);
             onRefresh();
           }}
+        />
+      ) : null}
+      {editing ? (
+        <WebhookEditModal
+          webhook={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            onRefresh();
+          }}
+          onChanged={onRefresh}
         />
       ) : null}
     </section>
@@ -562,12 +578,14 @@ function WebhookRow({
   expanded,
   onToggleDeliveries,
   onTest,
+  onEdit,
 }: {
   webhook: Webhook;
   testingId: string | null;
   expanded: boolean;
   onToggleDeliveries: () => void;
   onTest: (webhook: Webhook) => void;
+  onEdit: () => void;
 }) {
   const { t } = useTranslation('operations');
   return (
@@ -586,6 +604,9 @@ function WebhookRow({
             </button>
             <button className="button ghost" type="button" onClick={() => onTest(webhook)} disabled={testingId === webhook.id || webhook.status !== 'active'}>
               <Send size={14} aria-hidden="true" /> {testingId === webhook.id ? t('webhooks.actions.testing') : t('webhooks.actions.test')}
+            </button>
+            <button className="button ghost" type="button" onClick={onEdit}>
+              <Pencil size={14} aria-hidden="true" /> {t('webhooks.actions.edit')}
             </button>
           </div>
         </td>
@@ -746,6 +767,183 @@ function WebhookCreateModal({ onClose, onSaved }: { onClose: () => void; onSaved
         <div className="modalActions">
           <button className="button outline" type="button" onClick={onClose}>{t('webhooks.create.cancel')}</button>
           <button className="button primary" type="submit" disabled={saving || !url.trim() || selectedEvents.size === 0}>{saving ? t('webhooks.create.submitting') : t('webhooks.create.submit')}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Edit a webhook subscription and manage its signing secret. `status` accepts
+ * exactly `active`/`disabled` — re-enabling is the published remedy for an
+ * endpoint disabled by sustained failures, and clears its reason and failure
+ * window server-side. `rotate-secret` answers the new `secret_key` once and
+ * never again, so the response is displayed rather than discarded; both
+ * secret actions arm first and confirm on a second click.
+ */
+function WebhookEditModal({
+  webhook,
+  onClose,
+  onSaved,
+  onChanged,
+}: {
+  webhook: Webhook;
+  onClose: () => void;
+  onSaved: () => void;
+  onChanged: () => void;
+}) {
+  const { t } = useTranslation('operations');
+  const [name, setName] = useState(webhook.name);
+  const [url, setUrl] = useState(webhook.url);
+  const [selectedEvents, setSelectedEvents] = useState<ReadonlySet<string>>(() => new Set(webhook.events));
+  const [description, setDescription] = useState(webhook.description);
+  const [status, setStatus] = useState(webhook.status === 'disabled' ? 'disabled' : 'active');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [secretBusy, setSecretBusy] = useState(false);
+  const [secretError, setSecretError] = useState('');
+  const [armedAction, setArmedAction] = useState<'rotate' | 'retire' | null>(null);
+  const [newSecret, setNewSecret] = useState('');
+
+  const toggleEvent = (eventName: string) => {
+    setSelectedEvents((current) => {
+      const next = new Set(current);
+      if (next.has(eventName)) next.delete(eventName);
+      else next.add(eventName);
+      return next;
+    });
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      await putJson<Webhook>(`/v1/webhooks/${encodeURIComponent(webhook.id)}`, {
+        name: name || undefined,
+        url,
+        description,
+        events: WEBHOOK_EVENT_GROUPS.flatMap((group) => group.events.filter((name) => selectedEvents.has(name))),
+        status,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('webhooks.edit.failed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const secretAction = async (action: 'rotate' | 'retire') => {
+    if (armedAction !== action) {
+      setArmedAction(action);
+      return;
+    }
+    setSecretBusy(true);
+    setSecretError('');
+    setArmedAction(null);
+    try {
+      const updated = await postJson<Webhook & { secret_key?: string }>(
+        `/v1/webhooks/${encodeURIComponent(webhook.id)}/${action === 'rotate' ? 'rotate-secret' : 'retire-secret'}`,
+        {},
+      );
+      // The rotated secret is shown once in this dialog, so a successful
+      // rotate must refresh the row without closing — `onSaved` would take the
+      // secret down with the modal.
+      if (action === 'rotate' && updated.secret_key) setNewSecret(updated.secret_key);
+      onChanged();
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSecretBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={t('webhooks.edit.title')} subtitle={webhook.id} onClose={onClose} size="medium">
+      <form className="modalForm operationCreateForm" onSubmit={submit}>
+        {error ? <div className="banner error inlineBanner">{error}</div> : null}
+        <label className="editField">
+          {t('webhooks.create.url')} <RequiredMark />
+          <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder={t('webhooks.create.urlPlaceholder')} required />
+          <small>{t('webhooks.create.urlHint')}</small>
+        </label>
+        <label className="editField">
+          {t('webhooks.create.name')}
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('webhooks.create.namePlaceholder')} />
+        </label>
+        <fieldset className="webhookEventPicker">
+          <legend>{t('webhooks.create.events')} <RequiredMark /></legend>
+          {WEBHOOK_EVENT_GROUPS.map((group) => (
+            <div className="webhookEventGroup" key={group.category}>
+              <strong>{group.category}</strong>
+              <div className="webhookEventOptions">
+                {group.events.map((eventName) => (
+                  <label className="checkboxLine" key={eventName}>
+                    <input
+                      type="checkbox"
+                      checked={selectedEvents.has(eventName)}
+                      onChange={() => toggleEvent(eventName)}
+                    />
+                    <code>{eventName}</code>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          {selectedEvents.size === 0 ? <p className="fieldHint">{t('webhooks.create.eventsHint')}</p> : null}
+        </fieldset>
+        <label className="editField">
+          {t('webhooks.create.description')}
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
+        </label>
+        <label className="editField">
+          {t('webhooks.edit.status')}
+          <ConsoleSelect
+            label={t('webhooks.edit.status')}
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'active', label: t('webhooks.edit.statusActive') },
+              { value: 'disabled', label: t('webhooks.edit.statusDisabled') },
+            ]}
+          />
+          <small>{t('webhooks.edit.statusHint')}</small>
+        </label>
+
+        <fieldset className="webhookEventPicker">
+          <legend>{t('webhooks.edit.secretTitle')}</legend>
+          <p className="fieldHint">{t('webhooks.edit.secretHint')}</p>
+          {newSecret ? (
+            <div className="banner success inlineBanner">
+              <strong>{t('webhooks.edit.secretShownOnce')}</strong>
+              <code className="monoValue">{newSecret}</code>
+            </div>
+          ) : null}
+          {secretError ? <div className="banner error inlineBanner">{secretError}</div> : null}
+          <div className="rowActionGroup">
+            <button
+              className={`button ${armedAction === 'rotate' ? 'primary' : 'outline'}`}
+              type="button"
+              disabled={secretBusy}
+              onClick={() => void secretAction('rotate')}
+            >
+              <KeyRound size={14} aria-hidden="true" /> {armedAction === 'rotate' ? t('webhooks.edit.rotateConfirm') : t('webhooks.edit.rotate')}
+            </button>
+            <button
+              className={`button ${armedAction === 'retire' ? 'danger' : 'outline'}`}
+              type="button"
+              disabled={secretBusy}
+              onClick={() => void secretAction('retire')}
+            >
+              {armedAction === 'retire' ? t('webhooks.edit.retireConfirm') : t('webhooks.edit.retire')}
+            </button>
+          </div>
+        </fieldset>
+
+        <div className="modalActions">
+          <button className="button outline" type="button" onClick={onClose}>{t('webhooks.create.cancel')}</button>
+          <button className="button primary" type="submit" disabled={saving || !url.trim() || selectedEvents.size === 0}>{saving ? t('webhooks.edit.submitting') : t('webhooks.edit.submit')}</button>
         </div>
       </form>
     </Modal>
