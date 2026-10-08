@@ -195,7 +195,7 @@ describe('the interactive Console harness', () => {
 
       await user.click(screen.getByRole('combobox', { name: /loop engine/i }));
 
-      const options = screen.getAllByRole('option').map((option) => option.textContent);
+      const options = (await screen.findAllByRole('option')).map((option) => option.textContent);
       expect(options).toEqual(expect.arrayContaining(['Default', 'Pi CLI']));
       for (const roadmap of ['Codex', 'Harness', 'Claude']) {
         expect(options).not.toContain(roadmap);
