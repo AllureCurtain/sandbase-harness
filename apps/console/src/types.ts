@@ -808,3 +808,28 @@ export type HandoffBundleSummary = {
   metadata: Record<string, unknown>;
   created_at: string;
 };
+
+/** One work item in an environment's queue (`GET /v1/x/environments/{id}/work`). */
+export type EnvironmentWorkItem = {
+  type: 'work';
+  id: string;
+  environment_id: string;
+  state: 'queued' | 'starting' | 'active' | 'stopping' | 'stopped';
+  data: { type: string; id: string };
+  created_at: string;
+  acknowledged_at: string | null;
+  started_at: string | null;
+  latest_heartbeat_at: string | null;
+  stop_requested_at: string | null;
+  stopped_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+/** Queue depth summary (`GET /v1/x/environments/{id}/work/stats`). */
+export type EnvironmentWorkStats = {
+  type: 'work_queue_stats';
+  depth: number;
+  pending: number;
+  oldest_queued_at: string | null;
+  workers_polling: number;
+};
