@@ -9,6 +9,7 @@ import { ConfirmDeleteModal } from '../DangerZone';
 import { Modal } from '../Modal';
 import { ListToolbar, listSummary, SearchField } from '../list-ui';
 import { ConsoleSelect } from '../console-select';
+import { usePagedCollection } from '../../hooks/usePagedCollection';
 import { formatDateShort, relativeDate, shortId } from '../../lib/format';
 import type { ConsoleData, CredentialAuthType, CredentialValidation, Vault, VaultCredential } from '../../types';
 import './resources.css';
@@ -40,7 +41,15 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
   const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
-  const vaults = data.vaults.filter((vault) => {
+  // `include_archived` is the only filter the vault listing publishes; the
+  // status select maps onto it (archived rows only exist in the response when
+  // it is set) and the remaining status narrowing stays client-side, as does
+  // the text search — the endpoint has no name/id query parameter.
+  const paged = usePagedCollection<Vault>(
+    `/v1/credential-vaults?limit=50${status === 'active' ? '' : '&include_archived=true'}`,
+    data.vaults,
+  );
+  const vaults = paged.items.filter((vault) => {
     const q = query.toLowerCase();
     const matchesStatus = status === 'all' || vault.status === status;
     const matchesQuery = vault.id.toLowerCase().includes(q) || vault.name.toLowerCase().includes(q);
@@ -53,8 +62,8 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
   const empty = (
     <EmptyState
       icon={Lock}
-      title={data.vaults.length && filtering ? t('list.noMatch') : t('list.empty')}
-      description={data.vaults.length && filtering ? undefined : t('list.emptyBody')}
+      title={(paged.items.length || paged.loading) && filtering ? t('list.noMatch') : t('list.empty')}
+      description={(paged.items.length || paged.loading) && filtering ? undefined : t('list.emptyBody')}
       action={query
         ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button>
         : <button className="button primary" type="button" onClick={onNew}><Plus size={15} />{t('list.createVault')}</button>}
@@ -82,7 +91,7 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
         </KpiStrip>
         <ListToolbar
           label={t('list.filterLabel')}
-          summary={listSummary(tCommon, vaults.length, data.vaults.length, { locale: i18n.resolvedLanguage })}
+          summary={listSummary(tCommon, vaults.length, paged.items.length, { hasMore: paged.hasMore, locale: i18n.resolvedLanguage })}
         >
           <SearchField value={query} onChange={setQuery} placeholder={t('list.searchPlaceholder')} label={t('list.filterLabel')} />
           <ConsoleSelect
@@ -96,6 +105,7 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
             ]}
           />
         </ListToolbar>
+        {paged.error ? <p className="mutedLine" role="alert">{paged.error}</p> : null}
         {vaults.length ? (
           <div className="table-frame credentials-table-frame">
             <table className="data-table" aria-label={tPages('credential-vaults.title')}>
@@ -137,6 +147,11 @@ export function CredentialVaults({ data, onNew, onOpenVault }: { data: ConsoleDa
           ))}
           {vaults.length === 0 ? empty : null}
         </div>
+        {paged.hasMore ? (
+          <button className="button outline loadMoreButton" type="button" onClick={paged.loadMore} disabled={paged.loadingMore}>
+            {tCommon('actions.loadMore')}
+          </button>
+        ) : null}
       </PageBody>
     </section>
   );
