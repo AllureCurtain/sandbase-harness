@@ -4,6 +4,14 @@
 
 ### Added
 
+- The session detail actions menu gains two diagnostics surfaces. MCP
+  status reads `GET /v1/x/mcp/status?session_id=…` and lists each server's
+  connection state, tool count, and recorded error. Handoff bundles lists
+  the session's `GET /v1/x/handoff-bundles` rows, exports a new bundle
+  through `POST /v1/x/sessions/{id}/handoff-bundle` with the published
+  `label`/`include_message_content`/`include_file_content` flags
+  (digest-only by default, as the route intends), and downloads a
+  bundle's full payload via `GET /v1/x/handoff-bundles/{id}`.
 - The agent create/edit forms now expose the two execution controls the
   published agent schema already accepts: a turn cap that serializes as
   `max_turns` (blank clears a stored cap on update by sending `null`) and an

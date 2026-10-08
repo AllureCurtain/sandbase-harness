@@ -2002,3 +2002,14 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+
+.handoffBuildRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.handoffBuildRow > input[type="text"] {
+  flex: 1 1 200px;
+}

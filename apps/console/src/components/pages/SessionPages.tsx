@@ -5,6 +5,7 @@ import { deleteJson, postJson } from '../../api';
 import { StatusDot, type Tone } from '../console-ui';
 import { ConfirmDeleteModal } from '../DangerZone';
 import { DefineOutcomeModal, SessionResourcesModal, SessionSettingsModal } from '../modals/SessionModals';
+import { SessionHandoffBundlesModal, SessionMcpStatusModal } from '../modals/SessionDiagnosticsModals';
 import { SessionComposer } from '../session/SessionComposer';
 import { SessionHero } from '../session/SessionHero';
 import { SessionTimeline } from '../session/SessionTimeline';
@@ -52,6 +53,8 @@ export function SessionDetail({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [defineOutcomeOpen, setDefineOutcomeOpen] = useState(false);
   const [resourcesOpen, setResourcesOpen] = useState(false);
+  const [mcpStatusOpen, setMcpStatusOpen] = useState(false);
+  const [handoffsOpen, setHandoffsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [actionError, setActionError] = useState('');
   const [messageDraft, setMessageDraft] = useState('');
@@ -276,6 +279,8 @@ export function SessionDetail({
         onSettings={() => setSettingsOpen(true)}
         onDefineOutcome={() => setDefineOutcomeOpen(true)}
         onResources={() => setResourcesOpen(true)}
+        onMcpStatus={() => setMcpStatusOpen(true)}
+        onHandoffs={() => setHandoffsOpen(true)}
         onInterrupt={() => void interrupt()}
         onArchive={() => void archive()}
         onDelete={() => setDeleteConfirmOpen(true)}
@@ -339,6 +344,14 @@ export function SessionDetail({
           onClose={() => setResourcesOpen(false)}
           onChanged={onRefresh}
         />
+      ) : null}
+
+      {mcpStatusOpen ? (
+        <SessionMcpStatusModal session={session} onClose={() => setMcpStatusOpen(false)} />
+      ) : null}
+
+      {handoffsOpen ? (
+        <SessionHandoffBundlesModal session={session} onClose={() => setHandoffsOpen(false)} />
       ) : null}
 
       {defineOutcomeOpen ? (

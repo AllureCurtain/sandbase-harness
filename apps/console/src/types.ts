@@ -781,3 +781,30 @@ export type ViewId =
   | 'settings';
 
 export type AgentTab = 'agent' | 'sessions' | 'deployments' | 'observability';
+
+/** One server's connection row from `GET /v1/x/mcp/status?session_id=…`. */
+export type McpServerStatus = {
+  name: string;
+  type: 'stdio' | 'url';
+  connected: boolean;
+  toolCount: number;
+  error?: string;
+};
+
+/** `GET /v1/x/handoff-bundles` row: everything except the payload itself. */
+export type HandoffBundleSummary = {
+  id: string;
+  type: 'handoff_bundle';
+  session_id: string;
+  label: string | null;
+  schema_version: string;
+  replay_mode: string;
+  includes_message_content: boolean;
+  includes_file_content: boolean;
+  event_count: number;
+  file_count: number;
+  payload_sha256: string;
+  signature_key_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
