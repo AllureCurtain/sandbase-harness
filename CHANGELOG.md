@@ -13,6 +13,14 @@
   no published parameter on these collections, so it still applies to
   loaded rows only — the summary count now says "of N loaded" while more
   pages exist.
+- The create-session dialog can now override part of the agent definition
+  for a single session. Enabling the new overrides section in Session
+  details switches the request to the published
+  `agent: {type: "agent_with_overrides", ...}` reference and exposes the
+  five supported fields — model, system prompt, tools, MCP servers, and
+  skills. Structured fields are entered as JSON, validated locally before
+  submit, and omitted entirely when left blank, so sessions still send a
+  bare agent id when nothing is overridden.
 - The session detail actions menu gains two diagnostics surfaces. MCP
   status reads `GET /v1/x/mcp/status?session_id=…` and lists each server's
   connection state, tool count, and recorded error. Handoff bundles lists
