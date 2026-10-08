@@ -2149,6 +2149,18 @@ and keeps polling. An unusable `--port`, `--interval-ms`, `--claim-timeout-ms`,
 `--ack-timeout-ms` stops the worker at startup with a message naming the option: an
 unparseable interval would otherwise become a poll loop with no delay at all.
 
+To give every claim its own clean sandbox, `worker poll --on-work <command>` hands
+each claimed item to a spawned command instead of running it in-process: the item
+JSON — including its per-claim `secret` — arrives on the command's stdin, and the
+`MANAGED_AGENTS_*` variables (`WORK_ID`, `SESSION_ID`, `ENVIRONMENT_ID`,
+`ENVIRONMENT_KEY`, `WORKER_ID`, `BASE_URL`, `API_KEY`) arrive in its environment.
+The spawned process owns the item from there; `managed-agents worker run` is the
+ready-made target — a single-session worker that accepts the handed claim, drains
+that session's queue, and exits when the session ends or `--max-idle-ms` passes
+with no work, which is the one-clean-sandbox-per-claim pattern the published
+worker contract recommends. The full variable contract and a `docker run` example
+are in `docs/deployment.md`.
+
 Reporting an outcome is a separate step from producing one, and the worker treats
 them as separate facts. A completion the runtime refuses - `409` once the lease has
 lapsed and the item has moved to `unknown`, or a `5xx` - is a failure to **deliver**

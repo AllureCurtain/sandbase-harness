@@ -77,9 +77,10 @@
  *    than merely redundant.
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 /** Below this, polling a queue is indistinguishable from hammering the server. */
@@ -179,6 +180,7 @@ export type WorkerPollOptions = {
   workdir: string;
   tools?: string;
   once?: boolean;
+  onWork?: string;
   intervalMs?: string;
   heartbeatMs?: string;
   heartbeatTimeoutMs?: string;
@@ -190,6 +192,8 @@ export type WorkerPollOptions = {
 /** `WorkerPollOptions` with every default applied and every value checked. */
 export type ResolvedWorkerPollOptions = {
   port: string;
+  /** The runtime address the worker's own requests go to, derived from `port`. */
+  baseUrl: string;
   apiKey?: string;
   environmentId?: string;
   environmentKey?: string;
@@ -197,6 +201,17 @@ export type ResolvedWorkerPollOptions = {
   root: string;
   toolsPath?: string;
   once: boolean;
+  /**
+   * The `--on-work` spawn command: when set, a claimed item is handed to this
+   * process instead of executed in-process. See `runWorkHandler` for the
+   * contract.
+   */
+  onWork?: string;
+  /**
+   * Scopes claims to a single session — set by `worker run`, the in-sandbox
+   * counterpart a spawn handler launches, so one sandbox serves one session.
+   */
+  sessionId?: string;
   intervalMs: number;
   heartbeatMs: number;
   heartbeatTimeoutMs: number;
@@ -264,6 +279,7 @@ export function resolveWorkerPollOptions(opts: WorkerPollOptions): ResolvedWorke
 
   return {
     port: String(port),
+    baseUrl: `http://localhost:${port}`,
     apiKey: opts.apiKey,
     environmentId: opts.environmentId,
     environmentKey: opts.environmentKey,
@@ -271,6 +287,7 @@ export function resolveWorkerPollOptions(opts: WorkerPollOptions): ResolvedWorke
     root: resolve(opts.workdir),
     toolsPath: opts.tools ? resolve(opts.tools) : undefined,
     once: opts.once === true,
+    onWork: opts.onWork,
     intervalMs,
     heartbeatMs,
     heartbeatTimeoutMs,
@@ -286,6 +303,13 @@ type WorkerItem = {
   session_id?: string;
   kind: 'exec' | 'read' | 'write' | 'list' | 'custom_tool';
   payload: Record<string, unknown>;
+  /**
+   * The per-claim session credential, minted by the claim route in the
+   * published `BetaWorkSecret` shape (base64url `{sessions_token, api_base_url}`).
+   * An `--on-work` handler forwards it into the spawned sandbox as
+   * `MANAGED_AGENTS_WORK_SECRET`; an in-process worker never needs it.
+   */
+  secret?: string | null;
 };
 
 /**
@@ -355,6 +379,22 @@ export async function workerPollCommand(opts: WorkerPollOptions) {
       item = await claimWorkItem(config);
     } catch (error) {
       console.warn(`could not claim work: ${error instanceof Error ? error.message : String(error)}`);
+      if (config.once) return;
+      await sleep(config.intervalMs);
+      continue;
+    }
+    if (item && config.onWork) {
+      // `--on-work` hands the whole item lifecycle to the spawned command: this
+      // process never accepts, executes, or completes it — the handler does, which
+      // is what makes a fresh sandbox per claim work (the claim identity is
+      // forwarded, so the sandbox's worker accepts the claim as this worker). A
+      // spawn that fails leaves the item claimed-but-unaccepted, and its lease
+      // lapse hands it back to the queue rather than reporting a run that never
+      // happened.
+      const code = await runWorkHandler(config.onWork, item, config);
+      if (code !== 0) {
+        console.warn(`--on-work handler exited with code ${code} for ${item.id}; the item was left for the queue to reclaim`);
+      }
       if (config.once) return;
       await sleep(config.intervalMs);
       continue;
@@ -703,7 +743,7 @@ export class WorkAcceptUnconfirmedError extends Error {
 async function acceptWorkItem(opts: ResolvedWorkerPollOptions, itemId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`http://localhost:${opts.port}/v1/x/worker/accept`, {
+    res = await fetch(`${opts.baseUrl}/v1/x/worker/accept`, {
       method: 'POST',
       headers: jsonHeaders(opts),
       body: JSON.stringify({ id: itemId, worker_id: opts.workerId }),
@@ -728,7 +768,7 @@ async function acceptWorkItem(opts: ResolvedWorkerPollOptions, itemId: string): 
 async function renewClaim(opts: ResolvedWorkerPollOptions, itemId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`http://localhost:${opts.port}/v1/x/worker/heartbeat`, {
+    res = await fetch(`${opts.baseUrl}/v1/x/worker/heartbeat`, {
       method: 'POST',
       headers: jsonHeaders(opts),
       body: JSON.stringify({ id: itemId, worker_id: opts.workerId }),
@@ -863,11 +903,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function claimWorkItem(opts: ResolvedWorkerPollOptions): Promise<WorkerItem | null> {
   let res: Response;
   try {
-    res = await fetch(`http://localhost:${opts.port}/v1/x/worker/claim`, {
+    res = await fetch(`${opts.baseUrl}/v1/x/worker/claim`, {
       method: 'POST',
       headers: jsonHeaders(opts),
       body: JSON.stringify({
         worker_id: opts.workerId,
+        session_id: opts.sessionId,
         environment_id: opts.environmentId,
         environment_key: opts.environmentKey ?? process.env.MANAGED_AGENTS_ENVIRONMENT_KEY,
       }),
@@ -909,7 +950,7 @@ async function completeWorkItem(
   // only clue.
   let res: Response;
   try {
-    res = await fetch(`http://localhost:${opts.port}/v1/x/worker/complete`, {
+    res = await fetch(`${opts.baseUrl}/v1/x/worker/complete`, {
       method: 'POST',
       headers: jsonHeaders(opts),
       body: JSON.stringify(body),
@@ -958,6 +999,277 @@ async function execShell(command: string, opts: { cwd: string; timeoutMs: number
       });
     });
   });
+}
+
+/**
+ * The environment variables an `--on-work` handler is launched with.
+ *
+ * This is the published contract's variable set under this project's prefix:
+ * the poller sets every one except `MANAGED_AGENTS_WORK_SECRET`, which the
+ * handler itself extracts from the claimed item's `secret` on stdin and
+ * forwards only into the sandbox that serves that session. A secret that
+ * never leaves the poller's own environment can never leak into a sibling
+ * claim's sandbox, which is why it is not in this table.
+ */
+export const ON_WORK_ENV = {
+  workId: 'MANAGED_AGENTS_WORK_ID',
+  sessionId: 'MANAGED_AGENTS_SESSION_ID',
+  environmentId: 'MANAGED_AGENTS_ENVIRONMENT_ID',
+  environmentKey: 'MANAGED_AGENTS_ENVIRONMENT_KEY',
+  workerId: 'MANAGED_AGENTS_WORKER_ID',
+  baseUrl: 'MANAGED_AGENTS_BASE_URL',
+  apiKey: 'MANAGED_AGENTS_API_KEY',
+  workSecret: 'MANAGED_AGENTS_WORK_SECRET',
+} as const;
+
+/**
+ * Run the `--on-work` command for one claimed item and resolve with its exit
+ * code.
+ *
+ * The command receives the claimed work item as JSON on stdin and the
+ * `MANAGED_AGENTS_*` variables above in its environment. It owns the item
+ * from that point: acknowledging, executing, heartbeating, and reporting it
+ * are the spawned worker's job — typically `managed-agents worker run` inside
+ * a fresh sandbox. This function only waits for the process to exit; the
+ * queue's lease is the reclamation path when a spawn dies without reporting.
+ *
+ * The command string runs through the platform shell so a path (`./spawn.sh`)
+ * and a command line (`bash spawn.sh --flag`) both work; on Windows hosts the
+ * shell is `cmd.exe`, so handlers are usually invoked as `bash spawn.sh` or a
+ * `.cmd`/`.ps1` wrapper.
+ */
+export function runWorkHandler(
+  onWork: string,
+  item: WorkerItem,
+  config: ResolvedWorkerPollOptions,
+): Promise<number> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(onWork, {
+      shell: true,
+      stdio: ['pipe', 'inherit', 'inherit'],
+      env: {
+        ...process.env,
+        [ON_WORK_ENV.workId]: item.id,
+        [ON_WORK_ENV.sessionId]: item.sessionId ?? item.session_id ?? '',
+        ...(config.environmentId ? { [ON_WORK_ENV.environmentId]: config.environmentId } : {}),
+        ...(config.environmentKey ?? process.env.MANAGED_AGENTS_ENVIRONMENT_KEY
+          ? { [ON_WORK_ENV.environmentKey]: config.environmentKey ?? process.env.MANAGED_AGENTS_ENVIRONMENT_KEY! }
+          : {}),
+        [ON_WORK_ENV.workerId]: config.workerId,
+        [ON_WORK_ENV.baseUrl]: config.baseUrl,
+        ...(config.apiKey ? { [ON_WORK_ENV.apiKey]: config.apiKey } : {}),
+      },
+    });
+    if (child.stdin) {
+      // A handler that exits before reading leaves an EPIPE behind; the close
+      // event already reports the exit, so the pipe error is noise.
+      child.stdin.on('error', () => {});
+      child.stdin.write(JSON.stringify(item));
+      child.stdin.end();
+    }
+    child.on('error', () => resolvePromise(1));
+    child.on('close', (code) => resolvePromise(code ?? 1));
+  });
+}
+
+export type WorkerRunOptions = {
+  workdir?: string;
+  tools?: string;
+  /**
+   * How long to keep serving the session after its queue runs dry. The
+   * official `--max-idle` analogue: the sandbox is per-session, so an idle
+   * exit releases it and the next claim spawns a fresh one.
+   */
+  maxIdleMs?: string;
+  intervalMs?: string;
+  heartbeatMs?: string;
+  heartbeatTimeoutMs?: string;
+  claimTimeoutMs?: string;
+  completeTimeoutMs?: string;
+  ackTimeoutMs?: string;
+};
+
+const DEFAULT_RUN_MAX_IDLE_MS = 60_000;
+
+/**
+ * The in-sandbox half of `--on-work`: serve one session's work items and exit.
+ *
+ * Configuration is environment-driven because the process is meant to be a
+ * container entrypoint, matching the published `worker run` contract: the
+ * spawn handler sets `MANAGED_AGENTS_SESSION_ID`, `MANAGED_AGENTS_WORK_ID`,
+ * `MANAGED_AGENTS_WORKER_ID`, `MANAGED_AGENTS_ENVIRONMENT_*`,
+ * `MANAGED_AGENTS_BASE_URL`, and optionally `MANAGED_AGENTS_API_KEY`, and
+ * forwards the claimed item JSON — including its `secret` — on stdin.
+ *
+ * The stdin item is the claim the poller already holds: this process accepts
+ * and executes it under the forwarded worker id, then keeps claiming the
+ * session's queued items until the session ends or the queue stays empty for
+ * `--max-idle-ms`. Session liveness is read through the `mawt_` token in the
+ * item's `secret` when present — a token that stops authenticating at the
+ * session's terminal state is itself the ended signal — and the idle bound
+ * is the backstop when no secret was forwarded.
+ */
+export async function workerRunCommand(opts: WorkerRunOptions, stdin: Readable = process.stdin) {
+  const environmentKey = process.env.MANAGED_AGENTS_ENVIRONMENT_KEY;
+  const sessionId = process.env.MANAGED_AGENTS_SESSION_ID;
+  const workerId = process.env.MANAGED_AGENTS_WORKER_ID;
+  if (!sessionId) throw new Error(`${ON_WORK_ENV.sessionId} is required: worker run serves one session's items`);
+  if (!workerId) {
+    throw new Error(`${ON_WORK_ENV.workerId} is required: the claim this process continues was made under that identity`);
+  }
+  const intervalMs = Number(opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS);
+  if (!Number.isFinite(intervalMs) || intervalMs < MIN_POLL_INTERVAL_MS) {
+    throw new Error(`Invalid --interval-ms value "${opts.intervalMs}". Expected a number of at least ${MIN_POLL_INTERVAL_MS}.`);
+  }
+  const maxIdleMs = Number(opts.maxIdleMs ?? DEFAULT_RUN_MAX_IDLE_MS);
+  if (!Number.isFinite(maxIdleMs) || maxIdleMs < MIN_POLL_INTERVAL_MS) {
+    throw new Error(`Invalid --max-idle-ms value "${opts.maxIdleMs}". Expected a number of at least ${MIN_POLL_INTERVAL_MS}.`);
+  }
+  // The poll option validator is reused for the timeout flags — the bounds and
+  // the error shapes are the same contract on both commands. `port` is a
+  // placeholder: the runtime address this process talks to arrives through
+  // `MANAGED_AGENTS_BASE_URL`, which the spawn handler forwarded from the
+  // poller's own resolved base (or re-pointed at the host, for a container).
+  const config: ResolvedWorkerPollOptions = resolveWorkerPollOptions({
+    port: '3000',
+    apiKey: process.env.MANAGED_AGENTS_API_KEY,
+    environmentId: process.env.MANAGED_AGENTS_ENVIRONMENT_ID,
+    environmentKey,
+    workerId,
+    workdir: opts.workdir ?? '.',
+    tools: opts.tools,
+    intervalMs: String(intervalMs),
+    heartbeatMs: opts.heartbeatMs,
+    heartbeatTimeoutMs: opts.heartbeatTimeoutMs,
+    claimTimeoutMs: opts.claimTimeoutMs,
+    completeTimeoutMs: opts.completeTimeoutMs,
+    ackTimeoutMs: opts.ackTimeoutMs,
+  });
+  config.baseUrl = process.env.MANAGED_AGENTS_BASE_URL ?? 'http://localhost:3000';
+  config.sessionId = sessionId;
+  const customTools = await loadWorkerTools(config.toolsPath);
+
+  // The item the poller claimed arrives on stdin. When stdin is a TTY there is
+  // no handed item — the loop below serves the session from the queue.
+  const handed = await readStdinItem(stdin);
+  if (handed) {
+    await acceptWorkItem(config, handed.id);
+    const outcome = await runItemWithHeartbeat(config, handed, customTools);
+    await completeWorkItem(config, handed, outcome);
+    if (outcome.status === 'fulfilled') console.log(`completed ${handed.id}`);
+  }
+
+  // Every claim mints a fresh token, so the newest claimed item's `secret` is
+  // the freshest credential to read session liveness through.
+  let workSecret = handed?.secret ?? process.env.MANAGED_AGENTS_WORK_SECRET;
+  let idleSince: number | null = null;
+  for (;;) {
+    let item: WorkerItem | null;
+    try {
+      item = await claimWorkItem(config);
+    } catch (error) {
+      console.warn(`could not claim work: ${error instanceof Error ? error.message : String(error)}`);
+      item = null;
+    }
+    if (item) {
+      idleSince = null;
+      if (item.secret) workSecret = item.secret;
+      try {
+        await acceptWorkItem(config, item.id);
+      } catch (error) {
+        console.warn(`not running ${item.id}: ${error instanceof Error ? error.message : String(error)}`);
+        await sleep(config.intervalMs);
+        continue;
+      }
+      const outcome = await runItemWithHeartbeat(config, item, customTools);
+      try {
+        await completeWorkItem(config, item, outcome);
+        if (outcome.status === 'fulfilled') console.log(`completed ${item.id}`);
+      } catch (error) {
+        console.warn(`could not report ${item.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      continue;
+    }
+    idleSince ??= Date.now();
+    if (await sessionHasEnded(config, sessionId, workSecret)) return;
+    if (Date.now() - idleSince >= maxIdleMs) return;
+    await sleep(config.intervalMs);
+  }
+}
+
+/**
+ * One heartbeat-renewed execution of a work item, packaged so both the handed
+ * item and the session-drain loop share the failure envelope: a thrown run or
+ * a lease-lost renewal is a rejected outcome, reported as a failed item.
+ */
+async function runItemWithHeartbeat(
+  config: ResolvedWorkerPollOptions,
+  item: WorkerItem,
+  customTools: WorkerCustomTools,
+): Promise<PromiseSettledResult<unknown>> {
+  try {
+    return {
+      status: 'fulfilled',
+      value: await renewWhileRunning(config, item.id, (signal) => executeWorkItem(item, config.root, signal, customTools)),
+    };
+  } catch (error) {
+    return { status: 'rejected', reason: error };
+  }
+}
+
+/**
+ * Read one work item JSON from stdin, or null when stdin is a TTY/empty.
+ *
+ * The spawn contract passes the item on stdin; a `worker run` started without
+ * one simply starts serving the session's queue, which is what makes the same
+ * command usable as a manually-launched session worker.
+ */
+async function readStdinItem(stdin: Readable): Promise<WorkerItem | null> {
+  if (stdin === process.stdin && process.stdin.isTTY) return null;
+  const chunks: Buffer[] = [];
+  for await (const chunk of stdin) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : (chunk as Buffer));
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim();
+  if (!text) return null;
+  const item = JSON.parse(text) as WorkerItem;
+  if (typeof item.id !== 'string' || !item.id) {
+    throw new Error('work item on stdin is missing id');
+  }
+  return item;
+}
+
+/**
+ * Whether the session this worker serves has ended, read through the per-claim
+ * `mawt_` token. A dead token answers 401 — the session reaching a terminal
+ * state revokes it — so any refusal counts as ended, and a live session's
+ * projected `terminated` status is the explicit case. When no token was
+ * forwarded the check reports "not ended" and the idle bound governs exit.
+ */
+async function sessionHasEnded(
+  config: ResolvedWorkerPollOptions,
+  sessionId: string,
+  workSecret: string | null | undefined,
+): Promise<boolean> {
+  if (!workSecret) return false;
+  let token = workSecret;
+  try {
+    const decoded = JSON.parse(Buffer.from(workSecret, 'base64url').toString('utf8')) as { sessions_token?: string };
+    if (typeof decoded.sessions_token === 'string') token = decoded.sessions_token;
+  } catch {
+    // A raw token works too; only the BetaWorkSecret envelope needs decoding.
+  }
+  try {
+    const res = await fetch(`${config.baseUrl}/v1/sessions/${sessionId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(config.claimTimeoutMs),
+    });
+    if (!res.ok) return true;
+    const session = (await res.json()) as { status?: unknown };
+    return session.status === 'terminated';
+  } catch {
+    return false;
+  }
 }
 
 function safePath(root: string, value: string): string {

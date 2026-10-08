@@ -17,14 +17,15 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { join } from 'node:path';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { serve } from '@hono/node-server';
 import { Database } from '@/core/db/database.js';
 import { SessionManager } from '@/core/session/session-manager.js';
 import { createServer } from '@/api/server.js';
 import { WorkQueue } from '@/sandbox/self-hosted-provider.js';
-import { resolveWorkerPollOptions, renewWhileRunning, workerPollCommand, executeWorkItem } from '@/cli/worker-commands.js';
+import { Readable } from 'node:stream';
+import { resolveWorkerPollOptions, renewWhileRunning, workerPollCommand, workerRunCommand, executeWorkItem } from '@/cli/worker-commands.js';
 
 /** Run `fn` with `console.log` captured, so the poller's output stays out of the report. */
 async function withCapturedLog<T>(fn: () => Promise<T>): Promise<string[]> {
@@ -1029,5 +1030,229 @@ describe('worker poll CLI', () => {
       expect(() => resolveWorkerPollOptions({ port: bad, workdir: '.' })).toThrow(/port/);
     }
     expect(resolveWorkerPollOptions({ port: '3000', workdir: '.' }).port).toBe('3000');
+  });
+
+  it('hands a claimed item to --on-work instead of running it, with the contract env and stdin JSON', async () => {
+    // The `--on-work` contract is the published spawn-hook shape: the poller
+    // claims, then invokes the command once per item with the item JSON on
+    // stdin and the MANAGED_AGENTS_* variables in its environment — and does
+    // NOT run the item itself. The claim identity is forwarded, so the
+    // spawned process accepts and reports under the poller's worker id.
+    //
+    // A real child process is spawned here (a Node capture script), because
+    // the contract is the process boundary: a stubbed spawn would agree with
+    // whatever the code happened to pass.
+    const { queue, port, workdir } = await startRuntime();
+    db!.prepare("INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{}')").run();
+    db!.prepare("INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')").run();
+    db!.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id, status) VALUES ('sess_a', 'agent_x', 'x', 'env_a', 'running')").run();
+    writeFileSync(join(workdir, 'greeting.txt'), 'hello from the worker', 'utf8');
+    const id = queue.enqueue('sess_a', 'read', { path: 'greeting.txt' });
+
+    const capture = join(tmpDir!, 'capture.json');
+    const script = join(tmpDir!, 'capture.cjs');
+    writeFileSync(script, `
+      const chunks = [];
+      process.stdin.on('data', (c) => chunks.push(c));
+      process.stdin.on('end', () => {
+        const env = Object.fromEntries(
+          Object.entries(process.env).filter(([k]) => k.startsWith('MANAGED_AGENTS_')));
+        require('node:fs').writeFileSync(${JSON.stringify(capture)},
+          JSON.stringify({ item: JSON.parse(Buffer.concat(chunks).toString('utf8')), env }));
+      });
+    `);
+
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warnings.push(args.join(' ')); });
+    let lines: string[];
+    try {
+      lines = await withCapturedLog(() =>
+        workerPollCommand({
+          port: String(port), workdir, once: true, workerId: 'worker_spawn',
+          environmentId: 'env_a', onWork: `node "${script}"`,
+        }));
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(existsSync(capture)).toBe(true);
+    const { item, env } = JSON.parse(readFileSync(capture, 'utf8'));
+
+    // stdin is the claimed item, including the per-claim secret minted by the
+    // claim route — a base64url BetaWorkSecret envelope around a mawt_ bearer.
+    expect(item.id).toBe(id);
+    expect(item.sessionId).toBe('sess_a');
+    expect(item.kind).toBe('read');
+    const secret = JSON.parse(Buffer.from(item.secret, 'base64url').toString('utf8'));
+    expect(secret.sessions_token).toMatch(/^mawt_/);
+    expect(secret.api_base_url).toBe(`http://localhost:${port}`);
+
+    // The environment carries the poller's identity and addressing; the work
+    // secret is deliberately NOT among them — the handler forwards it from
+    // stdin into only the sandbox it spawns.
+    expect(env.MANAGED_AGENTS_WORK_ID).toBe(id);
+    expect(env.MANAGED_AGENTS_SESSION_ID).toBe('sess_a');
+    expect(env.MANAGED_AGENTS_ENVIRONMENT_ID).toBe('env_a');
+    expect(env.MANAGED_AGENTS_WORKER_ID).toBe('worker_spawn');
+    expect(env.MANAGED_AGENTS_BASE_URL).toBe(`http://localhost:${port}`);
+    expect(env.MANAGED_AGENTS_WORK_SECRET).toBeUndefined();
+
+    // The poller never ran the item: the row is claimed by it but never
+    // accepted, and no result was recorded or logged.
+    const row = queue.get(id)!;
+    expect(row.status).toBe('queued');
+    expect(row.claimedBy).toBe('worker_spawn');
+    expect(row.acceptedAt).toBeNull();
+    expect(row.result).toBeUndefined();
+    expect(lines.join('\n')).not.toContain(`completed ${id}`);
+    // The secret never reaches the poller's own output.
+    expect(lines.join('\n')).not.toContain(secret.sessions_token);
+    expect(warnings.join('\n')).not.toContain(secret.sessions_token);
+  });
+
+  it('leaves a claimed item for the queue to reclaim when --on-work fails to run it', async () => {
+    // A spawn that exits non-zero (or cannot start) must not be reported as a
+    // failed item — nothing ran, so a `failed` row would assert an effect that
+    // never happened. The claim lapses unaccepted and the sweep re-hands it.
+    const { queue, port, workdir } = await startRuntime();
+    const id = queue.enqueue('sess_worker', 'exec', { command: 'echo never ran' });
+
+    const script = join(tmpDir!, 'fail.mjs');
+    writeFileSync(script, 'process.exit(3)\n');
+
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warnings.push(args.join(' ')); });
+    try {
+      await withCapturedLog(() =>
+        workerPollCommand({ port: String(port), workdir, once: true, workerId: 'worker_spawn', onWork: `node "${script}"` }));
+    } finally {
+      warn.mockRestore();
+    }
+
+    const row = queue.get(id)!;
+    expect(row.status).toBe('queued');
+    expect(row.claimedBy).toBe('worker_spawn');
+    expect(row.acceptedAt).toBeNull();
+    expect(row.result).toBeUndefined();
+    expect(warnings.join('\n')).toContain(`--on-work handler exited with code 3 for ${id}`);
+  });
+
+  it('worker run accepts the handed claim and drains the session’s queue only', async () => {
+    // `worker run` is the in-sandbox half: it accepts the claim the poller
+    // already holds (arriving on stdin), executes it under the forwarded
+    // worker id, then keeps claiming this session's items until the queue
+    // runs dry and --max-idle-ms passes. Other sessions' items stay queued.
+    const { queue, port, workdir } = await startRuntime();
+    db!.prepare("INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{}')").run();
+    db!.prepare("INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')").run();
+    db!.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id, status) VALUES ('sess_a', 'agent_x', 'x', 'env_a', 'running')").run();
+    db!.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id, status) VALUES ('sess_other', 'agent_x', 'x', 'env_a', 'running')").run();
+    writeFileSync(join(workdir, 'a.txt'), 'content of a', 'utf8');
+    writeFileSync(join(workdir, 'b.txt'), 'content of b', 'utf8');
+    const handedId = queue.enqueue('sess_a', 'read', { path: 'a.txt' });
+    const drainedId = queue.enqueue('sess_a', 'read', { path: 'b.txt' });
+    const foreignId = queue.enqueue('sess_other', 'read', { path: 'a.txt' });
+
+    // The poller's half: the claim goes over the real route so the handed
+    // item carries a minted secret, exactly as a spawned worker receives it.
+    const claimRes = await fetch(`http://localhost:${port}/v1/x/worker/claim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ worker_id: 'worker_spawn' }),
+    });
+    const handed = (await claimRes.json()) as { id: string; sessionId: string; secret?: string };
+    expect(handed.id).toBe(handedId);
+    expect(handed.secret).toMatch(/^[A-Za-z0-9_-]+$/);
+
+    const envBackup = { ...process.env };
+    process.env.MANAGED_AGENTS_SESSION_ID = 'sess_a';
+    process.env.MANAGED_AGENTS_WORKER_ID = 'worker_spawn';
+    process.env.MANAGED_AGENTS_BASE_URL = `http://localhost:${port}`;
+    delete process.env.MANAGED_AGENTS_ENVIRONMENT_ID;
+    delete process.env.MANAGED_AGENTS_ENVIRONMENT_KEY;
+    delete process.env.MANAGED_AGENTS_API_KEY;
+    delete process.env.MANAGED_AGENTS_WORK_SECRET;
+    try {
+      const lines = await withCapturedLog(() =>
+        workerRunCommand(
+          { workdir, intervalMs: '250', maxIdleMs: '900' },
+          Readable.from([JSON.stringify(handed)]),
+        ));
+      expect(lines.join('\n')).toContain(`completed ${handedId}`);
+      expect(lines.join('\n')).toContain(`completed ${drainedId}`);
+    } finally {
+      process.env = envBackup;
+    }
+
+    expect(queue.get(handedId)!.status).toBe('applied');
+    expect(queue.get(handedId)!.result).toBe('content of a');
+    expect(queue.get(drainedId)!.status).toBe('applied');
+    expect(queue.get(drainedId)!.result).toBe('content of b');
+    // The session scope is the claim filter's, not convention: the other
+    // session's item was never taken.
+    expect(queue.get(foreignId)!.status).toBe('queued');
+  });
+
+  it('worker run exits when the session ends and when the queue stays idle', async () => {
+    const { port, workdir } = await startRuntime();
+    db!.prepare("INSERT INTO agents (id, name, definition) VALUES ('agent_x', 'x', '{}')").run();
+    db!.prepare("INSERT INTO environments (id, name, description, config, metadata) VALUES ('env_a', 'a', '', '{}', '{}')").run();
+    db!.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id, status) VALUES ('sess_end', 'agent_x', 'x', 'env_a', 'running')").run();
+
+    // A token minted while the session runs dies with it — the published
+    // semantic is that the sessions_token's authority is the session's
+    // lifetime, so a dead token is itself the ended signal.
+    const { issueSessionWorkToken } = await import('@/core/auth/session-work-tokens.js');
+    const token = issueSessionWorkToken(db!, 'sess_end', 'env_a');
+    const secret = Buffer.from(
+      JSON.stringify({ sessions_token: token, api_base_url: `http://localhost:${port}` }), 'utf8').toString('base64url');
+    db!.prepare("UPDATE sessions SET status = 'completed' WHERE id = 'sess_end'").run();
+
+    const envBackup = { ...process.env };
+    const setRunEnv = (sessionId: string, workSecret?: string) => {
+      process.env.MANAGED_AGENTS_SESSION_ID = sessionId;
+      process.env.MANAGED_AGENTS_WORKER_ID = 'worker_spawn';
+      process.env.MANAGED_AGENTS_BASE_URL = `http://localhost:${port}`;
+      delete process.env.MANAGED_AGENTS_ENVIRONMENT_ID;
+      delete process.env.MANAGED_AGENTS_ENVIRONMENT_KEY;
+      delete process.env.MANAGED_AGENTS_API_KEY;
+      if (workSecret === undefined) delete process.env.MANAGED_AGENTS_WORK_SECRET;
+      else process.env.MANAGED_AGENTS_WORK_SECRET = workSecret;
+    };
+    setRunEnv('sess_end', secret);
+    try {
+      // The session is already terminal: the run must return promptly even
+      // though --max-idle-ms is far above this test's patience.
+      await withCapturedLog(() =>
+        workerRunCommand(
+          { workdir, intervalMs: '250', maxIdleMs: '60000' },
+          Readable.from(['']),
+        ));
+    } finally {
+      process.env = envBackup;
+    }
+
+    // And with a live session and an empty queue, --max-idle-ms is the
+    // bound that releases the sandbox: the run ends on its own.
+    db!.prepare("INSERT INTO sessions (id, agent_id, agent_name, environment_id, status) VALUES ('sess_idle', 'agent_x', 'x', 'env_a', 'running')").run();
+    setRunEnv('sess_idle');
+    const started = Date.now();
+    try {
+      await withCapturedLog(() =>
+        workerRunCommand(
+          { workdir, intervalMs: '250', maxIdleMs: '600' },
+          Readable.from(['']),
+        ));
+    } finally {
+      process.env = envBackup;
+    }
+    expect(Date.now() - started).toBeLessThan(15_000);
+  });
+
+  it('resolves --on-work and derives the base URL the spawn contract forwards', () => {
+    const opts = resolveWorkerPollOptions({ port: '3000', workdir: '.', onWork: './spawn-docker.sh' });
+    expect(opts.onWork).toBe('./spawn-docker.sh');
+    expect(opts.baseUrl).toBe('http://localhost:3000');
+    expect(resolveWorkerPollOptions({ port: '3000', workdir: '.' }).onWork).toBeUndefined();
   });
 });

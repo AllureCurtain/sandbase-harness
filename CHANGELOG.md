@@ -13,6 +13,10 @@
   no published parameter on these collections, so it still applies to
   loaded rows only — the summary count now says "of N loaded" while more
   pages exist.
+- The environment detail actions menu gains a read-only Work queue view
+  that reads `GET /v1/x/environments/{id}/work/stats` and the paged
+  `/work` listing, so an operator can watch depth, pending items, the
+  oldest queued row, and polling workers without claiming anything.
 - The agent create/edit forms now expose the two execution controls the
   published agent schema already accepts: a turn cap that serializes as
   `max_turns` (blank clears a stored cap on update by sending `null`) and an

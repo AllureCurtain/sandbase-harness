@@ -23,7 +23,7 @@ import {
   sessionMessageCommand,
   sessionTailCommand,
 } from './session-commands.js';
-import { workerPollCommand } from './worker-commands.js';
+import { workerPollCommand, workerRunCommand } from './worker-commands.js';
 import {
   workspaceCreateCommand,
   workspaceListCommand,
@@ -386,6 +386,11 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
       'JS module declaring this worker\'s custom tools (default export: { tool_name: handler })',
     )
     .option('--once', 'Claim and run at most one item, then exit', false)
+    .option(
+      '--on-work <command>',
+      'Run this command once per claimed item instead of executing it here: ' +
+        'the item JSON goes to its stdin and MANAGED_AGENTS_* variables to its environment',
+    )
     .option('--interval-ms <ms>', 'Delay between polls when the queue is empty', '1000')
     .option(
       '--claim-timeout-ms <ms>',
@@ -410,6 +415,50 @@ export function createCliProgram({ version, startServer }: CliProgramOptions): C
     )
     .action(async (opts) => {
       await workerPollCommand(opts);
+    });
+
+  // The in-sandbox half of `--on-work`: a spawn handler starts this inside a
+  // fresh container, where it accepts the handed claim on stdin and serves the
+  // session's queue until the session ends or `--max-idle-ms` passes with no
+  // work. Configuration is the MANAGED_AGENTS_* environment the handler
+  // forwards, because the command doubles as a container entrypoint.
+  worker
+    .command('run')
+    .description('Serve one session\'s work items and exit (the --on-work spawn target)')
+    .option('-w, --workdir <dir>', 'Directory work items are executed inside', '.')
+    .option(
+      '--tools <module>',
+      'JS module declaring this worker\'s custom tools (default export: { tool_name: handler })',
+    )
+    .option(
+      '--max-idle-ms <ms>',
+      'Exit after the session queue stays empty this long',
+      '60000',
+    )
+    .option('--interval-ms <ms>', 'Delay between polls when the queue is empty', '1000')
+    .option(
+      '--claim-timeout-ms <ms>',
+      'How long to wait for a claim to be answered before polling again',
+      '10000',
+    )
+    .option('--heartbeat-ms <ms>', 'Renew the claim on this interval while an item runs', '20000')
+    .option(
+      '--complete-timeout-ms <ms>',
+      'How long to wait for an outcome to be recorded before reporting it as unconfirmed',
+      '10000',
+    )
+    .option(
+      '--heartbeat-timeout-ms <ms>',
+      'How long to wait for a renewal to be answered before reporting it as unconfirmed',
+      '10000',
+    )
+    .option(
+      '--ack-timeout-ms <ms>',
+      'How long to wait for the runtime to confirm a claim before giving up on the item',
+      '10000',
+    )
+    .action(async (opts) => {
+      await workerRunCommand(opts);
     });
 
   const template = program.command('template').description('Manage solution templates');
