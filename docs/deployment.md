@@ -334,6 +334,12 @@ authority dies with the session) or when the queue stays empty for
 Its settings come from the forwarded environment rather than `--port`; the
 timeout flags are shared with `worker poll`.
 
+A copyable reference implementation of both halves — the `spawn-docker.sh`
+handler that wraps `docker run` and a `webhook-handler.mjs` that starts the
+poller on `session.status_run_started` instead of running one always — lives
+in `examples/self-hosted-worker/`, with the trigger subscription steps in its
+README.
+
 A claim carries a lease window (60s by default), so a worker that executed a long
 item silently would have it reclaimed and handed to a second worker while the first
 was still running it. While an item runs, the worker therefore renews its own claim
