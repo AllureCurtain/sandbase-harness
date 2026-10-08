@@ -330,4 +330,97 @@ describe('the interactive Console harness', () => {
     expect(screen.queryByLabelText(/branch name/i)).toBeNull();
     expect(screen.getByLabelText(/commit sha/i)).toBeDefined();
   });
+
+  describe('agent overrides', () => {
+    async function pickAgentAndEnvironment(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getAllByRole('button', { name: /select an agent/i })[0]);
+      await user.click(screen.getByRole('option', { name: /echo agent/i }));
+      await user.click(screen.getAllByRole('button', { name: /select an environment/i })[0]);
+      await user.click(screen.getByRole('option', { name: /local/i }));
+    }
+
+    it('sends an agent_with_overrides reference with exactly the filled fields', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={data} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await user.click(screen.getByRole('checkbox', { name: /override agent config/i }));
+      await user.type(screen.getByLabelText(/^model$/i), 'gpt-4o-mini');
+      await user.type(screen.getByLabelText(/^system prompt$/i), 'Be terse.');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      const create = apiRequests().find((request) => request.path === '/v1/sessions');
+      expect(create?.body).toMatchObject({
+        agent: {
+          type: 'agent_with_overrides',
+          id: 'agent_echo',
+          model: 'gpt-4o-mini',
+          system: 'Be terse.',
+        },
+      });
+      const agentRef = (create?.body as Record<string, unknown>).agent as Record<string, unknown>;
+      expect(Object.keys(agentRef).sort()).toEqual(['id', 'model', 'system', 'type']);
+    });
+
+    it('parses JSON override fields into the request body', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={data} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await user.click(screen.getByRole('checkbox', { name: /override agent config/i }));
+      const skillsField = screen.getByLabelText(/^skills \(json\)$/i);
+      await user.click(skillsField);
+      await user.paste('[{"type":"anthropic","skill_id":"skill_pdf"}]');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      const create = apiRequests().find((request) => request.path === '/v1/sessions');
+      expect(create?.body).toMatchObject({
+        agent: {
+          type: 'agent_with_overrides',
+          id: 'agent_echo',
+          skills: [{ type: 'anthropic', skill_id: 'skill_pdf' }],
+        },
+      });
+    });
+
+    it('refuses to submit while an override field holds malformed JSON', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={data} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await user.click(screen.getByRole('checkbox', { name: /override agent config/i }));
+      await user.type(screen.getByLabelText(/^tools \(json\)$/i), 'not json');
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      expect(apiRequests().find((request) => request.path === '/v1/sessions')).toBeUndefined();
+      expect(screen.getByText(/invalid json in override fields: tools/i)).toBeDefined();
+    });
+
+    it('keeps the bare agent id when the override toggle stays off', async () => {
+      const user = userEvent.setup();
+      onApiRequest(() => ({ id: 'sess_new', type: 'session' }));
+
+      renderConsole(
+        <SessionModal data={data} onClose={() => {}} onSaved={() => {}} onNavigate={() => {}} />,
+      );
+
+      await pickAgentAndEnvironment(user);
+      await user.click(screen.getByRole('button', { name: /create session/i }));
+
+      const create = apiRequests().find((request) => request.path === '/v1/sessions');
+      expect(create?.body).toMatchObject({ agent: 'agent_echo' });
+    });
+  });
 });

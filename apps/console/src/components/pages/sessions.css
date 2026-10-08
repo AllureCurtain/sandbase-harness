@@ -2003,6 +2003,15 @@
   50% { opacity: 0.35; }
 }
 
+.sessionOverrides {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
 .handoffBuildRow {
   display: flex;
   align-items: center;
