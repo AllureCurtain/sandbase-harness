@@ -43,7 +43,7 @@ export type Agent = {
   archived_at: string | null;
 };
 
-export type AgentToolset = BuiltinToolset | McpToolset;
+export type AgentToolset = BuiltinToolset | McpToolset | CustomToolEntry;
 
 export type BuiltinToolset = {
   type: 'agent_toolset_20260401';
@@ -56,6 +56,19 @@ export type McpToolset = {
   mcp_server_name: string;
   configs?: Record<string, ToolConfig>;
   default_config?: ToolConfig;
+};
+
+/**
+ * Canonical caller-executed tool entry — deliberately no `enabled` and no
+ * `permission_policy`: the caller runs the tool, so the runtime holds no
+ * governance to configure. `parameters` survives reads as a legacy alias.
+ */
+export type CustomToolEntry = {
+  type: 'custom';
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  parameters?: Record<string, unknown>;
 };
 
 export type ToolConfig = {

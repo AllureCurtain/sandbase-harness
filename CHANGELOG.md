@@ -4,6 +4,15 @@
 
 ### Added
 
+- The Console agent editor now declares caller-executed custom tools. Each
+  entry edits its `name`, `description`, and `input_schema` as JSON, saves as
+  the canonical `{type: "custom"}` tools entry the API projects on read, and
+  carries no permission policy — the caller executes the tool, so the runtime
+  holds no governance to configure. Stored custom tools prefill on edit
+  (including the legacy `custom_toolset` grouped shape, which expands to one
+  row per tool), appear on the agent detail as caller-executed cards, list in
+  version diffs, and fail pre-save checks when a name, description, or schema
+  is missing or the schema text does not parse.
 - The tool-result overflow threshold now defaults to the published 100,000
   characters — results at or under it pass through untouched and larger ones
   are spilled to `/mnt/session/tool_outputs` with the shared preview — and is

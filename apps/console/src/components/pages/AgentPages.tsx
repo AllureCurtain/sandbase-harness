@@ -13,7 +13,7 @@ import {
   useRuntimeCapabilities,
   type RuntimeCapability,
 } from '../../useRuntimeCapabilities';
-import type { Agent, AgentTab, AgentToolset, ConsoleData, McpToolset, Session, ToolPermission } from '../../types';
+import type { Agent, AgentTab, AgentToolset, ConsoleData, CustomToolEntry, McpToolset, Session, ToolPermission } from '../../types';
 import './agents.css';
 
 function agentTone(agent: Agent): Tone {
@@ -243,7 +243,8 @@ export function AgentDetail({
  * stays free of the server's dependency graph.
  */
 export function effectiveToolsetPermission(toolset: AgentToolset | undefined): ToolPermission {
-  if (!toolset) return 'always_allow';
+  // Custom tools are caller-executed — no policy governs them at all.
+  if (!toolset || toolset.type === 'custom') return 'always_allow';
   return toolset.default_config?.permission_policy?.type
     ?? (toolset.type === 'agent_toolset_20260401' ? 'always_allow' : 'always_ask');
 }
@@ -276,6 +277,7 @@ function AgentConfigTab({
   const enabledCapabilities = selectEnabledCapabilities(capabilities, new Set(toolNames(agent)));
   const builtinToolCount = toolNames(agent).length;
   const mcpToolsets = agent.tools.filter((toolset): toolset is McpToolset => toolset.type === 'mcp_toolset');
+  const customTools = agent.tools.filter((toolset): toolset is CustomToolEntry => toolset.type === 'custom');
   const builtinPolicy = effectiveToolsetPermission(
     agent.tools.find((toolset) => toolset.type === 'agent_toolset_20260401'),
   );
@@ -336,6 +338,21 @@ function AgentConfigTab({
                 <span>mcp_toolset</span>
               </div>
               <PermissionBadge policy={effectiveToolsetPermission(toolset)} />
+            </div>
+          </div>
+        ))}
+        {customTools.map((tool) => (
+          <div className="toolsetCard" key={tool.name}>
+            <div className="toolsetHeader">
+              <div className="toolsetIcon"><FlaskConical size={22} /></div>
+              <div>
+                <strong>{tool.name}</strong>
+                <span>custom</span>
+              </div>
+            </div>
+            <div className="toolsetRow">
+              <span><ChevronDown size={16} />{t('detail.callerExecuted')}</span>
+              <span>{tool.description}</span>
             </div>
           </div>
         ))}
@@ -449,6 +466,7 @@ function AgentObservability({ sessions, tokenIn, tokenOut }: { sessions: Session
 function toolNames(agent: Pick<Agent, 'tools'>): string[] {
   const names = new Set<string>();
   for (const toolset of agent.tools ?? []) {
+    if (toolset.type === 'custom') continue;
     for (const [name, config] of Object.entries(toolset.configs ?? {})) {
       if (config.enabled !== false && config.permission_policy?.type !== 'never_allow') names.add(name);
     }
