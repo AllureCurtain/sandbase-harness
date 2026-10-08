@@ -4,6 +4,20 @@
 
 ### Added
 
+- The scheduled deployments page now manages a schedule after creation.
+  Each deployment row and card offers Pause/Resume through the dedicated
+  `POST /v1/scheduled-deployments/{id}/pause|unpause` routes, an Edit
+  dialog that prefills the stored name, description, agent, environment,
+  cron expression, timezone, and prompt and submits the published
+  `PUT /v1/scheduled-deployments/{id}` shape — including
+  `schedule: null` when the expression is cleared, which the route treats
+  as switching the deployment back to manual-only — and a Delete action
+  behind an explicit confirmation that calls
+  `DELETE /v1/scheduled-deployments/{id}` to permanently remove the
+  schedule and its run history while keeping materialized sessions.
+  Update and delete failures surface inside the dialogs instead of
+  closing them.
+
 - The webhooks page now edits subscriptions in place. Each row's Edit
   action opens the endpoint's current fields — url, name, the grouped
   official event catalog, description — plus a status selector that maps
