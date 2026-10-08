@@ -1,13 +1,15 @@
-import { Archive, Copy, Globe, MoreVertical, Pencil, Plus, Server, Trash2 } from 'lucide-react';
+import { Archive, Copy, Globe, ListChecks, MoreVertical, Pencil, Plus, Server, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { deleteJson, postJson, putJson } from '../../api';
-import { EmptyState, PageBody, PageHeader, StatusDot } from '../console-ui';
+import { deleteJson, getJson, postJson, putJson } from '../../api';
+import { EmptyState, Kpi, KpiStrip, PageBody, PageHeader, StatusDot, type Tone } from '../console-ui';
 import { ConfirmDeleteModal } from '../DangerZone';
+import { Modal } from '../Modal';
 import { ListToolbar, listSummary, SearchField } from '../list-ui';
 import { ConsoleSelect } from '../console-select';
+import { usePagedCollection } from '../../hooks/usePagedCollection';
 import { copyText, formatDateShort, shortId } from '../../lib/format';
-import type { ConsoleData, Environment, EnvironmentDraft, MetadataDraft } from '../../types';
+import type { ConsoleData, Environment, EnvironmentDraft, EnvironmentWorkItem, EnvironmentWorkStats, MetadataDraft } from '../../types';
 import { CloudEnvironment, ReadonlyTable, SelfHostedEnvironment } from './EnvironmentDetailViews';
 import {
   environmentDraftFromApi,
@@ -121,6 +123,7 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
   const [editing, setEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [workQueueOpen, setWorkQueueOpen] = useState(false);
   const environmentSessions = data.sessions.filter((session) => session.environment_id === environment.id);
   const isSelfHosted = environmentHostingType(environment) === 'self_hosted';
 
@@ -128,6 +131,7 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
     setEditing(false);
     setMenuOpen(false);
     setDeleteOpen(false);
+    setWorkQueueOpen(false);
   }, [environment.id]);
 
   const archive = async () => {
@@ -180,6 +184,15 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
             </button>
             {menuOpen ? (
               <div className="agentMenu">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setWorkQueueOpen(true);
+                  }}
+                >
+                  <ListChecks size={18} />{t('detail.workQueue.action')}
+                </button>
                 <button type="button" onClick={() => void archive()}><Archive size={18} />{t('detail.archive')}</button>
                 <button
                   type="button"
@@ -209,7 +222,93 @@ export function EnvironmentDetail({ environment, data, onBack, onRefresh }: { en
           }}
         />
       ) : null}
+      {workQueueOpen ? (
+        <EnvironmentWorkQueueModal environment={environment} onClose={() => setWorkQueueOpen(false)} />
+      ) : null}
     </section>
+  );
+}
+
+function workStateTone(state: EnvironmentWorkItem['state']): Tone {
+  if (state === 'active') return 'ok';
+  if (state === 'queued' || state === 'starting') return 'warning';
+  return 'neutral';
+}
+
+/**
+ * The environment's work queue: the published stats counter row plus the
+ * paged item listing. Read-only on purpose — claim/ack/stop stay on the
+ * worker side of the protocol; an operator only watches the backlog here.
+ */
+function EnvironmentWorkQueueModal({ environment, onClose }: { environment: Environment; onClose: () => void }) {
+  const { t } = useTranslation('environments');
+  const { t: tCommon, i18n } = useTranslation();
+  const [stats, setStats] = useState<EnvironmentWorkStats | null>(null);
+  const [statsError, setStatsError] = useState('');
+  const paged = usePagedCollection<EnvironmentWorkItem>(
+    `/v1/x/environments/${encodeURIComponent(environment.id)}/work?limit=50`,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    getJson<EnvironmentWorkStats>(`/v1/x/environments/${encodeURIComponent(environment.id)}/work/stats`)
+      .then((value) => { if (!cancelled) setStats(value); })
+      .catch((err) => { if (!cancelled) setStatsError(err instanceof Error ? err.message : String(err)); });
+    return () => { cancelled = true; };
+  }, [environment.id]);
+
+  return (
+    <Modal
+      title={t('detail.workQueue.title', { name: environment.name })}
+      onClose={onClose}
+      footer={paged.hasMore ? (
+        <button className="button outline" type="button" onClick={paged.loadMore} disabled={paged.loadingMore}>
+          {tCommon('actions.loadMore')}
+        </button>
+      ) : null}
+    >
+      <>
+        {stats ? (
+          <KpiStrip label={t('detail.workQueue.stats')}>
+            <Kpi label={t('detail.workQueue.depth')} value={stats.depth} />
+            <Kpi label={t('detail.workQueue.pending')} value={stats.pending} />
+            <Kpi label={t('detail.workQueue.workers')} value={stats.workers_polling} />
+            <Kpi label={t('detail.workQueue.oldest')} value={stats.oldest_queued_at ? formatDateShort(stats.oldest_queued_at) : '—'} />
+          </KpiStrip>
+        ) : statsError ? (
+          <p className="mutedLine" role="alert">{statsError}</p>
+        ) : null}
+        {paged.error ? <p className="mutedLine" role="alert">{paged.error}</p> : null}
+        {paged.items.length ? (
+          <div className="table-frame">
+            <table className="data-table" aria-label={t('detail.workQueue.title', { name: environment.name })}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('detail.workQueue.columns.id')}</th>
+                  <th scope="col">{t('detail.workQueue.columns.session')}</th>
+                  <th scope="col">{t('detail.workQueue.columns.state')}</th>
+                  <th scope="col">{t('detail.workQueue.columns.created')}</th>
+                  <th scope="col">{t('detail.workQueue.columns.heartbeat')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.items.map((item) => (
+                  <tr key={item.id}>
+                    <td><strong className="monoText">{shortId(item.id)}</strong></td>
+                    <td><span className="monoText">{shortId(item.data.id)}</span></td>
+                    <td><StatusDot tone={workStateTone(item.state)} label={t(`detail.workQueue.states.${item.state}`)} /></td>
+                    <td>{formatDateShort(item.created_at)}</td>
+                    <td>{item.latest_heartbeat_at ? formatDateShort(item.latest_heartbeat_at) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : !paged.loading && !paged.error ? (
+          <p className="mutedLine">{t('detail.workQueue.empty')}</p>
+        ) : null}
+      </>
+    </Modal>
   );
 }
 
