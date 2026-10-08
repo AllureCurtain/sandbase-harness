@@ -24,9 +24,15 @@ export interface PagedCollection<T> {
  * `next_page` is exposed through `loadMore`, which appends the following page.
  * The cursor already binds the ordering and filters that produced it, so the
  * hook replays it verbatim rather than reconstructing query state.
+ *
+ * `initialRows` seeds the first paint with the bootstrap slice the app shell
+ * already loaded — identical to what the pages rendered before server-side
+ * filtering — so the list never flashes empty while page one is in flight.
+ * It also keeps static markup renders honest: without an effect pass the seed
+ * is all a server-rendered list can show.
  */
-export function usePagedCollection<T>(path: string, refreshKey?: unknown): PagedCollection<T> {
-  const [items, setItems] = useState<T[]>([]);
+export function usePagedCollection<T>(path: string, refreshKey?: unknown, initialRows?: T[]): PagedCollection<T> {
+  const [items, setItems] = useState<T[]>(initialRows ?? []);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);

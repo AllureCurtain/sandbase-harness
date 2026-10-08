@@ -4,6 +4,15 @@
 
 ### Added
 
+- The sessions, credential-vault, and memory-store lists now filter and
+  page on the server instead of narrowing a fixed 100-row window. The
+  sessions toolbar sends `statuses`, `agent_id`, and `include_archived`
+  with each query, the vault and store status pickers send
+  `include_archived` for views that can show archived rows, and every
+  list follows `next_page` through a Load more control. Text search has
+  no published parameter on these collections, so it still applies to
+  loaded rows only — the summary count now says "of N loaded" while more
+  pages exist.
 - The create-session dialog can now override part of the agent definition
   for a single session. Enabling the new overrides section in Session
   details switches the request to the published

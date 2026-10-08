@@ -8,6 +8,7 @@ import { ConfirmDeleteModal } from '../DangerZone';
 import { Modal } from '../Modal';
 import { ListToolbar, listSummary, SearchField } from '../list-ui';
 import { ConsoleSelect } from '../console-select';
+import { usePagedCollection } from '../../hooks/usePagedCollection';
 import { formatBytes, formatDateShort, shortId, truncateMiddle } from '../../lib/format';
 import type { ConsoleData, MemoryRecord, MemoryStore, MemoryVersion } from '../../types';
 import './resources.css';
@@ -28,7 +29,15 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
   const { t: tCommon, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('active');
-  const stores = data.memoryStores.filter((store) => {
+  // `include_archived` is the only filter the store listing publishes — it is
+  // set for any view that can show archived rows, and the status narrowing +
+  // text search stay client-side over the loaded pages.
+  const paged = usePagedCollection<MemoryStore>(
+    `/v1/memory_stores?limit=50${status === 'active' ? '' : '&include_archived=true'}`,
+    data.memoryStores,
+    data.memoryStores,
+  );
+  const stores = paged.items.filter((store) => {
     const q = query.toLowerCase();
     const matchesStatus = status === 'all' || (status === 'active' ? !store.archived_at : status === 'archived' ? !!store.archived_at : store.status === status);
     const matchesQuery = store.id.toLowerCase().includes(q) || store.name.toLowerCase().includes(q) || store.description.toLowerCase().includes(q);
@@ -40,8 +49,8 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
   const empty = (
     <EmptyState
       icon={Database}
-      title={data.memoryStores.length && filtering ? t('list.noMatch') : t('list.empty')}
-      description={data.memoryStores.length && filtering ? undefined : t('list.emptyBody')}
+      title={(paged.items.length || paged.loading) && filtering ? t('list.noMatch') : t('list.empty')}
+      description={(paged.items.length || paged.loading) && filtering ? undefined : t('list.emptyBody')}
       action={query
         ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button>
         : <button className="button primary" type="button" onClick={onNew}><Plus size={15} />{t('list.createStore')}</button>}
@@ -68,7 +77,7 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
         </KpiStrip>
         <ListToolbar
           label={t('list.filterLabel')}
-          summary={listSummary(tCommon, stores.length, data.memoryStores.length, { locale: i18n.resolvedLanguage })}
+          summary={listSummary(tCommon, stores.length, paged.items.length, { hasMore: paged.hasMore, locale: i18n.resolvedLanguage })}
         >
           <SearchField value={query} onChange={setQuery} placeholder={t('list.searchPlaceholder')} label={t('list.filterLabel')} />
           <ConsoleSelect
@@ -82,6 +91,7 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
             ]}
           />
         </ListToolbar>
+        {paged.error ? <p className="mutedLine" role="alert">{paged.error}</p> : null}
         {stores.length ? (
           <div className="table-frame memory-table-frame">
             <table className="data-table" aria-label={tPages('memory-stores.title')}>
@@ -121,6 +131,11 @@ export function MemoryStores({ data, onNew, onOpenMemoryStore }: { data: Console
           ))}
           {stores.length === 0 ? empty : null}
         </div>
+        {paged.hasMore ? (
+          <button className="button outline loadMoreButton" type="button" onClick={paged.loadMore} disabled={paged.loadingMore}>
+            {tCommon('actions.loadMore')}
+          </button>
+        ) : null}
       </PageBody>
     </section>
   );

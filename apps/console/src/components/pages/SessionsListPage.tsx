@@ -4,9 +4,32 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState, PageBody, PageHeader, StatusDot, type Tone } from '../console-ui';
 import { CopyableId, ListToolbar, listSummary, SearchField } from '../list-ui';
 import { ConsoleSelect } from '../console-select';
+import { usePagedCollection } from '../../hooks/usePagedCollection';
 import { formatDateShort, formatUsage, shortId } from '../../lib/format';
 import type { ConsoleData, Session } from '../../types';
 import './sessions.css';
+
+/** The published wire statuses the "active" filter selection sends. */
+const ACTIVE_SESSION_STATUSES = ['idle', 'running', 'rescheduling'] as const;
+
+/**
+ * Translate the toolbar selection into the session listing's published
+ * parameters. `statuses`/`agent_id`/`include_archived` are answered by the
+ * server so a match past the first window is still found; the text search has
+ * no published parameter and stays a filter over loaded rows.
+ */
+function sessionListPath(status: string, agentId: string, showArchived: boolean): string {
+  const params = new URLSearchParams();
+  params.set('limit', '50');
+  if (status === 'active') {
+    for (const wire of ACTIVE_SESSION_STATUSES) params.append('statuses', wire);
+  } else if (status !== 'all') {
+    params.append('statuses', status);
+  }
+  if (agentId !== 'all') params.set('agent_id', agentId);
+  if (showArchived) params.set('include_archived', 'true');
+  return `/v1/sessions?${params.toString()}`;
+}
 
 function sessionTone(session: Session): Tone {
   if (session.archived_at) return 'neutral';
@@ -33,15 +56,25 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
   const [status, setStatus] = useState('active');
   const [showArchived, setShowArchived] = useState(false);
   const [agentId, setAgentId] = useState('all');
-  const sessions = data.sessions.filter((session) => {
-    const q = query.toLowerCase();
+  // `data.sessions` seeds the first paint and re-runs the current filters'
+  // first page after any silent refresh (session created, archived,
+  // terminated). The seed passes the same predicates the path encodes so the
+  // pre-fetch paint never shows rows the current filter would exclude.
+  const seedSessions = data.sessions.filter((session) => {
     if (!showArchived && session.archived_at) return false;
-    const matchesStatus = status === 'all' || (status === 'active'
-      ? session.status !== 'terminated'
-      : session.status === status);
-    const matchesAgent = agentId === 'all' || session.agent.id === agentId;
-    const matchesQuery = session.id.toLowerCase().includes(q) || session.agent.name.toLowerCase().includes(q) || (session.title ?? '').toLowerCase().includes(q);
-    return matchesStatus && matchesAgent && matchesQuery;
+    if (status === 'active' && !(ACTIVE_SESSION_STATUSES as readonly string[]).includes(session.status)) return false;
+    if (status !== 'active' && status !== 'all' && session.status !== status) return false;
+    if (agentId !== 'all' && session.agent.id !== agentId) return false;
+    return true;
+  });
+  const paged = usePagedCollection<Session>(
+    sessionListPath(status, agentId, showArchived),
+    data.sessions,
+    seedSessions,
+  );
+  const sessions = paged.items.filter((session) => {
+    const q = query.toLowerCase();
+    return session.id.toLowerCase().includes(q) || session.agent.name.toLowerCase().includes(q) || (session.title ?? '').toLowerCase().includes(q);
   });
   const filtering = Boolean(query) || status !== 'active' || agentId !== 'all' || showArchived;
   return (
@@ -60,7 +93,7 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
       <PageBody>
         <ListToolbar
           label={t('view.filterLabel')}
-          summary={listSummary(tCommon, sessions.length, data.sessions.length, { locale: i18n.resolvedLanguage })}
+          summary={listSummary(tCommon, sessions.length, paged.items.length, { hasMore: paged.hasMore, locale: i18n.resolvedLanguage })}
         >
           <SearchField value={query} onChange={setQuery} placeholder={t('view.searchPlaceholder')} label={t('view.filterLabel')} />
           <ConsoleSelect
@@ -94,6 +127,7 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
             {t('view.showArchived')}
           </label>
         </ListToolbar>
+        {paged.error ? <p className="mutedLine" role="alert">{paged.error}</p> : null}
         {sessions.length ? (
           <div className="table-frame sessions-table-frame">
             <table className="data-table" aria-label={tPages('sessions.title')}>
@@ -126,10 +160,15 @@ export function Sessions({ data, onNewSession, onOpenSession }: { data: ConsoleD
         ) : (
           <EmptyState
             icon={MessageSquare}
-            title={data.sessions.length && filtering ? t('list.noMatch') : t('list.noSessions')}
+            title={(paged.items.length || paged.loading) && filtering ? t('list.noMatch') : t('list.noSessions')}
             action={query ? <button className="button outline" type="button" onClick={() => setQuery('')}>{tCommon('actions.clearSearch')}</button> : null}
           />
         )}
+        {paged.hasMore ? (
+          <button className="button outline loadMoreButton" type="button" onClick={paged.loadMore} disabled={paged.loadingMore}>
+            {tCommon('actions.loadMore')}
+          </button>
+        ) : null}
         <div className="session-card-list">
           {sessions.map((session) => (
             <div className="session-card" key={session.id}>

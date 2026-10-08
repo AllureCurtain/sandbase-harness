@@ -817,6 +817,10 @@ html[data-theme="dark"] .main {
   margin-top: 10px;
   font-size: 14px;
 }
+.loadMoreButton {
+  display: block;
+  margin: 14px auto 0;
+}
 .agentDescription {
   margin-top: 10px;
   font-size: 14px;
