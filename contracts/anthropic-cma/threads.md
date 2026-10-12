@@ -3,8 +3,9 @@
 Contract area: threads, the multi-agent roster, thread lifecycle and message
 events, thread listing and archive.
 Status: `partial` — the coordinator tools, child threads, dispatch/reply
-events, confirmation routing, per-thread interrupt, and archive are live;
-per-thread budget is not yet implemented, and there is no advisor. See §7.
+events, confirmation routing, per-thread interrupt, archive, and per-thread
+`budget_reached` are live; there is no advisor and no Console thread surface.
+See §7.
 Source: `src/core/session/session-threads.ts`,
 `src/core/session/event-logger.ts`, `src/core/session/session-manager.ts`,
 `src/core/session/coordinator-tools.ts`, `src/core/session/thread-runner.ts`,
@@ -170,12 +171,11 @@ dropped, and its stranded parked calls leave the session's `event_ids` union.
 
 What does **not** exist yet:
 
-- The shared session budget still parks the session as a whole; per-thread
-  `budget_reached` is not emitted.
 - There is no server-side advisor; an `advisor` roster member is refused at
   write time with `advisor_unsupported`.
 - The local delegation extension (`delegations`, `enable_general_subagent`)
   is unchanged and remains a separate mechanism, not the roster.
+- No Console thread surface: threads are reachable over the API and SSE only.
 
 ## 3. Alignment
 
@@ -197,7 +197,7 @@ values through the same table).
 | Child-thread `requires_action` cross-post | Implemented: the parked `agent.tool_use` / `mcp_tool_use` / `custom_tool_use` is lifted onto the primary stream (the row keeps its `thread_id`; `cross_posted = 1` admits it to the primary view, and `session_thread_id` on the wire attributes it), the child's `session.thread_status_idle` carries `stop_reason.requires_action` with only its own parked `event_ids`, the session-level `session.status_idle` reports the union across parked threads, and the answering `user.tool_confirmation` / `user.custom_tool_result` is stamped onto the owning thread and cross-posted so both streams show the request→response pair. |
 | Archive | Implemented: `POST .../threads/{tid}/archive` archives an idle child (`requires_action` counts as idle), emits the cross-posted `session.thread_status_terminated`, frees the slot, returns the thread object; primary → `primary_thread_not_archivable` (400), running → `thread_running` (409), repeat → same row, no second event. |
 | Interrupt targeting | Implemented: `user.interrupt` accepts `session_thread_id` — scoped interrupts one thread (unknown/cross-session id → 400), unscoped interrupts every unarchived thread; a parked thread's calls are closed with the published error result and it goes `paused` (`end_turn`) without a model call; an idle thread is a no-op. |
-| Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
+| Thread-scoped budget | Implemented per §4.6: the ceiling stays one shared session-level cap, but each running thread that crosses it idles on its own `session.thread_status_idle` (`budget_reached`), a suspended child posts no reply to its parent, and the aggregate reports `requires_action` while any thread still waits on a confirmation. A budget raise re-enters each budget-parked thread on its own `internal.resume_after_budget`. |
 | `event_deltas` scope | Child-thread previews appear only on the child's stream; the projector already runs per-connection, so the rule holds. |
 | `stats.startup_seconds` | Always 0 — a fixed honest value: a thread's first turn is enqueued with its creation, and there is no thread-level provisioning delay to measure. |
 
@@ -205,9 +205,9 @@ values through the same table).
 
 - The surface is landing in slices rather than all at once: the data model,
   the primary thread, and the read routes were the foundation; the coordinator
-  tools, child threads, and the dispatch/reply exchange now execute on top of
-  it; archive, per-thread interrupt, and per-thread budget are the slices that
-  remain.
+  tools, child threads, the dispatch/reply exchange, archive, per-thread
+  interrupt, and per-thread `budget_reached` now execute on top of it; the
+  advisor and the Console surface are the slices that remain.
 - The session stream is defined as the primary stream rather than renamed:
   pre-thread sessions had exactly one stream, and making the session-level
   routes *be* the primary thread's stream keeps a single-threaded session's
@@ -296,10 +296,14 @@ the routed answer (`user.tool_confirmation` / `user.custom_tool_result`
 stamped onto the owning thread and cross-posted), thread-scoped
 `user.interrupt` (unscoped closes every unarchived thread; scoped touches one;
 a parked thread's calls are closed with the published error text before it
-settles `paused`), and `POST .../threads/{tid}/archive` with its
-`primary_thread_not_archivable` / `thread_running` / idempotent refusals.
+settles `paused`), `POST .../threads/{tid}/archive` with its
+`primary_thread_not_archivable` / `thread_running` / idempotent refusals, and
+the shared-ceiling budget behaviour (each running thread idles on its own
+`session.thread_status_idle` (`budget_reached`), the aggregate reports
+`requires_action` while a thread waits on a confirmation, and a budget raise
+resumes each budget-parked thread on its own `internal.resume_after_budget`).
 
-Not implemented: per-thread budget signalling, the advisor role, and the
-Console thread surface. The `multiagent` roster itself is accepted, validated,
-stored, and projected on the agent (`agents.md`), and an `advisor` member is
-refused with `advisor_unsupported` by decision — not planned.
+Not implemented: the advisor role and the Console thread surface. The
+`multiagent` roster itself is accepted, validated, stored, and projected on
+the agent (`agents.md`), and an `advisor` member is refused with
+`advisor_unsupported` by decision — not planned.

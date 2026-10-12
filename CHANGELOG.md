@@ -79,8 +79,8 @@
   turn closing `end_turn` reports its last reply back to the parent as a
   cross-posted `agent.thread_message_received` projecting `[来自 <agent_name>]`
   into the receiver's next context, which re-enters the parent's chain when it
-  is idle. Per-thread `user.interrupt`, thread archive, and per-thread budget
-  remain for later slices.
+  is idle. Per-thread `user.interrupt`, thread archive, and per-thread
+  `budget_reached` landed in the slices that follow.
 - Thread confirmation routing. A child thread that parks on `requires_action`
   now lifts the blocking `agent.tool_use` / `agent.mcp_tool_use` /
   `agent.custom_tool_use` rows onto the primary stream (`cross_posted = 1` —
@@ -114,6 +114,18 @@
   follow-ups and turns on its chain are refused or dropped — and its stranded
   parked calls leave the session's `event_ids` union, so a `requires_action`
   session an archived child was holding returns to `idle`.
+- Per-thread `budget_reached` on the shared session ceiling. The cap stays
+  one session-level budget — `sessionSpend` already aggregates every thread's
+  model requests — but each running thread now stops on its own
+  `session.thread_status_idle` with `stop_reason.budget_reached`, and the
+  session aggregate reports `idle` (`budget_reached`) only once every
+  unarchived thread is paused — a thread still parked on `requires_action`
+  keeps the session at `requires_action` under the §4.3 priority rules. A
+  child suspended on the ceiling does not post a reply to its parent: the
+  reply goes out on the `end_turn` its resumed turn eventually reaches. An
+  accepted budget raise or removal re-enters each budget-parked thread on its
+  own `internal.resume_after_budget`, leaving a thread that idled on
+  `end_turn` or `retries_exhausted` untouched.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment
