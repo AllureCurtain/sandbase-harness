@@ -12,11 +12,12 @@
  * the recorded log reads it from `GET /events` and resumes from what it has.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { SessionEvent } from '@/types/session.js';
 import { toApiEvent } from '@/api/standard.js';
 import { EventDeltaProjector, parseEventDeltas } from '@/core/session/event-deltas.js';
+import { primaryThreadIdForSession } from '@/core/session/session-threads.js';
 import type { ServerDeps } from '../server.js';
 import { rejectUnexpectedQueryParams } from './query-params.js';
 
@@ -67,20 +68,57 @@ function resolveResumeCursor(
   return { ok: true, seq: fromHeader.seq ?? fromQuery.seq };
 }
 
-export function streamRoutes(deps: ServerDeps) {
-  const app = new Hono();
-  const { sessionManager } = deps;
+/**
+ * The stream one thread publishes, as a filter over the session's broadcast and
+ * a backfill reader. The session-level route passes the primary thread's —
+ * the session stream *is* the primary thread's stream, widened by whatever a
+ * child thread cross-posted onto it.
+ */
+export interface StreamMembership {
+  /** Whether one logged or broadcast event belongs on this stream. */
+  includes(event: SessionEvent): boolean;
+  /** The stream's stored events after `seq`, in seq order. */
+  stored(afterSeq: number): SessionEvent[];
+  /**
+   * The thread the stream belongs to, passed to `toApiEvent` so a row read on
+   * a stream it is not part of announces its thread in `session_thread_id`
+   * and a row read on its own stream does not.
+   */
+  streamThreadId: string;
+}
 
-  // GET /:id/events/stream — SSE stream
-  app.get('/:id/events/stream', (c) => {
+/** The primary stream: the primary thread's rows plus every cross-posted row. */
+export function primaryStreamMembership(deps: ServerDeps, sessionId: string): StreamMembership {
+  const primaryId = primaryThreadIdForSession(sessionId);
+  return {
+    includes: (event) =>
+      // A NULL threadId is a pre-thread-era orphan — by the primary stream's
+      // definition it is on this stream, same as the backfill predicate reads it.
+      event.threadId === undefined || event.threadId === primaryId || event.crossPosted === true,
+    stored: (afterSeq) => deps.sessionManager.getEventLogger().getPrimaryEvents(sessionId, afterSeq),
+    streamThreadId: primaryId,
+  };
+}
+
+/** One thread's own stream: only the rows whose thread_id is this thread. */
+export function threadStreamMembership(deps: ServerDeps, sessionId: string, threadId: string): StreamMembership {
+  return {
+    includes: (event) => event.threadId === threadId,
+    stored: (afterSeq) => deps.sessionManager.getEventLogger().getThreadEvents(sessionId, threadId, afterSeq),
+    streamThreadId: threadId,
+  };
+}
+
+/**
+ * The shared SSE handler behind both the session-level stream and a thread's
+ * own stream. Everything both streams publish — resume cursor, delta previews,
+ * dedup, keepalive — is identical; only the membership of the log differs.
+ */
+export function eventStreamHandler(deps: ServerDeps, sessionId: string, membership: StreamMembership) {
+  const { sessionManager } = deps;
+  return (c: Context) => {
     const rejected = rejectUnexpectedQueryParams(c, ['event_deltas', 'event_deltas[]', 'last_event_id']);
     if (rejected) return rejected;
-    const sessionId = c.req.param('id');
-    const session = sessionManager.get(sessionId);
-
-    if (!session) {
-      return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
-    }
 
     // `event_deltas[]` is rejected before the stream opens: a 400 must arrive as
     // a normal response, not as an error on an established event stream.
@@ -133,7 +171,7 @@ export function streamRoutes(deps: ServerDeps) {
         await stream.writeSSE({
           id: String(event.seq),
           event: event.type,
-          data: JSON.stringify(toApiEvent(event)),
+          data: JSON.stringify(toApiEvent(event, { streamThreadId: membership.streamThreadId })),
         });
 
         if (event.type === 'session.deleted') {
@@ -142,8 +180,12 @@ export function streamRoutes(deps: ServerDeps) {
       };
 
       // Subscribe first — while backfilling, buffer; after, write directly.
+      // A broadcast event this stream does not own is dropped at the filter,
+      // not buffered: a child thread's quiet rows never reach a connection
+      // that asked for another thread's stream.
       const unsubscribe = sessionManager.subscribe(sessionId, (event) => {
         if (closed) return;
+        if (!membership.includes(event)) return;
         if (backfilling) {
           liveBuffer.push(event);
         } else {
@@ -157,9 +199,7 @@ export function streamRoutes(deps: ServerDeps) {
       // asked for the live stream, so nothing recorded is replayed to it.
       if (resumeFromSeq !== undefined) {
         try {
-          const stored = sessionManager
-            .getEventLogger()
-            .getEvents(sessionId, resumeFromSeq);
+          const stored = membership.stored(resumeFromSeq);
           for (const event of stored) {
             if (closed) break;
             await writeEvent(event);
@@ -207,6 +247,27 @@ export function streamRoutes(deps: ServerDeps) {
       clearInterval(keepalive);
       unsubscribe();
     });
+  };
+}
+
+export function streamRoutes(deps: ServerDeps) {
+  const app = new Hono();
+  const { sessionManager } = deps;
+
+  // GET /:id/events/stream — the session-level SSE stream. With threads the
+  // session stream is the primary thread's: everything the coordinator's own
+  // stream carries, plus whatever a child thread cross-posted onto it.
+  app.get('/:id/events/stream', (c) => {
+    // Query-parameter admission runs ahead of the session lookup: an unknown
+    // parameter is a 400 even on a session that does not exist, because the
+    // refusal names a contract violation, not a missing resource.
+    const rejected = rejectUnexpectedQueryParams(c, ['event_deltas', 'event_deltas[]', 'last_event_id']);
+    if (rejected) return rejected;
+    const sessionId = c.req.param('id');
+    if (!sessionManager.get(sessionId)) {
+      return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
+    }
+    return eventStreamHandler(deps, sessionId, primaryStreamMembership(deps, sessionId))(c);
   });
 
   return app;

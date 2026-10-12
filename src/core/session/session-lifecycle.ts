@@ -22,6 +22,35 @@ export function eventTypeForStatus(status: SessionStatus): SessionEvent['type'] 
   return STATUS_PROJECTION[status].event;
 }
 
+/**
+ * The `session.thread_status_*` counterpart of {@link eventTypeForStatus}.
+ *
+ * The same internal status drives both names: a thread transitions through
+ * the same lifecycle a session does, and the wire distinguishes only whose
+ * transition it reports. `queued` maps to no event — a thread that exists
+ * but has not run publishes `session.thread_created`, not a status event.
+ */
+export function threadEventTypeForStatus(status: SessionStatus): SessionEvent['type'] | undefined {
+  switch (status) {
+    case 'running':
+      return 'session.thread_status_running';
+    case 'retrying':
+      return 'session.thread_status_rescheduled';
+    case 'paused':
+    case 'requires_action':
+      return 'session.thread_status_idle';
+    case 'completed':
+    case 'failed':
+    case 'cancelled':
+    case 'timed_out':
+    case 'cleanup_pending':
+    case 'archived':
+      return 'session.thread_status_terminated';
+    default:
+      return undefined;
+  }
+}
+
 export function isAbortError(err: unknown): boolean {
   return (
     err instanceof Error &&

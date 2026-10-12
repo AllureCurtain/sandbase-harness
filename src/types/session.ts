@@ -123,6 +123,18 @@ export interface SessionEvent {
   delegationDepth?: number;
   /** Immutable event-specific data that does not belong in content blocks. */
   metadata?: Record<string, unknown>;
+  /**
+   * The thread the event was produced on. Always present on rows written
+   * after the threads migration — the writer defaults to the session's
+   * primary thread — and absent only on rows that predate the column.
+   */
+  threadId?: string;
+  /**
+   * Whether the row also surfaces on the primary stream. A child's
+   * cross-posted row keeps its own `thread_id`; the flag is the whole reason
+   * it is readable on the primary stream without being a second copy.
+   */
+  crossPosted?: boolean;
   createdAt: Date;
   processedAt?: Date;
 }

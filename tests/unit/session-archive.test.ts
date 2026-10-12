@@ -38,6 +38,9 @@ describe('session archive', () => {
     expect(archived.archivedAt).toBeInstanceOf(Date);
     expect(cleanupSession).toHaveBeenCalledWith(session.id);
     expect(manager.getEventLogger().getEvents(session.id)).toEqual([
+      // The primary thread's own termination precedes the session-level event
+      // its aggregate produced — the ordering the thread contract fixes.
+      expect.objectContaining({ type: 'session.thread_status_terminated' }),
       expect.objectContaining({ type: 'session.status_terminated' }),
     ]);
   });
@@ -88,6 +91,7 @@ describe('session archive', () => {
       type: 'user.message',
       content: [{ type: 'text', text: 'after archive' }],
     })).rejects.toMatchObject({ code: 'session_archived' });
-    expect(manager.getEventLogger().getEvents(session.id)).toHaveLength(1);
+    // Two lifecycle rows: the thread's termination and the session's.
+    expect(manager.getEventLogger().getEvents(session.id)).toHaveLength(2);
   });
 });

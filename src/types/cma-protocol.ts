@@ -37,6 +37,8 @@ export type CMAEventType =
   | 'agent.mcp_tool_result'
   | 'agent.custom_tool_use'
   | 'agent.thread_context_compacted'
+  | 'agent.thread_message_received'
+  | 'agent.thread_message_sent'
   // Local extension — an external authorization hook refused a governed call
   | 'agent.external_authorization'
   // Streaming events (transient — broadcast over SSE only, never persisted)
@@ -54,6 +56,12 @@ export type CMAEventType =
   | 'session.deleted'
   | 'session.updated'
   | 'session.usage'
+  // Thread lifecycle events (5)
+  | 'session.thread_created'
+  | 'session.thread_status_running'
+  | 'session.thread_status_idle'
+  | 'session.thread_status_rescheduled'
+  | 'session.thread_status_terminated'
   // Span events (5)
   | 'span.model_request_start'
   | 'span.model_request_end'

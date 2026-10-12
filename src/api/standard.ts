@@ -2,6 +2,7 @@ import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/age
 import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { ApiSessionStatus, Session, SessionEvent, SessionLoopEngine, SessionStatus } from '@/types/session.js';
 import type { MonetaryAmount, SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
+import type { SessionThread } from '@/core/session/session-threads.js';
 import { projectSessionError, type SessionErrorPayload } from '@/core/session/session-error.js';
 import { STATUS_PROJECTION } from '@/core/session/session-lifecycle.js';
 import { isTerminal } from '@/core/session/state-machine.js';
@@ -389,6 +390,34 @@ export interface ApiEvent {
   rubric?: OutcomeRubric;
   max_iterations?: number | null;
   /**
+   * The thread one event belongs to, or that a `session.thread_*` event
+   * reports on. Present on the primary stream when the event's own thread is
+   * a child (so a client can attribute it), and on every `session.thread_*`
+   * event wherever it is read — that field is the event's payload, not a
+   * context marker. Suppressed on the event's own thread stream.
+   */
+  session_thread_id?: string;
+  /**
+   * `session.thread_*` payload: the name of the agent the named thread runs.
+   * Lifted from the metadata carrier like every other event field that has
+   * no column of its own.
+   */
+  agent_name?: string;
+  /**
+   * `agent.thread_message_received`: the thread the message came from, and
+   * the name of the agent running it (omitted when the sender had none —
+   * a thread whose row predates the field reports nothing rather than a
+   * made-up name).
+   */
+  from_session_thread_id?: string;
+  from_agent_name?: string;
+  /**
+   * `agent.thread_message_sent`: the thread the message went to, and the
+   * name of the agent running it.
+   */
+  to_session_thread_id?: string;
+  to_agent_name?: string;
+  /**
    * `session.updated` payload, lifted from the metadata carrier. Each field is
    * present only when the update changed it: `agent` is the session's full
    * materialized agent snapshot (the same projection `toApiSession` reports),
@@ -599,7 +628,35 @@ function durationSeconds(session: Session, now: Date): number {
   return Math.max(0, (end.getTime() - session.createdAt.getTime()) / 1000);
 }
 
-export function toApiEvent(event: SessionEvent): ApiEvent {
+/**
+ * Which stream a projection is being written for, when the answer matters.
+ *
+ * The session-level event routes and the session SSE stream pass the primary
+ * thread's id; a thread's own routes pass its id. The only field the context
+ * changes is `session_thread_id`: an event read on the stream it belongs to
+ * does not re-announce its thread, while the same event read on the primary
+ * stream does — that is how a client attributes a cross-posted row.
+ */
+export interface ApiEventStreamContext {
+  streamThreadId: string;
+}
+
+/**
+ * The event types that carry an optional `session_thread_id` field on the
+ * wire — the seven the published SDK declares. `session.thread_*` and
+ * `agent.thread_message_*` events carry their own identifying fields instead
+ * (projected unconditionally below), so they are deliberately absent here.
+ */
+const SESSION_THREAD_ID_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'agent.tool_use',
+  'agent.mcp_tool_use',
+  'agent.custom_tool_use',
+  'user.tool_confirmation',
+  'user.custom_tool_result',
+  'user.interrupt',
+]);
+
+export function toApiEvent(event: SessionEvent, stream?: ApiEventStreamContext): ApiEvent {
   const streamEvent = event as SessionEvent & { delta?: string; message_id?: string };
   // `session.usage` is persisted through the generic metadata carrier (the
   // events table has no per-type payload column) and projected to its
@@ -690,6 +747,42 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
   const sessionUpdate = event.type === 'session.updated'
     ? metadataObject(event, 'session_updated')
     : undefined;
+  // `session.thread_*` events persist their identifying payload through the
+  // metadata carrier — `session_thread_id` names the thread the transition is
+  // about, `agent_name` the agent it runs — and `session.thread_status_idle`
+  // reuses the same `stop_reason` object the session-level idle projects.
+  // These fields are the event's payload, so they are projected wherever the
+  // event is read, not only when it is cross-posted.
+  const threadStatus = event.type.startsWith('session.thread_')
+    ? {
+        session_thread_id: metadataString(event, 'session_thread_id'),
+        agent_name: metadataString(event, 'agent_name'),
+        stop_reason: event.type === 'session.thread_status_idle'
+          ? metadataObject(event, 'stop_reason') as NonNullable<SessionStatusIdleEvent['stop_reason']> | undefined
+          : undefined,
+      }
+    : undefined;
+  // `agent.thread_message_*` events persist their direction fields through the
+  // same carrier: `from_*` names the sender on a received message, `to_*` the
+  // recipient on a sent one.
+  const threadMessage = event.type === 'agent.thread_message_received' || event.type === 'agent.thread_message_sent'
+    ? {
+        from_session_thread_id: metadataString(event, 'from_session_thread_id'),
+        from_agent_name: metadataString(event, 'from_agent_name'),
+        to_session_thread_id: metadataString(event, 'to_session_thread_id'),
+        to_agent_name: metadataString(event, 'to_agent_name'),
+      }
+    : undefined;
+  // An event that carries `session_thread_id` reports it only when read off a
+  // stream it does not belong to: the field exists so a client on the primary
+  // stream can attribute a cross-posted row, and an event's own thread stream
+  // has nothing to attribute — the row is already in the thread it names.
+  const sessionThreadId = stream !== undefined
+    && event.threadId !== undefined
+    && event.threadId !== stream.streamThreadId
+    && SESSION_THREAD_ID_EVENT_TYPES.has(event.type)
+    ? event.threadId
+    : undefined;
   const sessionUpdateAgent = sessionUpdate?.agent !== undefined
     ? toApiAgent(sessionUpdate.agent as AgentDefinition, {
         id: sessionUpdate.agent_id as string | undefined,
@@ -751,8 +844,16 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
     ...(event.modelUsed !== undefined ? { model_used: event.modelUsed } : {}),
     ...(event.tokensIn !== undefined ? { tokens_in: event.tokensIn } : {}),
     ...(event.tokensOut !== undefined ? { tokens_out: event.tokensOut } : {}),
+    ...(threadStatus?.session_thread_id !== undefined ? { session_thread_id: threadStatus.session_thread_id } : {}),
+    ...(threadStatus?.agent_name !== undefined ? { agent_name: threadStatus.agent_name } : {}),
+    ...(threadMessage?.from_session_thread_id !== undefined ? { from_session_thread_id: threadMessage.from_session_thread_id } : {}),
+    ...(threadMessage?.from_agent_name !== undefined ? { from_agent_name: threadMessage.from_agent_name } : {}),
+    ...(threadMessage?.to_session_thread_id !== undefined ? { to_session_thread_id: threadMessage.to_session_thread_id } : {}),
+    ...(threadMessage?.to_agent_name !== undefined ? { to_agent_name: threadMessage.to_agent_name } : {}),
+    ...(sessionThreadId !== undefined ? { session_thread_id: sessionThreadId } : {}),
     ...(event.stopReason !== undefined ? { stop_reason: event.stopReason } : {}),
     ...(sessionStopReason ? { stop_reason: sessionStopReason } : {}),
+    ...(threadStatus?.stop_reason ? { stop_reason: threadStatus.stop_reason } : {}),
     ...(event.durationMs !== undefined ? { duration_ms: event.durationMs } : {}),
     ...(streamEvent.delta !== undefined ? { delta: streamEvent.delta } : {}),
     ...(streamEvent.message_id !== undefined ? { message_id: streamEvent.message_id } : {}),
@@ -764,6 +865,105 @@ export function toApiEvent(event: SessionEvent): ApiEvent {
 
 export function toApiSessionStatus(status: SessionStatus): ApiSession['status'] {
   return STATUS_PROJECTION[status].wire;
+}
+
+/**
+ * The published thread object (`BetaManagedAgentsSessionThread`).
+ *
+ * `agent` is the full resolved snapshot the thread runs — the same projection
+ * `toApiAgent` gives the agent resource, narrowed to the published
+ * `SessionThreadAgent` shape — because the thread carries the definition it
+ * was spawned with rather than resolving the name again at read time.
+ * `stats` and `usage` are `null` until the thread has transitioned: a thread
+ * that was created but never ran reports nothing rather than zeros for
+ * counters it has not started.
+ */
+export interface ApiSessionThread {
+  id: string;
+  type: 'session_thread';
+  session_id: string;
+  parent_thread_id: string | null;
+  agent: ApiAgent | { type: 'advisor'; model: string };
+  status: ApiSessionStatus;
+  stats: {
+    active_seconds?: number;
+    duration_seconds?: number;
+    /**
+     * Time to first run. Always 0 here: a thread's first turn is enqueued in
+     * the same call that creates it, so there is no provisioning delay to
+     * report — a fixed zero is the honest answer, not an unmeasured one.
+     */
+    startup_seconds?: number;
+  } | null;
+  usage: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation?: {
+      ephemeral_5m_input_tokens: number;
+      ephemeral_1h_input_tokens: number;
+    };
+    /**
+     * Equal to `stats.active_seconds`; the published usage object surfaces it
+     * alongside the counters the same figure is priced on.
+     */
+    active_seconds?: number;
+    list_cost?: MonetaryAmount | null;
+    server_tool_use?: {
+      web_search_requests: number;
+      web_fetch_requests: number;
+    } | null;
+  } | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+/**
+ * Derive a thread's `stats`/`usage` from its own event stream.
+ *
+ * `activeSeconds` comes from the caller, which already ran the thread-status
+ * interval scan over this thread's events — recomputing it here would make
+ * the route read the log twice for one answer.
+ */
+export function toApiThread(
+  thread: SessionThread,
+  derived?: { activeSeconds?: number; now?: Date },
+): ApiSessionThread {
+  const started = thread.status !== 'queued' || thread.usage.tokensOut > 0 || thread.usage.tokensIn > 0;
+  const active = derived?.activeSeconds ?? 0;
+  const now = derived?.now ?? new Date();
+  const durationEnd = isTerminal(thread.status) || thread.archivedAt ? thread.updatedAt : now;
+  const durationSeconds = Math.max(0, (durationEnd.getTime() - thread.createdAt.getTime()) / 1000);
+  return {
+    id: thread.id,
+    type: 'session_thread',
+    session_id: thread.sessionId,
+    parent_thread_id: thread.parentThreadId,
+    agent: toApiAgent(thread.agentDefinition, {
+      id: thread.agentId ?? undefined,
+      version: thread.agentVersion ?? undefined,
+    }),
+    status: toApiSessionStatus(thread.status),
+    stats: started
+      ? { active_seconds: active, duration_seconds: durationSeconds, startup_seconds: 0 }
+      : null,
+    usage: started
+      ? {
+          input_tokens: thread.usage.tokensIn,
+          output_tokens: thread.usage.tokensOut,
+          cache_read_input_tokens: thread.usage.cacheReadTokens,
+          cache_creation: {
+            ephemeral_5m_input_tokens: thread.usage.cacheWriteTokens,
+            ephemeral_1h_input_tokens: 0,
+          },
+          active_seconds: active,
+        }
+      : null,
+    created_at: toIsoString(thread.createdAt),
+    updated_at: toIsoString(thread.updatedAt),
+    archived_at: thread.archivedAt ? toIsoString(thread.archivedAt) : null,
+  };
 }
 
 function toApiSessionResource(resource: Record<string, unknown>): ApiSessionResource {

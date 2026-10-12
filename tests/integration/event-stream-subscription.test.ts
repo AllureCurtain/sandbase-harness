@@ -39,9 +39,18 @@ function streamApp(events: SessionEvent[] = []) {
       subscribers.add(listener);
       return () => subscribers.delete(listener);
     },
-    getEventLogger: () => ({ getEvents: (_id: string, afterSeq?: number) => (
-      afterSeq === undefined ? events : events.filter((event) => event.seq > afterSeq)
-    ) }),
+    getEventLogger: () => ({
+      getEvents: (_id: string, afterSeq?: number) => (
+        afterSeq === undefined ? events : events.filter((event) => event.seq > afterSeq)
+      ),
+      // The session-level stream backfills through the primary-thread reader.
+      getPrimaryEvents: (_id: string, afterSeq?: number) => (
+        afterSeq === undefined ? events : events.filter((event) => event.seq > afterSeq)
+      ),
+      getThreadEvents: (_id: string, _threadId: string, afterSeq?: number) => (
+        afterSeq === undefined ? events : events.filter((event) => event.seq > afterSeq)
+      ),
+    }),
   };
   const app = new Hono();
   app.route('/v1/sessions', streamRoutes({ sessionManager } as unknown as ServerDeps));
@@ -187,6 +196,12 @@ describe('session event stream subscription modes', () => {
       },
       getEventLogger: () => ({
         getEvents: (_id: string, afterSeq?: number) => {
+          for (const listener of subscribers) listener(stored(3, 'live during backfill'));
+          return afterSeq === undefined ? [] : [stored(1), stored(2)].filter((event) => event.seq > afterSeq);
+        },
+        // The session-level stream backfills through the primary-thread reader;
+        // the broadcast still has to happen inside that call to hit the window.
+        getPrimaryEvents: (_id: string, afterSeq?: number) => {
           for (const listener of subscribers) listener(stored(3, 'live during backfill'));
           return afterSeq === undefined ? [] : [stored(1), stored(2)].filter((event) => event.seq > afterSeq);
         },
