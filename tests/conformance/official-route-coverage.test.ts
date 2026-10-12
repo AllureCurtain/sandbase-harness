@@ -112,15 +112,17 @@ describe('official SDK route coverage', () => {
     }
     await expect(client.beta.tunnels.retrieve('x_probe')).rejects.toMatchObject(expected);
     await expect(client.beta.userProfiles.retrieve('x_probe')).rejects.toMatchObject(expected);
-    // Threads are served now: an unknown session id decodes the real route's
-    // 404, and the one verb still refused — archive — keeps the envelope.
+    // Threads are served now — every verb: an unknown session id decodes the
+    // real route's 404, archive included now that the lifecycle work landed.
     await expect(client.beta.sessions.threads.list('x_probe')).rejects.toMatchObject({
       status: 404, error: { error: { type: 'not_found' } },
     });
     await expect(client.beta.sessions.threads.retrieve('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject({
       status: 404, error: { error: { type: 'not_found' } },
     });
-    await expect(client.beta.sessions.threads.archive('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject(expected);
+    await expect(client.beta.sessions.threads.archive('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject({
+      status: 404, error: { error: { type: 'not_found' } },
+    });
     await expect(client.beta.sessions.threads.events.list('x_probe', { session_id: 'x_probe' })).rejects.toMatchObject({
       status: 404, error: { error: { type: 'not_found' } },
     });

@@ -7,6 +7,7 @@
  *   GET /:id/threads/:tid          — one thread object
  *   GET /:id/threads/:tid/events   — the thread's own event log page
  *   GET /:id/threads/:tid/stream   — the thread's SSE stream
+ *   POST /:id/threads/:tid/archive — archive one child thread
  *
  * The session-level routes already publish the *primary* stream: this file is
  * the read surface for the threads themselves. The envelope, cursor, and SSE
@@ -198,6 +199,52 @@ export function sessionThreadsRoutes(deps: ServerDeps) {
     const { thread, error } = threadFor(deps, sessionId, c.req.param('tid'));
     if (error) return c.json(error.body, error.status);
     return eventStreamHandler(deps, sessionId, threadStreamMembership(deps, sessionId, thread!.id))(c);
+  });
+
+  // POST /:id/threads/:tid/archive — archive a child thread. The primary
+  // thread is the session's own stream and cannot be archived
+  // (`primary_thread_not_archivable`); a thread that is still running must be
+  // interrupted first, so a live one answers 409. Archiving emits the thread's
+  // `session.thread_status_terminated` (cross-posted) and releases its
+  // concurrency slot — `activeChildCount` already excludes archived rows.
+  app.post('/:id/threads/:tid/archive', (c) => {
+    const rejected = rejectUnexpectedQueryParams(c, []);
+    if (rejected) return rejected;
+    const sessionId = c.req.param('id');
+    if (!sessionManager.get(sessionId)) {
+      return c.json({ error: { type: 'not_found', message: 'Session not found' } }, 404);
+    }
+    const { thread, error } = threadFor(deps, sessionId, c.req.param('tid'));
+    if (error) return c.json(error.body, error.status);
+
+    if (thread!.parentThreadId === null) {
+      return c.json({
+        error: {
+          type: 'invalid_request_error',
+          code: 'primary_thread_not_archivable',
+          message: 'The primary thread cannot be archived; archive the session instead.',
+        },
+      }, 400);
+    }
+    if (thread!.status === 'running' || thread!.status === 'retrying') {
+      return c.json({
+        error: {
+          type: 'conflict',
+          code: 'thread_running',
+          message: `Thread ${thread!.id} is ${thread!.status}; interrupt it and wait for idle before archiving`,
+        },
+      }, 409);
+    }
+    if (thread!.archivedAt) {
+      // Already archived — the terminal lifecycle write. Repeating it would
+      // emit a second `session.thread_status_terminated`, so the read is the
+      // same no-op the contract's archive is elsewhere.
+      return c.json(toApiThread(thread!, threadDerived(thread!)));
+    }
+
+    sessionManager.archiveThread(sessionId, thread!.id);
+    const archived = sessionManager.getThreadStore().get(thread!.id)!;
+    return c.json(toApiThread(archived, threadDerived(archived)));
   });
 
   return app;

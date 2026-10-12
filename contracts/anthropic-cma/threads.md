@@ -2,9 +2,9 @@
 
 Contract area: threads, the multi-agent roster, thread lifecycle and message
 events, thread listing and archive.
-Status: `partial` — the coordinator tools, child threads, dispatch/reply events,
-and cross-posting are live; thread archive, per-thread interrupt, and per-thread
-budget are not yet implemented, and there is no advisor. See §7.
+Status: `partial` — the coordinator tools, child threads, dispatch/reply
+events, confirmation routing, per-thread interrupt, and archive are live;
+per-thread budget is not yet implemented, and there is no advisor. See §7.
 Source: `src/core/session/session-threads.ts`,
 `src/core/session/event-logger.ts`, `src/core/session/session-manager.ts`,
 `src/core/session/coordinator-tools.ts`, `src/core/session/thread-runner.ts`,
@@ -151,12 +151,25 @@ and resumed on the owning thread's own execution chain: the child's parked
 set, its context projection, and its tool-result pairing are all computed on
 its own stream.
 
+**Interrupt and archive are thread-scoped.** `user.interrupt` accepts an
+optional `session_thread_id`: without it every unarchived thread is stopped —
+a running or retrying thread's turn is aborted through its own controller,
+and a thread parked on `requires_action` has each parked call closed with the
+published error result ("Tool execution was interrupted before completion.
+Please retry.") before going straight to `paused` (`end_turn`), with no model
+call — while with it only the named thread is touched (an id naming no thread
+of the session is refused). The event itself is stamped on the thread it was
+addressed to and cross-posted, so the primary stream records a scoped
+interrupt against the child's stream too. `POST .../threads/{tid}/archive`
+archives an idle child — a parked `requires_action` thread counts as idle —
+emitting `session.thread_status_terminated` (cross-posted) and freeing its
+concurrency slot; the primary thread answers `primary_thread_not_archivable`
+(400) and a running one `thread_running` (409). An archived thread accepts no
+input: `send_to_agent` follow-ups and turns on its chain are refused or
+dropped, and its stranded parked calls leave the session's `event_ids` union.
+
 What does **not** exist yet:
 
-- `POST .../threads/{tid}/archive` is still a mounted `unsupported_capability`
-  refusal.
-- `user.interrupt` still targets the session as a whole; `session_thread_id`
-  on the input event is not yet routed.
 - The shared session budget still parks the session as a whole; per-thread
   `budget_reached` is not emitted.
 - There is no server-side advisor; an `advisor` roster member is refused at
@@ -182,8 +195,8 @@ values through the same table).
 | `send_to_agent` sync/async | Local by D8: the call records the dispatch and returns `{status: 'sent'}` immediately, and the reply arrives later as `agent.thread_message_received` driving a fresh turn. A synchronous wait would freeze the coordinator through the child's whole run, which is the parallel-dispatch pattern the roster exists for. |
 | Advisor | An `advisor` roster member is refused with `advisor_unsupported` — no server-side advisor exists in this runtime. |
 | Child-thread `requires_action` cross-post | Implemented: the parked `agent.tool_use` / `mcp_tool_use` / `custom_tool_use` is lifted onto the primary stream (the row keeps its `thread_id`; `cross_posted = 1` admits it to the primary view, and `session_thread_id` on the wire attributes it), the child's `session.thread_status_idle` carries `stop_reason.requires_action` with only its own parked `event_ids`, the session-level `session.status_idle` reports the union across parked threads, and the answering `user.tool_confirmation` / `user.custom_tool_result` is stamped onto the owning thread and cross-posted so both streams show the request→response pair. |
-| Archive | `POST .../threads/{tid}/archive` remains a mounted refusal. A thread cannot be archived. |
-| Interrupt targeting | `user.interrupt` has no `session_thread_id` handling; it aborts the session's running turn as before. |
+| Archive | Implemented: `POST .../threads/{tid}/archive` archives an idle child (`requires_action` counts as idle), emits the cross-posted `session.thread_status_terminated`, frees the slot, returns the thread object; primary → `primary_thread_not_archivable` (400), running → `thread_running` (409), repeat → same row, no second event. |
+| Interrupt targeting | Implemented: `user.interrupt` accepts `session_thread_id` — scoped interrupts one thread (unknown/cross-session id → 400), unscoped interrupts every unarchived thread; a parked thread's calls are closed with the published error result and it goes `paused` (`end_turn`) without a model call; an idle thread is a no-op. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
 | `event_deltas` scope | Child-thread previews appear only on the child's stream; the projector already runs per-connection, so the rule holds. |
 | `stats.startup_seconds` | Always 0 — a fixed honest value: a thread's first turn is enqueued with its creation, and there is no thread-level provisioning delay to measure. |
@@ -250,12 +263,18 @@ values through the same table).
 - `tests/conformance/session-threads-multiagent.test.ts` — the official SDK
   drives a rostered coordinator end to end; after `send_to_agent`,
   `threads.list` answers the primary thread plus the spawned child.
-- `tests/conformance/official-route-coverage.test.ts` — thread list,
-  retrieve, and events decode the real route's 404 for an unknown session;
-  archive keeps the `unsupported_capability` envelope.
+- `tests/conformance/official-route-coverage.test.ts` — every thread route,
+  archive included, decodes the real route's 404 for an unknown session.
 - `tests/unit/session-archive.test.ts` — a session archive now emits the
   primary thread's `session.thread_status_terminated` ahead of the
   session-level `session.status_terminated`.
+- `tests/unit/session-thread-archive.test.ts` — the archive route's
+  `primary_thread_not_archivable` / `thread_running` / success / idempotent
+  cases, archiving a parked child freeing the slot and dropping its parked
+  call from the session's `event_ids` union, and every §4.5 interrupt rule:
+  scoped on a parked child (error results, `end_turn`, no model call),
+  unscoped across running and parked threads, the already-idle no-op, and
+  the unknown / cross-session `session_thread_id` refusal.
 
 ## 7. Status
 
@@ -273,11 +292,14 @@ contract puts it on the primary stream), the 25-child concurrency cap, the
 requires_action cross-post (a child's parked `agent.*tool_use` lifted onto
 the primary stream and attributed by `session_thread_id`), per-thread
 `event_ids` on a thread's status event against the union on the session's,
-and the routed answer (`user.tool_confirmation` / `user.custom_tool_result`
-stamped onto the owning thread and cross-posted).
+the routed answer (`user.tool_confirmation` / `user.custom_tool_result`
+stamped onto the owning thread and cross-posted), thread-scoped
+`user.interrupt` (unscoped closes every unarchived thread; scoped touches one;
+a parked thread's calls are closed with the published error text before it
+settles `paused`), and `POST .../threads/{tid}/archive` with its
+`primary_thread_not_archivable` / `thread_running` / idempotent refusals.
 
-Not implemented: `user.interrupt` thread targeting, thread archive (mounted
-refusal), per-thread budget signalling, the advisor role, and the Console
-thread surface. The `multiagent` roster itself is accepted, validated, stored,
-and projected on the agent (`agents.md`), and an `advisor` member is refused
-with `advisor_unsupported` by decision — not planned.
+Not implemented: per-thread budget signalling, the advisor role, and the
+Console thread surface. The `multiagent` roster itself is accepted, validated,
+stored, and projected on the agent (`agents.md`), and an `advisor` member is
+refused with `advisor_unsupported` by decision — not planned.

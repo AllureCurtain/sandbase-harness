@@ -6,12 +6,17 @@
  *   queued → running
  *   running → paused | requires_action | completed | failed
  *   paused → running
- *   requires_action → running | timed_out
+ *   requires_action → running | paused | timed_out
  *
  * `requires_action → timed_out` is how a configured parked-wait bound ends a
  * session nobody answered (`parked-wait.ts`). It reaches the same terminal
  * status the Pi child's own timeout already used, which was simply not
  * reachable from the one state that waits on a caller.
+ *
+ * `requires_action → paused` is the interrupt's close-out: a thread parked on
+ * a client answer that is stopped settles `end_turn` after each parked call
+ * is closed with the published error result — the state the contract's
+ * thread-interrupt rule produces rather than a parked-forever thread.
  *
  * Terminal states are completed, failed, cancelled, timed_out, cleanup_pending, and archived.
  * cleanup_pending and archived deliberately have no outbound transition: the workspace
