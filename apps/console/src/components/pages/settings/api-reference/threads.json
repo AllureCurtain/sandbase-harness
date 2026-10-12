@@ -1,0 +1,92 @@
+[
+  {
+    "id": "session-threads-list",
+    "group": "Session threads",
+    "title": "List session threads",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/threads",
+    "summary": "List a session's threads — the primary thread first, then children in creation order (archived included) — under the same cursor envelope as GET /v1/sessions/{id}/events.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionThread[]",
+        "description": "Thread objects: id (sth_), parent_thread_id (null on the primary), agent_name, status, usage counters, timestamps, archived_at."
+      },
+      {
+        "name": "next_cursor",
+        "type": "string | null",
+        "description": "Opaque cursor for the next page, or null when this is the last."
+      }
+    ]
+  },
+  {
+    "id": "session-threads-retrieve",
+    "group": "Session threads",
+    "title": "Retrieve a session thread",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/threads/{thread_id}",
+    "summary": "Return one thread object with agent as the resolved definition snapshot; stats and usage are null until the thread first transitions.",
+    "response": [
+      {
+        "name": "thread",
+        "type": "SessionThread",
+        "description": "The thread object: id, parent_thread_id, agent_name, agent snapshot, status, stats/usage, timestamps, archived_at."
+      }
+    ]
+  },
+  {
+    "id": "session-threads-events",
+    "group": "Session threads",
+    "title": "List thread events",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/threads/{thread_id}/events",
+    "summary": "Read the thread's own event log with the same cursor envelope as the session-level events route. Events carry seq, type, content, metadata; rows shared with the primary stream keep the same row and seq.",
+    "response": [
+      {
+        "name": "data",
+        "type": "SessionEvent[]",
+        "description": "Events on this thread's stream ordered by sequence."
+      },
+      {
+        "name": "next_cursor",
+        "type": "string | null",
+        "description": "Opaque cursor for the next page, or null when this is the last."
+      }
+    ]
+  },
+  {
+    "id": "session-threads-stream",
+    "group": "Session threads",
+    "title": "Stream thread events (SSE)",
+    "method": "GET",
+    "path": "/v1/sessions/{session_id}/threads/{thread_id}/stream",
+    "summary": "Server-sent events over the thread's own stream with the same Last-Event-ID resume cursor and event_deltas[] opt-in as the session-level stream — a filter over the same broadcast.",
+    "response": [
+      {
+        "name": "event stream",
+        "type": "text/event-stream",
+        "description": "SessionEvent frames on this thread's stream; keepalives are `event: ping`."
+      }
+    ]
+  },
+  {
+    "id": "session-threads-archive",
+    "group": "Session threads",
+    "title": "Archive a thread",
+    "method": "POST",
+    "path": "/v1/sessions/{session_id}/threads/{thread_id}/archive",
+    "summary": "Archive an idle child thread (a thread parked on requires_action counts as idle). Emits a cross-posted session.thread_status_terminated, frees the concurrency slot, and returns the thread object. The primary thread answers 400 primary_thread_not_archivable, a running or retrying one 409 thread_running, and repeating the call returns the same row with no second event.",
+    "response": [
+      {
+        "name": "thread",
+        "type": "SessionThread",
+        "description": "The archived thread object."
+      },
+      {
+        "name": "error",
+        "type": "object",
+        "description": "400 primary_thread_not_archivable for the primary thread; 409 thread_running while the thread is running or retrying."
+      }
+    ]
+  }
+]

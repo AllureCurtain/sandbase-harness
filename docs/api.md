@@ -177,8 +177,7 @@ Known unsupported official SDK operations instead return HTTP 400 with
 `error.type: "unsupported_capability"`, a message pointing to
 `docs/api-matrix.md#unsupported-official-routes`, and
 `error.details.capabilities` containing the capability id and reason. These
-explicit refusals cover MCP tunnels, hosted user profiles, and
-session threads (the unimplemented multiagent surface); they do not create
+explicit refusals cover MCP tunnels and hosted user profiles; they do not create
 resources or
 execute work. Authentication, throttling, and compatibility admission still run
 first. Only the documented official methods and paths are registered; unrelated
@@ -203,11 +202,6 @@ resource response.
 | GET, POST | `/v1/user_profiles` |
 | GET, POST | `/v1/user_profiles/{id}` |
 | POST | `/v1/user_profiles/{id}/enrollment_url` |
-| GET | `/v1/sessions/{id}/threads` |
-| GET | `/v1/sessions/{id}/threads/{thread_id}` |
-| GET | `/v1/sessions/{id}/threads/{thread_id}/events` |
-| GET | `/v1/sessions/{id}/threads/{thread_id}/stream` |
-| POST | `/v1/sessions/{id}/threads/{thread_id}/archive` |
 
 A query parameter a route does not implement is refused rather than ignored:
 
@@ -1260,6 +1254,51 @@ published shape (`retryable` → `retrying`, the other two → `terminal`, and t
 stored `type` reclassified and preserved as `code`).
 
 A turn aborted by the caller is not a failure and records no `session.error`.
+
+### Threads
+
+Every session owns exactly one **primary thread** — the session-level event
+stream itself, with `parent_thread_id: null` and an id of `sth_` plus the
+session id's suffix. A coordinator agent (one whose `multiagent` roster
+resolves) can spawn child threads through its `send_to_agent` tool; each child
+runs on its own execution chain against its own slice of the event log while
+sharing the session's sandbox, filesystem, resources, and vault.
+
+`GET /v1/sessions/{id}/threads` lists the session's threads — primary first,
+then children in creation order, archived rows included — under the same
+cursor envelope as `GET /v1/sessions/{id}/events`.
+`GET /v1/sessions/{id}/threads/{thread_id}` returns the published thread
+object with `agent` as the resolved definition snapshot; `stats` and `usage`
+are `null` until the thread first transitions.
+`GET /v1/sessions/{id}/threads/{thread_id}/events` and
+`GET /v1/sessions/{id}/threads/{thread_id}/stream` expose the thread's own log
+and SSE stream with the same resume-cursor and `event_deltas[]` semantics as
+the session-level routes. The session-level events surface is the **primary
+stream**: the primary thread's own rows plus rows a child cross-posted
+(`cross_posted = 1`), one row with one `seq` on both views; an event read on
+a stream it does not belong to carries `session_thread_id` on the wire.
+
+Every thread transition emits a `session.thread_status_*` event carrying
+`session_thread_id` and `agent_name` — cross-posted to the primary stream for
+a child — and the session's public status is recomputed from its threads: any
+running thread makes it `running`, else any `requires_action` keeps it
+`requires_action`, else all unarchived `paused` makes it `idle`, and a
+terminal primary makes it terminal. A child's parked `agent.*tool_use` is
+cross-posted so a primary-stream reader sees the call it must answer; the
+`user.tool_confirmation` or `user.custom_tool_result` is stamped onto the
+owning thread and resumed on its chain. `user.interrupt` accepts
+`session_thread_id`: unscoped stops every unarchived thread, scoped touches
+only the named one. The shared session budget parks each running thread on
+its own `session.thread_status_idle` (`budget_reached`), and a budget raise
+resumes each budget-parked thread separately.
+
+`POST /v1/sessions/{id}/threads/{thread_id}/archive` archives an idle child
+(a thread parked on `requires_action` counts as idle), emits the cross-posted
+`session.thread_status_terminated`, frees the concurrency slot, and returns
+the thread object. The primary thread answers `400`
+`primary_thread_not_archivable`, a running or retrying one `409`
+`thread_running`, and repeating the call returns the same row without a
+second event.
 
 ### Runs
 

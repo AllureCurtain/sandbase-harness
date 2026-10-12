@@ -6,13 +6,14 @@ project-owned features only.
 ## Near Term
 
 - Improve API compatibility coverage and documented response shapes.
-- Decide the multiagent surface: the published `multiagent` roster, session
-  threads (`/v1/sessions/{id}/threads*`), the coordinator/advisor roles, and
-  the `session.thread_*` / `agent.thread_message_*` events are all mounted
-  `unsupported_capability` refusals today (see
-  `contracts/anthropic-cma/threads.md`). It is the largest remaining gap to
-  the published contract — implement it, or declare it permanently out of
-  scope the way `/v1/tunnels` and `/v1/user_profiles` already are.
+- Finish the multiagent surface: the published `multiagent` roster, session
+  threads (`/v1/sessions/{id}/threads*`), the coordinator's `list_agents` /
+  `send_to_agent` tools, the `session.thread_*` / `agent.thread_message_*`
+  events, per-thread confirmation routing, `user.interrupt`, archive, and
+  `budget_reached` are delivered (see
+  `contracts/anthropic-cma/threads.md`). What remains: the server-side
+  `advisor` role — refused with `advisor_unsupported` by decision today —
+  and the Console thread UI.
 - Improve template validation and authoring commands.
 - Add richer runtime metrics for model usage, tool duration, and session state.
 

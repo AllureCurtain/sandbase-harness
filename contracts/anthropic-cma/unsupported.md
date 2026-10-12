@@ -30,14 +30,12 @@ mcp-tunnel: not_applicable
 
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
 Dreams are implemented too — a session-backed memory-consolidation job — and
-have their own file, [`dreams.md`](./dreams.md).
-Threads' coordinator, the advisor, and child threads are **not** implemented
-either; they have their own file, [`threads.md`](./threads.md), which records
-the gap. The primary thread and its read routes are live (PR 3.1), and the
-canonical `multiagent` roster is accepted and stored (PR 3.2, `agents.md`) —
-only the coordinator role and the `archive` route remain unimplemented, the
-latter still a mounted `unsupported_capability` refusal so the SDK's
-`sessions.threads.archive` gets a decodable 400 rather than a 404.
+have their own file, [`dreams.md`](./dreams.md). Threads are implemented
+except the advisor role and the Console surface — they have their own file,
+[`threads.md`](./threads.md). No thread route is refused here anymore: the
+coordinator tools, child threads, confirmation routing, per-thread
+`user.interrupt`, `POST .../threads/{tid}/archive`, and per-thread
+`budget_reached` are all live.
 
 Failure mechanism:
 

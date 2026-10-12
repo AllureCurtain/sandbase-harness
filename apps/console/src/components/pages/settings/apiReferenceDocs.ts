@@ -1,5 +1,6 @@
 import type { ApiReferenceEndpoint } from './apiReferenceTypes';
 import sessions from './api-reference/sessions.json';
+import session_threads from './api-reference/threads.json';
 import runs from './api-reference/runs.json';
 import agents from './api-reference/agents.json';
 import skills from './api-reference/skills.json';
@@ -53,6 +54,7 @@ function publishedAliasDocs(
 
 export const API_REFERENCE_DOCS: ApiReferenceEndpoint[] = [
   ...(sessions as unknown as ApiReferenceEndpoint[]),
+  ...(session_threads as unknown as ApiReferenceEndpoint[]),
 ...(runs as unknown as ApiReferenceEndpoint[]),
   ...(agents as unknown as ApiReferenceEndpoint[]),
   ...(skills as unknown as ApiReferenceEndpoint[]),
