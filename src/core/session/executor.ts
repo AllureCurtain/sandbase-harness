@@ -19,7 +19,7 @@ import type { TurnTrigger } from '@/types/session.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { SandboxInstance, SandboxProvider, EnvironmentConfig } from '@/types/sandbox.js';
 import type { SandboxProviderRegistry } from '@/sandbox/registry.js';
-import type { AgentStrategy, ExternalAuthorizationHook, StrategyContext } from '@/types/strategy.js';
+import type { AgentStrategy, EventLogWriter, ExternalAuthorizationHook, StrategyContext } from '@/types/strategy.js';
 import { ModelRegistry } from '@/model/registry.js';
 import type { McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { EventLogger } from './event-logger.js';
@@ -56,6 +56,8 @@ import {
   assertPiEnvironmentCanExecute,
   assertPiUserEventCanExecute,
 } from './pi-policy.js';
+import { ThreadEventLogWriter } from './thread-runner.js';
+import { buildCoordinatorTools, type CoordinatorToolsHost } from './coordinator-tools.js';
 import {
   hasSteering,
   type LoopEngineSteerInput,
@@ -272,6 +274,15 @@ export class DefaultSessionExecutor implements SessionExecutor {
   ): AsyncIterable<SessionEvent> {
     const { agents, modelRegistry, eventLogger } = this.deps;
     const strategy = this.strategyFor(session);
+    // The thread this turn runs on: a child thread runs its own roster member's
+    // definition and writes its events under its own `thread_id`, while the
+    // primary thread is the session's default — `options.thread` is absent for
+    // every caller that predates threads, and the scoping writer falls back to
+    // the session's primary id.
+    const thread = options?.thread;
+    const eventLog: EventLogWriter = thread
+      ? new ThreadEventLogWriter(eventLogger, thread.id)
+      : eventLogger;
 
     // A steer is not a turn, so it must not be executed as one. `execute()` is
     // serialized per session, which means a steer routed through it would apply
@@ -284,8 +295,18 @@ export class DefaultSessionExecutor implements SessionExecutor {
       throw new Error('user.steer is delivered through the steering side channel, not as a turn');
     }
 
-    // 1. Load agent definition
-    const agent = session.agentDefinition
+    // 1. Load agent definition. A child thread carries its own resolved
+    // snapshot — the roster member's pinned version, or the coordinator's
+    // effective definition for a `self` replica — stored on the thread row at
+    // dispatch, which outranks the session's own snapshot. A snapshot left empty
+    // (`{}`) — the value a primary thread row gets on a migrated or unpinned
+    // session — names no agent at all, so it falls through to the session's own
+    // resolution rather than shadowing it.
+    const threadDefinition = thread?.agentDefinition && 'name' in thread.agentDefinition
+      ? thread.agentDefinition
+      : undefined;
+    const agent = threadDefinition
+      ?? session.agentDefinition
       ?? this.deps.resolveAgent?.(session.agentId)
       ?? agents.find((a) => a.name === session.agentName);
     if (!agent) {
@@ -352,6 +373,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
         event,
         eventLogger,
         options?.broadcast ?? (() => {}),
+        thread,
       );
       if (!resolution.handled) return;
     }
@@ -375,7 +397,13 @@ export class DefaultSessionExecutor implements SessionExecutor {
     // would leave the decision undelivered.
     const answeredAParkedCall = event.type === 'user.custom_tool_result'
       || (event.type === 'user.tool_confirmation' && session.loopEngine !== 'pi');
-    if (answeredAParkedCall && parkedCalls(eventLogger.getEvents(session.id)).length > 0) {
+    // The parked set is scoped to the thread that owns the call: a sibling
+    // thread's parked call must not hold this turn back, so the gate reads the
+    // thread's own stream rather than the whole session log.
+    const parkedEvents = thread
+      ? eventLogger.getThreadEvents(session.id, thread.id)
+      : eventLogger.getEvents(session.id);
+    if (answeredAParkedCall && parkedCalls(parkedEvents).length > 0) {
       options?.onRequiresAction?.();
       return;
     }
@@ -400,6 +428,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
       broadcast,
       {
         repositorySkills,
+        threadId: thread?.id,
         sandboxProvider: this.sandboxLifecycle.resolveProviderType(session),
         skillPackagePaths: this.sandboxLifecycle.materializedSkillPaths(session.id),
       },
@@ -427,6 +456,16 @@ export class DefaultSessionExecutor implements SessionExecutor {
       ? { env: { ...resolvedCredentials.environment }, redactor: createCredentialRedactor(resolvedCredentials) }
       : undefined;
     const tools = await this.toolResolver.resolveTools(session, agent, sandbox, credentials);
+    // A coordinator thread carries `list_agents`/`send_to_agent` beside its own
+    // tool set. The host that performs the dispatch is supplied per turn by the
+    // session manager — it owns the thread store and the execution chain the
+    // child turn enqueues on — so the tool layer stays a thin binding. Only a
+    // rostered agent builds these: `buildCoordinatorTools` returns an empty map
+    // for a thread with no `multiagent`, which is also the runtime half of the
+    // one-level delegation rule.
+    if (options?.coordinatorHost && agent.multiagent) {
+      Object.assign(tools, buildCoordinatorTools(agent, options.coordinatorHost));
+    }
     // A custom tool call is parked work, not executable work: the runtime
     // surfaces it and waits for the caller's result, so it is routed through the
     // same requires_action path an approval takes.
@@ -452,7 +491,7 @@ export class DefaultSessionExecutor implements SessionExecutor {
       // tools are caller-executed.
       customToolNames: new Set(getCustomToolNames(agent)),
       sandbox,
-      eventLog: eventLogger,
+      eventLog,
       broadcast, // real SSE broadcast wired from SessionManager
       config: {
         maxSteps: agent.max_turns ?? this.deps.defaultMaxSteps ?? 25,

@@ -296,6 +296,20 @@ export interface EventLogWriter {
      * mints it before streaming and hands it back here. Omitted elsewhere.
      */
     id?: string;
+    /**
+     * The thread the event belongs to. Omitted callers default to the
+     * session's primary thread — the writer the strategy holds is already
+     * scoped to the thread it is running, so nothing in the loop names a
+     * thread explicitly; the scoping writer fills this in.
+     */
+    threadId?: string;
+    /**
+     * Whether the row also belongs on the primary stream. Only the coordinator
+     * plumbing sets it — a child thread's cross-posted row keeps its own
+     * `thread_id`, and the flag is what makes the same event readable on both
+     * streams without a second copy.
+     */
+    crossPosted?: boolean;
   }): SessionEvent;
   getLatestSeq(sessionId: string): number;
   /**
@@ -310,6 +324,12 @@ export interface EventLogWriter {
     tokensIn: number,
     tokensOut: number,
     cache?: { read?: number; write?: number },
+    /**
+     * The thread the request ran on. Defaulted to the primary thread so the
+     * per-request aggregate and the per-thread cache cannot disagree about
+     * which stream produced the usage — a thread-scoped writer fills it in.
+     */
+    threadId?: string,
   ): void;
   /**
    * Persist the canonical usage record for one model request that ran outside
@@ -322,7 +342,7 @@ export interface EventLogWriter {
   recordAuxiliaryModelUsage(
     sessionId: string,
     usage: AuxiliaryModelUsage | undefined,
-    options: { purpose: string; modelUsed?: string; durationMs?: number },
+    options: { purpose: string; modelUsed?: string; durationMs?: number; threadId?: string },
   ): SessionEvent;
 }
 

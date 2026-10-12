@@ -62,6 +62,25 @@
   cross-posted (`cross_posted = 1`) — the same row and seq on both views — and
   `toApiEvent` emits `session_thread_id` on the seven published event types
   when an event is read on a stream it does not belong to.
+- The coordinator's `list_agents` and `send_to_agent` tools and the child
+  threads they spawn. A thread whose agent carries a `multiagent` roster —
+  the coordinator's own primary thread and any `self` replica, never a roster
+  member's thread — mounts both. `send_to_agent` is asynchronous: it validates
+  the member and the optional `thread_id` follow-up target, enforces the
+  25-active-child concurrency cap, inserts a `queued` child row carrying the
+  member's pinned definition (`self` takes the coordinator's effective
+  configuration), writes `session.thread_created` on the parent plus the
+  `agent.thread_message_sent` / `agent.thread_message_received` pair
+  (cross-posted to the primary stream), and returns
+  `{thread_id, status: 'sent'}` immediately. Each thread runs the same engine
+  loop on its own execution chain against its own slice of the event log — a
+  `ThreadEventLogWriter` facade stamps `thread_id` on every write — while the
+  session's sandbox, filesystem, resources, and vault are shared. A child's
+  turn closing `end_turn` reports its last reply back to the parent as a
+  cross-posted `agent.thread_message_received` projecting `[来自 <agent_name>]`
+  into the receiver's next context, which re-enters the parent's chain when it
+  is idle. Per-thread `user.interrupt`, thread archive, per-thread budget, and
+  the child `requires_action` cross-post remain for later slices.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

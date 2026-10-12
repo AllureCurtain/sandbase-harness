@@ -170,6 +170,26 @@ export function eventsToMessages(
         break;
       }
 
+      case 'agent.thread_message_received': {
+        // A sibling thread's reply is this thread's next input, so it projects
+        // as a user turn. The sender is named in the text rather than the
+        // message metadata the model cannot see: `[from <agent_name>]`.
+        flushAssistant();
+        flushTools();
+        const from = typeof event.metadata?.from_agent_name === 'string'
+          ? event.metadata.from_agent_name
+          : undefined;
+        const text = extractText(event.content);
+        messages.push({
+          role: 'user',
+          content: [{
+            type: 'text',
+            text: from ? `[来自 ${from}] ${text}` : text,
+          }],
+        });
+        break;
+      }
+
       case 'user.define_outcome': {
         // The event carries no content blocks: its payload lives in `metadata`,
         // and the projection turns it back into the instruction the agent works
@@ -283,6 +303,10 @@ export function eventsToMessages(
         break;
       }
 
+      // `agent.thread_message_sent` is the coordinator's `send_to_agent` call
+      // itself, recorded as an event; the tool's own result already carries it
+      // back to the model, so it is not projected a second time here.
+      case 'agent.thread_message_sent':
       case 'user.interrupt':
       // A steer is not re-projected into the model context. It was written to the
       // live engine session's own input channel while its turn was running, so the

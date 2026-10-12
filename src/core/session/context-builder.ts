@@ -53,6 +53,13 @@ export interface ContextBuildOptions {
    */
   repositorySkills?: Skill[];
   /**
+   * The thread whose own log this context is built from. Omitted means the
+   * session's primary thread — every caller that predates threads is by
+   * definition building the primary context, and the child runner names the
+   * child thread it is running.
+   */
+  threadId?: string;
+  /**
    * Backend the session's environment resolves to, as reported by the lifecycle.
    *
    * Used to name the paths a mounted resource can be reached by: the canonical
@@ -79,9 +86,11 @@ export class ContextBuilder {
     broadcast: (event: SessionEvent) => void,
     options?: ContextBuildOptions,
   ): Promise<BuiltContext> {
-    await this.compactIfNeeded(session, model, broadcast);
+    await this.compactIfNeeded(session, model, broadcast, options?.threadId);
 
-    const events = this.deps.eventLogger.getEvents(session.id);
+    const events = options?.threadId
+      ? this.deps.eventLogger.getThreadEvents(session.id, options.threadId)
+      : this.deps.eventLogger.getEvents(session.id);
     const messages = eventsToMessages(events, this.compactionBoundary(session.id));
 
     let systemPrompt = this.composeSystemPrompt(agent, options?.repositorySkills);
@@ -164,12 +173,15 @@ export class ContextBuilder {
     session: Session,
     model: unknown | undefined,
     broadcast: (event: SessionEvent) => void,
+    threadId?: string,
   ): Promise<void> {
     // Strategies such as Pi own their model transport, so compaction cannot
     // construct or invoke an AI SDK model on their behalf.
     if (!this.deps.compactor || !model) return;
 
-    const events = this.deps.eventLogger.getEvents(session.id);
+    const events = threadId
+      ? this.deps.eventLogger.getThreadEvents(session.id, threadId)
+      : this.deps.eventLogger.getEvents(session.id);
     const prior = this.compactionBoundary(session.id);
     const projected = eventsToMessages(events, prior);
     const modelId = typeof model === 'object' && model !== null && 'modelId' in model
