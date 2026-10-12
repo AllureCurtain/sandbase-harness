@@ -306,7 +306,7 @@ export class EventLogger {
   recordAuxiliaryModelUsage(
     sessionId: string,
     usage: AuxiliaryModelUsage | undefined,
-    options: { purpose: string; modelUsed?: string; durationMs?: number },
+    options: { purpose: string; modelUsed?: string; durationMs?: number; threadId?: string },
   ): SessionEvent {
     const { input, cacheRead, cacheWrite } = splitModelRequestUsage(usage);
     const tokensOut = usage?.outputTokens ?? 0;
@@ -319,9 +319,10 @@ export class EventLogger {
       modelUsed: options.modelUsed,
       durationMs: options.durationMs,
       isError: false,
+      threadId: options.threadId,
       metadata: { auxiliary: options.purpose },
     });
-    this.recordUsage(sessionId, input, tokensOut, { read: cacheRead, write: cacheWrite });
+    this.recordUsage(sessionId, input, tokensOut, { read: cacheRead, write: cacheWrite }, options.threadId);
     return event;
   }
 }

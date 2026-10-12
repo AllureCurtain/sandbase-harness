@@ -3,6 +3,12 @@ import type { SessionEvent } from '@/types/session.js';
 export interface OrphanedToolUse {
   id: string;
   resultType: 'agent.tool_result' | 'agent.mcp_tool_result';
+  /**
+   * The thread the orphaned call was produced on — `undefined` for a row that
+   * predates threads. The placeholder result must land on the same thread or
+   * the child's projection still sees an unpaired call.
+   */
+  threadId?: string;
 }
 
 /**
@@ -43,6 +49,7 @@ export function findOrphanedToolUses(events: SessionEvent[]): OrphanedToolUse[] 
           resultType: event.type === 'agent.mcp_tool_use'
             ? 'agent.mcp_tool_result'
             : 'agent.tool_result',
+          threadId: event.threadId,
         });
       }
     } else if (event.type === 'agent.tool_result' || event.type === 'agent.mcp_tool_result') {

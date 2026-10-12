@@ -14,7 +14,9 @@ import { collectGrepHits, editOnce, mountProviderUnavailable, mountRelativePath,
 import { McpManager, type McpServerStatus } from '@/core/mcp/mcp-manager.js';
 import { toolError, toolErrorText } from '@/core/tool-result-error.js';
 import { rootDelegationContext, DEFAULT_MAX_DELEGATION_DEPTH } from '@/core/orchestrator/agent-orchestrator.js';
+import type { EventLogWriter } from '@/types/strategy.js';
 import type { EventLogger } from './event-logger.js';
+import type { SessionThread } from './session-threads.js';
 import type { DelegationService } from './delegation-service.js';
 import { getCustomToolConfigs, getCustomToolNames, getEnabledToolNames, mcpDiscoveredToolAdmitted, resolveToolsRequiringConfirmation } from '@/core/agent/standard.js';
 import { resolveWebToolExecutionPolicy } from '@/core/agent/web-tool-policy.js';
@@ -161,8 +163,16 @@ export class ToolResolver {
     event: Extract<UserEvent, { type: 'user.tool_confirmation' }>,
     eventLogger: EventLogger,
     broadcast: (event: SessionEvent) => void,
+    /** The thread the confirmation is scoped to; absent means the primary. */
+    thread?: SessionThread,
   ): Promise<ToolConfirmationResolution> {
-    const events = eventLogger.getEvents(session.id);
+    // The pending set is scoped to the thread that parked the call — the same
+    // stream the turn's gate reads. A sibling thread's parked call must not
+    // count as resolved or pending for this answer, and a child's own rows are
+    // invisible to the primary stream rather than merely un-owned.
+    const events = thread
+      ? eventLogger.getThreadEvents(session.id, thread.id)
+      : eventLogger.getPrimaryEvents(session.id);
 
     const resolved = new Set<string>();
     const pendingUses: PendingToolUse[] = [];

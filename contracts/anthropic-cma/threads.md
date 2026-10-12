@@ -2,11 +2,12 @@
 
 Contract area: threads, the multi-agent roster, thread lifecycle and message
 events, thread listing and archive.
-Status: `partial` — the primary thread exists on every session and the thread
-read routes are live; the roster, coordinator tools, child threads, thread
-archive, and per-thread interrupt/budget are not yet implemented. See §7.
+Status: `partial` — the coordinator tools, child threads, dispatch/reply events,
+and cross-posting are live; thread archive, per-thread interrupt, and per-thread
+budget are not yet implemented, and there is no advisor. See §7.
 Source: `src/core/session/session-threads.ts`,
 `src/core/session/event-logger.ts`, `src/core/session/session-manager.ts`,
+`src/core/session/coordinator-tools.ts`, `src/core/session/thread-runner.ts`,
 `src/api/routes/session-threads.ts`, `src/api/routes/stream.ts`,
 `src/api/standard.ts`.
 
@@ -79,31 +80,75 @@ row in the same call as the session. The primary thread's id is derived —
 - Every thread status transition emits a `session.thread_status_*` event
   carrying `session_thread_id` and `agent_name` — including the primary
   thread's, which is the `session.thread_status_running` the contract
-  requires of every session. The session-level `session.status_*` event
+  requires of every session. A child's transition is cross-posted, so it also
+  appears on the primary stream. The session-level `session.status_*` event
   follows the thread event that produced it, and `session.usage` still sits
   immediately before `session.status_idle`.
 - Session status is recomputed from thread status after every transition
-  (`recomputeSessionStatus`). With one thread the aggregation is the identity
-  map, so a single-agent session's lifecycle is exactly what it was before.
+  (`recomputeSessionStatus`): any running thread → `running` (`retrying` when
+  every active thread is), else any `requires_action` → `requires_action`,
+  else all unarchived `paused` → `paused`, and a terminal primary → terminal.
+  With one thread the aggregation is the identity map, so a single-agent
+  session's lifecycle is exactly what it was before.
 - `toApiEvent` gains a stream context: an event read on the primary stream
   whose `thread_id` names a different thread carries `session_thread_id` (the
   seven event types the SDK declares it on); the same event read on its own
   thread's stream does not repeat the field.
 
+**The coordinator's two tools are live.** A thread whose agent carries a
+`multiagent` roster (the `multiagent-roster` capability — see `agents.md`)
+mounts `list_agents` and `send_to_agent`
+(`src/core/session/coordinator-tools.ts`) — only that thread and any `self`
+replica, which is the runtime half of the one-level rule: a roster member's
+thread mounts neither, so delegation cannot recurse. `list_agents` returns the
+roster's `{name, description}` members and the session's existing
+`{thread_id, agent_name, status}` threads. `send_to_agent` is asynchronous
+(D8): it validates the member and the optional `thread_id` follow-up target,
+enforces the 25-child concurrency cap, inserts a `queued` child row with the
+member's pinned definition (a `self` replica gets the coordinator's effective
+configuration), writes `session.thread_created` on the parent plus the
+`agent.thread_message_sent` / `agent.thread_message_received` pair, and returns
+`{thread_id, status: 'sent'}` immediately. The child's first turn is enqueued
+on its own execution chain — every thread serializes only its own turns, so
+several children run concurrently.
+
+**Each thread runs the same engine loop against its own slice of the log.** A
+`ThreadEventLogWriter` facade wraps the session's `EventLogger` and stamps the
+running thread's `thread_id` on every event and usage record, so a child's
+`agent.message`, `agent.tool_use`, and `span.*` rows land on its stream without
+the strategy knowing a second thread exists. Context builds from
+`getThreadEvents(thread_id)` — a child's context is only its own rows. Threads
+share the session's sandbox, filesystem, resources, and vault (D4): the
+sandbox lifecycle is keyed by `session.id`, so `getOrProvision` reuses the one
+sandbox for every thread.
+
+**A child's reply returns to its parent on `end_turn`.** When a child's turn
+closes `paused` rather than `requires_action` (a parked call is the child
+waiting on its own client work, so no reply goes out then), its last assistant
+text becomes the parent's `agent.thread_message_received` — cross-posted so it
+also surfaces on the primary stream — and the matching
+`agent.thread_message_sent` closes the pair on the child's stream. The parent's
+chain is then re-entered with an `internal.thread_message` trigger, which runs
+only when the parent is still idle; a running parent folds the message into its
+next context rebuild instead. The `agent.thread_message_received` event
+projects into the receiver's context as a user message prefixed
+`[来自 <agent_name>]`; `agent.thread_message_sent` is the `send_to_agent` call
+itself and is not re-projected.
+
 What does **not** exist yet:
 
-- A `multiagent` roster is now accepted, validated, and stored on the agent —
-  but it is not *executed*: no coordinator tools exist to spawn child threads
-  from it. See `agents.md` (`multiagent-roster`).
-- No coordinator tools (`list_agents`, `send_to_agent`), no child threads, no
-  `session.thread_created`, no `agent.thread_message_*`, no cross-posted rows
-  in practice — the machinery exists, nothing produces them yet.
 - `POST .../threads/{tid}/archive` is still a mounted `unsupported_capability`
   refusal.
 - `user.interrupt` still targets the session as a whole; `session_thread_id`
   on the input event is not yet routed.
 - The shared session budget still parks the session as a whole; per-thread
   `budget_reached` is not emitted.
+- A child's `agent.tool_use` / `agent.mcp_tool_use` / `agent.custom_tool_use`
+  that parks on `requires_action` is not yet cross-posted to the primary
+  stream, and the `user.tool_confirmation` / `user.custom_tool_result` that
+  answers it is not yet routed back to the child's thread.
+- There is no server-side advisor; an `advisor` roster member is refused at
+  write time with `advisor_unsupported`.
 - The local delegation extension (`delegations`, `enable_general_subagent`)
   is unchanged and remains a separate mechanism, not the roster.
 
@@ -121,34 +166,48 @@ values through the same table).
 
 | Difference | Detail |
 | --- | --- |
-| Roster | `multiagent` is accepted, validated, and stored on the agent (resolved members pinned to `{type:'agent', id, version}`; `advisor` refused with `advisor_unsupported`), but nothing executes it yet — it is configuration the coordinator will read. |
-| Child threads | None. No coordinator tools exist, so `send_to_agent` cannot create one and `session.thread_created` / `agent.thread_message_*` are never emitted. |
+| `send_to_agent` parameter shape | The published contract names `list_agents` and `send_to_agent` but fixes no argument or result shape; the local `{agent, message, thread_id?}` → `{thread_id, status: 'sent'}` is the runtime's own and is unverified upstream. |
+| `send_to_agent` sync/async | Local by D8: the call records the dispatch and returns `{status: 'sent'}` immediately, and the reply arrives later as `agent.thread_message_received` driving a fresh turn. A synchronous wait would freeze the coordinator through the child's whole run, which is the parallel-dispatch pattern the roster exists for. |
+| Advisor | An `advisor` roster member is refused with `advisor_unsupported` — no server-side advisor exists in this runtime. |
+| Child-thread `requires_action` cross-post | Not yet: a child's `agent.tool_use` / `mcp_tool_use` / `custom_tool_use` that parks is not yet lifted onto the primary stream with `session_thread_id`, and the confirmation that answers it is not yet routed to the child's thread. |
 | Archive | `POST .../threads/{tid}/archive` remains a mounted refusal. A thread cannot be archived. |
 | Interrupt targeting | `user.interrupt` has no `session_thread_id` handling; it aborts the session's running turn as before. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
-| Cross-posting | The columns, predicates, and `session_thread_id` projection exist and are tested through the primary stream; nothing produces a cross-posted row until child threads land. |
-| `event_deltas` scope | Child-thread previews will appear only on the child's stream per spec; the projector already runs per-connection, so the rule holds when children exist. |
+| `event_deltas` scope | Child-thread previews appear only on the child's stream; the projector already runs per-connection, so the rule holds. |
 | `stats.startup_seconds` | Always 0 — a fixed honest value: a thread's first turn is enqueued with its creation, and there is no thread-level provisioning delay to measure. |
 
 ## 5. Reason for the difference
 
 - The surface is landing in slices rather than all at once: the data model,
-  the primary thread, and the read routes are the foundation every later
-  behaviour (roster, coordinator tools, archive, per-thread interrupt and
-  budget) is built on, and this slice is that foundation.
+  the primary thread, and the read routes were the foundation; the coordinator
+  tools, child threads, and the dispatch/reply exchange now execute on top of
+  it; archive, per-thread interrupt, and per-thread budget are the slices that
+  remain.
 - The session stream is defined as the primary stream rather than renamed:
   pre-thread sessions had exactly one stream, and making the session-level
   routes *be* the primary thread's stream keeps a single-threaded session's
   observable behaviour identical while giving the multi-agent surface the
   same envelope to build on.
+- `send_to_agent` is asynchronous by design: the contract says threads are
+  durable and concurrent, so a synchronous wait would both freeze the
+  coordinator through the child's run and make the fan-out pattern the roster
+  exists for impossible. The reply returning as a
+  `agent.thread_message_received` that re-enters the coordinator's chain is
+  what keeps the call non-blocking without losing the answer.
+- The seam between "one engine loop" and "many threads" is the event writer,
+  not the loop: `ThreadEventLogWriter` stamps `thread_id` on the same
+  `EventLogWriter` surface the strategy already used, so a child runs the
+  same `DefaultStrategy` — the loop never learned a second thread exists,
+  which is also why a child's events cannot leak into a sibling's context.
 - `startup_seconds` reports a fixed 0 instead of a fabricated measurement:
   the runtime provisions the sandbox once per session and threads share it,
   so there is no per-thread startup the field could truthfully measure.
-- The roster is accepted before the coordinator exists because it is
-  configuration the coordinator will read — storing it now means the later PRs
-  need no schema change. What still cannot be honoured is refused at the same
-  boundary: `advisor` (`advisor_unsupported`), a nested roster, and a roster
-  combined with the local delegation extension.
+- The roster's members are pinned at dispatch: a named member runs the
+  version the roster resolved at write time, and a `self` replica runs the
+  coordinator's *effective* configuration — the same resolved definition the
+  coordinator's own turn runs, session-level overrides included — because the
+  contract calls `self` a copy of the coordinator, not a fresh resolution of
+  its durable row.
 
 ## 6. Corresponding tests
 
@@ -158,9 +217,23 @@ values through the same table).
   the single-thread event-sequence regression (pre-thread sequence plus only
   the thread events), the primary/thread stream predicates, and session
   delete clearing thread rows.
+- `tests/unit/coordinator-send-to-agent.test.ts` — the dispatch, reply, and
+  chain logic against the real `SessionManager` with a scripted executor:
+  `list_agents`/`send_to_agent` mounting, the `thread_created` → `sent` →
+  `running` → `idle` → `received` order on the primary stream, a follow-up
+  keeping the child's history, two concurrent children, the 26th child
+  refused as a tool error, no coordinator tools on a non-rostered thread, and
+  every §4.3 aggregation rule.
+- `tests/integration/coordinator-send-to-agent.test.ts` — the full turn over
+  `DefaultSessionExecutor` + `DefaultStrategy` + a scripted model: the
+  coordinator's `send_to_agent`, the child's shared-workspace file write, the
+  reply reaching the coordinator's second request as `[来自 reviewer] done`.
 - `tests/conformance/session-threads.test.ts` — the official SDK drives
   `threads.list`, `threads.retrieve`, `threads.events.list`, and
   `threads.events.stream` over HTTP against a live turn.
+- `tests/conformance/session-threads-multiagent.test.ts` — the official SDK
+  drives a rostered coordinator end to end; after `send_to_agent`,
+  `threads.list` answers the primary thread plus the spawned child.
 - `tests/conformance/official-route-coverage.test.ts` — thread list,
   retrieve, and events decode the real route's 404 for an unknown session;
   archive keeps the `unsupported_capability` envelope.
@@ -172,14 +245,19 @@ values through the same table).
 
 `partial`. Implemented: the `session_threads` table and `events.thread_id` /
 `cross_posted` columns with migration back-fill, a derived primary-thread id,
-`session.thread_status_*` events on every thread transition, thread-aware
-session status aggregation, the four thread read routes (list, retrieve,
-events, stream) with the published envelopes and resume semantics, and the
-primary-stream definition of the session-level event surface.
+`session.thread_status_*` events on every thread transition (a child's
+cross-posted), thread-aware session status aggregation, the four thread read
+routes with the published envelopes and resume semantics, the primary-stream
+definition of the session-level event surface, the coordinator's `list_agents`
+and `send_to_agent` tools, child threads spawned on their own execution
+chains sharing the session's sandbox, the `session.thread_created` and
+`agent.thread_message_sent`/`received` exchange (cross-posted where the
+contract puts it on the primary stream), the 25-child concurrency cap, and
+the `[来自 <name>]` reply projection into the receiver's context.
 
-Not implemented: coordinator tools, child threads, `session.thread_created`
-and `agent.thread_message_*` events, `user.interrupt` thread targeting, thread
-archive (mounted refusal), and per-thread budget signalling. The `multiagent`
-roster itself is now accepted and stored on the agent (`agents.md`), and the
-advisor entry type is refused with `advisor_unsupported` by decision — not
-planned.
+Not implemented: `user.interrupt` thread targeting, thread archive (mounted
+refusal), per-thread budget signalling, the child `requires_action`
+cross-post plus its confirmation routing, the advisor role, and the Console
+thread surface. The `multiagent` roster itself is accepted, validated, stored,
+and projected on the agent (`agents.md`), and an `advisor` member is refused
+with `advisor_unsupported` by decision — not planned.

@@ -1,5 +1,6 @@
 import type { AgentDefinition } from '@/types/agent.js';
 import type { UserEvent } from '@/types/cma-protocol.js';
+import type { TurnTrigger } from '@/types/session.js';
 import {
   assertPiAgentToolPolicyCanExecute,
   PiToolPolicyUnsupportedError,
@@ -99,7 +100,11 @@ export class PiMultiagentUnsupportedError extends Error {
  * all three are admitted here because all three have a real transport in the
  * adapter.
  */
-export function assertPiUserEventCanExecute(event: UserEvent): void {
+export function assertPiUserEventCanExecute(event: TurnTrigger): void {
+  // An internal re-entry carries no user payload to validate — it resumes the
+  // loop on the transcript the log already holds.
+  if (event.type === 'internal.resume_after_budget') return;
+  if (event.type === 'internal.thread_message') return;
   if (event.type === 'user.interrupt') return;
   if (event.type === 'user.tool_confirmation') return;
   if (event.type === 'user.steer') return;

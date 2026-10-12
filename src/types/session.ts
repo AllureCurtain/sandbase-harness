@@ -257,4 +257,18 @@ export interface ResumeAfterBudgetTrigger {
 }
 
 /** What the executor's turn loop may be entered with: a wire event, or an internal resume. */
-export type TurnTrigger = UserEvent | ResumeAfterBudgetTrigger;
+export type TurnTrigger = UserEvent | ResumeAfterBudgetTrigger | SessionMessageTrigger;
+
+/**
+ * Internal trigger that re-enters a thread's turn loop when a sibling thread's
+ * reply arrives. Like `internal.resume_after_budget` it is deliberately not a
+ * `UserEvent`: the reply it carries is already durable in the log as an
+ * `agent.thread_message_received` event, so re-deriving the turn's context from
+ * the log rather than fabricating a `user.message` is what keeps the model's
+ * view honest. The runner resolves which thread the trigger addresses.
+ */
+export interface SessionMessageTrigger {
+  type: 'internal.thread_message';
+  /** The thread whose turn this re-entry belongs to. */
+  threadId: string;
+}

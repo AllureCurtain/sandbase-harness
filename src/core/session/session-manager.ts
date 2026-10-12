@@ -20,7 +20,12 @@ import { findOrphanedToolUses, INTERRUPTED_TOOL_OUTCOME_MESSAGE } from './sessio
 import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
-import { SessionThreadStore } from './session-threads.js';
+import { SessionThreadStore, type SessionThread } from './session-threads.js';
+import {
+  buildCoordinatorTools,
+  MAX_ACTIVE_CHILD_THREADS,
+  type CoordinatorToolsHost,
+} from './coordinator-tools.js';
 import { attachSessionResources } from './session-resources.js';
 import { officialErrorType, retryStatus } from './session-error.js';
 import { isRetriesExhausted } from '@/model/registry.js';
@@ -150,6 +155,21 @@ export interface ExecuteOptions {
    * back onto `session.status_running`.
    */
   retryObserver?: RetryObserver;
+  /**
+   * The thread this turn runs on. Omitted means the primary thread — every
+   * caller that predates threads is by definition running the primary — and a
+   * child turn names the thread row it is executing, so the turn's agent,
+   * context, and event writes all scope to it.
+   */
+  thread?: import('./session-threads.js').SessionThread;
+  /**
+   * The coordinator host a rostered thread's `list_agents`/`send_to_agent`
+   * tools dispatch through. Supplied by the session manager, which owns the
+   * thread store and the execution chains the dispatch enqueues on; absent
+   * means no coordinator tools are mounted (a session whose agent declares no
+   * roster builds none anyway, so this is the common case).
+   */
+  coordinatorHost?: import('./coordinator-tools.js').CoordinatorToolsHost;
 }
 
 /** The one internal trigger this runtime re-enters a turn on. See `TurnTrigger`. */
@@ -221,9 +241,15 @@ export class SessionManager {
   /** Reader for a `{type: "file"}` rubric; absent means a file rubric is refused. */
   private rubricFileResolver?: (fileId: string) => string | undefined;
   private sessionStorage: SessionStorage = {};
-  /** Per-session execution chain — serializes turns so they never overlap. */
+  /**
+   * Per-thread execution chains — serialize the turns of one thread so they
+   * never overlap, while letting different threads run concurrently (§4.4, D5).
+   * Keyed by thread id, not session id: a session's primary thread and its
+   * children each serialize on their own key, which is the whole reason a
+   * `send_to_agent` child can run while the coordinator is parked.
+   */
   private executionChains = new Map<string, Promise<void>>();
-  /** Per-session abort controller for the currently running turn. */
+  /** Per-thread abort controller for the currently running turn. */
   private abortControllers = new Map<string, AbortController>();
   /**
    * List prices budgets are metered against. Configuration, not policy: it
@@ -860,7 +886,12 @@ export class SessionManager {
       agentId: agentSnapshot.id,
       agentName: agentSnapshot.name,
       agentVersion: agentSnapshot.version,
-      agentDefinition: frozenDefinition ? effectiveDefinition : undefined,
+      // The primary thread runs the session's effective definition — the same
+      // resolved snapshot the turn resolves — not the possibly-absent frozen
+      // copy. An unpinned session stores no `agent_definition` on its row, but
+      // the thread's own snapshot must still carry the roster the executor
+      // reads to mount coordinator tools.
+      agentDefinition: effectiveDefinition,
       loopEngine,
       environmentId: params.environmentId ?? 'env_default',
       status: 'queued',
@@ -1161,7 +1192,9 @@ export class SessionManager {
     // user.interrupt jumps the queue and aborts the running turn — it does
     // NOT enqueue a new turn (there's no new work, just a stop signal).
     if (event.type === 'user.interrupt') {
-      this.abortControllers.get(sessionId)?.abort();
+      // Chains are keyed by thread id, and a `user.interrupt` reaches the
+      // primary thread — the client's address — not a child's.
+      this.abortControllers.get(this.threadStore.primaryThreadId(sessionId))?.abort();
       return { accepted: true };
     }
 
@@ -1178,25 +1211,91 @@ export class SessionManager {
       ? { ...event, tool_use_id: confirmationMetadata.tool_use_id }
       : event;
 
-    // Execute asynchronously, serialized per session so turns never overlap.
-    // The user event is already durably in the log; the chained turn will
-    // read the full log (including this event) when it runs.
+    // Execute asynchronously, serialized per thread so turns never overlap on
+    // one thread while different threads run concurrently. Most `user.*` input
+    // is the primary thread's — a client cannot address a child directly — but
+    // a confirmation or custom-tool result names a parked call, and the call's
+    // own thread is the one that must resume. The user event is already durably
+    // in the log; the chained turn will read the full log (including this
+    // event) when it runs.
     if (this.executor) {
-      const prev = this.executionChains.get(sessionId) ?? Promise.resolve();
-      const next = prev
-        .catch(() => {}) // isolate failures so one bad turn doesn't wedge the chain
-        .then(() => this.runTurn(sessionId, turnEvent))
-        .catch(() => {}); // never let a turn (even its prelude) reject the chain
-      this.executionChains.set(sessionId, next);
-      // Clean up the map entry once this is the last queued turn (L1 leak fix).
-      void next.finally(() => {
-        if (this.executionChains.get(sessionId) === next) {
-          this.executionChains.delete(sessionId);
-        }
-      });
+      this.enqueueThreadTurn(sessionId, this.threadIdForEvent(sessionId, turnEvent), turnEvent);
     }
 
     return { accepted: true };
+  }
+
+  /**
+   * The thread a turn trigger belongs to.
+   *
+   * A `user.message`, `user.interrupt`, or `user.define_outcome` is always the
+   * primary thread's input — the client addresses the session, and the session's
+   * primary thread is the stream that answers. A `user.tool_confirmation` or
+   * `user.custom_tool_result` names a parked call, and the thread that produced
+   * the call is the thread that must resume: routing it to the primary would
+   * resume the wrong conversation and leave the child's call still parked. The
+   * thread id is read off the referenced `tool_use` event's `thread_id`, which
+   * is the same durable fact `parkedCalls` resolved the call from; a call the
+   * lookup cannot place falls back to the primary thread, matching the
+   * single-thread behaviour the routing replaced.
+   */
+  private threadIdForEvent(sessionId: string, event: TurnTrigger): string {
+    const primaryId = this.threadStore.primaryThreadId(sessionId);
+    if (event.type === 'user.tool_confirmation') {
+      return this.threadIdOfToolUse(sessionId, event.tool_use_id) ?? primaryId;
+    }
+    if (event.type === 'user.custom_tool_result') {
+      return this.threadIdOfCustomToolUse(sessionId, event.custom_tool_use_id) ?? primaryId;
+    }
+    return primaryId;
+  }
+
+  /** The thread that produced the referenced `tool_use`/`mcp_tool_use` call. */
+  private threadIdOfToolUse(sessionId: string, reference: string): string | undefined {
+    for (const event of this.eventLogger.getEvents(sessionId)) {
+      if (event.type !== 'agent.tool_use' && event.type !== 'agent.mcp_tool_use') continue;
+      const block = event.content?.find((item) => item.type === 'tool_use') as
+        | { type: 'tool_use'; id: string } | undefined;
+      if (event.id === reference || block?.id === reference) return event.threadId;
+    }
+    return undefined;
+  }
+
+  /** The thread that produced the referenced `custom_tool_use` call. */
+  private threadIdOfCustomToolUse(sessionId: string, reference: string): string | undefined {
+    for (const event of this.eventLogger.getEvents(sessionId)) {
+      if (event.type !== 'agent.custom_tool_use') continue;
+      const block = event.content?.find((item) => item.type === 'tool_use') as
+        | { type: 'tool_use'; id: string } | undefined;
+      if (event.id === reference || block?.id === reference) return event.threadId;
+    }
+    return undefined;
+  }
+
+  /**
+   * Enqueue one turn on a thread's own execution chain.
+   *
+   * This is the single place a turn is scheduled, so the chain's invariants
+   * hold for every entry point — the client's `sendEvent`, the initial-events
+   * path, a `send_to_agent` dispatch, and a child thread's reply alike. The
+   * chain serializes only within the thread: a child turn never waits on the
+   * coordinator's, which is what lets a `send_to_agent` return while its child
+   * is already running.
+   */
+  private enqueueThreadTurn(sessionId: string, threadId: string, event: TurnTrigger): void {
+    if (!this.executor) return;
+    const prev = this.executionChains.get(threadId) ?? Promise.resolve();
+    const next = prev
+      .catch(() => {}) // isolate failures so one bad turn doesn't wedge the chain
+      .then(() => this.runTurn(sessionId, event, threadId))
+      .catch(() => {}); // never let a turn (even its prelude) reject the chain
+    this.executionChains.set(threadId, next);
+    // Clean up the map entry once this is the last queued turn (L1 leak fix).
+    void next.finally(() => {
+      if (this.executionChains.get(threadId) === next) {
+        this.executionChains.delete(threadId);
+      }
+    });
   }
 
   /**
@@ -1357,21 +1456,9 @@ export class SessionManager {
     this.broadcast(sessionId, logged);
   }
 
-  /** Queue the turn for one initial event, serialized per session. */
+  /** Queue the turn for one initial event, serialized per thread. */
   private enqueueTurnForEvent(sessionId: string, event: TurnTrigger): void {
-    if (!this.executor) return;
-    const prev = this.executionChains.get(sessionId) ?? Promise.resolve();
-    const next = prev
-      .catch(() => {}) // isolate failures so one bad turn doesn't wedge the chain
-      .then(() => this.runTurn(sessionId, event))
-      .catch(() => {}); // never let a turn (even its prelude) reject the chain
-    this.executionChains.set(sessionId, next);
-    // Clean up the map entry once this is the last queued turn (L1 leak fix).
-    void next.finally(() => {
-      if (this.executionChains.get(sessionId) === next) {
-        this.executionChains.delete(sessionId);
-      }
-    });
+    this.enqueueThreadTurn(sessionId, this.threadIdForEvent(sessionId, event), event);
   }
 
   /**
@@ -1480,7 +1567,11 @@ export class SessionManager {
     if (isTerminal(session.status)) {
       throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
     }
-    this.abortControllers.get(sessionId)?.abort();
+    // Every thread's turn stops: chains are keyed by thread id, and a session
+    // can run several — the primary plus dispatched children.
+    for (const threadId of this.threadIdsForSession(sessionId)) {
+      this.abortControllers.get(threadId)?.abort();
+    }
     await this.drainChain(sessionId);
   }
 
@@ -1576,12 +1667,22 @@ export class SessionManager {
     return event;
   }
 
-  /** Await the current execution chain for a session (if any), swallowing errors. */
+  /** Await every execution chain a session's threads are running, swallowing errors. */
   private async drainChain(sessionId: string): Promise<void> {
-    const chain = this.executionChains.get(sessionId);
-    if (chain) {
-      await chain.catch(() => {});
+    for (const threadId of this.threadIdsForSession(sessionId)) {
+      const chain = this.executionChains.get(threadId);
+      if (chain) {
+        await chain.catch(() => {});
+      }
     }
+  }
+
+  /** Every thread id this session owns — the primary plus its children. */
+  private threadIdsForSession(sessionId: string): string[] {
+    const rows = this.threadStore.listBySession(sessionId).map((thread) => thread.id);
+    const primaryId = this.threadStore.primaryThreadId(sessionId);
+    if (rows.includes(primaryId)) return rows;
+    return [primaryId, ...rows];
   }
 
   /**
@@ -1721,14 +1822,19 @@ export class SessionManager {
     this.updateThreadStatus(sessionId, this.threadStore.primaryThreadId(sessionId), newStatus, idleStopReason);
   }
 
-  private updateSessionStatus(sessionId: string, newStatus: SessionStatus, idleStopReason?: IdleStopReason): void {
+  private updateSessionStatus(sessionId: string, newStatus: SessionStatus, idleStopReason?: IdleStopReason, derived = false): void {
     // Validate the transition against the state machine. If the current status
     // already equals the target, this is a no-op. Invalid transitions are
     // skipped (defense — should not happen given callers guard with isTerminal).
+    // A recomputed aggregate is exempt: the session's published status is a
+    // function of its threads, and §4.3's rules — not the single-thread
+    // transition table — define which value it may take. A paused primary with
+    // a requires_action child is `requires_action`, a transition the row alone
+    // could never declare.
     const current = this.get(sessionId);
     if (current) {
       if (current.status === newStatus) return;
-      if (!canTransition(current.status, newStatus)) {
+      if (!derived && !canTransition(current.status, newStatus)) {
         return;
       }
     }
@@ -1818,9 +1924,16 @@ export class SessionManager {
     const threadEventType = threadEventTypeForStatus(newStatus);
     if (threadEventType) {
       const events = this.eventLogger.getEvents(sessionId);
+      // A child's `session.thread_status_*` is cross-posted so the primary
+      // stream reports the whole session's lifecycle (§4.2 row 2), not only the
+      // primary thread's. The primary thread's own transition needs no flag —
+      // it is already on the primary stream by `thread_id` — but setting it is
+      // harmless and keeps the write unconditional.
+      const isPrimary = threadId === this.threadStore.primaryThreadId(sessionId);
       const threadEvent = this.eventLogger.append(sessionId, {
         type: threadEventType,
         threadId,
+        crossPosted: !isPrimary,
         metadata: {
           session_thread_id: threadId,
           agent_name: thread.agentName,
@@ -1869,7 +1982,7 @@ export class SessionManager {
       return;
     }
 
-    this.updateSessionStatus(sessionId, next, idleStopReason);
+    this.updateSessionStatus(sessionId, next, idleStopReason, true);
   }
 
   /**
@@ -2098,16 +2211,32 @@ export class SessionManager {
   }
 
   /**
-   * Run a single turn for a session. Serialized via executionChains so turns
-   * never overlap. Transitions running on start, then paused (idle, awaiting
-   * next input) on normal completion — NOT terminal, so multi-turn works.
+   * Run a single turn on one thread. Serialized via that thread's
+   * executionChains entry so its turns never overlap, while a sibling thread's
+   * chain runs concurrently.
+   *
+   * `threadId` defaults to the session's primary thread: every caller that
+   * predates threads (and every client event, which can only address the
+   * session) is by definition running the primary. A `send_to_agent` child names
+   * its own thread, and the turn's status transitions, context projection, and
+   * event writes all scope to that thread — the session's aggregate follows the
+   * thread's through `recomputeSessionStatus`.
    */
-  private async runTurn(sessionId: string, event: TurnTrigger): Promise<void> {
+  private async runTurn(sessionId: string, event: TurnTrigger, threadId?: string): Promise<void> {
     if (!this.executor) return;
 
     const session = this.get(sessionId);
     // Session may have been stopped/deleted between enqueue and execution.
     if (!session || isTerminal(session.status)) return;
+
+    const resolvedThreadId = threadId ?? this.threadStore.primaryThreadId(sessionId);
+    const thread = this.threadStore.get(resolvedThreadId)
+      ?? (resolvedThreadId === this.threadStore.primaryThreadId(sessionId)
+        ? this.threadStore.ensurePrimaryThread(session)
+        : undefined);
+    // A child thread row that is gone — archived or deleted between dispatch and
+    // execution — has nothing to run; the turn is simply dropped.
+    if (!thread) return;
 
     // Two resume requests can legitimately queue behind one idle — the check at
     // enqueue is a fast path only, so the trigger re-reads the log when its turn
@@ -2117,14 +2246,21 @@ export class SessionManager {
     if (event.type === 'internal.resume_after_budget' && !this.lastIdleStopReasonIs(sessionId, 'budget_reached')) {
       return;
     }
+    // An `internal.thread_message` trigger re-enters only when its thread is
+    // actually waiting: a reply for an idle (paused) coordinator starts a turn,
+    // but one for a thread that has since gone terminal or moved on is stale.
+    if (event.type === 'internal.thread_message' && !this.threadAcceptsMessage(thread)) {
+      return;
+    }
 
-    // Transition to running for this turn
-    if (session.status !== 'running') {
-      this.updateStatus(sessionId, 'running');
+    // Transition the thread to running for this turn; the session's aggregate
+    // follows through the recompute below.
+    if (thread.status !== 'running') {
+      this.updateThreadStatus(sessionId, resolvedThreadId, 'running');
     }
 
     const abortController = new AbortController();
-    this.abortControllers.set(sessionId, abortController);
+    this.abortControllers.set(resolvedThreadId, abortController);
     // Shared with the outcome loop: a revision turn that stops for a tool
     // confirmation ends the outcome (it cannot drive another turn while the
     // session waits), and the status below still says `requires_action`.
@@ -2132,11 +2268,20 @@ export class SessionManager {
 
     try {
       const running = this.get(sessionId)!;
-      for await (const evt of this.executor.execute(running, event, {
+      // The thread's own view of the session: a child runs its roster member's
+      // pinned definition rather than the coordinator's, and the sandbox,
+      // resources, and environment are the session's, shared across threads.
+      const threadSession = this.sessionForThread(running, thread);
+      for await (const evt of this.executor.execute(threadSession, event, {
         abortSignal: abortController.signal,
         broadcast: (e) => this.broadcast(sessionId, e),
         budgetExhausted: () => this.isBudgetExhausted(sessionId),
         retryObserver: this.retryObserverFor(sessionId, turnState),
+        thread,
+        // A rostered thread gets the coordinator tools bound to its own
+        // dispatch host; a thread with no roster builds none, so the host is
+        // still constructed but unused.
+        coordinatorHost: this.coordinatorHost(sessionId, thread),
         onRequiresAction: () => {
           turnState.requiresAction = true;
         },
@@ -2145,11 +2290,10 @@ export class SessionManager {
       }
 
       // A declared outcome is driven once the turn it instructed has finished.
-      // The turn itself already ran, so the loop measures it, appends the
-      // grader's feedback as a revision whenever another iteration is owed, and
-      // re-enters the executor for it. A grading pass that cannot run throws,
-      // which surfaces below as this session's own error rather than as an
-      // outcome silently left unjudged.
+      // Outcomes are a primary-thread concern — the loop measures the session's
+      // deliverable and re-enters the executor on the primary thread — so a
+      // child thread's turn never reaches this branch: it cannot carry a
+      // `user.define_outcome`, which is the only trigger that runs one.
       if (event.type === 'user.define_outcome') {
         try {
           await this.runDeclaredOutcomeLoop(sessionId, event, abortController, turnState);
@@ -2166,25 +2310,21 @@ export class SessionManager {
       // a turn that stopped at the spending ceiling idles on `budget_reached`
       // — the ceiling outranks only `end_turn`, never a parked call waiting on
       // its answer. Anything else goes idle (paused), awaiting next input.
-      // `retrying` is included defensively: a completed turn cannot still be
-      // waiting on a retry, but a wedged `rescheduling` is unrecoverable if
-      // some future path ever leaves it here.
-      const current = this.get(sessionId);
-      if (current && (current.status === 'running' || current.status === 'retrying')) {
+      const settledThread = this.threadStore.get(resolvedThreadId);
+      if (settledThread && (settledThread.status === 'running' || settledThread.status === 'retrying')) {
         if (turnState.requiresAction) {
-          this.updateStatus(sessionId, 'requires_action');
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'requires_action');
         } else {
-          // A ceiling stop can strand a call the loop dispatched but never
-          // executed — its `agent.tool_use` has no paired result, and the resume
-          // a budget update queues next projects messages straight from this
-          // log. Settle it the way crash recovery and a fresh user.message do,
-          // before `session.usage` and the idle close the turn.
           if (this.isBudgetExhausted(sessionId)) {
             this.resolveOrphanedToolUses(sessionId);
-            this.updateStatus(sessionId, 'paused', 'budget_reached');
+            this.updateThreadStatus(sessionId, resolvedThreadId, 'paused', 'budget_reached');
           } else {
-            this.updateStatus(sessionId, 'paused');
+            this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
           }
+          // A child that ended its turn reports back to its parent: the last
+          // assistant text becomes the parent's `thread_message_received`,
+          // which is what re-enters the parent's chain for the reply.
+          this.postReplyToParent(sessionId, thread);
         }
       }
     } catch (err) {
@@ -2194,56 +2334,49 @@ export class SessionManager {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
           metadata: sessionErrorMetadata(err, errorCode),
+          threadId: resolvedThreadId,
         });
         this.broadcast(sessionId, errorEvent);
-        if (this.get(sessionId)?.status === 'running') this.updateStatus(sessionId, 'cleanup_pending');
+        if (this.threadStore.get(resolvedThreadId)?.status === 'running') {
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'cleanup_pending');
+        }
       } else if (abortController.signal.aborted || isAbortError(err)) {
-        const current = this.get(sessionId);
+        const current = this.threadStore.get(resolvedThreadId);
         if (current && (current.status === 'running' || current.status === 'retrying')) {
-          this.updateStatus(sessionId, 'paused');
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
         }
       } else if (turnState.retriesExhausted || isRetriesExhausted(err)) {
-        // The retry middleware already published each scheduled wait through
-        // the observer; what surfaces here is the policy giving up. The error
-        // reports `exhausted`, and the session idles on `retries_exhausted`
-        // rather than failing — a transient provider failure is not a broken
-        // session, and the client can send another message.
         const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
           metadata: sessionErrorMetadata(err, errorCode, { type: 'exhausted' }),
+          threadId: resolvedThreadId,
         });
         this.broadcast(sessionId, errorEvent);
-        const current = this.get(sessionId);
+        const current = this.threadStore.get(resolvedThreadId);
         if (current && (current.status === 'running' || current.status === 'retrying')) {
-          this.updateStatus(sessionId, 'paused', 'retries_exhausted');
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'paused', 'retries_exhausted');
         }
       } else {
         const errorEvent = this.eventLogger.append(sessionId, {
           type: 'session.error',
           content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
           metadata: sessionErrorMetadata(err, errorCode),
+          threadId: resolvedThreadId,
         });
         this.broadcast(sessionId, errorEvent);
-        const current = this.get(sessionId);
+        const current = this.threadStore.get(resolvedThreadId);
         if (current && !isTerminal(current.status)) {
-          if (errorCode === PI_CLEANUP_PENDING_CODE) this.updateStatus(sessionId, 'cleanup_pending');
-          else if (errorCode === PI_TIMED_OUT_CODE) this.updateStatus(sessionId, 'timed_out');
-          else if (errorCode === PI_SESSION_BUSY_CODE) this.updateStatus(sessionId, 'paused');
-          // A model failure is a fixable configuration mistake, not a broken
-          // session: the caller corrects the provider or the agent's model id
-          // and sends the next event. Reporting it as `failed` publishes
-          // `session.status_terminated`, which reads to a client as "this
-          // session is over" — the cost of a mistake the operator can repair.
-          else if (RESUMABLE_MODEL_FAILURE_CODES.has(errorCode ?? '')) this.updateStatus(sessionId, 'paused');
-          else this.updateStatus(sessionId, 'failed');
+          if (errorCode === PI_CLEANUP_PENDING_CODE) this.updateThreadStatus(sessionId, resolvedThreadId, 'cleanup_pending');
+          else if (errorCode === PI_TIMED_OUT_CODE) this.updateThreadStatus(sessionId, resolvedThreadId, 'timed_out');
+          else if (errorCode === PI_SESSION_BUSY_CODE) this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
+          else if (RESUMABLE_MODEL_FAILURE_CODES.has(errorCode ?? '')) this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
+          else this.updateThreadStatus(sessionId, resolvedThreadId, 'failed');
         }
-        // A cleanup_pending child may still own the workspace. Never release it
-        // based on parent close or a failed taskkill result.
         if (errorCode !== PI_CLEANUP_PENDING_CODE) await this.releaseSandbox(sessionId);
       }
     } finally {
-      this.abortControllers.delete(sessionId);
+      this.abortControllers.delete(resolvedThreadId);
     }
   }
 
@@ -2255,6 +2388,259 @@ export class SessionManager {
         // best-effort
       }
     }
+  }
+
+  // ============================================================
+  // Thread execution — the `send_to_agent` dispatch and reply path
+  // ============================================================
+
+  /**
+   * The session a thread's turn executes against.
+   *
+   * A child thread shares the session's sandbox, resources, environment, and
+   * vault — the contract is one workspace per session, not one per thread — but
+   * runs its own roster member's definition: the agent the coordinator pinned,
+   * with the coordinator's session-level overrides applied to a `self` replica.
+   * The primary thread runs the session's own effective definition, so the view
+   * is a pass-through there and a substitution only for a child.
+   */
+  private sessionForThread(session: Session, thread: SessionThread): Session {
+    if (thread.parentThreadId === null) return session;
+    return {
+      ...session,
+      agentId: thread.agentId ?? session.agentId,
+      agentName: thread.agentName,
+      agentVersion: thread.agentVersion ?? session.agentVersion,
+      // The thread row carries the resolved definition snapshot — the roster
+      // member's pinned version for a named agent, or the coordinator's
+      // effective definition for a `self` replica — so the turn runs exactly
+      // the configuration the dispatch captured.
+      agentDefinition: thread.agentDefinition,
+    };
+  }
+
+  /**
+   * Whether a thread is in a state where a sibling's reply can start a turn.
+   *
+   * A reply re-enters only an idle thread: one already running picks the
+   * message up on its next turn's context rebuild, and a terminal or
+   * requires_action thread is left alone — the message stays durable in its
+   * log either way.
+   */
+  private threadAcceptsMessage(thread: SessionThread): boolean {
+    // A freshly dispatched child is 'queued': its row exists but no turn has
+    // run yet, so the trigger that starts it must be admitted rather than
+    // dropped as a message on a non-idle thread.
+    return thread.status === 'paused' || thread.status === 'queued';
+  }
+
+  /**
+   * Hand a finished child turn's reply back to its parent thread.
+   *
+   * Runs once per child turn that ends `end_turn` (paused) rather than
+   * `requires_action`: a parked call is the child waiting on its own client
+   * work, so the reply only goes out when the turn genuinely closes. The
+   * child's last assistant text becomes the parent's
+   * `agent.thread_message_received` — cross-posted so it also surfaces on the
+   * primary stream when the parent is not itself the primary thread — and the
+   * parent's own `agent.thread_message_sent` closes the pair on the child's
+   * side. The parent's chain is then re-entered with `internal.thread_message`,
+   * which the runTurn fast-path accepts only if the parent is still idle.
+   */
+  private postReplyToParent(sessionId: string, child: SessionThread): void {
+    if (child.parentThreadId === null) return; // the primary thread has no parent to answer
+    const parent = this.threadStore.get(child.parentThreadId);
+    if (!parent) return;
+
+    // The reply is the last assistant text the child produced this turn — the
+    // event the model meant as its answer — read off the child's own stream so
+    // a concurrent sibling's events cannot interleave into it.
+    const childEvents = this.eventLogger.getThreadEvents(sessionId, child.id);
+    const lastMessage = [...childEvents].reverse().find((event) => event.type === 'agent.message');
+    const replyText = (lastMessage?.content ?? [])
+      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n')
+      .trim();
+
+    // `agent.thread_message_sent` on the child's stream closes the pair: on a
+    // child it is the reply going out, just as on the parent it is the task
+    // going in. Cross-posted so the parent's stream shows the full exchange.
+    const sent = this.eventLogger.append(sessionId, {
+      type: 'agent.thread_message_sent',
+      threadId: child.id,
+      crossPosted: true,
+      content: [{ type: 'text', text: replyText }],
+      metadata: {
+        to_session_thread_id: parent.id,
+        to_agent_name: parent.agentName,
+        from_session_thread_id: child.id,
+        from_agent_name: child.agentName,
+      },
+    });
+    this.broadcast(sessionId, sent);
+
+    const received = this.eventLogger.append(sessionId, {
+      type: 'agent.thread_message_received',
+      threadId: parent.id,
+      crossPosted: true,
+      content: [{ type: 'text', text: replyText }],
+      metadata: {
+        from_session_thread_id: child.id,
+        from_agent_name: child.agentName,
+      },
+    });
+    this.broadcast(sessionId, received);
+
+    // Re-enter the parent's chain only when it is parked — a running parent
+    // folds the message into its next context rebuild instead. The trigger is
+    // internal: the reply is already durable, so a `user.message` carrier would
+    // fabricate an utterance the model never saw arrive.
+    this.enqueueThreadTurn(sessionId, parent.id, { type: 'internal.thread_message', threadId: parent.id });
+  }
+
+  /**
+   * The `CoordinatorToolsHost` the executor's coordinator tools run against.
+   *
+   * Bound to one coordinator thread for the lifetime of its turn: the host
+   * reads the session's live thread set, enforces the concurrency cap, and
+   * performs the dispatch — inserting the child row, recording the
+   * `session.thread_created` and the sent/received event pair on the right
+   * streams, and enqueueing the child's turn on its own chain. The tool layer
+   * turns a failed dispatch into a tool error rather than a thrown exception,
+   * so a bad `agent`/`thread_id` argument is a result the model can read and
+   * recover from.
+   */
+  private coordinatorHost(sessionId: string, parentThread: SessionThread): CoordinatorToolsHost {
+    return {
+      sessionId,
+      parentThread,
+      listThreads: () => this.threadStore.listBySession(sessionId),
+      activeChildCount: () => this.threadStore.activeChildCount(sessionId),
+      agentNameFor: (agentId) => this.resolveAgentSnapshot(agentId)?.name,
+      agentDescriptionFor: (agentId) => this.resolveAgentSnapshot(agentId)?.definition.description,
+      dispatchToAgent: ({ member, message, threadId }) => {
+        if (member.type !== 'agent') {
+          return { ok: false, reason: 'The advisor member is unavailable in this runtime.' };
+        }
+
+        // Resolve the target thread: an existing one for a follow-up, or a new
+        // child row for a first dispatch.
+        let target: SessionThread | undefined;
+        let created = false;
+        if (threadId !== undefined) {
+          const existing = this.threadStore.get(threadId);
+          if (!existing || existing.sessionId !== sessionId) {
+            return { ok: false, reason: `Thread "${threadId}" does not exist in this session.` };
+          }
+          if (existing.archivedAt) {
+            return { ok: false, reason: `Thread "${threadId}" is archived; start a new thread instead.` };
+          }
+          if (existing.agentName !== this.agentNameForMember(member)) {
+            return {
+              ok: false,
+              reason: `Thread "${threadId}" runs "${existing.agentName}", not "${this.agentNameForMember(member)}".`,
+            };
+          }
+          target = existing;
+        } else {
+          if (this.threadStore.activeChildCount(sessionId) >= MAX_ACTIVE_CHILD_THREADS) {
+            return {
+              ok: false,
+              reason: `Concurrency limit reached: ${MAX_ACTIVE_CHILD_THREADS} active child threads. Archive a finished thread before dispatching another.`,
+            };
+          }
+          target = this.threadStore.insertThread({
+            sessionId,
+            parentThreadId: parentThread.id,
+            agentName: this.agentNameForMember(member),
+            agentDefinition: this.definitionForMember(member, sessionId, parentThread),
+            agentId: member.id,
+            agentVersion: member.version,
+            status: 'queued',
+          });
+          created = true;
+
+          // `session.thread_created` is produced on the parent (the coordinator
+          // dispatched it) and cross-posted so the child's own stream records it
+          // too — the thread's first event, before any turn runs.
+          const createdEvent = this.eventLogger.append(sessionId, {
+            type: 'session.thread_created',
+            threadId: parentThread.id,
+            crossPosted: true,
+            metadata: {
+              session_thread_id: target.id,
+              agent_name: target.agentName,
+              parent_thread_id: parentThread.id,
+            },
+          });
+          this.broadcast(sessionId, createdEvent);
+        }
+
+        // The sent/received pair: `agent.thread_message_sent` on the parent's
+        // stream (cross-posted so the primary sees the dispatch), and
+        // `agent.thread_message_received` on the child's, which is the input
+        // its turn reads.
+        const sentEvent = this.eventLogger.append(sessionId, {
+          type: 'agent.thread_message_sent',
+          threadId: parentThread.id,
+          crossPosted: true,
+          content: [{ type: 'text', text: message }],
+          metadata: {
+            to_session_thread_id: target.id,
+            to_agent_name: target.agentName,
+          },
+        });
+        this.broadcast(sessionId, sentEvent);
+
+        const receivedEvent = this.eventLogger.append(sessionId, {
+          type: 'agent.thread_message_received',
+          threadId: target.id,
+          content: [{ type: 'text', text: message }],
+          metadata: {
+            from_session_thread_id: parentThread.id,
+            from_agent_name: parentThread.agentName,
+          },
+        });
+        this.broadcast(sessionId, receivedEvent);
+
+        // Queue the child's turn on its own chain — independent of the
+        // parent's, so the dispatch returns while the child is already running.
+        this.enqueueThreadTurn(sessionId, target.id, { type: 'internal.thread_message', threadId: target.id });
+        return { ok: true, thread: target, created };
+      },
+    };
+  }
+
+  /** The display name a roster member carries on the wire (its agent's `name`). */
+  private agentNameForMember(member: { type: 'agent'; id: string; version: number }): string {
+    return this.resolveAgentSnapshot(member.id)?.name ?? member.id;
+  }
+
+  /**
+   * The definition snapshot a child thread runs.
+   *
+   * A `self` replica runs the coordinator's *effective* definition — the same
+   * resolved configuration the coordinator's own thread runs, session-level
+   * overrides included — because the contract says a `self` member is a copy of
+   * the coordinator, not a fresh resolution of its durable row. A named member
+   * runs its pinned version's definition, which the roster captured at write
+   * time.
+   */
+  private definitionForMember(
+    member: { type: 'agent'; id: string; version: number },
+    sessionId: string,
+    parentThread: SessionThread,
+  ): AgentDefinition {
+    const coordinator = parentThread.agentDefinition;
+    // A `self` member's pinned id is the coordinator's own agent id, so the
+    // replica reuses the coordinator's running definition wholesale — the
+    // roster entry resolved to "this same agent", and the snapshot must match.
+    if (member.id === parentThread.agentId) {
+      return coordinator;
+    }
+    const snapshot = this.resolveAgentSnapshot(member.id, member.version);
+    return snapshot?.definition ?? coordinator;
   }
 
   /**
@@ -2275,6 +2661,11 @@ export class SessionManager {
     for (const toolUse of findOrphanedToolUses(events)) {
       this.eventLogger.append(sessionId, {
         type: toolUse.resultType,
+        // The placeholder lands on the thread that produced the orphaned call,
+        // so that thread's projection pairs it — a child's crash must not leave
+        // an unpaired call on its own stream while the placeholder sits on the
+        // primary's.
+        threadId: toolUse.threadId,
         content: [{
           type: 'tool_result',
           tool_use_id: toolUse.id,
