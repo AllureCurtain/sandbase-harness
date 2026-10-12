@@ -1,5 +1,6 @@
 import type { Database } from '@/core/db/database.js';
 import { MODEL_EFFORT_LEVELS } from './model-object.js';
+import { parseRosterParam, resolveRoster, type RosterMemberRow } from './roster.js';
 import { validateAgentDefinition } from './schema.js';
 import type { AgentDefinition, AgentLoadError } from '@/types/agent.js';
 
@@ -14,10 +15,51 @@ type AgentRow = {
   archived_at?: string | null;
 };
 
+/**
+ * Import seed agent files into the store.
+ *
+ * A roster is resolved before it is stored, against the same lookup the write
+ * routes use — the already-persisted table plus the other seeds in this batch,
+ * so a coordinator may name a member declared in a later file. The batch is
+ * indexed by the deterministic id each seed's name produces, which is also the
+ * id `self` resolves to. Members that cannot be resolved — missing, archived,
+ * advisor, or themselves rostered — fail the seed with a load error rather
+ * than storing a param-form roster a read would project unresolved.
+ */
 export function importAgentSeeds(db: Database, agents: AgentDefinition[]): AgentLoadError[] {
   const errors: AgentLoadError[] = [];
 
+  // The batch's own rows form the lookup for members that name other seeds:
+  // a coordinator may list a member declared in a later file, and `self`
+  // resolves to the deterministic id the seed's own name produces. A seed that
+  // fails to resolve — a member that is missing, archived, an advisor, or
+  // itself rostered — is a load error, not a stored param-form roster a read
+  // would project unresolved.
+  const batchIndex = new Map<string, { definition: unknown; version: number }>();
   for (const agent of agents) {
+    batchIndex.set(standardAgentId(agent.name), { definition: agent, version: 1 });
+  }
+
+  for (const agent of agents) {
+    const id = standardAgentId(agent.name);
+    const existing = db.prepare('SELECT id FROM agents WHERE id = ?').get(id);
+    if (existing) continue;
+
+    const lookup = (memberId: string): RosterMemberRow | undefined => {
+      const row = loadAgentRowById(db, memberId);
+      if (row && row.status !== 'archived' && !row.archived_at) {
+        const definition = parseAgentDefinitionFromRow(row);
+        return { version: row.version ?? 1, hasMultiagent: definition?.multiagent != null };
+      }
+      const seeded = batchIndex.get(memberId);
+      if (!seeded) return undefined;
+      // A member whose own seed fails validation never lands in the table, so
+      // it resolves as missing rather than as a member the coordinator can pin.
+      const member = validateAgentDefinition(seeded.definition);
+      if (!member.valid || !member.data) return undefined;
+      return { version: seeded.version, hasMultiagent: member.data.multiagent != null };
+    };
+
     const result = validateAgentDefinition(agent);
     if (!result.valid || !result.data) {
       errors.push({
@@ -28,14 +70,29 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
       continue;
     }
 
-    const id = standardAgentId(agent.name);
-    const existing = db.prepare('SELECT id FROM agents WHERE id = ?').get(id);
-    if (existing) continue;
+    // A declared roster is resolved before it is stored, so the persisted row
+    // carries the pinned form the wire reports. `null` is the documented clear.
+    let definition = result.data;
+    if (definition.multiagent != null) {
+      const parsedRoster = parseRosterParam(definition.multiagent);
+      const resolved = parsedRoster.ok
+        ? resolveRoster(parsedRoster.roster, { id, version: 1 }, lookup)
+        : parsedRoster;
+      if (!resolved.ok) {
+        errors.push({
+          file: agent.name,
+          reason: 'Invalid seeded agent definition',
+          field: resolved.errors[0]?.path ?? 'multiagent',
+        });
+        continue;
+      }
+      definition = { ...definition, multiagent: resolved.roster };
+    }
 
     db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
       id,
       agent.name,
-      JSON.stringify(agent),
+      JSON.stringify(definition),
     );
   }
 

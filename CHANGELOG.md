@@ -19,6 +19,19 @@
 
 ### Added
 
+- The canonical `multiagent` roster on agent create and update. A coordinator
+  roster is now accepted, validated, and stored in its resolved form: `self`
+  and unversioned members are pinned to concrete `{type:'agent', id, version}`
+  references at write time, a member that does not exist or is archived is
+  refused, a member declaring its own roster is refused (delegation is one
+  level), and `multiagent: null` clears the roster. An `advisor` member is
+  refused with `advisor_unsupported` because no server-side advisor exists in
+  this runtime, and a roster combined with the local `delegations` /
+  `enable_general_subagent` extension is refused (two delegation mechanisms
+  cannot both hold on one agent). The resolved roster is projected on the agent
+  and on a session's `agent.multiagent`, replacing the earlier fixed `null`.
+  The coordinator and advisor roles the roster drives are not yet implemented —
+  the roster is stored, not executed.
 - Session threads — the data model and read surface the multi-agent roster
   builds on. Every session now owns exactly one **primary thread**
   (`parent_thread_id: null`), created in the same call as the session under

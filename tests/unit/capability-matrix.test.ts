@@ -227,12 +227,13 @@ describe('capability matrix', () => {
     expect(reason).toContain('enable_general_subagent');
   });
 
-  it('refuses the canonical multiagent roster while keeping local delegation', () => {
-    // The two facts have to stay apart: the roster is a canonical surface this
-    // runtime refuses by name, and the single-level delegation extension is
-    // what actually exists. One entry claiming both would be the drift back.
-    expect(capabilityEntry('multiagent-roster').status).toBe('unavailable');
-    expect(capabilityEntry('multiagent-roster').reason.toLowerCase()).toContain('refused by name');
+  it('stores the canonical multiagent roster while keeping local delegation apart', () => {
+    // The two facts have to stay apart: the roster is a canonical surface now
+    // accepted and stored (partial — validated and projected, not executed),
+    // and the single-level delegation extension is what runs. One entry
+    // claiming both would be the drift back.
+    expect(capabilityEntry('multiagent-roster').status).toBe('partial');
+    expect(capabilityEntry('multiagent-roster').reason.toLowerCase()).toContain('not executed');
     expect(capabilityEntry('local-delegation-subagent').status).toBe('supported');
     expect(capabilityEntry('local-delegation-subagent').reason.toLowerCase())
       .toContain('enable_general_subagent');

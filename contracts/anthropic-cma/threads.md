@@ -92,8 +92,9 @@ row in the same call as the session. The primary thread's id is derived —
 
 What does **not** exist yet:
 
-- No `multiagent` roster — still refused by name on agent create and update
-  (`multiagent-roster`).
+- A `multiagent` roster is now accepted, validated, and stored on the agent —
+  but it is not *executed*: no coordinator tools exist to spawn child threads
+  from it. See `agents.md` (`multiagent-roster`).
 - No coordinator tools (`list_agents`, `send_to_agent`), no child threads, no
   `session.thread_created`, no `agent.thread_message_*`, no cross-posted rows
   in practice — the machinery exists, nothing produces them yet.
@@ -120,7 +121,7 @@ values through the same table).
 
 | Difference | Detail |
 | --- | --- |
-| Roster | `multiagent` is still refused by name on both write paths (`multiagent-roster`). The published roster is not stored yet. |
+| Roster | `multiagent` is accepted, validated, and stored on the agent (resolved members pinned to `{type:'agent', id, version}`; `advisor` refused with `advisor_unsupported`), but nothing executes it yet — it is configuration the coordinator will read. |
 | Child threads | None. No coordinator tools exist, so `send_to_agent` cannot create one and `session.thread_created` / `agent.thread_message_*` are never emitted. |
 | Archive | `POST .../threads/{tid}/archive` remains a mounted refusal. A thread cannot be archived. |
 | Interrupt targeting | `user.interrupt` has no `session_thread_id` handling; it aborts the session's running turn as before. |
@@ -143,9 +144,11 @@ values through the same table).
 - `startup_seconds` reports a fixed 0 instead of a fabricated measurement:
   the runtime provisions the sandbox once per session and threads share it,
   so there is no per-thread startup the field could truthfully measure.
-- The roster refusal stays in place rather than relaxing it early: accepting
-  `multiagent` before the coordinator exists would let a caller write a
-  configuration no turn could honour.
+- The roster is accepted before the coordinator exists because it is
+  configuration the coordinator will read — storing it now means the later PRs
+  need no schema change. What still cannot be honoured is refused at the same
+  boundary: `advisor` (`advisor_unsupported`), a nested roster, and a roster
+  combined with the local delegation extension.
 
 ## 6. Corresponding tests
 
@@ -174,8 +177,9 @@ session status aggregation, the four thread read routes (list, retrieve,
 events, stream) with the published envelopes and resume semantics, and the
 primary-stream definition of the session-level event surface.
 
-Not implemented: the `multiagent` roster (still refused), coordinator tools,
-child threads, `session.thread_created` and `agent.thread_message_*` events,
-`user.interrupt` thread targeting, thread archive (mounted refusal), and
-per-thread budget signalling. The advisor entry type is out of scope by
-decision and is not planned.
+Not implemented: coordinator tools, child threads, `session.thread_created`
+and `agent.thread_message_*` events, `user.interrupt` thread targeting, thread
+archive (mounted refusal), and per-thread budget signalling. The `multiagent`
+roster itself is now accepted and stored on the agent (`agents.md`), and the
+advisor entry type is refused with `advisor_unsupported` by decision — not
+planned.

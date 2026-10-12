@@ -83,6 +83,84 @@ describe('runtime agent/skill bootstrap', () => {
     db.close();
   });
 
+  it('resolves a seed roster against the batch and stores the pinned form', () => {
+    const { db, agentsDir, skillsDir } = makeWorkspace();
+    // The coordinator names a member whose file comes later in the listing —
+    // resolution cannot depend on file order — plus `self`.
+    writeFileSync(
+      join(agentsDir, 'coordinator.yaml'),
+      [
+        'name: coordinator',
+        'model: gpt-4o',
+        'system: Coordinate the thread.',
+        'multiagent:',
+        '  type: coordinator',
+        '  agents:',
+        '    - type: self',
+        '    - agent_worker',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(agentsDir, 'worker.yaml'),
+      [
+        'name: worker',
+        'model: gpt-4o',
+        'system: Do the work.',
+        '',
+      ].join('\n'),
+    );
+
+    const state = loadRuntimeAgentSkillState({ db, agentsDir, skillsDir, writeError: () => undefined });
+
+    expect(state.agentSeedErrors).toEqual([]);
+    const stored = db
+      .prepare(`SELECT definition FROM agents WHERE id = 'agent_coordinator'`)
+      .get() as { definition: string };
+    const roster = (JSON.parse(stored.definition) as AgentDefinition).multiagent;
+    expect(roster).toEqual({
+      type: 'coordinator',
+      agents: [
+        { type: 'agent', id: 'agent_coordinator', version: 1 },
+        { type: 'agent', id: 'agent_worker', version: 1 },
+      ],
+    });
+    db.close();
+  });
+
+  it('fails a seed whose roster member exists nowhere, rather than storing it unresolved', () => {
+    const { db, agentsDir, skillsDir } = makeWorkspace();
+    writeFileSync(
+      join(agentsDir, 'coordinator.yaml'),
+      [
+        'name: coordinator',
+        'model: gpt-4o',
+        'system: Coordinate the thread.',
+        'multiagent:',
+        '  type: coordinator',
+        '  agents:',
+        '    - agent_ghost',
+        '',
+      ].join('\n'),
+    );
+    const errors: string[] = [];
+
+    const state = loadRuntimeAgentSkillState({
+      db,
+      agentsDir,
+      skillsDir,
+      writeError: (message) => errors.push(message),
+    });
+
+    expect(state.agentSeedErrors).toHaveLength(1);
+    expect(state.agentSeedErrors[0]?.field).toBe('multiagent.agents[0]');
+    expect(errors).toEqual([
+      '[AGENT_SEED] coordinator - Invalid seeded agent definition (field: multiagent.agents[0])',
+    ]);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM agents').get()).toEqual({ count: 0 });
+    db.close();
+  });
+
   it('reloads file-backed agents into the active runtime array', () => {
     const { db, agentsDir, skillsDir } = makeWorkspace();
     writeSkill(skillsDir, 'research');

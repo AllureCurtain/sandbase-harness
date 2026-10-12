@@ -78,6 +78,20 @@ export class PiMessageContentUnsupportedError extends Error {
   }
 }
 
+/** Stable public error code for a rostered agent Pi cannot thread. */
+export const PI_MULTIAGENT_UNSUPPORTED_CODE = 'pi_multiagent_not_supported';
+export const PI_MULTIAGENT_UNSUPPORTED_MESSAGE =
+  'Pi loop engine does not support session threads; an agent declaring a multiagent roster cannot run on it.';
+
+export class PiMultiagentUnsupportedError extends Error {
+  readonly code = PI_MULTIAGENT_UNSUPPORTED_CODE;
+
+  constructor() {
+    super(PI_MULTIAGENT_UNSUPPORTED_MESSAGE);
+    this.name = 'PiMultiagentUnsupportedError';
+  }
+}
+
 /**
  * Pi RPC turns accept text messages. `user.interrupt` remains a SessionManager
  * control-plane event, `user.tool_confirmation` settles the gate the Pi session
@@ -100,14 +114,16 @@ export type PiSessionAdmissionError =
   | PiToolPolicyUnsupportedError
   | PiSandboxProviderUnsupportedError
   | PiUserEventUnsupportedError
-  | PiMessageContentUnsupportedError;
+  | PiMessageContentUnsupportedError
+  | PiMultiagentUnsupportedError;
 
 /** Maps all Pi admission failures to the stable API error shape. */
 export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdmissionError {
   return error instanceof PiToolPolicyUnsupportedError
     || error instanceof PiSandboxProviderUnsupportedError
     || error instanceof PiUserEventUnsupportedError
-    || error instanceof PiMessageContentUnsupportedError;
+    || error instanceof PiMessageContentUnsupportedError
+    || error instanceof PiMultiagentUnsupportedError;
 }
 
 /**
@@ -126,5 +142,10 @@ export function isPiSessionAdmissionError(error: unknown): error is PiSessionAdm
  * admitting the agent an enforcement rather than a promise.
  */
 export function assertPiAgentCanExecute(agent: AgentDefinition): PiNativeToolPlan {
+  // Pi runs a single print-mode turn per session; it has no thread surface, so
+  // an agent whose whole point is coordinating child threads cannot execute.
+  // Refused by name rather than run as a single thread, which would discard
+  // the roster the definition declares (§5 boundary, D-threads).
+  if (agent.multiagent != null) throw new PiMultiagentUnsupportedError();
   return assertPiAgentToolPolicyCanExecute(agent);
 }

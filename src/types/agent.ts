@@ -49,6 +49,14 @@ export interface AgentDefinition {
   delegations?: string[];
   /** Enable CMA general_subagent tool for ad-hoc sub-task delegation */
   enable_general_subagent?: boolean;
+  /**
+   * The resolved canonical multiagent roster, when this agent coordinates a
+   * session's threads. Stored and projected in the resolved form — `self` and
+   * unversioned members are pinned to concrete `{type:'agent', id, version}`
+   * references at write time, so a read never re-resolves. Absent means the
+   * agent is single-threaded; `null` on input clears it.
+   */
+  multiagent?: MultiagentRoster | null;
   /** Strategy name (default: 'default') */
   strategy?: string;
   /** Environment name (default: 'local') */
@@ -56,6 +64,25 @@ export interface AgentDefinition {
 }
 
 export type AgentModelSpeed = 'fast' | 'standard' | 'extended';
+
+// ============================================================
+// Multiagent roster (resolved form)
+// ============================================================
+
+/** A resolved roster member: a concrete agent reference, or the unsupported advisor. */
+export type MultiagentRosterEntry =
+  | { type: 'agent'; id: string; version: number }
+  | { type: 'advisor'; model: string };
+
+/**
+ * The resolved `multiagent` value. The coordinator topology is the only one
+ * the contract defines; every member is pinned to a concrete agent version at
+ * write time, so this is the same shape the SDK decodes on read.
+ */
+export interface MultiagentRoster {
+  type: 'coordinator';
+  agents: MultiagentRosterEntry[];
+}
 
 export interface AgentModelConfig {
   id: string;

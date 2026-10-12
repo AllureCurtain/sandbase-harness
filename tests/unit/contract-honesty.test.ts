@@ -581,8 +581,8 @@ describe('contract document parsing', () => {
 // ---------------------------------------------------------------------------
 
 describe('documented capability decisions', () => {
-  it('reports the canonical multiagent roster as unavailable and refuses it by name', () => {
-    expect(entry('multiagent-roster').status).toBe('unavailable');
+  it('reports the canonical multiagent roster as stored but not executed', () => {
+    expect(entry('multiagent-roster').status).toBe('partial');
     expect(entry('threads-and-coordinator').status).toBe('partial');
     expect(entry('local-delegation-subagent').status).toBe('supported');
 

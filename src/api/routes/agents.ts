@@ -12,7 +12,7 @@ import { cursorPageOf, offsetCursorPage, toApiAgent, type ApiCursorPage } from '
 import { rejectUnexpectedQueryParams } from './query-params.js';
 import { unsupportedCapability } from '../capability-errors.js';
 import { UnsupportedCapabilityError } from '@/core/capabilities/registry.js';
-import { validateAgentDefinition } from '@/core/agent/schema.js';
+import { validateAgentDefinition, type RosterResolverContext } from '@/core/agent/schema.js';
 import { parseObject } from './resource-utils.js';
 import {
   agentDefinitionsEqual,
@@ -64,9 +64,13 @@ export function agentsRoutes(deps: ServerDeps) {
       return c.json({ error: { type: 'invalid_request_error', message: 'Request body must be valid JSON' } }, 400);
     }
 
-    const result = validateAgentDefinition(body);
+    // The id is allocated before validation so `self` roster members resolve
+    // to it — a coordinator that names itself spawns threads running its own
+    // configuration, so the roster stores this id.
+    const id = createAgentId(deps);
+    const result = validateAgentDefinition(body, rosterResolver(deps, { id, version: 1 }));
     if (!result.valid || !result.data) {
-      return c.json({ error: { type: 'invalid_request_error', message: 'Invalid agent definition', details: result.errors } }, 400);
+      return c.json({ error: invalidDefinitionError(result.errors) }, 400);
     }
 
     const agent = result.data;
@@ -76,7 +80,6 @@ export function agentsRoutes(deps: ServerDeps) {
       if (error instanceof UnsupportedCapabilityError) return unsupportedCapability(c, error);
       throw error;
     }
-    const id = createAgentId(deps);
 
     deps.db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(
       id,
@@ -177,9 +180,9 @@ export function agentsRoutes(deps: ServerDeps) {
       return c.json(toApiAgent(parsed, agentRowMeta(deps, id)));
     }
 
-    const result = validateAgentDefinition(merged);
+    const result = validateAgentDefinition(merged, rosterResolver(deps, { id, version: (existing.version ?? 1) + 1 }));
     if (!result.valid || !result.data) {
-      return c.json({ error: { type: 'invalid_request_error', message: 'Invalid agent definition', details: result.errors } }, 400);
+      return c.json({ error: invalidDefinitionError(result.errors) }, 400);
     }
 
     const agent = result.data;
@@ -298,6 +301,43 @@ function activeAgentRow(deps: ServerDeps, id: string) {
   const row = loadAgentRowById(deps.db, id);
   if (!row || row.status === 'archived' || row.archived_at) return undefined;
   return row;
+}
+
+/**
+ * The store lookup `validateAgentDefinition` needs to resolve a roster: each
+ * member id to its current version and whether its own definition declares
+ * `multiagent` (the one-level depth rule). `self` is the coordinator being
+ * written — its id and the version this write produces.
+ */
+/**
+ * The error body for a failed definition. A refusal that carries a stable code
+ * (today only the roster's `advisor_unsupported`) is hoisted onto `error.code`
+ * alongside the field details, so a caller can branch on the code without
+ * scanning the details list.
+ */
+function invalidDefinitionError(errors: Array<{ path: string; message: string; code?: string }> | undefined) {
+  const coded = (errors ?? []).find((e) => e.code !== undefined);
+  return {
+    type: 'invalid_request_error',
+    message: 'Invalid agent definition',
+    details: errors,
+    ...(coded ? { code: coded.code } : {}),
+  };
+}
+
+function rosterResolver(deps: ServerDeps, self: { id: string; version: number }): RosterResolverContext {
+  return {
+    self,
+    lookup: (id) => {
+      const row = activeAgentRow(deps, id);
+      if (!row) return undefined;
+      const definition = parseAgentDefinitionFromRow(row);
+      return {
+        version: row.version ?? 1,
+        hasMultiagent: definition?.multiagent != null,
+      };
+    },
+  };
 }
 
 function loadAgentVersions(deps: ServerDeps, agentId: string) {
