@@ -15,11 +15,12 @@ import type { Database } from '@/core/db/database.js';
 import type { ArtifactStore } from '@/core/storage/artifact-store.js';
 import { parseSessionVaultIds } from '@/core/credentials/injection.js';
 import { EventLogger } from './event-logger.js';
-import { eventTypeForStatus, isAbortError, STATUS_PROJECTION } from './session-lifecycle.js';
+import { eventTypeForStatus, isAbortError, STATUS_PROJECTION, threadEventTypeForStatus } from './session-lifecycle.js';
 import { findOrphanedToolUses, INTERRUPTED_TOOL_OUTCOME_MESSAGE } from './session-recovery.js';
 import { parkedCalls, type ParkedCall } from './parked-calls.js';
 import { expiredParkedWait, PARKED_WAIT_TIMEOUT_CODE } from './parked-wait.js';
 import { rowToSession, type SessionRow } from './session-records.js';
+import { SessionThreadStore } from './session-threads.js';
 import { attachSessionResources } from './session-resources.js';
 import { officialErrorType, retryStatus } from './session-error.js';
 import { isRetriesExhausted } from '@/model/registry.js';
@@ -202,6 +203,7 @@ export interface SessionStorage {
 
 export class SessionManager {
   private readonly eventLogger: EventLogger;
+  private readonly threadStore: SessionThreadStore;
   private readonly resolveEnvironmentSandboxProvider: EnvironmentSandboxProviderResolver;
   private readonly isLoopEngineExecutable: (engine: SessionLoopEngine) => boolean;
   private subscribers = new Map<string, Set<Subscriber>>();
@@ -240,7 +242,8 @@ export class SessionManager {
     loopEngineAvailability?: (engine: SessionLoopEngine) => boolean,
   ) {
     this.isLoopEngineExecutable = loopEngineAvailability ?? ((engine) => engine === this.defaultLoopEngine);
-    this.eventLogger = new EventLogger(db);
+    this.threadStore = new SessionThreadStore(db);
+    this.eventLogger = new EventLogger(db, this.threadStore);
     // Direct/embedded managers do not have runtime Settings V2 composition.
     // Retain their declared-Environment lookup, but let composed runtimes make
     // the authoritative effective-provider decision (including env_default).
@@ -847,6 +850,29 @@ export class SessionManager {
       // removed" stay distinguishable in the column.
       params.budget ? serializeBudget(params.budget) : null,
     );
+
+    // The primary thread row is written in the same insert: the session's
+    // first-class stream is the thread's, and the two exist together or not
+    // at all. A session that skipped this would be one the thread listing
+    // could not answer for.
+    this.threadStore.ensurePrimaryThread({
+      id,
+      agentId: agentSnapshot.id,
+      agentName: agentSnapshot.name,
+      agentVersion: agentSnapshot.version,
+      agentDefinition: frozenDefinition ? effectiveDefinition : undefined,
+      loopEngine,
+      environmentId: params.environmentId ?? 'env_default',
+      status: 'queued',
+      title: params.title,
+      contextId: params.contextId,
+      resources: params.resources,
+      vaultIds: params.vaultIds,
+      metadata: params.metadata,
+      budget: params.budget,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     // A session created with resources records them as durable instances in the same call, so
     // `GET /v1/sessions/{id}/resources` reports them and a token rotation or detach has an ID
@@ -1566,6 +1592,13 @@ export class SessionManager {
   }
 
   /**
+   * Get the thread store (exposed for routes/tests).
+   */
+  getThreadStore(): SessionThreadStore {
+    return this.threadStore;
+  }
+
+  /**
    * Crash recovery (R9.10). On process restart, any session left in 'running'
    * was interrupted mid-turn. For each, inject a placeholder tool_result for
    * every orphaned tool_use (so the next eventsToMessages projection has a
@@ -1673,7 +1706,22 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Transition the session's primary thread — the only thread a single-agent
+   * session has — and let the aggregate follow it. Callers that predate
+   * threads keep this signature; the status they name is the primary
+   * thread's, which `recomputeSessionStatus` then publishes as the session's.
+   */
   private updateStatus(sessionId: string, newStatus: SessionStatus, idleStopReason?: IdleStopReason): void {
+    // A session the migration could not have back-filled — one created by a
+    // build between "the table exists" and "create writes the row" — gets its
+    // primary here rather than silently dropping every later transition.
+    const session = this.get(sessionId);
+    if (session) this.threadStore.ensurePrimaryThread(session);
+    this.updateThreadStatus(sessionId, this.threadStore.primaryThreadId(sessionId), newStatus, idleStopReason);
+  }
+
+  private updateSessionStatus(sessionId: string, newStatus: SessionStatus, idleStopReason?: IdleStopReason): void {
     // Validate the transition against the state machine. If the current status
     // already equals the target, this is a no-op. Invalid transitions are
     // skipped (defense — should not happen given callers guard with isTerminal).
@@ -1710,6 +1758,118 @@ export class SessionManager {
       });
       this.broadcast(sessionId, statusEvent);
     }
+  }
+
+  /**
+   * The derived id of the session's primary thread. Pure — the store never
+   * scans for it, which is why callers can pass it without a round-trip.
+   */
+  primaryThreadId(sessionId: string): string {
+    return this.threadStore.primaryThreadId(sessionId);
+  }
+
+  /**
+   * Transition one thread and re-aggregate the session's status.
+   *
+   * This is the thread-level replacement for the session-level `updateStatus`
+   * that every caller below still invokes through that name: in this change
+   * the only thread that can transition is the primary one, so the session's
+   * aggregate follows it mechanically. The thread's own
+   * `session.thread_status_*` event is appended first (the row's thread id
+   * rides the event log's `thread_id`), then `recomputeSessionStatus` decides
+   * whether the session's published status changed — the ordering the contract
+   * fixes: the thread event precedes the session event it caused.
+   */
+  private updateThreadStatus(
+    sessionId: string,
+    threadId: string,
+    newStatus: SessionStatus,
+    idleStopReason?: IdleStopReason,
+  ): void {
+    const thread = this.threadStore.get(threadId);
+    if (!thread) {
+      // A transition aimed at a thread that does not exist cannot be recorded
+      // on it — but a missing *primary* row must not swallow the session's
+      // lifecycle with it, so the aggregate is updated directly as it was
+      // before threads existed.
+      if (threadId === this.threadStore.primaryThreadId(sessionId)) {
+        this.updateSessionStatus(sessionId, newStatus, idleStopReason);
+      }
+      return;
+    }
+    if (thread.status === newStatus) return;
+    if (!canTransition(thread.status, newStatus)) {
+      // A transition the thread row cannot take. For a child thread that is a
+      // real refusal — but when the *primary* thread's stored status has
+      // drifted from the session row (a crash left `sessions.status` ahead of
+      // a thread row nothing ran), blocking here would deadlock the recovery
+      // path that raw-wrote the session. Re-sync the primary's row to the
+      // target — the session row is the source of truth for the drift — then
+      // reconcile the aggregate so `sessions.status` reaches it too.
+      if (threadId === this.threadStore.primaryThreadId(sessionId)) {
+        this.threadStore.updateStatus(threadId, newStatus);
+        this.updateSessionStatus(sessionId, newStatus, idleStopReason);
+      }
+      return;
+    }
+
+    this.threadStore.updateStatus(threadId, newStatus);
+
+    const threadEventType = threadEventTypeForStatus(newStatus);
+    if (threadEventType) {
+      const events = this.eventLogger.getEvents(sessionId);
+      const threadEvent = this.eventLogger.append(sessionId, {
+        type: threadEventType,
+        threadId,
+        metadata: {
+          session_thread_id: threadId,
+          agent_name: thread.agentName,
+          ...lifecycleMetadataFor(newStatus, events, idleStopReason),
+        },
+      });
+      this.broadcast(sessionId, threadEvent);
+    }
+
+    this.recomputeSessionStatus(sessionId, idleStopReason);
+  }
+
+  /**
+   * Recompute the session's published status from its threads and emit the
+   * session-level event only when the aggregate actually changed.
+   *
+   * §4.3: any running thread → running (retrying when every active thread is
+   * retrying); else any requires_action → requires_action; else all
+   * unarchived paused → paused (reason = primary's, with budget_reached
+   * bubbling up); primary terminal → session terminal. With a single primary
+   * thread the recomputation is the identity map, which is what keeps the
+   * pre-thread event sequence byte-for-byte stable.
+   */
+  private recomputeSessionStatus(sessionId: string, idleStopReason?: IdleStopReason): void {
+    const threads = this.threadStore.listBySession(sessionId);
+    const primaryId = this.threadStore.primaryThreadId(sessionId);
+    const primary = threads.find((t) => t.id === primaryId);
+    if (!primary) return;
+
+    const unarchived = threads.filter((t) => !t.archivedAt);
+    const active = unarchived.filter((t) => !isTerminal(t.status));
+
+    let next: SessionStatus;
+    if (isTerminal(primary.status)) {
+      next = primary.status;
+    } else if (active.length > 0 && active.every((t) => t.status === 'retrying')) {
+      next = 'retrying';
+    } else if (threads.some((t) => t.status === 'running' || t.status === 'retrying')) {
+      next = 'running';
+    } else if (threads.some((t) => t.status === 'requires_action')) {
+      next = 'requires_action';
+    } else if (unarchived.length > 0 && unarchived.every((t) => t.status === 'paused')) {
+      next = 'paused';
+    } else {
+      // Nothing decided (e.g. queued primary before first turn): keep the row.
+      return;
+    }
+
+    this.updateSessionStatus(sessionId, next, idleStopReason);
   }
 
   /**

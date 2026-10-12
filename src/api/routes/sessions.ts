@@ -58,6 +58,7 @@ import {
   systemMessageContentError,
 } from './system-message.js';
 import { publishOperationEvent } from './operation-events.js';
+import { primaryThreadIdForSession } from '@/core/session/session-threads.js';
 import type { LoopEngineSteerReceipt } from '@/strategy/loop-engine/adapter.js';
 
 export function sessionsRoutes(deps: ServerDeps) {
@@ -835,7 +836,10 @@ export function sessionsRoutes(deps: ServerDeps) {
     }
 
     const eventLogger = sessionManager.getEventLogger();
-    const allEvents = eventLogger.getEvents(sessionId);
+    // The session-level log is the primary stream: the primary thread's own
+    // rows plus whatever a child thread cross-posted onto it. A child's
+    // uncrossed rows belong to the thread's own event route, not this one.
+    const allEvents = eventLogger.getPrimaryEvents(sessionId);
     const start = afterId ? allEvents.findIndex((event) => event.id === afterId) + 1 : 0;
 
     // A cursor this route issued always names an event it returned, so one naming an
@@ -854,7 +858,10 @@ export function sessionsRoutes(deps: ServerDeps) {
     const limited = events.slice(0, limit);
 
     const last = limited[limited.length - 1];
-    return c.json(cursorPageOf(limited.map(toApiEvent), {
+    // The primary stream attributes a cross-posted row: `session_thread_id`
+    // names the child thread an event belongs to when it is not this stream's.
+    const stream = { streamThreadId: primaryThreadIdForSession(sessionId) };
+    return c.json(cursorPageOf(limited.map((event) => toApiEvent(event, stream)), {
       // A forward-only scan cannot name its predecessor, and a cursor that does not
       // resolve is worse than an honest `null` (`standard.ts`).
       prev: null,

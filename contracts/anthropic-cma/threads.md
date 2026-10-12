@@ -2,13 +2,16 @@
 
 Contract area: threads, the multi-agent roster, thread lifecycle and message
 events, thread listing and archive.
-Status: `unavailable`. See §7.
-Source: `src/core/session/delegation-service.ts`,
-`src/core/orchestrator/agent-orchestrator.ts`, `src/core/agent/schema.ts`,
-`src/core/agent/update.ts`.
+Status: `partial` — the primary thread exists on every session and the thread
+read routes are live; the roster, coordinator tools, child threads, thread
+archive, and per-thread interrupt/budget are not yet implemented. See §7.
+Source: `src/core/session/session-threads.ts`,
+`src/core/session/event-logger.ts`, `src/core/session/session-manager.ts`,
+`src/api/routes/session-threads.ts`, `src/api/routes/stream.ts`,
+`src/api/standard.ts`.
 
 <!-- capability-status
-threads-and-coordinator: unavailable
+threads-and-coordinator: partial
 -->
 
 ---
@@ -47,89 +50,132 @@ threads-and-coordinator: unavailable
 
 ## 2. Current SandBase shape
 
-**None of this surface exists.** There is no thread resource, no thread row, no
-per-thread event isolation, no `session.thread_*` or `agent.thread_message_*`
-event, no `session_thread_id` routing, and no thread-level budget signal. The
-five published thread routes — `GET /v1/sessions/{id}/threads`, thread
-retrieval, events, and stream, and `POST .../archive` — are mounted as
-`unsupported_capability` refusals naming `threads-and-coordinator`, so an SDK
-caller gets a decodable 400 instead of a 404. A session is one
-event stream and one context window; the budget is session-level only.
+The thread store is `src/core/session/session-threads.ts`, the columns and
+stream predicates live in `src/core/session/event-logger.ts`, the status
+aggregation in `src/core/session/session-manager.ts`, the routes in
+`src/api/routes/session-threads.ts` and `src/api/routes/stream.ts`, and the
+wire projections in `src/api/standard.ts`.
 
-What does exist is a **different, smaller mechanism**, and it is not this
-surface:
+**The primary thread exists on every session.** Migration
+`062_session_threads` adds `session_threads` and `events.thread_id` /
+`events.cross_posted`, back-fills one primary row per existing session plus a
+`thread_id` on every pre-thread event, and `SessionManager.create` writes the
+row in the same call as the session. The primary thread's id is derived —
+`sth_` plus the session id's suffix — so a lookup never scans for it.
 
-- `src/core/agent/schema.ts` accepts `delegations` (a list of agent names) and
-  the boolean `enable_general_subagent`, and refuses a canonical `multiagent`
-  roster by name with the capability id `multiagent-roster`. Both write paths
-  refuse it: the create path in `validateAgentDefinition` and the update path in
-  `validateAgentUpdateRequest` via `src/core/agent/update.ts`, which special-cases
-  the key rather than reporting it as merely unknown.
-- `src/core/session/delegation-service.ts` builds one tool per allowed target
-  (`delegate_to_<name>`) plus `general_subagent`, which runs a temporary copy of
-  the agent for one level. `src/core/orchestrator/agent-orchestrator.ts`
-  (`validateDelegation`) enforces the allowed-target list, the chain, and the
-  maximum depth.
-- A delegated run is a nested turn with its own sandbox handle and its own
-  context. It has no identity, no listing, no per-thread status, and no
-  cross-posted lifecycle events, so it cannot be observed the way a thread can.
+- `GET /v1/sessions/{id}/threads` lists every thread (primary first,
+  archived included) with the same cursor envelope as `GET /:id/events`;
+  `GET .../threads/{tid}` returns the thread object — `agent` is the resolved
+  snapshot the thread runs, `stats` and `usage` are `null` until the thread
+  has transitioned (`startup_seconds` is a fixed 0 — the runtime has no
+  per-thread provisioning delay to report).
+- `GET .../threads/{tid}/events` and `GET .../threads/{tid}/stream` expose the
+  thread's own log and SSE stream with the same envelope, cursor discipline,
+  `Last-Event-ID` resume, and `event_deltas[]` opt-in as the session-level
+  routes — the stream is a filter over the same broadcast.
+- The session-level `GET /:id/events` and `/events/stream` are the primary
+  stream by definition: the primary thread's own rows plus rows a child
+  cross-posted (`cross_posted = 1`), one row with one seq for both views.
+- Every thread status transition emits a `session.thread_status_*` event
+  carrying `session_thread_id` and `agent_name` — including the primary
+  thread's, which is the `session.thread_status_running` the contract
+  requires of every session. The session-level `session.status_*` event
+  follows the thread event that produced it, and `session.usage` still sits
+  immediately before `session.status_idle`.
+- Session status is recomputed from thread status after every transition
+  (`recomputeSessionStatus`). With one thread the aggregation is the identity
+  map, so a single-agent session's lifecycle is exactly what it was before.
+- `toApiEvent` gains a stream context: an event read on the primary stream
+  whose `thread_id` names a different thread carries `session_thread_id` (the
+  seven event types the SDK declares it on); the same event read on its own
+  thread's stream does not repeat the field.
 
-An earlier revision of this file described a `thread-manager.ts`, a
-`multiagent.ts`, and a `session-threads.ts` route. None of those files exist in
-the tree. The description was removed rather than reinterpreted, because a
-contract document that describes a module nobody can open is worse than a
-contract document that records the gap.
+What does **not** exist yet:
+
+- No `multiagent` roster — still refused by name on agent create and update
+  (`multiagent-roster`).
+- No coordinator tools (`list_agents`, `send_to_agent`), no child threads, no
+  `session.thread_created`, no `agent.thread_message_*`, no cross-posted rows
+  in practice — the machinery exists, nothing produces them yet.
+- `POST .../threads/{tid}/archive` is still a mounted `unsupported_capability`
+  refusal.
+- `user.interrupt` still targets the session as a whole; `session_thread_id`
+  on the input event is not yet routed.
+- The shared session budget still parks the session as a whole; per-thread
+  `budget_reached` is not emitted.
+- The local delegation extension (`delegations`, `enable_general_subagent`)
+  is unchanged and remains a separate mechanism, not the roster.
 
 ## 3. Alignment
 
-None. The only neighbouring concept is delegation, and the local mechanism
-differs from the published surface in field names, in lifecycle, and in what a
-caller can observe: a thread is a first-class, listable, context-isolated stream
-with its own status transitions, while a delegated run is an internal turn.
+Aligned for: the primary thread on every session, the thread object shape and
+id prefix (`sth_`), the read routes and their envelopes, the primary stream
+definition (primary rows plus cross-posted rows), per-thread status events
+with `session_thread_id`/`agent_name`, the thread event → session event
+ordering, `session.usage` before `session.status_idle`, and the internal
+state machine the projection reuses (thread status maps to the same four wire
+values through the same table).
 
 ## 4. Differences
 
 | Difference | Detail |
 | --- | --- |
-| Threads | Absent. No thread resource, no lifecycle events, no per-thread context isolation. The five published thread routes are mounted as `unsupported_capability` refusals rather than 404s. |
-| Coordinator and advisor roles | Absent. No coordinator may run several threads for one roster agent, and no advisor consultation exists. |
-| Canonical roster | A `multiagent` roster is **refused by name** on both agent write paths rather than stored and ignored. The refusal names the capability `multiagent-roster` and points at the local extension. |
+| Roster | `multiagent` is still refused by name on both write paths (`multiagent-roster`). The published roster is not stored yet. |
+| Child threads | None. No coordinator tools exist, so `send_to_agent` cannot create one and `session.thread_created` / `agent.thread_message_*` are never emitted. |
+| Archive | `POST .../threads/{tid}/archive` remains a mounted refusal. A thread cannot be archived. |
+| Interrupt targeting | `user.interrupt` has no `session_thread_id` handling; it aborts the session's running turn as before. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
-| Interrupt targeting | Absent. `user.interrupt` targets the session; a thread id has nothing to route to. |
-| Local delegation extension | `delegations` and `enable_general_subagent` are a one-level parent/child mechanism with its own tool names. It is recorded as a local extension, never as the canonical roster. |
+| Cross-posting | The columns, predicates, and `session_thread_id` projection exist and are tested through the primary stream; nothing produces a cross-posted row until child threads land. |
+| `event_deltas` scope | Child-thread previews will appear only on the child's stream per spec; the projector already runs per-connection, so the rule holds when children exist. |
+| `stats.startup_seconds` | Always 0 — a fixed honest value: a thread's first turn is enqueued with its creation, and there is no thread-level provisioning delay to measure. |
 
 ## 5. Reason for the difference
 
-- The gap is a scope decision, not an oversight: threads, a coordinator role,
-  advisor consultations, and per-thread event routing are a protocol surface of
-  their own, and this phase implements none of them.
-- The refusal exists because the alternative is worse than the gap. Accepting a
-  `multiagent` roster and storing it would let a caller build on delegation by
-  roster — a controller that spawns threads, a UI that lists them, an
-  interrupt that targets one — none of which would ever happen, and the caller
-  would only find out from behaviour rather than from an error.
-- A partial implementation was rejected on purpose. Thread identity without
-  context isolation, or a listed `anthropic.advisor` thread that no consultation
-  ever uses, would be a surface that reports work it did not do. The runtime
-  reports the gap and tells the caller which local field to use instead.
+- The surface is landing in slices rather than all at once: the data model,
+  the primary thread, and the read routes are the foundation every later
+  behaviour (roster, coordinator tools, archive, per-thread interrupt and
+  budget) is built on, and this slice is that foundation.
+- The session stream is defined as the primary stream rather than renamed:
+  pre-thread sessions had exactly one stream, and making the session-level
+  routes *be* the primary thread's stream keeps a single-threaded session's
+  observable behaviour identical while giving the multi-agent surface the
+  same envelope to build on.
+- `startup_seconds` reports a fixed 0 instead of a fabricated measurement:
+  the runtime provisions the sandbox once per session and threads share it,
+  so there is no per-thread startup the field could truthfully measure.
+- The roster refusal stays in place rather than relaxing it early: accepting
+  `multiagent` before the coordinator exists would let a caller write a
+  configuration no turn could honour.
 
 ## 6. Corresponding tests
 
-- `tests/integration/agent-roster-refusal.test.ts` — the refusal of a canonical
-  roster on create and update before anything is persisted, and the acceptance of
-  the local `enable_general_subagent` extension on both write paths.
-- `tests/integration/delegation.test.ts` — the local delegation extension: the
-  tools built for an agent's `delegations` list, and a delegated run returning
-  its result. Evidence that this mechanism exists and is *not* a thread surface.
-- `tests/unit/orchestrator.test.ts` — the delegation checks: target not in the
-  roster, chain, and depth.
+- `tests/unit/session-primary-thread.test.ts` — migration back-fill (primary
+  row per pre-existing session, `thread_id` on every pre-thread event),
+  create-time primary insert, the `session.thread_status_*` emission order,
+  the single-thread event-sequence regression (pre-thread sequence plus only
+  the thread events), the primary/thread stream predicates, and session
+  delete clearing thread rows.
+- `tests/conformance/session-threads.test.ts` — the official SDK drives
+  `threads.list`, `threads.retrieve`, `threads.events.list`, and
+  `threads.events.stream` over HTTP against a live turn.
+- `tests/conformance/official-route-coverage.test.ts` — thread list,
+  retrieve, and events decode the real route's 404 for an unknown session;
+  archive keeps the `unsupported_capability` envelope.
+- `tests/unit/session-archive.test.ts` — a session archive now emits the
+  primary thread's `session.thread_status_terminated` ahead of the
+  session-level `session.status_terminated`.
 
 ## 7. Status
 
-`unavailable` — nothing in this contract area is implemented. The runtime has no
-thread resource, no coordinator or advisor role, no thread lifecycle or
-message-direction events, no per-thread event isolation, and no thread-scoped
-budget signal. The published thread routes are mounted refusals returning
-`unsupported_capability` with the `threads-and-coordinator` capability id. The
-neighbouring local delegation extension is recorded separately in the
-capability matrix and is not presented as threads.
+`partial`. Implemented: the `session_threads` table and `events.thread_id` /
+`cross_posted` columns with migration back-fill, a derived primary-thread id,
+`session.thread_status_*` events on every thread transition, thread-aware
+session status aggregation, the four thread read routes (list, retrieve,
+events, stream) with the published envelopes and resume semantics, and the
+primary-stream definition of the session-level event surface.
+
+Not implemented: the `multiagent` roster (still refused), coordinator tools,
+child threads, `session.thread_created` and `agent.thread_message_*` events,
+`user.interrupt` thread targeting, thread archive (mounted refusal), and
+per-thread budget signalling. The advisor entry type is out of scope by
+decision and is not planned.

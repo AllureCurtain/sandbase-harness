@@ -11,6 +11,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sessionsRoutes } from './routes/sessions.js';
+import { sessionThreadsRoutes } from './routes/session-threads.js';
 import { runsRoutes } from './routes/runs.js';
 import { agentsRoutes } from './routes/agents.js';
 import { dreamRoutes } from './routes/dreams.js';
@@ -186,6 +187,10 @@ export function createServer(deps: ServerDeps) {
 
   // Managed Agents API endpoints
   app.route('/v1/sessions', sessionsRoutes(deps));
+  // The thread read surface (list/retrieve/events/stream) mounts ahead of the
+  // refusal router so its subroutes win; archive stays a mounted refusal there
+  // until the thread-lifecycle work lands it.
+  app.route('/v1/sessions', sessionThreadsRoutes(deps));
 app.route('/v1/runs', runsRoutes(deps));
   app.route('/v1/agents', agentsRoutes(deps));
   app.route('/v1/dreams', dreamRoutes(deps));

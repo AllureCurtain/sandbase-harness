@@ -19,6 +19,36 @@
 
 ### Added
 
+- Session threads — the data model and read surface the multi-agent roster
+  builds on. Every session now owns exactly one **primary thread**
+  (`parent_thread_id: null`), created in the same call as the session under
+  migration `062_session_threads`, which also back-fills a primary row per
+  existing session and stamps `thread_id` on every pre-thread event. The
+  primary thread's id is derived (`sth_` plus the session id's suffix), so a
+  thread lookup never scans. Four official routes go live in place of their
+  `unsupported_capability` refusals: `GET /v1/sessions/{id}/threads` (primary
+  first, archived included, same cursor envelope as `GET .../events`),
+  `GET .../threads/{tid}` (the published `session_thread` object — `agent`
+  is the resolved snapshot, `stats`/`usage` are `null` until the thread first
+  transitions, `startup_seconds` is a fixed 0 because threads share the
+  session's sandbox), `GET .../threads/{tid}/events`, and
+  `GET .../threads/{tid}/stream` (same envelope, `Last-Event-ID` resume, and
+  `event_deltas[]` semantics as the session-level routes). `POST .../archive`
+  remains a mounted refusal until the lifecycle work lands it.
+- `session.thread_status_*` lifecycle events. Every thread status change —
+  including the primary thread's — emits `session.thread_status_running`,
+  `session.thread_status_idle` (with `stop_reason`),
+  `session.thread_status_rescheduled`, or `session.thread_status_terminated`
+  carrying `session_thread_id` and `agent_name`. Session status is now
+  recomputed from the session's threads after each transition, so the thread
+  event always precedes the `session.status_*` it produced and `session.usage`
+  still sits immediately before `session.status_idle`. For a single-agent
+  session the event sequence is identical to before, plus the new thread
+  events. `GET /v1/sessions/{id}/events` and `/events/stream` now define the
+  **primary stream**: the primary thread's rows plus rows a child
+  cross-posted (`cross_posted = 1`) — the same row and seq on both views — and
+  `toApiEvent` emits `session_thread_id` on the seven published event types
+  when an event is read on a stream it does not belong to.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

@@ -207,19 +207,23 @@ describe('capability matrix', () => {
     // and publishes vault_credential.refresh_failed.
     expect(capabilityEntry('oauth-refresh').status).toBe('supported');
     expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('refresh_failed');
-    // Threads are a real gap, not a spelling difference: no thread resource, no
-    // coordinator or advisor role, and no thread route exist. The earlier
-    // `partial` reading described files that were never in the tree.
-    expect(capabilityEntry('threads-and-coordinator').status).toBe('unavailable');
+    // Threads are partially landed: the primary thread, the `session_threads`
+    // table, the thread read routes, and `session.thread_status_*` exist, but
+    // the roster, coordinator tools, child threads, archive, and per-thread
+    // interrupt/budget do not — the entry must not read as either extreme.
+    expect(capabilityEntry('threads-and-coordinator').status).toBe('partial');
     expect(capabilityEntry('threads-and-coordinator').contract).toBe('contracts/anthropic-cma/threads.md');
   });
 
-  it('names the surface that keeps the thread entry unavailable', () => {
-    // `unavailable` has to be readable as a real absence rather than as a
-    // placeholder, so the missing pieces are pinned rather than trusted.
+  it('names the surfaces that keep the thread entry partial', () => {
+    // `partial` has to be readable as a real boundary rather than as a
+    // placeholder, so both the landed and the missing pieces are pinned.
     const reason = capabilityEntry('threads-and-coordinator').reason.toLowerCase();
+    expect(reason).toContain('primary thread');
+    expect(reason).toContain('session.thread_status_');
     expect(reason).toContain('not implemented');
-    expect(reason).toContain('no coordinator or advisor role');
+    expect(reason).toContain('coordinator tools');
+    expect(reason).toContain('archive');
     expect(reason).toContain('enable_general_subagent');
   });
 

@@ -1421,6 +1421,86 @@ CREATE TABLE session_work_tokens (
 CREATE INDEX idx_session_work_tokens_session ON session_work_tokens(session_id);
 `;
 
+/**
+ * Session threads — the multi-agent surface.
+ *
+ * Every session has exactly one **primary thread** (`parent_thread_id` NULL),
+ * which owns the session-level event stream the contract publishes. Child
+ * threads are spawned later by a coordinator's `send_to_agent`; this migration
+ * only back-fills the primary row every existing session is entitled to, so a
+ * thread listing on a pre-thread workspace answers one row rather than none.
+ *
+ * `agent_definition` stores the resolved agent snapshot the thread executes —
+ * the same JSON `sessions.agent_definition` carries for the primary thread, and
+ * a roster member's pinned definition for a child — so the thread's runtime
+ * never re-resolves a name that may have been edited or archived since spawn.
+ * `agent_name` is denormalized beside it because the `session.thread_*` events
+ * publish it by name and reading it back must not depend on the snapshot's
+ * parse.
+ *
+ * `usage_*` columns are a materialized cache of the thread's own event rows:
+ * the canonical usage record stays on `events` (one row per model request), and
+ * the counters a thread reports are the same figures filtered by `thread_id`,
+ * so the columns exist for reads that must not scan the log. They are written
+ * when the thread's owning session records its aggregate — never projected
+ * back into a per-request truth, which is what keeps the "one canonical usage
+ * record" rule intact.
+ *
+ * `events.thread_id` names the thread the event was produced on. The primary
+ * thread's own rows carry its id; a child thread's rows carry the child's.
+ * `events.cross_posted` marks the rows a child produced that also belong on
+ * the primary stream — the same row, not a copy, so the log keeps one seq and
+ * one id for both views.
+ *
+ * The back-fill is deterministic per session: `sth_` plus the session id's own
+ * suffix makes the primary thread id derivable from the session it belongs to,
+ * which is also how `primaryThreadId` resolves it later without a scan.
+ */
+const M062_SESSION_THREADS = `
+CREATE TABLE session_threads (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  parent_thread_id TEXT,
+  agent_name TEXT NOT NULL,
+  agent_definition TEXT NOT NULL,
+  agent_id TEXT,
+  agent_version INTEGER,
+  status TEXT NOT NULL DEFAULT 'queued',
+  usage_tokens_in INTEGER NOT NULL DEFAULT 0,
+  usage_tokens_out INTEGER NOT NULL DEFAULT 0,
+  usage_cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  usage_cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived_at TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_thread_id) REFERENCES session_threads(id)
+);
+CREATE INDEX idx_session_threads_session ON session_threads(session_id, created_at);
+
+ALTER TABLE events ADD COLUMN thread_id TEXT;
+ALTER TABLE events ADD COLUMN cross_posted INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_events_thread_seq ON events(thread_id, seq);
+
+INSERT INTO session_threads (
+  id, session_id, parent_thread_id, agent_name, agent_definition,
+  agent_id, agent_version, status,
+  usage_tokens_in, usage_tokens_out, usage_cache_read_tokens, usage_cache_write_tokens,
+  created_at, updated_at, archived_at
+)
+SELECT
+  'sth_' || substr(id, 6), id, NULL,
+  agent_name,
+  COALESCE(agent_definition, '{}'),
+  agent_id, agent_version, status,
+  COALESCE(usage_tokens_in, 0), COALESCE(usage_tokens_out, 0),
+  COALESCE(usage_cache_read_tokens, 0), COALESCE(usage_cache_write_tokens, 0),
+  created_at, updated_at, archived_at
+FROM sessions;
+
+UPDATE events SET thread_id = 'sth_' || substr(session_id, 6) WHERE thread_id IS NULL;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1483,4 +1563,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 59, name: '059_webhook_rotation_window_since', sql: M059_WEBHOOK_ROTATION_WINDOW_SINCE },
   { version: 60, name: '060_dreams', sql: M060_DREAMS },
   { version: 61, name: '061_work_api_surface', sql: M061_WORK_API_SURFACE },
+  { version: 62, name: '062_session_threads', sql: M062_SESSION_THREADS },
 ];

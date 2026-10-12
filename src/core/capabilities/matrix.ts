@@ -475,8 +475,8 @@ export const CMA_CAPABILITY_MATRIX: readonly CapabilityEntry[] = [
   {
     area: 'threads',
     id: 'threads-and-coordinator',
-    status: 'unavailable',
-    reason: 'Not implemented: there is no thread resource, no thread lifecycle or per-thread event isolation, no coordinator or advisor role, and no thread-scoped budget event. The five published thread routes are mounted `unsupported_capability` refusals naming this capability, so an SDK caller decodes a 400 rather than hitting a 404. A request carrying a `multiagent` roster is refused by name rather than silently stripped. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface.',
+    status: 'partial',
+    reason: 'The primary thread exists on every session: the `session_threads` table and `events.thread_id`/`cross_posted` columns are migration back-filled and written at create, the thread id is derived (`sth_` plus the session id suffix), and the session-level event routes are the primary stream — a thread\'s own rows plus rows a child cross-posted. Thread status transitions emit `session.thread_status_*` carrying `session_thread_id`/`agent_name`, session status is recomputed from thread status, and the four read routes (list, retrieve, events, stream) serve the published envelopes and resume semantics. Not implemented: the `multiagent` roster (still refused by name), coordinator tools, child threads and `session.thread_created`/`agent.thread_message_*`, `user.interrupt` thread targeting, and per-thread budget signalling. `POST .../threads/{id}/archive` remains a mounted `unsupported_capability` refusal naming this capability. Delegation exists only as the local single-level `delegations` / `enable_general_subagent` extension, which is not this surface.',
     contract: 'contracts/anthropic-cma/threads.md',
   },
   {

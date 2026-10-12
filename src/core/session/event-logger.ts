@@ -11,9 +11,20 @@ import type { SessionEvent } from '@/types/session.js';
 import type { CMAEventType, ContentBlock } from '@/types/cma-protocol.js';
 import type { AuxiliaryModelUsage } from '@/types/strategy.js';
 import { splitModelRequestUsage } from '@/strategy/model-usage.js';
+import { primaryThreadIdForSession, type SessionThreadStore } from './session-threads.js';
 
 export class EventLogger {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    /**
+     * Thread-row writer for the per-thread usage counters.
+     *
+     * Optional so a bare embedder keeps working: when absent the session
+     * aggregate is still recorded and the thread cache simply stays stale —
+     * the canonical record is on `events`, so nothing is lost.
+     */
+    private readonly threadStore?: SessionThreadStore,
+  ) {}
 
   /**
    * Append an event to the log. Returns the persisted event with generated ID and seq.
@@ -44,15 +55,33 @@ export class EventLogger {
        * Omitted everywhere else.
        */
       id?: string;
+      /**
+       * The thread the event was produced on. Omitted callers default to the
+       * session's primary thread — every writer that does not name a child is
+       * by definition producing on the primary stream.
+       */
+      threadId?: string;
+      /**
+       * Whether the row also belongs on the primary stream. A child thread's
+       * cross-posted row keeps its own `thread_id`; the flag is what makes the
+       * same event readable on both streams without a second copy, so seq and
+       * id never diverge between them.
+       */
+      crossPosted?: boolean;
     },
   ): SessionEvent {
     const id = event.id ?? `sevt_${nanoid(16)}`;
     const seq = this.getLatestSeq(sessionId) + 1;
     const now = new Date();
+    // An event that names no thread lands on the primary one: every writer
+    // that does not deliberately produce on a child is by definition on the
+    // primary stream, and a NULL `thread_id` would otherwise read as
+    // "unowned" to every filter that partitions the log by thread.
+    const threadId = event.threadId ?? primaryThreadIdForSession(sessionId);
 
     const stmt = this.db.prepare(`
-      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, cache_read_tokens, cache_write_tokens, stop_reason, duration_ms, parent_event_id, is_error, speed, delegation_depth, metadata, processed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, session_id, seq, type, content, model_used, tokens_in, tokens_out, cache_read_tokens, cache_write_tokens, stop_reason, duration_ms, parent_event_id, is_error, speed, delegation_depth, metadata, processed_at, thread_id, cross_posted)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -74,6 +103,8 @@ export class EventLogger {
       event.delegationDepth ?? 0,
       JSON.stringify(event.metadata ?? {}),
       now.toISOString(),
+      threadId,
+      event.crossPosted ? 1 : 0,
     );
 
     return {
@@ -94,6 +125,8 @@ export class EventLogger {
       speed: event.speed,
       delegationDepth: event.delegationDepth,
       metadata: event.metadata,
+      threadId,
+      crossPosted: event.crossPosted === true,
       createdAt: now,
       processedAt: now,
     };
@@ -110,6 +143,46 @@ export class EventLogger {
     const stmt = this.db.prepare(sql);
     const rows = (afterSeq !== undefined ? stmt.all(sessionId, afterSeq) : stmt.all(sessionId)) as unknown as EventRow[];
 
+    return rows.map(rowToEvent);
+  }
+
+  /**
+   * The primary stream: the primary thread's own rows plus every cross-posted
+   * row, in seq order.
+   *
+   * The predicate names the primary thread explicitly rather than relying on
+   * `thread_id IS NULL`: a row the migration back-filled, and a row written by
+   * an older build that never learned the column, both land on the primary
+   * thread's id — and only a child thread's own rows are excluded. A NULL row
+   * is a pre-thread-era orphan and belongs on the primary stream too, so it is
+   * admitted rather than filtered out.
+   */
+  getPrimaryEvents(sessionId: string, afterSeq?: number): SessionEvent[] {
+    const sql = afterSeq !== undefined
+      ? `SELECT * FROM events WHERE session_id = ? AND seq > ?
+         AND (thread_id IS NULL OR thread_id = ? OR cross_posted = 1) ORDER BY seq ASC`
+      : `SELECT * FROM events WHERE session_id = ?
+         AND (thread_id IS NULL OR thread_id = ? OR cross_posted = 1) ORDER BY seq ASC`;
+    const primaryId = primaryThreadIdForSession(sessionId);
+    const rows = (afterSeq !== undefined
+      ? this.db.prepare(sql).all(sessionId, afterSeq, primaryId)
+      : this.db.prepare(sql).all(sessionId, primaryId)) as unknown as EventRow[];
+    return rows.map(rowToEvent);
+  }
+
+  /**
+   * One thread's own stream: only the rows whose `thread_id` is this thread.
+   *
+   * A child's cross-posted rows stay on it — they are the child's own events
+   * that also surface on the primary stream, not a copy the primary owns.
+   */
+  getThreadEvents(sessionId: string, threadId: string, afterSeq?: number): SessionEvent[] {
+    const sql = afterSeq !== undefined
+      ? `SELECT * FROM events WHERE session_id = ? AND thread_id = ? AND seq > ? ORDER BY seq ASC`
+      : `SELECT * FROM events WHERE session_id = ? AND thread_id = ? ORDER BY seq ASC`;
+    const rows = (afterSeq !== undefined
+      ? this.db.prepare(sql).all(sessionId, threadId, afterSeq)
+      : this.db.prepare(sql).all(sessionId, threadId)) as unknown as EventRow[];
     return rows.map(rowToEvent);
   }
 
@@ -194,6 +267,12 @@ export class EventLogger {
     tokensIn: number,
     tokensOut: number,
     cache?: { read?: number; write?: number },
+    /**
+     * The thread the request ran on. Defaulted to the primary thread so the
+     * per-request aggregate and the per-thread cache cannot disagree about
+     * which stream produced the usage.
+     */
+    threadId?: string,
   ): void {
     this.db.prepare(`
       UPDATE sessions
@@ -204,6 +283,12 @@ export class EventLogger {
           updated_at = datetime('now')
       WHERE id = ?
     `).run(tokensIn, tokensOut, cache?.read ?? 0, cache?.write ?? 0, sessionId);
+    this.threadStore?.recordUsage(
+      threadId ?? primaryThreadIdForSession(sessionId),
+      tokensIn,
+      tokensOut,
+      cache,
+    );
   }
 
   /**
@@ -282,6 +367,8 @@ interface EventRow {
   metadata: string | null;
   created_at: string;
   processed_at: string | null;
+  thread_id: string | null;
+  cross_posted: number | null;
 }
 
 function parseMetadata(value: string | null): Record<string, unknown> | undefined {
@@ -315,6 +402,8 @@ function rowToEvent(row: EventRow): SessionEvent {
     speed: row.speed === 'fast' ? 'fast' : row.speed === 'standard' ? 'standard' : undefined,
     delegationDepth: row.delegation_depth,
     metadata: parseMetadata(row.metadata),
+    threadId: row.thread_id ?? undefined,
+    crossPosted: row.cross_posted === 1,
     createdAt: new Date(row.created_at),
     processedAt: row.processed_at ? new Date(row.processed_at) : undefined,
   };

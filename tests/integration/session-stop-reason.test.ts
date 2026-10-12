@@ -163,9 +163,11 @@ describe('Session status_idle stop_reason projection', () => {
     const idle = events.find((e) => e.type === 'session.status_idle');
     expect(typeof idle.stop_reason).toBe('object');
 
-    // No other event type gained an object.
+    // No other event type gained an object. The one sanctioned exception is
+    // `session.thread_status_idle`, which the thread contract gives the same
+    // top-level `stop_reason` object — every other event keeps the field off.
     for (const event of events) {
-      if (event.type === 'session.status_idle') continue;
+      if (event.type === 'session.status_idle' || event.type === 'session.thread_status_idle') continue;
       expect(typeof event.stop_reason === 'object' && event.stop_reason !== null).toBe(false);
     }
   });

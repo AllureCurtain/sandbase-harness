@@ -36,10 +36,9 @@ export function unsupportedOfficialRoutes(): Hono {
   app.post('/user_profiles/:id', profiles);
   app.post('/user_profiles/:id/enrollment_url', profiles);
 
-  app.get('/sessions/:id/threads', threads);
-  app.get('/sessions/:id/threads/:threadId', threads);
-  app.get('/sessions/:id/threads/:threadId/events', threads);
-  app.get('/sessions/:id/threads/:threadId/stream', threads);
+  // Thread list/retrieve/events/stream are mounted for real under
+  // `/v1/sessions` (session-threads.ts); archive stays refused until the
+  // thread-lifecycle work lands it.
   app.post('/sessions/:id/threads/:threadId/archive', threads);
 
   return app;
