@@ -207,10 +207,11 @@ describe('capability matrix', () => {
     // and publishes vault_credential.refresh_failed.
     expect(capabilityEntry('oauth-refresh').status).toBe('supported');
     expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('refresh_failed');
-    // Threads are partially landed: the primary thread, the `session_threads`
-    // table, the thread read routes, and `session.thread_status_*` exist, but
-    // the roster, coordinator tools, child threads, archive, and per-thread
-    // interrupt/budget do not — the entry must not read as either extreme.
+    // Threads are substantially landed — the primary thread, the
+    // `session_threads` table, the read routes, `session.thread_status_*`,
+    // coordinator tools, child threads, interrupt targeting, archive, and
+    // per-thread budget — but the advisor and the Console surface are not, so
+    // the entry must not read as either extreme.
     expect(capabilityEntry('threads-and-coordinator').status).toBe('partial');
     expect(capabilityEntry('threads-and-coordinator').contract).toBe('contracts/anthropic-cma/threads.md');
   });
@@ -221,19 +222,25 @@ describe('capability matrix', () => {
     const reason = capabilityEntry('threads-and-coordinator').reason.toLowerCase();
     expect(reason).toContain('primary thread');
     expect(reason).toContain('session.thread_status_');
-    expect(reason).toContain('not implemented');
-    expect(reason).toContain('coordinator tools');
+    expect(reason).toContain('send_to_agent');
     expect(reason).toContain('archive');
+    expect(reason).toContain('budget_reached');
+    expect(reason).toContain('not implemented');
+    expect(reason).toContain('advisor');
+    expect(reason).toContain('console');
     expect(reason).toContain('enable_general_subagent');
   });
 
   it('stores the canonical multiagent roster while keeping local delegation apart', () => {
-    // The two facts have to stay apart: the roster is a canonical surface now
-    // accepted and stored (partial — validated and projected, not executed),
-    // and the single-level delegation extension is what runs. One entry
+    // The two facts have to stay apart: the roster is a canonical surface
+    // accepted, stored, and now executed for the coordinator role (partial —
+    // the advisor role has no implementation), and the single-level
+    // delegation extension is a separate mechanism entirely. One entry
     // claiming both would be the drift back.
     expect(capabilityEntry('multiagent-roster').status).toBe('partial');
-    expect(capabilityEntry('multiagent-roster').reason.toLowerCase()).toContain('not executed');
+    const rosterReason = capabilityEntry('multiagent-roster').reason.toLowerCase();
+    expect(rosterReason).toContain('advisor');
+    expect(rosterReason).toContain('coordinator');
     expect(capabilityEntry('local-delegation-subagent').status).toBe('supported');
     expect(capabilityEntry('local-delegation-subagent').reason.toLowerCase())
       .toContain('enable_general_subagent');

@@ -126,6 +126,13 @@
   accepted budget raise or removal re-enters each budget-parked thread on its
   own `internal.resume_after_budget`, leaving a thread that idled on
   `end_turn` or `retries_exhausted` untouched.
+- Thread routes in the Console API reference and `docs/api.md`. The five
+  `/v1/sessions/{id}/threads*` operations are now documented as the live
+  surface they are — list, retrieve, per-thread events and SSE stream, and
+  archive with its `primary_thread_not_archivable` / `thread_running`
+  refusals — instead of appearing under "Unsupported official operations",
+  where they had been left as `unsupported_capability` refusals before the
+  threads work landed.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

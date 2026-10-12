@@ -275,6 +275,11 @@ values through the same table).
   scoped on a parked child (error results, `end_turn`, no model call),
   unscoped across running and parked threads, the already-idle no-op, and
   the unknown / cross-session `session_thread_id` refusal.
+- `tests/unit/thread-budget.test.ts` — the §4.6 budget cases: two running
+  threads each emitting `session.thread_status_idle` (`budget_reached`) and
+  the aggregate following to `idle` (`budget_reached`), a `requires_action`
+  child outranking the budget-parked aggregate, and a budget raise resuming
+  each parked thread on its own `internal.resume_after_budget`.
 
 ## 7. Status
 
