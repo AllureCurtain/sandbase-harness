@@ -135,6 +135,22 @@ projects into the receiver's context as a user message prefixed
 `[来自 <agent_name>]`; `agent.thread_message_sent` is the `send_to_agent` call
 itself and is not re-projected.
 
+**A child's parked call is answered on its own thread.** When a child's turn
+ends on `requires_action` — an approval-gated `agent.tool_use` /
+`agent.mcp_tool_use`, or an `agent.custom_tool_use` waiting on the caller — the
+rows that parked it are lifted onto the primary stream (`cross_posted = 1`,
+keeping their own `thread_id`), so a primary-stream reader sees the blocking
+block attributed by `session_thread_id` on the wire. The child's
+`session.thread_status_idle` carries `stop_reason.requires_action` with
+`event_ids` scoped to that thread's parked calls, while the session-level
+`session.status_idle` reports the union across parked threads (§4.3). The
+client answers as before — `user.tool_confirmation` or
+`user.custom_tool_result`, either id spelling — and the answer is resolved to
+the thread that produced the call, stamped with that `thread_id`, cross-posted,
+and resumed on the owning thread's own execution chain: the child's parked
+set, its context projection, and its tool-result pairing are all computed on
+its own stream.
+
 What does **not** exist yet:
 
 - `POST .../threads/{tid}/archive` is still a mounted `unsupported_capability`
@@ -143,10 +159,6 @@ What does **not** exist yet:
   on the input event is not yet routed.
 - The shared session budget still parks the session as a whole; per-thread
   `budget_reached` is not emitted.
-- A child's `agent.tool_use` / `agent.mcp_tool_use` / `agent.custom_tool_use`
-  that parks on `requires_action` is not yet cross-posted to the primary
-  stream, and the `user.tool_confirmation` / `user.custom_tool_result` that
-  answers it is not yet routed back to the child's thread.
 - There is no server-side advisor; an `advisor` roster member is refused at
   write time with `advisor_unsupported`.
 - The local delegation extension (`delegations`, `enable_general_subagent`)
@@ -169,7 +181,7 @@ values through the same table).
 | `send_to_agent` parameter shape | The published contract names `list_agents` and `send_to_agent` but fixes no argument or result shape; the local `{agent, message, thread_id?}` → `{thread_id, status: 'sent'}` is the runtime's own and is unverified upstream. |
 | `send_to_agent` sync/async | Local by D8: the call records the dispatch and returns `{status: 'sent'}` immediately, and the reply arrives later as `agent.thread_message_received` driving a fresh turn. A synchronous wait would freeze the coordinator through the child's whole run, which is the parallel-dispatch pattern the roster exists for. |
 | Advisor | An `advisor` roster member is refused with `advisor_unsupported` — no server-side advisor exists in this runtime. |
-| Child-thread `requires_action` cross-post | Not yet: a child's `agent.tool_use` / `mcp_tool_use` / `custom_tool_use` that parks is not yet lifted onto the primary stream with `session_thread_id`, and the confirmation that answers it is not yet routed to the child's thread. |
+| Child-thread `requires_action` cross-post | Implemented: the parked `agent.tool_use` / `mcp_tool_use` / `custom_tool_use` is lifted onto the primary stream (the row keeps its `thread_id`; `cross_posted = 1` admits it to the primary view, and `session_thread_id` on the wire attributes it), the child's `session.thread_status_idle` carries `stop_reason.requires_action` with only its own parked `event_ids`, the session-level `session.status_idle` reports the union across parked threads, and the answering `user.tool_confirmation` / `user.custom_tool_result` is stamped onto the owning thread and cross-posted so both streams show the request→response pair. |
 | Archive | `POST .../threads/{tid}/archive` remains a mounted refusal. A thread cannot be archived. |
 | Interrupt targeting | `user.interrupt` has no `session_thread_id` handling; it aborts the session's running turn as before. |
 | Thread-scoped budget | Absent. The budget is one session-level ceiling; no `budget_reached` signal is emitted per thread. |
@@ -222,8 +234,12 @@ values through the same table).
   `list_agents`/`send_to_agent` mounting, the `thread_created` → `sent` →
   `running` → `idle` → `received` order on the primary stream, a follow-up
   keeping the child's history, two concurrent children, the 26th child
-  refused as a tool error, no coordinator tools on a non-rostered thread, and
-  every §4.3 aggregation rule.
+  refused as a tool error, no coordinator tools on a non-rostered thread,
+  every §4.3 aggregation rule, and the §4.5 routing cases — a parked
+  `agent.tool_use` / `agent.custom_tool_use` cross-posted to the primary
+  stream, per-thread `event_ids` on the thread's status event and the union
+  on the session's, and `user.tool_confirmation` / `user.custom_tool_result`
+  stamped onto the owning thread, cross-posted, and resumed on its chain.
 - `tests/integration/coordinator-send-to-agent.test.ts` — the full turn over
   `DefaultSessionExecutor` + `DefaultStrategy` + a scripted model: the
   coordinator's `send_to_agent`, the child's shared-workspace file write, the
@@ -252,12 +268,16 @@ definition of the session-level event surface, the coordinator's `list_agents`
 and `send_to_agent` tools, child threads spawned on their own execution
 chains sharing the session's sandbox, the `session.thread_created` and
 `agent.thread_message_sent`/`received` exchange (cross-posted where the
-contract puts it on the primary stream), the 25-child concurrency cap, and
-the `[来自 <name>]` reply projection into the receiver's context.
+contract puts it on the primary stream), the 25-child concurrency cap, the
+`[来自 <name>]` reply projection into the receiver's context, the
+requires_action cross-post (a child's parked `agent.*tool_use` lifted onto
+the primary stream and attributed by `session_thread_id`), per-thread
+`event_ids` on a thread's status event against the union on the session's,
+and the routed answer (`user.tool_confirmation` / `user.custom_tool_result`
+stamped onto the owning thread and cross-posted).
 
 Not implemented: `user.interrupt` thread targeting, thread archive (mounted
-refusal), per-thread budget signalling, the child `requires_action`
-cross-post plus its confirmation routing, the advisor role, and the Console
+refusal), per-thread budget signalling, the advisor role, and the Console
 thread surface. The `multiagent` roster itself is accepted, validated, stored,
 and projected on the agent (`agents.md`), and an `advisor` member is refused
 with `advisor_unsupported` by decision — not planned.

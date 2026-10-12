@@ -1181,11 +1181,25 @@ export class SessionManager {
       this.resolveOrphanedToolUses(sessionId);
     }
 
+    // The thread an answer belongs to is the thread that parked the call it
+    // resolves — the same routing `threadIdForEvent` applies to the turn. The
+    // row is stamped with it so the child's own stream carries the answer its
+    // resume gate and projection pair against, and cross-posted so the primary
+    // stream still shows the complete request→response pair (§4.5).
+    const answerThreadId = event.type === 'user.tool_confirmation' || event.type === 'user.custom_tool_result'
+      ? this.threadIdForEvent(sessionId, event)
+      : undefined;
+    const primaryThreadId = answerThreadId !== undefined
+      ? this.threadStore.primaryThreadId(sessionId)
+      : undefined;
+
     // Append the user event to the log
     const logged = this.eventLogger.append(sessionId, {
       type: event.type,
       content: 'content' in event ? (event as any).content : undefined,
       metadata: confirmationMetadata ?? customToolResultMetadata ?? defineOutcomeMetadata,
+      threadId: answerThreadId,
+      crossPosted: answerThreadId !== undefined && answerThreadId !== primaryThreadId,
     });
     this.broadcast(sessionId, logged);
 
@@ -1921,6 +1935,17 @@ export class SessionManager {
 
     this.threadStore.updateStatus(threadId, newStatus);
 
+    // A child thread that just parked lifts the calls it is waiting on onto the
+    // primary stream (§4.2 row 3): the block that needs a client's answer is
+    // the one event of the child's own stream a primary-stream reader must
+    // also see. The row keeps its own `thread_id`; `session_thread_id` on the
+    // wire is what attributes it. The primary thread's own parked calls are on
+    // the primary stream already, so only a child's rows need the flag.
+    if (newStatus === 'requires_action' && threadId !== this.threadStore.primaryThreadId(sessionId)) {
+      const parked = parkedCalls(this.eventLogger.getThreadEvents(sessionId, threadId));
+      this.eventLogger.markCrossPosted(parked.map((call) => call.eventId));
+    }
+
     const threadEventType = threadEventTypeForStatus(newStatus);
     if (threadEventType) {
       const events = this.eventLogger.getEvents(sessionId);
@@ -1937,7 +1962,7 @@ export class SessionManager {
         metadata: {
           session_thread_id: threadId,
           agent_name: thread.agentName,
-          ...lifecycleMetadataFor(newStatus, events, idleStopReason),
+          ...lifecycleMetadataFor(newStatus, events, idleStopReason, threadId),
         },
       });
       this.broadcast(sessionId, threadEvent);
@@ -2767,7 +2792,7 @@ function getConfirmationMetadata(
 
 type IdleStopReason = 'budget_reached' | 'retries_exhausted';
 
-function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idleStopReason?: IdleStopReason): Record<string, unknown> | undefined {
+function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idleStopReason?: IdleStopReason, threadId?: string): Record<string, unknown> | undefined {
   if (status === 'paused') return { stop_reason: { type: idleStopReason ?? 'end_turn' } };
   if (status !== 'requires_action') return undefined;
 
@@ -2785,7 +2810,12 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idl
   return {
     stop_reason: {
       type: 'requires_action',
-      event_ids: parkedCalls(events).map((call) => call.eventId),
+      // A thread event's event_ids name only that thread's parked calls; the
+      // session-level status event is the union across threads (§4.3 rule 2),
+      // which is what passing no scope yields.
+      event_ids: parkedCalls(
+        threadId === undefined ? events : events.filter((event) => event.threadId === threadId),
+      ).map((call) => call.eventId),
     },
   };
 }

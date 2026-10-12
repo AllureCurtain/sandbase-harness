@@ -62,6 +62,14 @@ interface TurnActions {
   captureMessages?: (messages: unknown) => void;
   /** Emit a child-file-write tool_use + result pair before the message. */
   writeFile?: { path: string; content: string };
+  /**
+   * End the turn parked on an approval-gated `agent.tool_use` — the
+   * `requires_action` path a child's `always_ask` call takes. The block id is
+   * `toolu_park_<n>` per thread so two children park distinct calls.
+   */
+  park?: { tool: string };
+  /** End the turn parked on an `agent.custom_tool_use` awaiting the caller's result. */
+  parkCustom?: { tool: string };
   /** Hold the turn open until resolved — used to overlap two children. */
   hold?: { promise: Promise<void>; resolve: () => void };
   /** The assistant text this turn ends on. */
@@ -84,6 +92,8 @@ class ScriptedExecutor implements SessionExecutor {
   readonly sendResults: string[] = [];
   /** Resolves each time a thread's turn starts running. */
   readonly turnStarted = new Map<string, Array<() => void>>();
+  /** Mints distinct parked tool_use block ids across turns. */
+  private parkCount = 0;
   /**
    * Optional resolver for a `thread_id` the script cannot know until the child
    * row exists. A send_to_agent arg of `'DYNAMIC'` is substituted at dispatch.
@@ -120,6 +130,22 @@ class ScriptedExecutor implements SessionExecutor {
 
     const queue = this.scripts.get(agentName) ?? [];
     const actions = queue.shift() ?? {};
+
+    // Emulate the real executor's confirmation path: the answer's tool_result
+    // is appended on this thread, pairing the parked call before the turn
+    // continues (the parked-call row carries the block id in content).
+    if (event.type === 'user.tool_confirmation') {
+      const parked = this.contextEvents(session.id, threadId)
+        .filter((e) => (e.type === 'agent.tool_use' || e.type === 'agent.mcp_tool_use'))
+        .map((e) => e.content?.find((b) => (b as { type: string }).type === 'tool_use') as { id: string } | undefined)
+        .filter(Boolean)
+        .at(-1)!;
+      this.eventLogger.append(session.id, {
+        type: 'agent.tool_result',
+        threadId,
+        content: [{ type: 'tool_result', tool_use_id: (event as { tool_use_id?: string }).tool_use_id ?? parked.id, content: 'ran' }],
+      });
+    }
 
     // Hand the model-facing context to the test — this is the projection the
     // reply `[来自 <name>]` must land in for the coordinator's next turn.
@@ -168,6 +194,40 @@ class ScriptedExecutor implements SessionExecutor {
         threadId,
         content: [{ type: 'tool_result', tool_use_id: `toolu_${threadId}`, content: 'wrote' }],
       });
+    }
+
+    // A parked call: the tool_use row lands on the turn's thread (the writer
+    // facade's stamping, reproduced), and onRequiresAction is what the real
+    // strategy invokes once the SDK has stopped on an unanswered call.
+    if (actions.park) {
+      const useEvent = this.eventLogger.append(session.id, {
+        type: 'agent.tool_use',
+        threadId,
+        content: [{
+          type: 'tool_use',
+          id: `toolu_park_${agentName}_${this.parkCount++}`,
+          name: actions.park.tool,
+          input: {},
+          requires_confirmation: true,
+        } as never],
+      });
+      options?.broadcast?.(useEvent);
+      options?.onRequiresAction?.();
+    }
+    if (actions.parkCustom) {
+      const useEvent = this.eventLogger.append(session.id, {
+        type: 'agent.custom_tool_use',
+        threadId,
+        content: [{
+          type: 'tool_use',
+          id: `toolu_custom_${agentName}_${this.parkCount++}`,
+          name: actions.parkCustom.tool,
+          input: {},
+        } as never],
+        metadata: { custom_tool: true },
+      });
+      options?.broadcast?.(useEvent);
+      options?.onRequiresAction?.();
     }
 
     // The turn ends on the assistant text the script names.
@@ -519,6 +579,165 @@ describe('coordinator send_to_agent', () => {
       expect(manager.get(session.id)?.status).toBe('completed');
       // The still-running child cannot resurrect the aggregate.
       expect(manager.get(session.id)?.status).not.toBe('running');
+    });
+  });
+
+  /**
+   * §4.2 row 3 + §4.5 — a child's parked call is lifted onto the primary
+   * stream, the client's answer is routed back to the child's thread, and the
+   * session's `event_ids` is the union across parked threads.
+   */
+  describe('thread confirmation routing (PR 3.4)', () => {
+    /** Dispatch reviewer, have it park on a gated call, return the child row. */
+    async function dispatchAndPark(sessionId: string, primaryId: string, custom = false) {
+      executor.script('coordinator', [{ sendToAgent: { agent: 'reviewer', message: 'do gated work' }, say: 'dispatched' }]);
+      executor.script('reviewer', custom
+        ? [{ parkCustom: { tool: 'custom_lookup' } }]
+        : [{ park: { tool: 'bash' } }]);
+      await manager.sendEvent(sessionId, { type: 'user.message', content: [{ type: 'text', text: 'go' }] });
+      const child = (await untilThreads(manager, sessionId,
+        (t) => t.some((x) => x.parentThreadId === primaryId && x.status === 'requires_action')))
+        .find((x) => x.parentThreadId === primaryId)!;
+      await until(manager, sessionId,
+        (e) => e.some((x) => x.type === 'session.status_idle'
+          && (x.metadata?.stop_reason as { type?: string } | undefined)?.type === 'requires_action'));
+      return child;
+    }
+
+    it('cross-posts the parked agent.tool_use and routes the confirmation back to the child', async () => {
+      const session = manager.create({ agent: 'agent_coordinator' });
+      const primaryId = primaryThreadIdForSession(session.id);
+      const child = await dispatchAndPark(session.id, primaryId);
+
+      const all = manager.getEventLogger().getEvents(session.id);
+      const parkedUse = all.find((e) => e.type === 'agent.tool_use' && e.threadId === child.id)!;
+      // The parked call is lifted onto the primary stream — the row keeps its
+      // own thread_id; the flag is what admits it to the primary view.
+      expect(parkedUse.crossPosted).toBe(true);
+      expect(manager.getEventLogger().getPrimaryEvents(session.id).map((e) => e.id)).toContain(parkedUse.id);
+
+      // The child's thread_status_idle reports only ITS parked ids; the
+      // session-level idle reports the same id (union of one).
+      const threadIdle = all.find((e) => e.type === 'session.thread_status_idle'
+        && e.metadata?.session_thread_id === child.id)!;
+      expect(threadIdle.crossPosted).toBe(true);
+      expect((threadIdle.metadata?.stop_reason as { event_ids?: string[] }).event_ids).toEqual([parkedUse.id]);
+      const sessionIdle = all.find((e) => e.type === 'session.status_idle'
+        && (e.metadata?.stop_reason as { type?: string } | undefined)?.type === 'requires_action')!;
+      expect((sessionIdle.metadata?.stop_reason as { event_ids?: string[] }).event_ids).toContain(parkedUse.id);
+      expect(manager.get(session.id)?.status).toBe('requires_action');
+
+      // The client answers with the event id — the routing lands the answer on
+      // the child's thread, cross-posted, and resumes the child's chain.
+      executor.script('reviewer', [{ say: 'gated work done' }]);
+      await manager.sendEvent(session.id, {
+        type: 'user.tool_confirmation',
+        tool_use_id: parkedUse.id,
+        result: 'allow',
+      } as never);
+      await until(manager, session.id, (e) => e.some((x) => x.type === 'agent.tool_result' && x.threadId === child.id));
+
+      const confirmation = manager.getEventLogger().getEvents(session.id)
+        .find((e) => e.type === 'user.tool_confirmation')!;
+      expect(confirmation.threadId).toBe(child.id);
+      expect(confirmation.crossPosted).toBe(true);
+      expect(manager.getEventLogger().getThreadEvents(session.id, child.id).map((e) => e.id)).toContain(confirmation.id);
+      expect(manager.getEventLogger().getPrimaryEvents(session.id).map((e) => e.id)).toContain(confirmation.id);
+
+      // The resolved result pairs on the child's stream, and the child ran a
+      // second turn driven by the confirmation trigger.
+      const result = manager.getEventLogger().getThreadEvents(session.id, child.id)
+        .find((e) => e.type === 'agent.tool_result')!;
+      expect(result.threadId).toBe(child.id);
+      expect(executor.invocations.filter((i) => i.threadId === child.id).map((i) => i.eventType))
+        .toEqual(['internal.thread_message', 'user.tool_confirmation']);
+
+      // The turn ended: the child is idle again and its reply reached the parent.
+      await until(manager, session.id, (e) => e.some((x) => x.type === 'agent.thread_message_received' && x.threadId === primaryId));
+      expect(manager.get(session.id)?.status).toBe('paused');
+    });
+
+    it('routes a custom_tool_result back to the child thread', async () => {
+      const session = manager.create({ agent: 'agent_coordinator' });
+      const primaryId = primaryThreadIdForSession(session.id);
+      const child = await dispatchAndPark(session.id, primaryId, true);
+
+      const customUse = manager.getEventLogger().getThreadEvents(session.id, child.id)
+        .find((e) => e.type === 'agent.custom_tool_use')!;
+      expect(customUse.crossPosted).toBe(true);
+      expect(manager.getEventLogger().getPrimaryEvents(session.id).map((e) => e.id)).toContain(customUse.id);
+
+      executor.script('reviewer', [{ say: 'custom done' }]);
+      await manager.sendEvent(session.id, {
+        type: 'user.custom_tool_result',
+        custom_tool_use_id: customUse.id,
+        content: [{ type: 'text', text: 'lookup answer' }],
+      } as never);
+      await until(manager, session.id, (e) => e.some((x) => x.type === 'agent.thread_message_received' && x.threadId === primaryId));
+
+      const answer = manager.getEventLogger().getEvents(session.id)
+        .find((e) => e.type === 'user.custom_tool_result')!;
+      expect(answer.threadId).toBe(child.id);
+      expect(answer.crossPosted).toBe(true);
+      expect(executor.invocations.filter((i) => i.threadId === child.id).map((i) => i.eventType))
+        .toEqual(['internal.thread_message', 'user.custom_tool_result']);
+      expect(manager.get(session.id)?.status).toBe('paused');
+    });
+
+    it('unions event_ids across two parked children and resumes each as it is answered', async () => {
+      db.prepare('UPDATE agents SET definition = ? WHERE id = ?').run(JSON.stringify(COORDINATOR2), 'agent_coordinator');
+      const session = manager.create({ agent: 'agent_coordinator' });
+      const primaryId = primaryThreadIdForSession(session.id);
+
+      executor.script('coordinator', [{
+        sendToAgents: [
+          { agent: 'reviewer', message: 'A' },
+          { agent: 'reviewer2', message: 'B' },
+        ],
+        say: 'dispatched',
+      }]);
+      executor.script('reviewer', [{ park: { tool: 'bash' } }]);
+      executor.script('reviewer2', [{ park: { tool: 'bash' } }]);
+      await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'go' }] });
+
+      const children = (await untilThreads(manager, session.id,
+        (t) => t.filter((x) => x.parentThreadId === primaryId && x.status === 'requires_action').length === 2))
+        .filter((x) => x.parentThreadId === primaryId);
+
+      await until(manager, session.id, (e) => {
+        const idle = e.filter((x) => x.type === 'session.status_idle').at(-1);
+        const ids = (idle?.metadata?.stop_reason as { event_ids?: string[] } | undefined)?.event_ids;
+        return (ids?.length ?? 0) >= 2;
+      });
+
+      const parkedIds = children.map((c) =>
+        manager.getEventLogger().getThreadEvents(session.id, c.id).find((e) => e.type === 'agent.tool_use')!.id);
+      const sessionIdle = manager.getEventLogger().getEvents(session.id)
+        .filter((x) => x.type === 'session.status_idle').at(-1)!;
+      const union = (sessionIdle.metadata?.stop_reason as { event_ids?: string[] }).event_ids!;
+      expect(union.sort()).toEqual([...parkedIds].sort());
+      // Each child's own status event names only its own parked call.
+      for (const [i, child] of children.entries()) {
+        const idle = manager.getEventLogger().getEvents(session.id).find((e) =>
+          e.type === 'session.thread_status_idle' && e.metadata?.session_thread_id === child.id)!;
+        expect((idle.metadata?.stop_reason as { event_ids?: string[] }).event_ids).toEqual([parkedIds[i]]);
+      }
+
+      // Answer the first child's call — only that child resumes; the session
+      // still reports requires_action on the other's pending call.
+      executor.script('reviewer', [{ say: 'A done' }]);
+      await manager.sendEvent(session.id, {
+        type: 'user.tool_confirmation',
+        tool_use_id: parkedIds[0]!,
+        result: 'allow',
+      } as never);
+      // Wait for the resumed child's turn to fully settle — while it is still
+      // `running` the aggregate is `running`, so the requires_action assertion
+      // must observe the state after its end_turn.
+      await untilThreads(manager, session.id, (t) =>
+        t.some((x) => x.id === children[0]!.id && x.status === 'paused'));
+      await until(manager, session.id, () => manager.get(session.id)?.status === 'requires_action');
+      expect(manager.get(session.id)?.status).toBe('requires_action');
     });
   });
 });
