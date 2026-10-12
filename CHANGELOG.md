@@ -79,8 +79,23 @@
   turn closing `end_turn` reports its last reply back to the parent as a
   cross-posted `agent.thread_message_received` projecting `[来自 <agent_name>]`
   into the receiver's next context, which re-enters the parent's chain when it
-  is idle. Per-thread `user.interrupt`, thread archive, per-thread budget, and
-  the child `requires_action` cross-post remain for later slices.
+  is idle. Per-thread `user.interrupt`, thread archive, and per-thread budget
+  remain for later slices.
+- Thread confirmation routing. A child thread that parks on `requires_action`
+  now lifts the blocking `agent.tool_use` / `agent.mcp_tool_use` /
+  `agent.custom_tool_use` rows onto the primary stream (`cross_posted = 1` —
+  the row keeps its own `thread_id`, and `session_thread_id` on the wire
+  attributes it to the child's stream), so a primary-stream reader sees the
+  request it's being asked to answer. The child's `session.thread_status_idle`
+  carries `stop_reason.requires_action` with `event_ids` scoped to that
+  thread's parked calls, while the session-level `session.status_idle` reports
+  the union across parked threads. The client's `user.tool_confirmation` or
+  `user.custom_tool_result` is resolved to the thread that produced the call,
+  stamped with that `thread_id`, and cross-posted — so the answer lands on the
+  child's own stream (where its parked set, context projection, and
+  tool-result pairing all live) while the primary stream keeps the complete
+  request→response pair. The child's chain then resumes and its `end_turn`
+  reply returns to the coordinator as before.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

@@ -266,6 +266,9 @@ export class ToolResolver {
       type: 'agent.tool_result',
       content: [{ type: 'tool_result', tool_use_id: pendingUse.id, content: resultText, is_error: isError }],
       metadata: { confirmation_group_id: groupId },
+      // The result pairs against the call on the thread that produced it — a
+      // sibling's parked set is resolved by block id on its own stream.
+      threadId: thread?.id,
     });
     broadcast(resultEvent);
 

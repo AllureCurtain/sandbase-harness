@@ -249,6 +249,26 @@ export class EventLogger {
   }
 
   /**
+   * Lift events onto the primary stream by setting `cross_posted`.
+   *
+   * The flag is decided when the row is written for every producer that knows
+   * it belongs there — dispatch, reply, thread status. The one producer that
+   * cannot know at write time is the turn itself: a `agent.tool_use` only
+   * becomes a cross-posted row when the thread parks on it, which the turn
+   * learns after the write. This is the single supported mutation of the log —
+   * one column, one direction, never content — because the alternative (the
+   * turn predicting which calls will park, or a second copy of the row) either
+   * guesses wrong or forks seq/id identity between the two streams.
+   */
+  markCrossPosted(eventIds: readonly string[]): void {
+    if (eventIds.length === 0) return;
+    const placeholders = eventIds.map(() => '?').join(', ');
+    this.db.prepare(
+      `UPDATE events SET cross_posted = 1 WHERE id IN (${placeholders})`,
+    ).run(...eventIds);
+  }
+
+  /**
    * Get the latest seq number for a session. Returns 0 if no events exist.
    */
   getLatestSeq(sessionId: string): number {
