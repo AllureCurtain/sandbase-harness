@@ -4,6 +4,9 @@
     "adapter_unavailable": [
       "src/core/settings/schema.ts"
     ],
+    "advisor_unsupported": [
+      "src/core/agent/roster.ts"
+    ],
     "agent_required": [
       "src/api/routes/session-normalizers.ts"
     ],
@@ -113,6 +116,9 @@
       "src/core/session/session-manager.ts"
     ],
     "pi_message_content_not_supported": [
+      "src/core/session/pi-policy.ts"
+    ],
+    "pi_multiagent_not_supported": [
       "src/core/session/pi-policy.ts"
     ],
     "pi_policy_mismatch": [

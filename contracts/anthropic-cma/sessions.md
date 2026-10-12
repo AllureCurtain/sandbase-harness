@@ -115,8 +115,9 @@ distinguish — and a `stats` object: `active_seconds` sums the session's
 bulk status-transition query rather than a full event read per row), and
 `duration_seconds` counts from creation to the last update for a terminated
 or archived session and to the read for a live one. The materialized `agent`
-pins `version` to the session snapshot and reports `multiagent: null` — a
-declared roster is refused by name, so a populated value can never appear.
+pins `version` to the session snapshot and reports `multiagent` as the resolved
+roster the definition carries — `null` for a single-threaded agent, the
+coordinator roster when one is stored.
 `outcome_evaluations` is derived from the event log on every read path: one
 entry per `user.define_outcome`, in declaration order, reporting `pending`,
 `running`, or `evaluating` while in progress and the terminal end-span verdict
@@ -394,7 +395,7 @@ to `tools`/`mcp_servers`, `metadata` merge patch, `title` replace), the
 fields: `budget` always present (`null` when there is no ceiling),
 `stats.active_seconds`/`stats.duration_seconds`, `outcome_evaluations`
 projected from the event log on create, retrieve, and list, and the
-materialized `agent` with a pinned `version` and `multiagent: null`.
+materialized `agent` with a pinned `version` and the resolved `multiagent` roster.
 
 ## 4. Differences
 
@@ -621,7 +622,7 @@ executor, and the loop is bounded by the declared `max_iterations`. The session
 object's published fields are emitted in full — `budget` always present,
 `stats` derived from the event log, `outcome_evaluations` projected from the
 declaration and evaluation spans on every read path, and the snapshot `agent`
-carrying `version` and `multiagent: null`. Session
+carrying `version` and the resolved `multiagent` roster. Session
 update is `supported` for `agent.tools`/`mcp_servers`, `metadata`, `title`,
 `vault_ids`, and `budget` with `session.updated`. Prompt caching is
 `supported` as the explicit

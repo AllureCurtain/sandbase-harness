@@ -214,11 +214,12 @@ export interface ApiAgent {
   status: 'active' | 'archived';
   version: number;
   /**
-   * Resolved multiagent roster. Always `null` in this runtime — a declared
-   * roster is refused by name (`multiagent-roster`), so a populated value can
-   * never appear here today.
+   * Resolved multiagent roster. `null` when the agent is single-threaded; the
+   * resolved coordinator form when the definition declares one — `self` and
+   * unversioned members are already pinned to concrete `{type:'agent', id,
+   * version}` references at write time.
    */
-  multiagent: null;
+  multiagent: { type: 'coordinator'; agents: Array<{ type: 'agent'; id: string; version: number } | { type: 'advisor'; model: string }> } | null;
   /**
    * Local extension: the server-side turn cap the definition carries. The
    * published contract has no `max_turns` on the agent object — the published
@@ -568,7 +569,7 @@ export function toApiAgent(
     metadata: parseStringRecord(agent.metadata),
     status: dates?.status ?? (dates?.archivedAt ? 'archived' : 'active'),
     version: dates?.version ?? 1,
-    multiagent: null,
+    multiagent: agent.multiagent ?? null,
     ...(agent.max_turns !== undefined ? { max_turns: agent.max_turns } : {}),
     created_at: dates?.createdAt ?? null,
     updated_at: dates?.updatedAt ?? null,

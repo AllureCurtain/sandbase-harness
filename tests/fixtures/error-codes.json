@@ -2,6 +2,7 @@
   "note": "Public error codes emitted by src, measured by tests/unit/error-code-inventory.test.ts. The scan model is stated in that test; adding a code means updating this file deliberately.",
   "codes": [
     "adapter_unavailable",
+    "advisor_unsupported",
     "agent_required",
     "already_exists",
     "cycle",
@@ -38,6 +39,7 @@
     "pi_always_ask_not_supported",
     "pi_cleanup_pending",
     "pi_message_content_not_supported",
+    "pi_multiagent_not_supported",
     "pi_policy_mismatch",
     "pi_rpc_approval_not_pending",
     "pi_rpc_closed",

@@ -24,10 +24,10 @@ import {
   agentNameSchema,
   agentToolsetSchema,
   mcpServerConfigSchema,
-  multiagentRosterRefusal,
   skillRefSchema,
   type ValidationError,
 } from './schema.js';
+import { rosterMemberParamSchema } from './roster.js';
 import type { AgentDefinition } from '@/types/agent.js';
 
 /**
@@ -50,9 +50,19 @@ const UPDATE_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   // the create path accepts it: the executor honours `enable_general_subagent`
   // when it builds the agent's delegation tools, so refusing it here would make
   // the two write paths disagree about a field the runtime does act on. It is a
-  // local extension and is not the canonical `multiagent` roster, which stays
-  // refused below.
+  // local extension and is not the canonical `multiagent` roster — declaring
+  // both on one agent is refused at definition validation (D10).
   enable_general_subagent: z.union([z.boolean(), z.null()]),
+  // The canonical roster in the param form the SDK sends; `null` clears it.
+  // Cardinality, advisor, depth, and reference checks run against the merged
+  // definition in `validateAgentDefinition`, same as every other coupled rule.
+  multiagent: z.union([
+    z.object({
+      type: z.literal('coordinator'),
+      agents: z.array(rosterMemberParamSchema).min(1).max(20),
+    }),
+    z.null(),
+  ]),
   strategy: z.union([z.string(), z.null()]),
   environment: z.union([z.string(), z.null()]),
 };
@@ -176,13 +186,6 @@ export function validateAgentUpdateRequest(input: unknown): AgentUpdateRequestRe
   for (const [key, value] of Object.entries(body)) {
     // The precondition is not a definition field and is read separately below.
     if ((PRECONDITION_FIELDS as readonly string[]).includes(key)) continue;
-    // The canonical roster gets its own refusal rather than the generic
-    // unknown-field message, so this path and the create path answer a roster
-    // with the same capability id and the same reason.
-    if (key === 'multiagent') {
-      errors.push(multiagentRosterRefusal());
-      continue;
-    }
     const schema = UPDATE_FIELD_SCHEMAS[key];
     if (!schema) {
       errors.push({ path: key, message: `Unknown agent update field "${key}"` });

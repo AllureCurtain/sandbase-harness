@@ -12,6 +12,7 @@ import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
 } from '@/core/agent/web-tool-policy.js';
+import { parseRosterParam, resolveRoster } from '@/core/agent/roster.js';
 import type { AgentDefinition, AgentModelConfig, AgentModelSpeed, AgentToolset } from '@/types/agent.js';
 
 // ============================================================
@@ -198,6 +199,25 @@ export const agentDefinitionSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   delegations: z.array(z.string()).optional(),
   enable_general_subagent: z.boolean().optional(),
+  /**
+   * The canonical coordinator roster. Accepted in the *param* form the SDK
+   * sends — `string | {type:'agent'} | {type:'self'} | {type:'advisor'}` — and
+   * in the *resolved* form a stored row carries back through revalidation.
+   * Cardinality, advisor, depth, and reference checks run after parse inside
+   * `validateAgentDefinition`; a `null` clears the roster (update path).
+   */
+  multiagent: z.union([
+    z.object({
+      type: z.literal('coordinator'),
+      agents: z.array(z.union([
+        z.string().min(1),
+        z.object({ type: z.literal('agent'), id: z.string().min(1), version: z.number().int().min(1).optional() }),
+        z.object({ type: z.literal('self') }),
+        z.object({ type: z.literal('advisor'), model: z.string().min(1) }),
+      ])).min(1).max(20),
+    }),
+    z.null(),
+  ]).optional(),
   strategy: z.string().optional(),
   environment: z.string().optional(),
 });
@@ -209,6 +229,13 @@ export const agentDefinitionSchema = z.object({
 export interface ValidationError {
   path: string;
   message: string;
+  /**
+   * Stable error code for a refusal that names a specific gap rather than a
+   * shape problem — the roster's `advisor_unsupported` is the one case today.
+   * Route handlers hoist it onto the error body's `code` field; it is absent
+   * for ordinary field-validation errors.
+   */
+  code?: string;
 }
 
 export interface ValidationResult {
@@ -222,49 +249,27 @@ export interface ValidationResult {
 // ============================================================
 
 /**
- * Capability id the canonical `multiagent` roster refusal points at.
- *
- * Exported so the create path, the update path, and the capability matrix name
- * the same capability: a refusal a caller cannot look up is a refusal they
- * cannot act on.
+ * How a roster member is resolved against the store, injected by callers that
+ * can reach the agent table. Absent means only structural roster rules run —
+ * the schema stays pure, and the routes that persist supply the real lookup.
  */
-export const MULTIAGENT_ROSTER_CAPABILITY_ID = 'multiagent-roster';
-
-/**
- * The refusal for a canonical `multiagent` roster.
- *
- * Returned rather than letting the schema strip the field. `agentDefinitionSchema`
- * drops what it does not declare, so without this check a create request carrying
- * a roster would answer 201 and behave as if the roster did not exist — the
- * caller would believe delegation by roster was in effect. The runtime implements
- * no thread, coordinator, or advisor surface, so the only honest answer is a named
- * refusal that points at the capability and at the local delegation extension.
- */
-export function multiagentRosterRefusal(): ValidationError {
-  return {
-    path: 'multiagent',
-    message:
-      `The canonical multiagent roster is unavailable in this runtime (capability "${MULTIAGENT_ROSTER_CAPABILITY_ID}"): no thread, coordinator, or advisor surface is implemented, so the roster is refused rather than accepted and ignored. `
-      + 'Use the local delegation extension instead — "delegations" names agents to call, and "enable_general_subagent" allows a one-level temporary sub-agent. '
-      + 'GET /v1/x/capabilities records the gap.',
-  };
-}
-
-/** True when the caller's own payload carries a `multiagent` key. */
-export function declaresMultiagentRoster(input: unknown): boolean {
-  return (
-    !!input
-    && typeof input === 'object'
-    && !Array.isArray(input)
-    && Object.prototype.hasOwnProperty.call(input, 'multiagent')
-  );
+export interface RosterResolverContext {
+  /** The coordinator's own id and the version this write produces (for `self`). */
+  self: { id: string; version: number };
+  /** Resolve a member id to `{version, hasMultiagent}`, or `undefined` when missing/archived. */
+  lookup: (id: string) => { version: number; hasMultiagent: boolean } | undefined;
 }
 
 /**
  * Validate an unknown object against the AgentDefinition schema.
  * Returns structured errors with field paths on failure.
+ *
+ * `roster` carries the store lookups the roster rules need; callers that only
+ * shape-check (seed import, tests) may omit it, in which case a declared
+ * roster's existence/depth members are validated structurally only and left in
+ * their param form for the caller to resolve.
  */
-export function validateAgentDefinition(input: unknown): ValidationResult {
+export function validateAgentDefinition(input: unknown, roster?: RosterResolverContext): ValidationResult {
   const result = agentDefinitionSchema.safeParse(input);
 
   if (!result.success) {
@@ -274,12 +279,6 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
     }));
 
     return { valid: false, errors };
-  }
-
-  // Refused from the caller's own value, before the schema's stripped copy is
-  // trusted, so the field cannot be dropped on the way to the store.
-  if (declaresMultiagentRoster(input)) {
-    return { valid: false, errors: [multiagentRosterRefusal()] };
   }
 
   // Domain-list rules the schema cannot express without losing the exact
@@ -338,6 +337,37 @@ export function validateAgentDefinition(input: unknown): ValidationResult {
           message: configRejection.message ?? 'model_config is invalid',
         }],
       };
+    }
+  }
+
+  // The roster: resolve param-form members against the store when a lookup is
+  // supplied, and refuse the local delegation extension declared beside one —
+  // two delegation mechanisms on one agent is a configuration no turn can
+  // honour honestly (D10). A `null` multiagent is the documented clear and is
+  // left for the store layer to apply.
+  const multiagentInput = (input && typeof input === 'object' && !Array.isArray(input))
+    ? (input as Record<string, unknown>).multiagent
+    : undefined;
+  if (multiagentInput !== undefined && multiagentInput !== null) {
+    if (result.data.delegations !== undefined || result.data.enable_general_subagent !== undefined) {
+      return {
+        valid: false,
+        errors: [{
+          path: 'multiagent',
+          message: 'A canonical `multiagent` roster cannot be combined with the local delegation extension ("delegations" or "enable_general_subagent"); declare one or the other',
+        }],
+      };
+    }
+    const parsedRoster = parseRosterParam(multiagentInput);
+    if (!parsedRoster.ok) {
+      return { valid: false, errors: parsedRoster.errors };
+    }
+    if (roster) {
+      const resolved = resolveRoster(parsedRoster.roster, roster.self, roster.lookup);
+      if (!resolved.ok) {
+        return { valid: false, errors: resolved.errors };
+      }
+      result.data.multiagent = resolved.roster;
     }
   }
 

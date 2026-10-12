@@ -845,26 +845,28 @@ describe('PUT /v1/agents/:id partial update', () => {
     expect(dangling.res.status).toBe(400);
     expect(JSON.stringify(dangling.body)).toContain('undeclared MCP server');
 
-    // The canonical roster is refused with the capability it names, so this
-    // path and the create path answer a `multiagent` field identically rather
-    // than one of them stripping it.
+    // The canonical roster is accepted: an update carrying `multiagent`
+    // resolves each member against the store and stores the resolved form.
     const rosterAttempt = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
       multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: plain.id }] },
     });
-    expect(rosterAttempt.res.status).toBe(400);
-    expect(rosterAttempt.body.error.details).toContainEqual({
-      path: 'multiagent',
-      message: expect.stringContaining('multiagent-roster'),
+    expect(rosterAttempt.res.status).toBe(200);
+    // `plain` was version-bumped by the web_fetch update above, so the pin is 2.
+    expect(rosterAttempt.body.multiagent).toEqual({
+      type: 'coordinator',
+      agents: [{ type: 'agent', id: plain.id, version: plain.version + 1 }],
     });
 
-    // The local delegation extension is a different field: both write paths
+    // The local delegation extension is a different field: it is refused only
+    // alongside a roster (D10). On an agent with no roster both write paths
     // accept it, because the executor honours it when it builds delegation
-    // tools.
-    const subagentAttempt = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+    // tools — so this runs on a fresh rosterless agent.
+    const rosterless = await seedAgent(ctx, { name: 'Rosterless', model: 'gpt-4o', system: 'x' });
+    const subagentAttempt = await request(ctx.app, 'PUT', `/v1/agents/${rosterless.id}`, {
       enable_general_subagent: true,
     });
     expect(subagentAttempt.res.status).toBe(200);
-    expect(JSON.parse(storedRow(ctx, agent.id).definition).enable_general_subagent).toBe(true);
+    expect(JSON.parse(storedRow(ctx, rosterless.id).definition).enable_general_subagent).toBe(true);
   });
 
   it('keeps response, stored row, versions, list, and the in-memory cache consistent', async () => {

@@ -31,12 +31,13 @@ mcp-tunnel: not_applicable
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
 Dreams are implemented too — a session-backed memory-consolidation job — and
 have their own file, [`dreams.md`](./dreams.md).
-Threads, the coordinator, the advisor, and the canonical `multiagent` roster are
-**not** implemented either; they have their own file,
-[`threads.md`](./threads.md), which records the gap and the refusal that keeps a
-caller from assuming otherwise. The five published thread routes are mounted
-`unsupported_capability` refusals, so the SDK's `sessions.threads` methods get a
-decodable 400 rather than a 404.
+Threads' coordinator, the advisor, and child threads are **not** implemented
+either; they have their own file, [`threads.md`](./threads.md), which records
+the gap. The primary thread and its read routes are live (PR 3.1), and the
+canonical `multiagent` roster is accepted and stored (PR 3.2, `agents.md`) —
+only the coordinator role and the `archive` route remain unimplemented, the
+latter still a mounted `unsupported_capability` refusal so the SDK's
+`sessions.threads.archive` gets a decodable 400 rather than a 404.
 
 Failure mechanism:
 
@@ -95,9 +96,9 @@ unsupported capability and its reason, and separating "not implemented" from
   rejected and no session is created.
 - `tests/unit/loop-engine-truthfulness.test.ts` — no capability is reported as
   available when it cannot execute.
-- `tests/integration/agent-roster-refusal.test.ts` — the related refusal this
-  file's threads gap depends on: a canonical `multiagent` roster is rejected by
-  name before anything is persisted.
+- `tests/integration/agent-roster-refusal.test.ts` — the roster's remaining
+  refusals: `advisor` with `advisor_unsupported`, a nested roster, a missing
+  member, and a roster beside the local delegation extension.
 
 ## 7. Status
 
@@ -106,6 +107,6 @@ rest are `unavailable`. Every one is recorded in the capability matrix with its
 reason rather than being omitted. Four entries that used to be here are no
 longer: session budget, `web_search` execution, dreams, and
 `mcp_oauth_validate` each have their own coverage because they were
-implemented. Threads, the coordinator, and the
-advisor stayed out: they are `unavailable`, not `partial`, and they too have
-their own file rather than a paragraph in this one.
+implemented. Threads' coordinator and advisor stayed out — the thread surface
+is `partial` (the primary thread and read routes are live, the roster is
+stored) and has its own file rather than a paragraph in this one.

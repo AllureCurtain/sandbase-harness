@@ -1,17 +1,18 @@
 # CMA Contract — agents
 
 Contract area: `/v1/agents` — agent definitions, model profile, toolsets.
-Status: `supported` for CRUD; `partial` for the model object profile; the
-canonical `multiagent` roster is `unavailable` and the local delegation
-extension is separate. See §4.
+Status: `supported` for CRUD; `partial` for the model object profile; `partial`
+for the canonical `multiagent` roster (validated, stored, and projected — the
+coordinator and advisor roles it drives are not implemented); the local
+delegation extension is separate. See §4.
 Source: `src/core/agent/schema.ts`, `src/core/agent/update.ts`,
-`src/core/agent/model-object.ts`, `src/api/routes/agents.ts`,
-`src/api/routes/session-normalizers.ts`.
+`src/core/agent/model-object.ts`, `src/core/agent/roster.ts`,
+`src/api/routes/agents.ts`, `src/api/routes/session-normalizers.ts`.
 
 <!-- capability-status
 agent-crud: supported
 model-object-profile: partial
-multiagent-roster: unavailable
+multiagent-roster: partial
 local-delegation-subagent: supported
 -->
 
@@ -77,13 +78,19 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
   the update unconditionally; that is exactly the local behaviour, so only the
   name differs. Both are read, and sending both with different values is refused
   rather than resolved by precedence.
-- A canonical `multiagent` roster is **refused by name** on both write paths. An
-  agent's create path checks the caller's own payload in
-  `validateAgentDefinition`, because the Zod schema strips keys it does not
-  declare and a stripped roster would answer 201 while doing nothing. The update
-  path special-cases the key in `validateAgentUpdateRequest` so both answers are
-  identical. Both name the capability `multiagent-roster` and point at the local
-  extension.
+- A canonical `multiagent` roster is accepted and validated on both write
+  paths. The schema parses the SDK's param form — `string` shorthand,
+  `{type:'agent', id, version?}`, `{type:'self'}`, `{type:'advisor', model}` —
+  and the route injects a store lookup (`src/core/agent/roster.ts`) that
+  resolves each member: `self` and unversioned members are pinned to concrete
+  `{type:'agent', id, version}` references at write time, a member that does
+  not exist or is archived is refused, and a member whose own definition
+  declares `multiagent` is refused because delegation is one level. The stored
+  and projected form is the resolved roster; `multiagent: null` clears it. An
+  `advisor` member is refused with `advisor_unsupported` — this runtime has no
+  server-side advisor, so the entry cannot be honoured — and the coordinator
+  and advisor roles the roster would drive are not implemented, so the roster
+  is `partial`: stored faithfully, not yet executed.
 - Local delegation is a separate extension, not the roster: `delegations` is a
   list of agent names, and the boolean `enable_general_subagent` exposes one
   extra tool that runs a temporary copy of the agent for a single level. Both
@@ -103,7 +110,7 @@ field the runtime cannot honour instead of dropping it.
 | `model.speed` | Executed on the Anthropic provider when the model supports it: `fast` is sent as `speed: "fast"` and the provider attaches the `fast-mode-2026-02-01` beta. The capability table (`src/model/anthropic-capabilities.ts`) holds the published fast-mode list — Opus 5.5, Opus 5, Opus 4.8 — and `fast` on a listed model that cannot take it is refused at create/update with `unsupported_model_speed` rather than stored and silently degraded. `standard` and the local `extended` produce no wire field. A model id the table does not know is accepted and sends nothing. |
 | `model.effort` | Parsed, validated, stored in the model profile, and returned by every read projection (agent, version, and session snapshot). On the Anthropic provider the level reaches the request as `output_config.effort` — capability-gated per level, because the published lists are not uniform (Opus 4.6 and Sonnet 4.6 take `max` but not `xhigh`; Opus 4.5 tops out at `high`; Haiku 4.5 takes no effort). A listed model refused its level fails create/update with `unsupported_model_effort` naming the allowed set; a level outside the published vocabulary is `invalid_model_effort`. Models outside the table, and every non-Anthropic provider, accept the field and send nothing. A deployment may also set `reasoning_effort` in its own model settings — operator-level, applying to the model rather than to an agent. |
 | `model.inference_geo` | Refused by name with `unsupported_model_field` when a well-formed pin is sent: this runtime has no inference-geography control, so accepting it would promise a pin it cannot hold. An unknown value is `invalid_inference_geo` first. |
-| `multiagent` roster | Refused by name on create and update (capability `multiagent-roster`) because no thread, coordinator, or advisor surface exists. The published roster is not implemented. See [`threads.md`](./threads.md). |
+| `multiagent` roster | Accepted and validated on create and update: members resolve to pinned `{type:'agent', id, version}` references, `self` resolves to the coordinator, an `advisor` member is refused with `advisor_unsupported` (no server-side advisor exists locally), a missing/archived/nested-roster member is refused, and `multiagent` combined with the local `delegations`/`enable_general_subagent` extension is refused (D10). The coordinator and advisor roles the roster drives are not implemented — it is stored and projected faithfully but not executed. See [`threads.md`](./threads.md). |
 | `max_turns` | Local extension, not a published field: the published model counts turns client-side, so no server cap exists there. Here it is a positive-integer server-side turn limit validated on create and update, stored on the definition, executed by the builtin strategy (agent value, else the workspace `default_max_steps`), and echoed on every agent projection. It is absent — never `null` — on definitions that do not set it. |
 | Local delegation extension | `delegations` plus `enable_general_subagent` is a local one-level parent/child mechanism with its own tool names (`delegate_to_<name>`, `general_subagent`). The published contract defines neither field, and this is not presented as the canonical roster. |
 | Version retention | SandBase keeps prior agent versions readable in its own archive table. The published contract states versioning but not the retention mechanism. |
@@ -131,11 +138,14 @@ field the runtime cannot honour instead of dropping it.
   `thinking: {type: "adaptive", display: "omitted"}` for the models that
   support it and nothing for the rest. `omitted` keeps thinking content out of
   the response, matching the policy of never persisting reasoning traces.
-- The `multiagent` roster is a substantial protocol surface (threads,
-  coordinator role, advisor role). Mapping a local delegation helper onto it
-  would overstate coverage, and accepting the field would let a caller build on
-  delegation by roster that never happens. Refusing it is the only answer that
-  cannot be misread.
+- The `multiagent` roster is stored rather than refused because the threads
+  work it coordinates is landing in slices — the roster is the configuration
+  those slices read, so accepting it now means a later coordinator needs no
+  schema change. What still cannot be honoured is refused honestly: `advisor`
+  (no server-side advisor), a nested roster (one-level depth), and a roster
+  beside the local delegation extension (two mechanisms that cannot both be
+  true of one agent). The roster is `partial` rather than `supported` because
+  the coordinator and advisor roles that would act on it are not implemented.
 - The local delegation fields are documented in the contract rather than hidden,
   because a caller reading only the published contract would otherwise not know
   how to reach the one delegation mechanism this runtime has.
@@ -168,12 +178,16 @@ field the runtime cannot honour instead of dropping it.
   definition carrying `effort: "max"` sends an OpenAI-compatible provider
   request without it.
 - `tests/integration/agent-update-contract.test.ts` — the unified partial-update
-  semantics, the unknown-field refusal, the roster refusal on the update path,
-  and both spellings of the concurrency precondition including the published
-  update example's body over the published verb.
-- `tests/integration/agent-roster-refusal.test.ts` — the create path's roster
-  refusal before anything is persisted, the same refusal on update, and the
-  acceptance of the local `enable_general_subagent` extension on both paths.
+  semantics, the unknown-field refusal, roster acceptance and version pinning
+  on the update path, and both spellings of the concurrency precondition
+  including the published update example's body over the published verb.
+- `tests/integration/agent-roster-refusal.test.ts` — the roster over HTTP:
+  create and update acceptance with member resolution, the `advisor` refusal
+  with `advisor_unsupported`, nested-roster and missing-member refusals, the
+  `delegations`/`enable_general_subagent` coexistence refusal, `multiagent:
+  null` clearing, and the session object's `agent.multiagent` projection.
+- `tests/unit/agent-multiagent-roster.test.ts` — each §4.8 rule at the schema
+  boundary through an injected store lookup.
 - `tests/unit/web-tool-policy.test.ts` — per-tool web configuration validation.
 
 ## 7. Status
@@ -182,6 +196,8 @@ field the runtime cannot honour instead of dropping it.
 model object profile: `effort` and `speed` are executed on the Anthropic
 provider under the capability table — with admission refusing what a listed
 model cannot take — and stored-not-sent elsewhere, while `inference_geo` is
-refused rather than honoured. The canonical
-`multiagent` roster is `unavailable` and refused by name; the local delegation
-extension is `supported` and is recorded as an extension, never as the roster.
+refused rather than honoured. `partial` for the canonical `multiagent` roster:
+it is validated, stored, and projected in the resolved form, but the
+coordinator and advisor roles it drives are not implemented and an `advisor`
+member is refused with `advisor_unsupported`. The local delegation extension is
+`supported` and is recorded as an extension, never as the roster.
