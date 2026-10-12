@@ -639,17 +639,35 @@ export class SessionManager {
     if (!this.executor) return;
     const session = this.get(sessionId);
     if (!session || session.loopEngine === 'pi') return;
-    if (!this.lastIdleStopReasonIs(sessionId, 'budget_reached')) return;
-    this.enqueueTurnForEvent(sessionId, RESUME_AFTER_BUDGET);
+    // Resume every thread the ceiling parked, not just the primary: a budget
+    // update lifts the session's shared cap, and §4.6 gives each thread that
+    // stopped on `budget_reached` its own re-entry. A thread parked on a
+    // confirmation (`requires_action`) is not resumed — its wait is for a
+    // client's answer, not for headroom — and neither is one that idled on
+    // `end_turn` or `retries_exhausted`, which named a different reason.
+    for (const thread of this.threadStore.listBySession(sessionId)) {
+      if (thread.archivedAt) continue;
+      if (!this.lastIdleStopReasonIs(sessionId, 'budget_reached', thread.id)) continue;
+      this.enqueueThreadTurn(sessionId, thread.id, RESUME_AFTER_BUDGET);
+    }
   }
 
   /**
-   * Read the `stop_reason` of the most recent `session.status_idle`, so a
+   * Read the `stop_reason` of the most recent idle event on one stream, so a
    * resume decision names the same projection a client saw.
+   *
+   * With a thread id the question is scoped to that thread's own
+   * `session.thread_status_idle` events — two threads can idle on different
+   * reasons at once, and the session's aggregate answers for neither. Without
+   * one the session-level `session.status_idle` is read, the pre-thread
+   * behaviour every caller that predates threads relied on.
    */
-  private lastIdleStopReasonIs(sessionId: string, reason: string): boolean {
-    const events = this.eventLogger.getEvents(sessionId);
-    const lastIdle = [...events].reverse().find((event) => event.type === 'session.status_idle');
+  private lastIdleStopReasonIs(sessionId: string, reason: string, threadId?: string): boolean {
+    const events = threadId === undefined
+      ? this.eventLogger.getEvents(sessionId)
+      : this.eventLogger.getThreadEvents(sessionId, threadId);
+    const idleType = threadId === undefined ? 'session.status_idle' : 'session.thread_status_idle';
+    const lastIdle = [...events].reverse().find((event) => event.type === idleType);
     const stopReason = (lastIdle?.metadata as { stop_reason?: { type?: string } } | undefined)?.stop_reason;
     return stopReason?.type === reason;
   }
@@ -2407,8 +2425,10 @@ export class SessionManager {
     // enqueue is a fast path only, so the trigger re-reads the log when its turn
     // comes. A first resume that already ran ends the session on `end_turn`,
     // and anything else that idled it since is a reason a duplicate must not
-    // re-enter over.
-    if (event.type === 'internal.resume_after_budget' && !this.lastIdleStopReasonIs(sessionId, 'budget_reached')) {
+    // re-enter over. The reason is read off *this* thread's stream: a sibling
+    // thread idling on `end_turn` while this one still waits on the ceiling
+    // must not cancel a resume that belongs to it (§4.6).
+    if (event.type === 'internal.resume_after_budget' && !this.lastIdleStopReasonIs(sessionId, 'budget_reached', resolvedThreadId)) {
       return;
     }
     // An `internal.thread_message` trigger re-enters only when its thread is
@@ -2479,13 +2499,15 @@ export class SessionManager {
       if (settledThread && (settledThread.status === 'running' || settledThread.status === 'retrying')) {
         if (turnState.requiresAction) {
           this.updateThreadStatus(sessionId, resolvedThreadId, 'requires_action');
+        } else if (this.isBudgetExhausted(sessionId)) {
+          this.resolveOrphanedToolUses(sessionId);
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'paused', 'budget_reached');
+          // A budget-parked child does not report back: its turn is suspended,
+          // not finished, so there is no reply for the parent to fold in. When
+          // the ceiling lifts and the thread resumes, the turn that then ends
+          // `end_turn` posts the reply like any other.
         } else {
-          if (this.isBudgetExhausted(sessionId)) {
-            this.resolveOrphanedToolUses(sessionId);
-            this.updateThreadStatus(sessionId, resolvedThreadId, 'paused', 'budget_reached');
-          } else {
-            this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
-          }
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
           // A child that ended its turn reports back to its parent: the last
           // assistant text becomes the parent's `thread_message_received`,
           // which is what re-enters the parent's chain for the reply.
