@@ -96,6 +96,24 @@
   tool-result pairing all live) while the primary stream keeps the complete
   request→response pair. The child's chain then resumes and its `end_turn`
   reply returns to the coordinator as before.
+- Thread-scoped `user.interrupt` and thread archive. `user.interrupt` accepts
+  an optional `session_thread_id`: without it every unarchived thread is
+  stopped — a running or retrying thread's turn is aborted, and a thread
+  parked on `requires_action` has each parked call closed with the published
+  error result ("Tool execution was interrupted before completion. Please
+  retry.") before going straight to `paused` (`end_turn`) with no model call —
+  while a scoped interrupt touches only the named thread and an id naming no
+  thread of the session is refused. `POST /v1/sessions/{id}/threads/{tid}/archive`
+  is mounted for real in place of its `unsupported_capability` refusal:
+  archiving an idle child (`requires_action` counts as idle) emits the
+  cross-posted `session.thread_status_terminated`, frees the concurrency slot,
+  and returns the thread object; the primary thread answers
+  `primary_thread_not_archivable` (400), a running or retrying one
+  `thread_running` (409), and repeating the call returns the same row without
+  a second event. An archived thread accepts no input — `send_to_agent`
+  follow-ups and turns on its chain are refused or dropped — and its stranded
+  parked calls leave the session's `event_ids` union, so a `requires_action`
+  session an archived child was holding returns to `idle`.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

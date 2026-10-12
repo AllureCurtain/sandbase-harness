@@ -133,6 +133,17 @@ import {
   RESUMABLE_MODEL_FAILURE_CODES,
 } from '@/model/errors.js';
 
+/**
+ * The published error text a thread's parked calls are closed with when the
+ * thread is interrupted while waiting on a client answer (`ManagedAgents参考`
+ * :930 — written verbatim: any other wording would be a local message where
+ * the contract fixes one).
+ */
+const INTERRUPTED_PARKED_CALL_MESSAGE = 'Tool execution was interrupted before completion. Please retry.';
+
+/** Shared empty set so `archivedThreadIds` allocates nothing in the common case. */
+const EMPTY_THREAD_SET: ReadonlySet<string> = new Set();
+
 // ============================================================
 // Types
 // ============================================================
@@ -1185,10 +1196,23 @@ export class SessionManager {
     // resolves — the same routing `threadIdForEvent` applies to the turn. The
     // row is stamped with it so the child's own stream carries the answer its
     // resume gate and projection pair against, and cross-posted so the primary
-    // stream still shows the complete request→response pair (§4.5).
+    // stream still shows the complete request→response pair (§4.5). A scoped
+    // `user.interrupt` is stamped the same way: the event is addressed to one
+    // thread, so that thread's stream records it and the primary stream sees
+    // it cross-posted.
+    let interruptTarget: SessionThread | undefined;
+    if (event.type === 'user.interrupt' && event.session_thread_id !== undefined) {
+      const named = this.threadStore.get(event.session_thread_id);
+      if (!named || named.sessionId !== sessionId) {
+        throw new Error('Invalid interrupt: session_thread_id does not name a thread of this session');
+      }
+      interruptTarget = named;
+    }
     const answerThreadId = event.type === 'user.tool_confirmation' || event.type === 'user.custom_tool_result'
       ? this.threadIdForEvent(sessionId, event)
-      : undefined;
+      : event.type === 'user.interrupt' && interruptTarget !== undefined
+        ? interruptTarget.id
+        : undefined;
     const primaryThreadId = answerThreadId !== undefined
       ? this.threadStore.primaryThreadId(sessionId)
       : undefined;
@@ -1206,9 +1230,7 @@ export class SessionManager {
     // user.interrupt jumps the queue and aborts the running turn — it does
     // NOT enqueue a new turn (there's no new work, just a stop signal).
     if (event.type === 'user.interrupt') {
-      // Chains are keyed by thread id, and a `user.interrupt` reaches the
-      // primary thread — the client's address — not a child's.
-      this.abortControllers.get(this.threadStore.primaryThreadId(sessionId))?.abort();
+      this.interruptThreads(sessionId, interruptTarget);
       return { accepted: true };
     }
 
@@ -1582,10 +1604,10 @@ export class SessionManager {
       throw new Error(`Session ${sessionId} is in terminal state: ${session.status}`);
     }
     // Every thread's turn stops: chains are keyed by thread id, and a session
-    // can run several — the primary plus dispatched children.
-    for (const threadId of this.threadIdsForSession(sessionId)) {
-      this.abortControllers.get(threadId)?.abort();
-    }
+    // can run several — the primary plus dispatched children. A thread parked
+    // on requires_action is closed out the same way an unscoped user.interrupt
+    // closes it.
+    this.interruptThreads(sessionId);
     await this.drainChain(sessionId);
   }
 
@@ -1681,6 +1703,106 @@ export class SessionManager {
     return event;
   }
 
+  /**
+   * Archive a thread: the terminal lifecycle write.
+   *
+   * `archived_at` is set first so the row is archived even if the status
+   * transition is refused by the single-thread table — a `requires_action`
+   * thread archivable by the contract but unreachable through
+   * `SESSION_TRANSITIONS` stays archived rather than resurrecting. Then the
+   * status transitions to `archived`, which emits the cross-posted
+   * `session.thread_status_terminated` and recomputes the session aggregate
+   * (§4.3 excludes archived rows, so the session's published status no longer
+   * counts the thread). The concurrency slot frees on the same write —
+   * `activeChildCount` excludes `archived_at`.
+   */
+  archiveThread(sessionId: string, threadId: string): void {
+    const thread = this.threadStore.get(threadId);
+    if (!thread || thread.sessionId !== sessionId || thread.archivedAt) return;
+    this.threadStore.archiveThread(threadId);
+    if (thread.status !== 'archived') {
+      if (canTransition(thread.status, 'archived')) {
+        this.updateThreadStatus(sessionId, threadId, 'archived');
+      } else {
+        // A status the single-thread table cannot take — the row is archived
+        // anyway, so the aggregate is recomputed without emitting a thread
+        // event whose `archived` status the table refused.
+        this.recomputeSessionStatus(sessionId);
+      }
+    }
+  }
+
+  /**
+   * Apply a `user.interrupt` to one thread — or to the whole session when no
+   * `session_thread_id` scoped it.
+   *
+   * §4.5: a running or retrying thread's turn is aborted and settles `paused`
+   * through the ordinary abort path; a thread parked on `requires_action` is
+   * not running, so there is nothing to abort — instead each parked call is
+   * closed with the published error result ("Tool execution was interrupted
+   * before completion. Please retry.") and the thread goes straight to
+   * `paused` (`end_turn`) without touching the model; an already-idle thread
+   * is a no-op. An unscoped interrupt applies both rules to every unarchived
+   * thread: the primary's running turn and a parked child are stopped by the
+   * same client action.
+   */
+  private interruptThreads(sessionId: string, target?: SessionThread): void {
+    const threads = (target !== undefined ? [target] : this.threadStore.listBySession(sessionId))
+      .filter((t) => !t.archivedAt);
+    for (const thread of threads) {
+      if (thread.status === 'running' || thread.status === 'retrying') {
+        this.abortControllers.get(thread.id)?.abort();
+      } else if (thread.status === 'requires_action') {
+        this.resolveInterruptedParkedCalls(sessionId, thread.id);
+        this.updateThreadStatus(sessionId, thread.id, 'paused');
+        // No `postReplyToParent`: an interrupt is a control action, not a turn
+        // the model ended — the child produced no reply to report, and
+        // re-entering the parent here would start a turn on a session the
+        // caller just asked to stop.
+      }
+      // queued and paused threads have nothing to stop: a parked-less queued
+      // row's enqueued first turn runs itself out, and an idle thread is the
+      // documented no-op.
+    }
+  }
+
+  /**
+   * Close every parked call on one thread with the interrupt's error result.
+   *
+   * The parked `agent.tool_use` / `agent.mcp_tool_use` gets an error
+   * `agent.tool_result`/`agent.mcp_tool_result`; a parked `agent.custom_tool_use`
+   * gets an error `user.custom_tool_result` — the same result type a client
+   * answer would carry, because the custom projection pairs on that event, not
+   * on a `tool_result` row. All of them stay on the thread's own stream.
+   */
+  private resolveInterruptedParkedCalls(sessionId: string, threadId: string): void {
+    const events = this.eventLogger.getThreadEvents(sessionId, threadId);
+    for (const call of parkedCalls(events)) {
+      const use = events.find((event) => event.id === call.eventId);
+      if (use?.type === 'agent.custom_tool_use') {
+        const result = this.eventLogger.append(sessionId, {
+          type: 'user.custom_tool_result',
+          threadId,
+          content: [{ type: 'text', text: INTERRUPTED_PARKED_CALL_MESSAGE }],
+          metadata: { custom_tool_use_id: call.blockId, is_error: true, interrupted: true },
+        });
+        this.broadcast(sessionId, result);
+      } else {
+        const result = this.eventLogger.append(sessionId, {
+          type: use?.type === 'agent.mcp_tool_use' ? 'agent.mcp_tool_result' : 'agent.tool_result',
+          threadId,
+          content: [{
+            type: 'tool_result',
+            tool_use_id: call.blockId,
+            content: INTERRUPTED_PARKED_CALL_MESSAGE,
+            is_error: true,
+          }],
+        });
+        this.broadcast(sessionId, result);
+      }
+    }
+  }
+
   /** Await every execution chain a session's threads are running, swallowing errors. */
   private async drainChain(sessionId: string): Promise<void> {
     for (const threadId of this.threadIdsForSession(sessionId)) {
@@ -1697,6 +1819,19 @@ export class SessionManager {
     const primaryId = this.threadStore.primaryThreadId(sessionId);
     if (rows.includes(primaryId)) return rows;
     return [primaryId, ...rows];
+  }
+
+  /**
+   * The session's archived thread ids — the threads whose parked calls can
+   * never be answered, so the session-level `requires_action` union skips them.
+   * Empty when nothing is archived (the ordinary case), kept as a Set so the
+   * metadata filter is an O(1) membership test.
+   */
+  private archivedThreadIds(sessionId: string): ReadonlySet<string> {
+    const archived = this.threadStore.listBySession(sessionId)
+      .filter((t) => t.archivedAt)
+      .map((t) => t.id);
+    return archived.length === 0 ? EMPTY_THREAD_SET : new Set(archived);
   }
 
   /**
@@ -1874,7 +2009,10 @@ export class SessionManager {
       }
       const statusEvent = this.eventLogger.append(sessionId, {
         type: eventType,
-        metadata: lifecycleMetadataFor(newStatus, events, idleStopReason),
+        // The union counts only threads that can still be answered: a parked
+        // call on an archived thread is unanswerable by definition, so it
+        // leaves the published pending set when its thread is archived.
+        metadata: lifecycleMetadataFor(newStatus, events, idleStopReason, undefined, this.archivedThreadIds(sessionId)),
       });
       this.broadcast(sessionId, statusEvent);
     }
@@ -1996,9 +2134,9 @@ export class SessionManager {
       next = primary.status;
     } else if (active.length > 0 && active.every((t) => t.status === 'retrying')) {
       next = 'retrying';
-    } else if (threads.some((t) => t.status === 'running' || t.status === 'retrying')) {
+    } else if (unarchived.some((t) => t.status === 'running' || t.status === 'retrying')) {
       next = 'running';
-    } else if (threads.some((t) => t.status === 'requires_action')) {
+    } else if (unarchived.some((t) => t.status === 'requires_action')) {
       next = 'requires_action';
     } else if (unarchived.length > 0 && unarchived.every((t) => t.status === 'paused')) {
       next = 'paused';
@@ -2260,8 +2398,10 @@ export class SessionManager {
         ? this.threadStore.ensurePrimaryThread(session)
         : undefined);
     // A child thread row that is gone — archived or deleted between dispatch and
-    // execution — has nothing to run; the turn is simply dropped.
-    if (!thread) return;
+    // execution — has nothing to run; the turn is simply dropped. An archived
+    // thread's turns are dropped the same way: archive is the terminal
+    // lifecycle write, so nothing may run on the thread after it.
+    if (!thread || thread.archivedAt) return;
 
     // Two resume requests can legitimately queue behind one idle — the check at
     // enqueue is a fast path only, so the trigger re-reads the log when its turn
@@ -2455,8 +2595,9 @@ export class SessionManager {
   private threadAcceptsMessage(thread: SessionThread): boolean {
     // A freshly dispatched child is 'queued': its row exists but no turn has
     // run yet, so the trigger that starts it must be admitted rather than
-    // dropped as a message on a non-idle thread.
-    return thread.status === 'paused' || thread.status === 'queued';
+    // dropped as a message on a non-idle thread. An archived thread is closed
+    // for input entirely — archive is the terminal lifecycle write.
+    return !thread.archivedAt && (thread.status === 'paused' || thread.status === 'queued');
   }
 
   /**
@@ -2792,7 +2933,7 @@ function getConfirmationMetadata(
 
 type IdleStopReason = 'budget_reached' | 'retries_exhausted';
 
-function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idleStopReason?: IdleStopReason, threadId?: string): Record<string, unknown> | undefined {
+function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idleStopReason?: IdleStopReason, threadId?: string, excludeThreadIds?: ReadonlySet<string>): Record<string, unknown> | undefined {
   if (status === 'paused') return { stop_reason: { type: idleStopReason ?? 'end_turn' } };
   if (status !== 'requires_action') return undefined;
 
@@ -2814,7 +2955,9 @@ function lifecycleMetadataFor(status: SessionStatus, events: SessionEvent[], idl
       // session-level status event is the union across threads (§4.3 rule 2),
       // which is what passing no scope yields.
       event_ids: parkedCalls(
-        threadId === undefined ? events : events.filter((event) => event.threadId === threadId),
+        events.filter((event) =>
+          (threadId === undefined || event.threadId === threadId)
+            && !(excludeThreadIds?.has(event.threadId ?? '') ?? false)),
       ).map((call) => call.eventId),
     },
   };

@@ -30,6 +30,9 @@ describe('Session State Machine', () => {
       ['paused', 'completed'],
       ['paused', 'failed'],
       ['requires_action', 'running'],
+      // The interrupt close-out: a parked thread that is stopped settles
+      // end_turn after its calls are answered with the error result.
+      ['requires_action', 'paused'],
       ['requires_action', 'completed'],
       ['requires_action', 'failed'],
     ];
@@ -52,7 +55,6 @@ describe('Session State Machine', () => {
       ['paused', 'queued'],
       ['paused', 'requires_action'],
       ['requires_action', 'queued'],
-      ['requires_action', 'paused'],
       ['completed', 'running'],
       ['completed', 'queued'],
       ['completed', 'failed'],

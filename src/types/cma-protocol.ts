@@ -176,6 +176,12 @@ export interface UserMessageEvent extends EventBase {
 
 export interface UserInterruptEvent extends EventBase {
   type: 'user.interrupt';
+  /**
+   * The thread to interrupt. Omitted interrupts the whole session — every
+   * running thread plus every thread parked on `requires_action`; present
+   * scopes the interrupt to that one thread.
+   */
+  session_thread_id?: string;
 }
 
 export interface UserToolConfirmationEvent extends EventBase {

@@ -13,11 +13,6 @@ export interface UnsupportedOfficialRoute {
 export const UNSUPPORTED_OFFICIAL_ROUTES: ReadonlyArray<UnsupportedOfficialRoute> = [
   { pattern: /^\/v1\/tunnels(?:\/|$)/, reason: 'MCP tunnels require hosted connectivity outside the local-first scope.' },
   { pattern: /^\/v1\/user_profiles(?:\/|$)/, reason: 'Hosted user profile management is outside the single-tenant runtime scope.' },
-  {
-    pattern: /^\/v1\/sessions\/[^/]+\/threads\/[^/]+\/archive$/,
-    methods: ['POST'],
-    reason: 'Thread archive lands with the thread-lifecycle work; list, retrieve, events, and stream are served.',
-  },
 ];
 
 /** Whether an extracted official route falls under a refusal entry. */

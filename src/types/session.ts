@@ -41,7 +41,10 @@ export const SESSION_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   // the exhausted retry earned (paused), or into the turn's own failure modes.
   retrying: ['running', 'paused', 'failed', 'cancelled', 'timed_out'],
   paused: ['running', 'completed', 'failed', 'cancelled', 'archived'],
-  requires_action: ['running', 'completed', 'failed', 'cancelled', 'timed_out', 'archived'],
+  // `requires_action → paused` is the interrupt's close-out: a parked thread
+  // that is stopped settles end_turn (its calls are answered with the
+  // interrupt's error result first) rather than staying parked forever.
+  requires_action: ['running', 'paused', 'completed', 'failed', 'cancelled', 'timed_out', 'archived'],
   completed: [],
   failed: [],
   cancelled: [],

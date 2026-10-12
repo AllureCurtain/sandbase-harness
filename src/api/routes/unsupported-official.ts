@@ -14,10 +14,6 @@ export function unsupportedOfficialRoutes(): Hono {
   const app = new Hono();
   const tunnels = rejectCapability('mcp-tunnel', 'MCP tunnels require hosted connectivity outside the local-first scope.');
   const profiles = rejectCapability('user-profiles', 'Hosted user profile management is outside the single-tenant runtime scope.');
-  const threads = rejectCapability(
-    'threads-and-coordinator',
-    'Session threads belong to the multiagent surface this runtime does not implement; a request reaches a mounted refusal rather than a 404.',
-  );
 
   app.get('/tunnels', tunnels);
   app.post('/tunnels', tunnels);
@@ -36,10 +32,9 @@ export function unsupportedOfficialRoutes(): Hono {
   app.post('/user_profiles/:id', profiles);
   app.post('/user_profiles/:id/enrollment_url', profiles);
 
-  // Thread list/retrieve/events/stream are mounted for real under
-  // `/v1/sessions` (session-threads.ts); archive stays refused until the
-  // thread-lifecycle work lands it.
-  app.post('/sessions/:id/threads/:threadId/archive', threads);
+  // Every `/v1/sessions/:id/threads*` route — list, retrieve, events, stream,
+  // and archive — is mounted for real under `/v1/sessions`
+  // (session-threads.ts); nothing of the thread surface remains refused here.
 
   return app;
 }
