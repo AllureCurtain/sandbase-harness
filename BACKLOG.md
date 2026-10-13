@@ -9,11 +9,10 @@ project-owned features only.
 - Finish the multiagent surface: the published `multiagent` roster, session
   threads (`/v1/sessions/{id}/threads*`), the coordinator's `list_agents` /
   `send_to_agent` tools, the `session.thread_*` / `agent.thread_message_*`
-  events, per-thread confirmation routing, `user.interrupt`, archive, and
-  `budget_reached` are delivered (see
+  events, per-thread confirmation routing, `user.interrupt`, archive,
+  `budget_reached`, and the Console thread surface are delivered (see
   `contracts/anthropic-cma/threads.md`). What remains: the server-side
-  `advisor` role — refused with `advisor_unsupported` by decision today —
-  and the Console thread UI.
+  `advisor` role — refused with `advisor_unsupported` by decision today.
 - Improve template validation and authoring commands.
 - Add richer runtime metrics for model usage, tool duration, and session state.
 

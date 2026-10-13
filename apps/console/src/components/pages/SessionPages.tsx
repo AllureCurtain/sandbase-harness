@@ -9,7 +9,9 @@ import { SessionHandoffBundlesModal, SessionMcpStatusModal } from '../modals/Ses
 import { SessionComposer } from '../session/SessionComposer';
 import { SessionHero } from '../session/SessionHero';
 import { SessionTimeline } from '../session/SessionTimeline';
+import { ThreadPanel } from '../session/ThreadPanel';
 import { useSessionStream } from '../session/useSessionStream';
+import { useSessionThreads } from '../session/useSessionThreads';
 import { beginToolConfirmation, customToolResultPayload, toolConfirmationPayload } from '../session/conversation';
 // Test and sibling consumers import these helpers from this module; the
 // implementations live in `session/` since the F14 split. Keep the re-export
@@ -73,6 +75,15 @@ export function SessionDetail({
   const agent = data.agents.find((item) => item.id === session.agent.id);
   const environment = data.environments.find((item) => item.id === session.environment_id);
 
+  // The thread the timeline currently shows: `null` is the primary stream
+  // (the session-level event surface), a thread id switches both the REST
+  // replay and the SSE tail to that thread's scoped routes.
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+
+  // One roster serves both the side panel and the timeline's per-tool thread
+  // labels, so a fresh poll cannot disagree with the list the user clicked.
+  const { threads, loading: threadsLoading, reload: reloadThreads, threadNameById } = useSessionThreads(session.id);
+
   const {
     events,
     displayStatus,
@@ -87,6 +98,7 @@ export function SessionDetail({
     session,
     onRefresh,
     onToolAwaiting: () => setSendingMessage(false),
+    threadId: selectedThreadId ?? undefined,
   });
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
 
@@ -305,22 +317,38 @@ export function SessionDetail({
         </div>
       ) : null}
 
-      <SessionTimeline
-        sessionId={session.id}
-        events={events}
-        streamingText={streamingText}
-        loadingEvents={loadingEvents}
-        eventError={eventError}
-        streamConnection={streamConnection}
-        agentName={agent?.name}
-        selectedEvent={selectedEvent}
-        onSelectEvent={setSelectedEventId}
-        confirmingToolIds={confirmingToolIds}
-        confirmedToolIds={confirmedToolIds}
-        onConfirm={(toolUseId, result) => void confirmTool(toolUseId, result)}
-        onSubmitResult={(toolUseId, eventId, text, isError) => void submitCustomToolResult(toolUseId, eventId, text, isError)}
-        composer={composer}
-      />
+      <div className="sessionBody">
+        <ThreadPanel
+          session={session}
+          threads={threads}
+          loading={threadsLoading}
+          selectedThreadId={selectedThreadId}
+          onSelectThread={setSelectedThreadId}
+          onChanged={() => {
+            void reloadThreads();
+            void loadEvents({ silent: true });
+            onRefresh();
+          }}
+        />
+        <SessionTimeline
+          sessionId={session.id}
+          events={events}
+          streamingText={streamingText}
+          loadingEvents={loadingEvents}
+          eventError={eventError}
+          streamConnection={streamConnection}
+          agentName={agent?.name}
+          selectedEvent={selectedEvent}
+          onSelectEvent={setSelectedEventId}
+          confirmingToolIds={confirmingToolIds}
+          confirmedToolIds={confirmedToolIds}
+          onConfirm={(toolUseId, result) => void confirmTool(toolUseId, result)}
+          onSubmitResult={(toolUseId, eventId, text, isError) => void submitCustomToolResult(toolUseId, eventId, text, isError)}
+          onOpenThread={(threadId) => setSelectedThreadId(threadId)}
+          threadNameById={threadNameById}
+          composer={composer}
+        />
+      </div>
 
       {actionError ? <div className="banner error inlineBanner">{actionError}</div> : null}
 

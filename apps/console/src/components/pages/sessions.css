@@ -2022,3 +2022,233 @@
 .handoffBuildRow > input[type="text"] {
   flex: 1 1 200px;
 }
+
+/* Session threads (F11): the multi-agent side list, the clickable
+   thread-message cards, and the per-tool source-thread label. */
+
+.sessionBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.sessionBody .sessionTimeline {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.threadPanel {
+  flex: 0 0 240px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.threadPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 13px;
+}
+
+.threadPanelHeader span {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.threadList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.threadRow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.threadRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 2px);
+  background: none;
+  cursor: pointer;
+}
+
+.threadRowMain:hover {
+  background: var(--hover);
+}
+
+.threadRow.selected .threadRowMain {
+  border-color: var(--line);
+  background: var(--hover);
+}
+
+.threadRow.archived .threadRowMain {
+  opacity: 0.6;
+}
+
+.threadRowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.threadRowName {
+  font-size: 13px;
+  font-weight: 640;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.threadRowMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+
+.threadRowBadge {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 640;
+  color: var(--fg-subtle);
+}
+
+.threadRowMenu {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.threadMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius-card) - 2px);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  z-index: 12;
+}
+
+.threadMenu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.threadMenu button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.threadMenu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The "sent to / from X" transcript card — clicking jumps to that thread. */
+.conversationMessage.threadMessage {
+  align-items: stretch;
+}
+
+.threadMessageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 72%;
+  padding: 9px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.threadMessageCard:disabled {
+  cursor: default;
+}
+
+.threadMessageCard:not(:disabled):hover {
+  border-style: solid;
+  background: var(--hover);
+}
+
+.threadMessageMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+.threadMessageMeta time {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+
+.threadMessagePreview {
+  font-size: 13px;
+  color: var(--fg);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Source-thread chip on an approval card whose tool ran on a child thread. */
+.conversationToolThread {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .sessionBody {
+    flex-direction: column;
+  }
+
+  .threadPanel {
+    flex: 0 0 auto;
+    max-height: 200px;
+  }
+}

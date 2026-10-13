@@ -56,6 +56,17 @@ export type ConversationEntry = ConversationMessage | {
   awaitingResult?: boolean;
   requiresConfirmation?: boolean;
   permission?: ToolPermission;
+} | {
+  id: string;
+  /** A thread↔thread message on the timeline — sent on the sender's stream, received on the receiver's. */
+  role: 'threadMessage';
+  direction: 'sent' | 'received';
+  /** The other side's display name (to_agent_name on sent, from_agent_name on received). */
+  otherAgentName: string;
+  /** The thread the message went to / came from — the click target. */
+  otherThreadId?: string;
+  text: string;
+  event: SessionEvent;
 };
 
 /** Transcript text: a `session.error` bubble prefers the projected message. */
@@ -120,6 +131,24 @@ export function conversationEntries(events: SessionEvent[]): ConversationEntry[]
         status: orphan?.failed || toolResultFailed(event) ? 'failed' : 'completed',
         event,
         ...(resultId ? { toolUseId: resultId } : {}),
+      });
+      continue;
+    }
+    if (event.type === 'agent.thread_message_sent' || event.type === 'agent.thread_message_received') {
+      const sent = event.type === 'agent.thread_message_sent';
+      // The other side of the hop: the receiver on a sent event, the sender on
+      // a received one. A name can be absent on very old projections; fall back
+      // to the raw thread id so the card still identifies the target.
+      const otherThreadId = sent ? event.to_session_thread_id : event.from_session_thread_id;
+      const otherAgentName = (sent ? event.to_agent_name : event.from_agent_name) ?? otherThreadId ?? '';
+      entries.push({
+        id: event.id,
+        role: 'threadMessage',
+        direction: sent ? 'sent' : 'received',
+        otherAgentName,
+        ...(otherThreadId ? { otherThreadId } : {}),
+        text: eventText(event),
+        event,
       });
       continue;
     }

@@ -17,12 +17,18 @@ export function ConversationToolCard({
   confirmedToolIds,
   onConfirm,
   onSubmitResult,
+  threadName,
 }: {
   entry: Extract<ConversationEntry, { role: 'tool' }>;
   confirmingToolIds: Set<string>;
   confirmedToolIds: Set<string>;
   onConfirm: (toolUseId: string, result: 'allow' | 'deny') => void;
   onSubmitResult: (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => void;
+  /**
+   * Display name of the thread this call ran on — set only when the event
+   * carries a `session_thread_id` the page could resolve to a roster member.
+   */
+  threadName?: string;
 }) {
   const { t } = useTranslation('sessions');
   const awaitingResult = Boolean(
@@ -58,6 +64,9 @@ export function ConversationToolCard({
             <span className="conversationToolChevron" aria-hidden="true">›</span>
             <strong>{entry.operation}</strong>
             <span className="conversationToolName">{entry.toolName}</span>
+            {threadName ? (
+              <span className="conversationToolThread">{t('detail.approval.fromThread', { name: threadName })}</span>
+            ) : null}
           </span>
           <span className={`conversationToolStatus ${entry.status}`}>
             {entry.status === 'running' ? t('detail.approval.statusRunning') : entry.status === 'awaiting' ? t('detail.approval.statusWaiting') : entry.status === 'failed' ? t('detail.approval.statusFailed') : t('detail.approval.statusCompleted')}

@@ -133,6 +133,21 @@
   refusals — instead of appearing under "Unsupported official operations",
   where they had been left as `unsupported_capability` refusals before the
   threads work landed.
+- The Console multi-agent surface. The agent create/edit modal gains a
+  multi-agent section that writes the `multiagent` roster: members are picked
+  from the existing agents with the pinned version shown, an optional
+  self-replica toggle maps to `{type:'self'}`, and the section is mutually
+  exclusive with `enable_general_subagent` — enabling the roster strips the
+  flag rather than submitting a combination the API refuses. A session with
+  more than one thread shows a thread list beside the timeline (primary
+  first, with each thread's agent name, status, and usage); selecting a row
+  moves the event replay and SSE tail onto `/threads/{tid}/events` and
+  `/threads/{tid}/stream`. `agent.thread_message_sent` / `received` render as
+  sent-to / from cards that jump to the other thread, a parked tool card
+  cross-posted from a child labels its source thread (the confirmation body
+  is unchanged — the server routes by tool id), and a per-row menu offers a
+  `session_thread_id`-scoped `user.interrupt` plus, off the primary thread,
+  archive.
 - `managed-agents apply <file...>` — the declarative manifest workflow (the
   `ant apply` pattern). A Markdown frontmatter document creates or updates an
   agent (the body becomes its system prompt) or a scheduled deployment

@@ -39,6 +39,8 @@ export function SessionTimeline({
   confirmedToolIds,
   onConfirm,
   onSubmitResult,
+  onOpenThread,
+  threadNameById,
   composer,
 }: {
   sessionId: string;
@@ -55,6 +57,10 @@ export function SessionTimeline({
   confirmedToolIds: Set<string>;
   onConfirm: (toolUseId: string, result: 'allow' | 'deny') => void;
   onSubmitResult: (toolUseId: string, customToolUseEventId: string, text: string, isError: boolean) => void;
+  /** Jump to a different thread's stream — thread-message cards use it. */
+  onOpenThread?: (threadId: string) => void;
+  /** thread id → agent display name; labels a tool card's source thread. */
+  threadNameById?: Map<string, string>;
   composer: ReactNode;
 }) {
   const { t } = useTranslation('sessions');
@@ -191,7 +197,30 @@ export function SessionTimeline({
                     confirmedToolIds={confirmedToolIds}
                     onConfirm={onConfirm}
                     onSubmitResult={onSubmitResult}
+                    threadName={entry.event.session_thread_id ? threadNameById?.get(entry.event.session_thread_id) : undefined}
                   />
+                ) : entry.role === 'threadMessage' ? (
+                  <article key={entry.id} className="conversationMessage threadMessage">
+                    <button
+                      type="button"
+                      className="threadMessageCard"
+                      disabled={!entry.otherThreadId || !onOpenThread}
+                      onClick={() => {
+                        if (entry.otherThreadId && onOpenThread) onOpenThread(entry.otherThreadId);
+                      }}
+                    >
+                      <span className="threadMessageMeta">
+                        <MessageSquare size={13} />
+                        <span>
+                          {entry.direction === 'sent'
+                            ? t('detail.threads.messageSent', { name: entry.otherAgentName })
+                            : t('detail.threads.messageReceived', { name: entry.otherAgentName })}
+                        </span>
+                        <time>{eventTime(entry.event)}</time>
+                      </span>
+                      {entry.text ? <span className="threadMessagePreview">{entry.text}</span> : null}
+                    </button>
+                  </article>
                 ) : (
                   <article key={entry.id} className={`conversationMessage ${entry.role}`}>
                     <div className="conversationMessageMeta">

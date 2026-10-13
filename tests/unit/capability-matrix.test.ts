@@ -209,8 +209,8 @@ describe('capability matrix', () => {
     expect(capabilityEntry('oauth-refresh').reason.toLowerCase()).toContain('refresh_failed');
     // Threads are substantially landed — the primary thread, the
     // `session_threads` table, the read routes, `session.thread_status_*`,
-    // coordinator tools, child threads, interrupt targeting, archive, and
-    // per-thread budget — but the advisor and the Console surface are not, so
+    // coordinator tools, child threads, interrupt targeting, archive,
+    // per-thread budget, and the Console surface — but the advisor is not, so
     // the entry must not read as either extreme.
     expect(capabilityEntry('threads-and-coordinator').status).toBe('partial');
     expect(capabilityEntry('threads-and-coordinator').contract).toBe('contracts/anthropic-cma/threads.md');
@@ -227,7 +227,9 @@ describe('capability matrix', () => {
     expect(reason).toContain('budget_reached');
     expect(reason).toContain('not implemented');
     expect(reason).toContain('advisor');
-    expect(reason).toContain('console');
+    // The Console surface is landed, so the reason must claim it — the pin
+    // lives in the landed half of the sentence, not the "not implemented" tail.
+    expect(reason).toContain('console surface is live');
     expect(reason).toContain('enable_general_subagent');
   });
 

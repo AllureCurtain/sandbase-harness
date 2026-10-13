@@ -39,9 +39,62 @@ export type AgentDraft = {
    * The one-level sub-agent switch. Write-only on the API — the projection
    * never echoes it — so the draft only carries a boolean once the operator
    * has chosen one; `undefined` means "leave the stored value alone".
+   *
+   * Mutually exclusive with `multiagent` (D10): declaring both on one agent
+   * fails definition validation, and the multi-agent editor strips this flag
+   * when a roster is enabled.
    */
   enable_general_subagent?: boolean;
+  /**
+   * Canonical coordinator roster, *param* form: selected agent ids plus at
+   * most one `{type:'self'}` replica entry. `null` clears a stored roster on
+   * update; `undefined` leaves it alone. The API resolves each entry to
+   * `{type:'agent', id, version}` at write time (D11).
+   */
+  multiagent?: {
+    type: 'coordinator';
+    agents: Array<{ type: 'agent'; id: string; version?: number } | { type: 'self' }>;
+  } | null;
 };
+
+/**
+ * The roster as the multi-agent section edits it: named members keep the
+ * version pin the API resolved (or the picker's current version), and `self`
+ * is a separate toggle — a stored `{type:'agent'}` member whose id is the
+ * coordinator's own reads back as the toggle, and writes back as
+ * `{type:'self'}` so the replica always runs at the coordinator's new version.
+ */
+type RosterDraft = { members: Array<{ id: string; version?: number }>; allowSelf: boolean };
+
+function rosterDraftFromMultiagent(value: AgentDraft['multiagent'], selfId?: string): RosterDraft {
+  const members: RosterDraft['members'] = [];
+  let allowSelf = false;
+  for (const member of value?.agents ?? []) {
+    if (member.type === 'self' || (selfId && 'id' in member && member.id === selfId)) {
+      allowSelf = true;
+    } else if ('id' in member) {
+      members.push(member.version !== undefined ? { id: member.id, version: member.version } : { id: member.id });
+    }
+  }
+  return { members, allowSelf };
+}
+
+/**
+ * Fold the editor's roster state back into the draft's param-form value.
+ * `null` means the section is off — an untouched field stays `undefined`;
+ * a roster emptied by hand writes the documented `null` clear.
+ */
+function multiagentFromRosterDraft(roster: RosterDraft | null): AgentDraft['multiagent'] {
+  if (roster === null) return undefined;
+  const agents: Array<{ type: 'agent'; id: string; version?: number } | { type: 'self' }> =
+    roster.members.map((member) => ({
+      type: 'agent' as const,
+      id: member.id,
+      ...(member.version !== undefined ? { version: member.version } : {}),
+    }));
+  if (roster.allowSelf) agents.push({ type: 'self' });
+  return agents.length ? { type: 'coordinator', agents } : null;
+}
 
 type McpRow = { id: string; name: string; url: string; rest: Record<string, unknown>; origName: string };
 type CustomToolRow = { id: string; name: string; description: string; schemaText: string; rest: Record<string, unknown> };
@@ -169,6 +222,8 @@ export function agentDefinitionObject(
     metadata: metadataObj,
     ...(maxTurns !== undefined ? { max_turns: maxTurns } : {}),
     ...(enable_general_subagent !== undefined ? { enable_general_subagent } : {}),
+    // `multiagent` passes through extras untouched — a param-form roster goes
+    // out as authored, `null` clears a stored roster on the update path.
   };
 }
 
@@ -184,6 +239,7 @@ function AgentDefinitionForm({
   setMetadataRows,
   data,
   idPrefix,
+  selfAgentId,
 }: {
   draft: AgentDraft;
   setDraft: (draft: AgentDraft) => void;
@@ -195,9 +251,15 @@ function AgentDefinitionForm({
   setMetadataRows: (rows: KvRow[]) => void;
   data?: ConsoleData;
   idPrefix: string;
+  /** Editing an existing agent: its id, so a resolved self entry in the stored roster reads back as the self toggle. */
+  selfAgentId?: string;
 }) {
   const { t } = useTranslation('agents');
   const { capabilities } = useRuntimeCapabilities();
+  // Set when enabling the roster stripped a declared `enable_general_subagent`
+  // (D10) — the flag is gone from the draft by then, so the notice needs its
+  // own state to stay visible until the section is switched off.
+  const [rosterReplacedSubagent, setRosterReplacedSubagent] = useState(false);
   const builtin = builtinToolsetOf(draft.tools);
   const builtinConfigs = builtin?.configs ?? {};
 
@@ -347,11 +409,12 @@ function AgentDefinitionForm({
           <FieldRow
             label={t('modal.basics.subagent')}
             optional={t('modal.basics.optional')}
-            helper={t('modal.basics.subagentHint')}
+            helper={draft.multiagent ? t('modal.multiagent.subagentBlocked') : t('modal.basics.subagentHint')}
           >
             <ConsoleSelect
               label={t('modal.basics.subagent')}
               value={draft.enable_general_subagent === undefined ? '' : String(draft.enable_general_subagent)}
+              disabled={Boolean(draft.multiagent)}
               onChange={(value) => setDraft({
                 ...draft,
                 enable_general_subagent: value === '' ? undefined : value === 'true',
@@ -366,7 +429,104 @@ function AgentDefinitionForm({
         </div>
       </SectionCard>
 
-      <SectionCard n={3} title={t('modal.tools.title')} hint={t('modal.tools.hint')}>
+      <SectionCard n={3} title={t('modal.multiagent.title')} hint={t('modal.multiagent.hint')}>
+        {(() => {
+          // `null` = off (roster cleared/never set). On, the members the
+          // coordinator may delegate to via `send_to_agent`.
+          // `undefined` = section off and field untouched; `null` = off and
+          // clearing a stored roster. Both render as "off" — the distinction is
+          // what the update body carries.
+          const rosterOff = draft.multiagent === undefined || draft.multiagent === null;
+          const roster: RosterDraft | null = rosterOff
+            ? null
+            : rosterDraftFromMultiagent(draft.multiagent, selfAgentId);
+          const setRoster = (next: RosterDraft | null) => {
+            // On→off writes the documented `null` clear. An emptied roster is
+            // the same state — the schema floors `agents` at one member, so an
+            // empty section is written as the clear instead of `agents: []`.
+            const multiagent = next === null || (next.members.length === 0 && !next.allowSelf)
+              ? null
+              : multiagentFromRosterDraft(next);
+            // D10 — the roster and the local delegation extension refuse each
+            // other server-side; turning the roster on strips the flag rather
+            // than leaving a combination the API would reject with a 400.
+            if (next !== null && draft.enable_general_subagent !== undefined) setRosterReplacedSubagent(true);
+            if (next === null) setRosterReplacedSubagent(false);
+            setDraft({ ...draft, multiagent, ...(next !== null ? { enable_general_subagent: undefined } : {}) });
+          };
+          const memberIds = new Set(roster?.members.map((member) => member.id) ?? []);
+          // The coordinator delegates to other agents; a copy of itself is the
+          // separate "self" toggle, not a member row.
+          const pickableAgents = (data?.agents ?? []).filter((item) => !item.archived_at && item.id !== selfAgentId);
+          return (
+            <>
+              {rosterReplacedSubagent && roster !== null ? (
+                <p className="fieldHelper">{t('modal.multiagent.exclusiveNotice')}</p>
+              ) : null}
+              <FieldRow
+                label={t('modal.multiagent.enabled')}
+                optional={t('modal.basics.optional')}
+                helper={t('modal.multiagent.enabledHint')}
+              >
+                <ConsoleSelect
+                  label={t('modal.multiagent.enabled')}
+                  value={roster === null ? 'off' : 'on'}
+                  onChange={(value) => setRoster(value === 'on' ? { members: roster?.members ?? [], allowSelf: roster?.allowSelf ?? false } : null)}
+                  options={[
+                    { value: 'off', label: t('modal.multiagent.disabled') },
+                    { value: 'on', label: t('modal.multiagent.enabledOption') },
+                  ]}
+                />
+              </FieldRow>
+              {roster !== null ? (
+                <>
+                  <FieldRow
+                    label={t('modal.multiagent.members')}
+                    helper={t('modal.multiagent.membersHint')}
+                  >
+                    <div className="toolChipGrid" role="group" aria-label={t('modal.multiagent.members')}>
+                      {pickableAgents.map((item) => {
+                        const selected = memberIds.has(item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`toolChip${selected ? ' selected' : ''}`}
+                            title={item.description || item.name}
+                            onClick={() => {
+                              const members = selected
+                                ? roster.members.filter((member) => member.id !== item.id)
+                                : [...roster.members, { id: item.id, version: item.version }];
+                              setRoster({ ...roster, members });
+                            }}
+                          >
+                            {item.name}
+                            <small>v{item.version}</small>
+                          </button>
+                        );
+                      })}
+                      {pickableAgents.length === 0 ? <span className="fieldHelper">{t('modal.multiagent.noAgents')}</span> : null}
+                    </div>
+                  </FieldRow>
+                  <FieldRow label={t('modal.multiagent.selfReplica')} optional={t('modal.basics.optional')} helper={t('modal.multiagent.selfReplicaHint')}>
+                    <ConsoleSelect
+                      label={t('modal.multiagent.selfReplica')}
+                      value={roster.allowSelf ? 'true' : 'false'}
+                      onChange={(value) => setRoster({ ...roster, allowSelf: value === 'true' })}
+                      options={[
+                        { value: 'false', label: t('modal.multiagent.selfReplicaOff') },
+                        { value: 'true', label: t('modal.multiagent.selfReplicaOn') },
+                      ]}
+                    />
+                  </FieldRow>
+                </>
+              ) : null}
+            </>
+          );
+        })()}
+      </SectionCard>
+
+      <SectionCard n={4} title={t('modal.tools.title')} hint={t('modal.tools.hint')}>
         <div className="toolChipGrid" role="group" aria-label={t('modal.tools.groupLabel')}>
           {toolNames.map((name) => {
             const enabled = builtinConfigs[name]?.enabled !== false;
@@ -444,7 +604,7 @@ function AgentDefinitionForm({
         </FieldRow>
       </SectionCard>
 
-      <SectionCard n={4} title={t('modal.integrations.title')}>
+      <SectionCard n={5} title={t('modal.integrations.title')}>
         <FieldRow label={t('modal.integrations.mcpServers')} optional={t('modal.integrations.mcpOptional')} helper={t('modal.integrations.mcpHelper')}>
           <div className="kvEditor">
             {mcpRows.map((row) => (
@@ -647,7 +807,7 @@ export function AgentModal({ template, data, onClose, onSaved }: { template?: Te
               data={data}
               idPrefix="create-agent"
             />
-            <SectionCard n={5} title={t('modal.check.section')}>
+            <SectionCard n={6} title={t('modal.check.section')}>
               <CheckCard items={checks} />
             </SectionCard>
           </div>
@@ -759,6 +919,7 @@ export function AgentEditModal({ agent, initialDraft, data, onClose, onSaved }: 
               setMetadataRows={setMetadataRows}
               data={data}
               idPrefix="edit-agent"
+              selfAgentId={agent.id}
             />
             <CheckCard items={checks} />
           </div>
@@ -821,5 +982,8 @@ function agentDraftFromApi(agent: Agent): AgentDraft {
     // prefill — the control stays on "keep stored value" until the operator
     // picks a side, and the partial update leaves the field alone.
     ...(agent.enable_general_subagent !== undefined ? { enable_general_subagent: agent.enable_general_subagent } : {}),
+    // The resolved roster is echoed on read; the draft keeps it so a no-change
+    // save round-trips the stored pins instead of clearing them.
+    ...(agent.multiagent !== undefined && agent.multiagent !== null ? { multiagent: agent.multiagent } : {}),
   };
 }
