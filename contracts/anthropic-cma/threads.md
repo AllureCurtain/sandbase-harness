@@ -3,9 +3,9 @@
 Contract area: threads, the multi-agent roster, thread lifecycle and message
 events, thread listing and archive.
 Status: `partial` — the coordinator tools, child threads, dispatch/reply
-events, confirmation routing, per-thread interrupt, archive, and per-thread
-`budget_reached` are live; there is no advisor and no Console thread surface.
-See §7.
+events, confirmation routing, per-thread interrupt, archive, per-thread
+`budget_reached`, and the Console thread surface are live; there is no
+advisor. See §7.
 Source: `src/core/session/session-threads.ts`,
 `src/core/session/event-logger.ts`, `src/core/session/session-manager.ts`,
 `src/core/session/coordinator-tools.ts`, `src/core/session/thread-runner.ts`,
@@ -175,7 +175,18 @@ What does **not** exist yet:
   write time with `advisor_unsupported`.
 - The local delegation extension (`delegations`, `enable_general_subagent`)
   is unchanged and remains a separate mechanism, not the roster.
-- No Console thread surface: threads are reachable over the API and SSE only.
+
+**The Console surface exists.** The agent build page carries a multi-agent
+section that writes the `multiagent` roster param form — member picks from
+the existing agents with the pin shown, plus an optional self-replica — and
+it is mutually exclusive with the `enable_general_subagent` control (D10). A
+multi-thread session's detail page lists every thread beside the timeline
+(primary first, with agent name, status, and usage); selecting a row moves
+the timeline onto that thread's `/threads/{tid}/events` + `/stream` routes.
+`agent.thread_message_*` events render as sent-to / from cards that jump to
+the other thread, a cross-posted parked tool card labels its source thread,
+and a per-row menu offers a `session_thread_id`-scoped `user.interrupt` and —
+off the primary — archive.
 
 ## 3. Alignment
 
@@ -206,8 +217,8 @@ values through the same table).
 - The surface is landing in slices rather than all at once: the data model,
   the primary thread, and the read routes were the foundation; the coordinator
   tools, child threads, the dispatch/reply exchange, archive, per-thread
-  interrupt, and per-thread `budget_reached` now execute on top of it; the
-  advisor and the Console surface are the slices that remain.
+  interrupt, per-thread `budget_reached`, and the Console surface now execute
+  on top of it; the advisor is the slice that remains.
 - The session stream is defined as the primary stream rather than renamed:
   pre-thread sessions had exactly one stream, and making the session-level
   routes *be* the primary thread's stream keeps a single-threaded session's
@@ -280,6 +291,11 @@ values through the same table).
   the aggregate following to `idle` (`budget_reached`), a `requires_action`
   child outranking the budget-parked aggregate, and a budget raise resuming
   each parked thread on its own `internal.resume_after_budget`.
+- `tests/unit/console/session-threads.test.tsx` — the Console surface: the
+  thread list renders primary-first beside the timeline, selecting a child
+  row re-subscribes the page onto `/threads/{tid}/stream` and
+  `/threads/{tid}/events`, and a cross-posted parked tool card labels its
+  source thread by name while the confirmation body is unchanged.
 
 ## 7. Status
 
@@ -308,7 +324,10 @@ the shared-ceiling budget behaviour (each running thread idles on its own
 `requires_action` while a thread waits on a confirmation, and a budget raise
 resumes each budget-parked thread on its own `internal.resume_after_budget`).
 
-Not implemented: the advisor role and the Console thread surface. The
-`multiagent` roster itself is accepted, validated, stored, and projected on
-the agent (`agents.md`), and an `advisor` member is refused with
-`advisor_unsupported` by decision — not planned.
+Not implemented: the advisor role. The `multiagent` roster itself is
+accepted, validated, stored, and projected on the agent (`agents.md`), and an
+`advisor` member is refused with `advisor_unsupported` by decision — not
+planned. The Console thread surface — the roster editor on the agent build
+page and the thread list, scoped stream switch, thread-message cards,
+source-thread approval labels, and per-thread interrupt/archive on the
+session detail page — is implemented.

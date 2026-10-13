@@ -36,8 +36,16 @@ export type Agent = {
   metadata: Record<string, unknown>;
   status: string;
   version: number;
-  /** Resolved multiagent roster — always `null`; no runtime can populate it yet. */
-  multiagent: null;
+  /**
+   * Resolved multiagent roster — `null` for a single-threaded agent, the
+   * pinned `{type:'agent', id, version}` list for a coordinator. `self`
+   * resolves to the coordinator's own id at write time; `advisor` members
+   * never appear (the API refuses them).
+   */
+  multiagent: {
+    type: 'coordinator';
+    agents: Array<{ type: 'agent'; id: string; version: number }>;
+  } | null;
   /**
    * Server-side turn cap. A local extension absent from the published
    * contract; the projection omits the key entirely when no cap is set.
@@ -119,12 +127,48 @@ export type Session = {
   archived_at: string | null;
 };
 
+/**
+ * One session thread as `GET /v1/sessions/{id}/threads` returns it: the
+ * primary thread (`parent_thread_id: null`) plus each child the coordinator's
+ * `send_to_agent` spawned. `stats`/`usage` are `null` until the thread first
+ * transitions.
+ */
+export type SessionThread = {
+  id: string;
+  type: 'session_thread';
+  session_id: string;
+  parent_thread_id: string | null;
+  agent: { name: string } & Record<string, unknown>;
+  status: 'idle' | 'running' | 'rescheduling' | 'terminated';
+  stats: { active_seconds: number; duration_seconds: number; startup_seconds: number } | null;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+  } | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
 export type SessionEvent = {
   id: string;
   /** Append-only per-session sequence; 0 is transient SSE-only output. */
   seq?: number;
   type: string;
   content: unknown[] | null;
+  /**
+   * Present when an event is read on a stream it does not belong to — a
+   * child's cross-posted row on the primary stream, or a thread-scoped
+   * `user.interrupt`/`tool_confirmation` answered onto another thread. The
+   * event types that carry it are the seven the SDK declares it on.
+   */
+  session_thread_id?: string;
+  /** `agent.thread_message_*` direction metadata (projected top-level). */
+  from_session_thread_id?: string;
+  to_session_thread_id?: string;
+  from_agent_name?: string;
+  to_agent_name?: string;
   /**
    * Tool Runtime authority. These fields are optional while older API
    * responses are still in use; the Console must never infer permission from

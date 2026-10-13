@@ -19,13 +19,30 @@ export function useSessionStream({
   session,
   onRefresh,
   onToolAwaiting,
+  threadId,
 }: {
   session: Session;
   onRefresh: () => void;
   /** A gated tool call arrived while a message send was in flight. */
   onToolAwaiting?: () => void;
+  /**
+   * When set, read this thread's own log and SSE stream instead of the
+   * primary stream — the same envelope and resume cursor, filtered to the
+   * thread's rows (cross-posted rows included on their owning thread).
+   */
+  threadId?: string;
 }) {
   const sessionId = session.id;
+  // The routes share one parameter: undefined means the session-level
+  // primary stream, a thread id swaps both endpoints to that thread's
+  // scoped views. Both URLs change together so the replay and the tail can
+  // never disagree about which stream they are on.
+  const eventsPath = threadId
+    ? `/v1/sessions/${encodeURIComponent(sessionId)}/threads/${encodeURIComponent(threadId)}/events?limit=1000`
+    : `/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=1000`;
+  const streamPath = threadId
+    ? `/v1/sessions/${encodeURIComponent(sessionId)}/threads/${encodeURIComponent(threadId)}/stream?event_deltas%5B%5D=agent.message`
+    : `/v1/sessions/${encodeURIComponent(sessionId)}/events/stream?event_deltas%5B%5D=agent.message`;
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [eventError, setEventError] = useState('');
@@ -43,7 +60,7 @@ export function useSessionStream({
     if (!options.silent) setLoadingEvents(true);
     setEventError('');
     try {
-      const page = await getPage<SessionEvent>(`/v1/sessions/${encodeURIComponent(sessionId)}/events?limit=1000`);
+      const page = await getPage<SessionEvent>(eventsPath);
       const merged = mergeOrderedSessionEvents(eventsRef.current, page.data);
       eventsRef.current = merged;
       lastDurableSequence.current = contiguousSessionSequence(merged);
@@ -67,7 +84,9 @@ export function useSessionStream({
     setEvents([]);
     setStreamingText({});
     void loadEvents();
-  }, [sessionId]);
+    // threadId joins the reset key: switching threads replays that thread's
+    // log from scratch rather than merging it into the previous stream's rows.
+  }, [sessionId, threadId]);
 
   const applyPreviewFrame = (frameType: 'event_start' | 'event_delta', data: unknown) => {
     const frame = data && typeof data === 'object' ? data as Record<string, unknown> : null;
@@ -162,7 +181,7 @@ export function useSessionStream({
           // between the read and the subscribe — would miss it. Resuming from 0
           // replays the log, which the projection below already merges by seq.
           await readEventStream(
-            `/v1/sessions/${encodeURIComponent(sessionId)}/events/stream?event_deltas%5B%5D=agent.message`,
+            streamPath,
             applyStreamEvent,
             { signal: controller.signal, lastEventId: String(lastDurableSequence.current) },
           );
@@ -181,7 +200,9 @@ export function useSessionStream({
       cancelled = true;
       controller.abort();
     };
-  }, [sessionId]);
+    // Resubscribe when the viewed thread changes — the new stream replays that
+    // thread's log under the same cursor discipline.
+  }, [sessionId, threadId]);
 
   const displayStatus = sessionDisplayStatus(session, events);
 
@@ -192,7 +213,7 @@ export function useSessionStream({
       onRefresh();
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [displayStatus, sessionId, onRefresh]);
+  }, [displayStatus, sessionId, threadId, onRefresh]);
 
   return {
     events,

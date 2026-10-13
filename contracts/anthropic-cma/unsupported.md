@@ -31,11 +31,11 @@ mcp-tunnel: not_applicable
 Session budget is implemented and has its own file, [`budget.md`](./budget.md).
 Dreams are implemented too — a session-backed memory-consolidation job — and
 have their own file, [`dreams.md`](./dreams.md). Threads are implemented
-except the advisor role and the Console surface — they have their own file,
+except the advisor role — they have their own file,
 [`threads.md`](./threads.md). No thread route is refused here anymore: the
 coordinator tools, child threads, confirmation routing, per-thread
-`user.interrupt`, `POST .../threads/{tid}/archive`, and per-thread
-`budget_reached` are all live.
+`user.interrupt`, `POST .../threads/{tid}/archive`, per-thread
+`budget_reached`, and the Console thread surface are all live.
 
 Failure mechanism:
 
