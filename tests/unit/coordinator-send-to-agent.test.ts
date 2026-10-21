@@ -378,6 +378,41 @@ describe('coordinator send_to_agent', () => {
     expect(threadStreamMembership(deps, session.id, child.id).includes(preview!)).toBe(true);
   });
 
+  it('a primary message does not answer a child parked call', async () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    executor.script('coordinator', [
+      { sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'dispatched' },
+      { say: 'ack' },
+    ]);
+    executor.script('reviewer', [{ park: { tool: 'bash' } }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'session.status_idle'
+      && (event.metadata?.stop_reason as { type?: string } | undefined)?.type === 'requires_action'));
+
+    const child = manager.getThreadStore().listBySession(session.id)
+      .find((thread) => thread.parentThreadId !== null)!;
+    const use = manager.getEventLogger().getThreadEvents(session.id, child.id)
+      .find((event) => event.type === 'agent.tool_use')!;
+    const blockId = (use.content ?? []).find((block) => block.type === 'tool_use') as { id: string };
+
+    // A message to the primary is not an answer to the child's parked call.
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'status?' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'agent.message'
+      && event.threadId === primaryId
+      && (event.content?.[0] as { text?: string } | undefined)?.text === 'ack'));
+
+    const resolved = manager.getEventLogger().getThreadEvents(session.id, child.id)
+      .flatMap((event) => (event.content ?? [])
+        .filter((block) => block.type === 'tool_result')
+        .map((block) => (block as { tool_use_id: string }).tool_use_id));
+    expect(resolved).not.toContain(blockId.id);
+    expect(manager.getThreadStore().get(child.id)?.status).toBe('requires_action');
+  });
+
   it('dispatches a child, runs it on its own chain, and returns the reply to the coordinator', async () => {
     const session = manager.create({ agent: 'agent_coordinator' });
     const primaryId = primaryThreadIdForSession(session.id);
