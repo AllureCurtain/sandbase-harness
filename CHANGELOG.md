@@ -52,6 +52,14 @@
   mislabel the coordinator's lifecycle. The observer is bound to the turn's
   thread, so the error and the `session.thread_status_rescheduled` belong to
   the thread that retried.
+- Context compaction is now scoped to the thread it compacted (migration
+  `063_thread_compaction`). A boundary records a session-wide event sequence,
+  so a child's boundary used to truncate the primary and sibling contexts from
+  that sequence and inject the child's summary into them; the compaction
+  usage and notification also landed on the primary. Boundaries now carry
+  `thread_id`, `latest` reads the requesting thread's own boundary, and the
+  projection and the auxiliary writes stay on that thread. Pre-thread rows are
+  back-filled to their session's primary thread.
 
 ### Added
 

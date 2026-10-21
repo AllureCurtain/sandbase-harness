@@ -466,6 +466,40 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('scopes compaction boundaries to a thread (063)', () => {
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'compaction_boundaries')).toContain('thread_id');
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 63').get()).toEqual({
+      name: '063_thread_compaction',
+    });
+    fresh.close();
+
+    // Existing: a boundary written before threads existed belongs to the
+    // session's primary thread; the upgrade must back-fill that id.
+    const upgradedPath = join(tmpDir, 'upgraded-thread-boundary.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 62));
+    expect(columnsOf(upgraded, 'compaction_boundaries')).not.toContain('thread_id');
+    upgraded.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_t', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_t', 't', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id)
+      VALUES ('sess_old', 'agent_t', 't', 'env_t');
+      INSERT INTO compaction_boundaries
+        (id, session_id, summary, event_id_before, tokens_before, tokens_after)
+      VALUES ('cmpb_old', 'sess_old', 'old summary', 'sevt_old', 100, 20)
+    `);
+
+    upgraded.runMigrations();
+    expect(
+      upgraded
+        .prepare('SELECT thread_id FROM compaction_boundaries WHERE id = ?')
+        .get('cmpb_old'),
+    ).toEqual({ thread_id: 'sth_old' });
+    upgraded.close();
+  });
+
   it('adds the usage cache-bucket columns to sessions and events (055)', () => {
     // Fresh: both tables carry the columns from the start.
     const fresh = new Database(dbPath);

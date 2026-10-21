@@ -9,10 +9,19 @@
 
 import { nanoid } from 'nanoid';
 import type { Database } from '../db/database.js';
+import { primaryThreadIdForSession } from './session-threads.js';
 
 export interface CompactionBoundary {
   id: string;
   sessionId: string;
+  /**
+   * The thread whose context this boundary covers.
+   *
+   * A session's event `seq` is shared by every thread, so a boundary without a
+   * thread would truncate every other thread's context from the same sequence
+   * and inject this thread's summary into it.
+   */
+  threadId: string;
   summary: string;
   /** Id of the last event covered by the summary. */
   eventIdBefore: string;
@@ -27,6 +36,7 @@ export interface CompactionBoundary {
 
 export interface NewCompactionBoundary {
   sessionId: string;
+  threadId: string;
   summary: string;
   eventIdBefore: string;
   eventSeqBefore: number;
@@ -38,6 +48,7 @@ export interface NewCompactionBoundary {
 interface BoundaryRow {
   id: string;
   session_id: string;
+  thread_id: string | null;
   summary: string;
   event_id_before: string;
   event_seq_before: number;
@@ -51,6 +62,10 @@ function toBoundary(row: BoundaryRow): CompactionBoundary {
   return {
     id: row.id,
     sessionId: row.session_id,
+    // A row that predates `063_thread_compaction` is back-filled by the
+    // migration; the fallback covers a boundary written by an older build into
+    // a workspace whose migration has not run (which then reads as primary).
+    threadId: row.thread_id ?? primaryThreadIdForSession(row.session_id),
     summary: row.summary,
     eventIdBefore: row.event_id_before,
     eventSeqBefore: row.event_seq_before,
@@ -64,13 +79,20 @@ function toBoundary(row: BoundaryRow): CompactionBoundary {
 export class CompactionStore {
   constructor(private readonly db: Database) {}
 
-  latest(sessionId: string): CompactionBoundary | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM compaction_boundaries
-         WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      )
-      .get(sessionId) as BoundaryRow | undefined;
+  /**
+   * The newest boundary for one thread, or for the session when no thread is
+   * named (the pre-thread callers and embedders that compact one stream).
+   */
+  latest(sessionId: string, threadId?: string): CompactionBoundary | undefined {
+    const sql = threadId === undefined
+      ? `SELECT * FROM compaction_boundaries
+         WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`
+      : `SELECT * FROM compaction_boundaries
+         WHERE session_id = ? AND thread_id = ?
+         ORDER BY created_at DESC, rowid DESC LIMIT 1`;
+    const row = (threadId === undefined
+      ? this.db.prepare(sql).get(sessionId)
+      : this.db.prepare(sql).get(sessionId, threadId)) as BoundaryRow | undefined;
     return row ? toBoundary(row) : undefined;
   }
 
@@ -79,13 +101,14 @@ export class CompactionStore {
     this.db
       .prepare(
         `INSERT INTO compaction_boundaries
-           (id, session_id, summary, event_id_before, event_seq_before,
+           (id, session_id, thread_id, summary, event_id_before, event_seq_before,
             compacted_event_id, tokens_before, tokens_after)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.sessionId,
+        input.threadId,
         input.summary,
         input.eventIdBefore,
         input.eventSeqBefore,
@@ -93,6 +116,6 @@ export class CompactionStore {
         input.tokensBefore,
         input.tokensAfter,
       );
-    return this.latest(input.sessionId)!;
+    return this.latest(input.sessionId, input.threadId)!;
   }
 }

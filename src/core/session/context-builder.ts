@@ -11,6 +11,7 @@ import { memoryBindingIsWritable, resolveMemoryBindings } from '@/core/memory/bi
 import { getAgentSkillIds } from '@/core/agent/standard.js';
 import type { SandboxProviderType } from '@/types/sandbox.js';
 import { renderSessionResources } from './session-resource-prompt.js';
+import { primaryThreadIdForSession } from './session-threads.js';
 
 type SessionAwareMemoryProvider = MemoryProvider & {
   addForSession?: (
@@ -91,7 +92,7 @@ export class ContextBuilder {
     const events = options?.threadId
       ? this.deps.eventLogger.getThreadEvents(session.id, options.threadId)
       : this.deps.eventLogger.getEvents(session.id);
-    const messages = eventsToMessages(events, this.compactionBoundary(session.id));
+    const messages = eventsToMessages(events, this.compactionBoundary(session.id, options?.threadId));
 
     let systemPrompt = this.composeSystemPrompt(agent, options?.repositorySkills);
     if (this.deps.memory && session.contextId) {
@@ -182,7 +183,11 @@ export class ContextBuilder {
     const events = threadId
       ? this.deps.eventLogger.getThreadEvents(session.id, threadId)
       : this.deps.eventLogger.getEvents(session.id);
-    const prior = this.compactionBoundary(session.id);
+    // The writes below are always attributed to a thread: a boundary is a
+    // per-thread fact, and the primary is the only sensible owner when a legacy
+    // caller compacts the session-wide log.
+    const resolvedThreadId = threadId ?? primaryThreadIdForSession(session.id);
+    const prior = this.compactionBoundary(session.id, threadId);
     const projected = eventsToMessages(events, prior);
     const modelId = typeof model === 'object' && model !== null && 'modelId' in model
       ? String((model as { modelId: unknown }).modelId)
@@ -213,10 +218,12 @@ export class ContextBuilder {
           const usageEvent = this.deps.eventLogger.recordAuxiliaryModelUsage(session.id, legacy.usage, {
             purpose: 'context_compaction',
             modelUsed: modelId,
+            threadId: resolvedThreadId,
           });
           broadcast(usageEvent);
           const boundary = this.deps.eventLogger.append(session.id, {
             type: 'agent.thread_context_compacted',
+            threadId: resolvedThreadId,
             content: [{ type: 'text', text: legacy.summary }],
           });
           broadcast(boundary);
@@ -228,13 +235,16 @@ export class ContextBuilder {
         const usageEvent = this.deps.eventLogger.recordAuxiliaryModelUsage(session.id, result.usage, {
           purpose: 'context_compaction',
           modelUsed: modelId,
+          threadId: resolvedThreadId,
         });
         broadcast(usageEvent);
         const notification = this.deps.eventLogger.append(session.id, {
           type: 'agent.thread_context_compacted',
+          threadId: resolvedThreadId,
         });
         this.deps.compactionStore.insert({
           sessionId: session.id,
+          threadId: resolvedThreadId,
           summary: result.summary,
           eventIdBefore: result.eventIdBefore,
           eventSeqBefore: result.eventSeqBefore,
@@ -251,8 +261,9 @@ export class ContextBuilder {
 
   private compactionBoundary(
     sessionId: string,
+    threadId?: string,
   ): { summary: string; eventSeqBefore: number } | undefined {
-    const boundary = this.deps.compactionStore?.latest(sessionId);
+    const boundary = this.deps.compactionStore?.latest(sessionId, threadId);
     return boundary
       ? { summary: boundary.summary, eventSeqBefore: boundary.eventSeqBefore }
       : undefined;
