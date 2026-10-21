@@ -256,8 +256,8 @@ export interface ValidationResult {
 export interface RosterResolverContext {
   /** The coordinator's own id and the version this write produces (for `self`). */
   self: { id: string; version: number };
-  /** Resolve a member id to `{version, hasMultiagent}`, or `undefined` when missing/archived. */
-  lookup: (id: string) => { version: number; hasMultiagent: boolean } | undefined;
+  /** Resolve a member id to `{version, hasMultiagent, versions}`, or `undefined` when missing/archived. */
+  lookup: (id: string) => { version: number; hasMultiagent: boolean; versions: readonly number[] } | undefined;
 }
 
 /**

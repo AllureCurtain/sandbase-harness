@@ -2738,11 +2738,19 @@ export class SessionManager {
               reason: `Concurrency limit reached: ${MAX_ACTIVE_CHILD_THREADS} active child threads. Archive a finished thread before dispatching another.`,
             };
           }
+          const memberName = this.agentNameForMember(member);
+          const memberDefinition = this.definitionForMember(member, sessionId, parentThread);
+          if (!memberDefinition) {
+            return {
+              ok: false,
+              reason: `Roster member "${memberName}" version ${member.version} is no longer available; delegation refuses to run a different definition.`,
+            };
+          }
           target = this.threadStore.insertThread({
             sessionId,
             parentThreadId: parentThread.id,
-            agentName: this.agentNameForMember(member),
-            agentDefinition: this.definitionForMember(member, sessionId, parentThread),
+            agentName: memberName,
+            agentDefinition: memberDefinition,
             agentId: member.id,
             agentVersion: member.version,
             status: 'queued',
@@ -2813,13 +2821,14 @@ export class SessionManager {
    * overrides included — because the contract says a `self` member is a copy of
    * the coordinator, not a fresh resolution of its durable row. A named member
    * runs its pinned version's definition, which the roster captured at write
-   * time.
+   * time; a pin the store can no longer resolve is refused by the caller rather
+   * than silently substituted with another definition.
    */
   private definitionForMember(
     member: { type: 'agent'; id: string; version: number },
     sessionId: string,
     parentThread: SessionThread,
-  ): AgentDefinition {
+  ): AgentDefinition | undefined {
     const coordinator = parentThread.agentDefinition;
     // A `self` member's pinned id is the coordinator's own agent id, so the
     // replica reuses the coordinator's running definition wholesale — the
@@ -2827,8 +2836,7 @@ export class SessionManager {
     if (member.id === parentThread.agentId) {
       return coordinator;
     }
-    const snapshot = this.resolveAgentSnapshot(member.id, member.version);
-    return snapshot?.definition ?? coordinator;
+    return this.resolveAgentSnapshot(member.id, member.version)?.definition;
   }
 
   /**

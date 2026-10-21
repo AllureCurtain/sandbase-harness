@@ -17,6 +17,18 @@
   unaffected: they reach the worker through their own materialization and are
   the contract's only self-hosted resource.
 
+### Fixed
+
+- A `multiagent` roster version pin is now validated against the versions the
+  store still retains. A pin naming a version that never existed was accepted
+  and stored; at dispatch the pinned snapshot could not be resolved and the
+  child fell back to the coordinator's own definition — running the wrong
+  agent, including its roster, which re-enabled delegation past the one-level
+  limit. Create and update now refuse such a pin with `400
+  invalid_request_error` naming the member and version, and a dispatch whose
+  row predates the check refuses the follow-up rather than substituting a
+  different definition.
+
 ### Added
 
 - The canonical `multiagent` roster on agent create and update. A coordinator

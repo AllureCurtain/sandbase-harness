@@ -49,7 +49,11 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
       const row = loadAgentRowById(db, memberId);
       if (row && row.status !== 'archived' && !row.archived_at) {
         const definition = parseAgentDefinitionFromRow(row);
-        return { version: row.version ?? 1, hasMultiagent: definition?.multiagent != null };
+        return {
+          version: row.version ?? 1,
+          hasMultiagent: definition?.multiagent != null,
+          versions: loadAgentVersions(db, memberId, row.version ?? 1),
+        };
       }
       const seeded = batchIndex.get(memberId);
       if (!seeded) return undefined;
@@ -57,7 +61,9 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
       // it resolves as missing rather than as a member the coordinator can pin.
       const member = validateAgentDefinition(seeded.definition);
       if (!member.valid || !member.data) return undefined;
-      return { version: seeded.version, hasMultiagent: member.data.multiagent != null };
+      // A seed is written at version 1 and has no prior versions yet, so that
+      // is the only pin its roster can resolve.
+      return { version: seeded.version, hasMultiagent: member.data.multiagent != null, versions: [seeded.version] };
     };
 
     const result = validateAgentDefinition(agent);
@@ -131,6 +137,18 @@ export function loadAgentDefinitionById(db: Database, id: string): AgentDefiniti
   const row = loadAgentRowById(db, id);
   if (!row || row.status === 'archived' || row.archived_at) return undefined;
   return parseAgentDefinitionFromRow(row);
+}
+
+/**
+ * Every version a roster pin may name for one agent: the current version plus
+ * the retained `agent_versions` rows.
+ *
+ * The current version is always included, because the durable row itself is
+ * resolvable even when an older workspace has no version row for it.
+ */
+export function loadAgentVersions(db: Database, agentId: string, currentVersion: number): number[] {
+  const rows = db.prepare('SELECT version FROM agent_versions WHERE agent_id = ?').all(agentId) as Array<{ version: number }>;
+  return [...new Set([currentVersion, ...rows.map((row) => row.version)])].sort((a, b) => a - b);
 }
 
 export function parseAgentDefinitionFromRow(row: Pick<AgentRow, 'definition'>): AgentDefinition | undefined {
