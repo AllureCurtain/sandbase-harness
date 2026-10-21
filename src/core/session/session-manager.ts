@@ -2366,7 +2366,11 @@ export class SessionManager {
    * moves the session back to `running`, and the exhausted case never reaches
    * here: the final error surfaces through `runTurn`'s catch instead.
    */
-  private retryObserverFor(sessionId: string, turnState: { retriesExhausted: boolean }): RetryObserver {
+  private retryObserverFor(sessionId: string, turnState: { retriesExhausted: boolean }, threadId?: string): RetryObserver {
+    // The observer belongs to one turn on one thread. Defaulting to the primary
+    // keeps the outcome loop (which only runs there) on the same path while a
+    // child's retry stays attributed to the child.
+    const resolvedThreadId = threadId ?? this.threadStore.primaryThreadId(sessionId);
     return {
       onRetryScheduled: ({ error }) => {
         const code = errorCodeOf(error);
@@ -2374,15 +2378,16 @@ export class SessionManager {
           type: 'session.error',
           content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
           metadata: sessionErrorMetadata(error, code, { type: 'retrying' }),
+          threadId: resolvedThreadId,
         });
         this.broadcast(sessionId, errorEvent);
-        if (this.get(sessionId)?.status === 'running') {
-          this.updateStatus(sessionId, 'retrying');
+        if (this.threadStore.get(resolvedThreadId)?.status === 'running') {
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'retrying');
         }
       },
       onRetryRecovered: () => {
-        if (this.get(sessionId)?.status === 'retrying') {
-          this.updateStatus(sessionId, 'running');
+        if (this.threadStore.get(resolvedThreadId)?.status === 'retrying') {
+          this.updateThreadStatus(sessionId, resolvedThreadId, 'running');
         }
       },
       onRetryExhausted: () => {
@@ -2475,7 +2480,7 @@ export class SessionManager {
         abortSignal: abortController.signal,
         broadcast: (e) => this.broadcast(sessionId, this.withTransientThread(e, resolvedThreadId)),
         budgetExhausted: () => this.isBudgetExhausted(sessionId),
-        retryObserver: this.retryObserverFor(sessionId, turnState),
+        retryObserver: this.retryObserverFor(sessionId, turnState, resolvedThreadId),
         thread,
         // A rostered thread gets the coordinator tools bound to its own
         // dispatch host; a thread with no roster builds none, so the host is

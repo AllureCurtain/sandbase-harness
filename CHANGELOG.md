@@ -45,6 +45,13 @@
   teardown could pull it out from under a running primary or sibling. The
   primary thread's own failure still releases it; a child's failure settles
   only that thread, and the sandbox is released when the session does.
+- A child thread's model retry is now attributed to the child. The retry
+  observer appended `session.error` without a thread id — which lands on the
+  primary — and moved the primary's status to `retrying`, so a child's
+  transient provider failure surfaced on the coordinator's stream and could
+  mislabel the coordinator's lifecycle. The observer is bound to the turn's
+  thread, so the error and the `session.thread_status_rescheduled` belong to
+  the thread that retried.
 
 ### Added
 
