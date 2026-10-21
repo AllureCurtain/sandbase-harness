@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Database } from '@/core/db/database.js';
 import { SessionManager, type ExecuteOptions, type SessionExecutor } from '@/core/session/session-manager.js';
 import { buildCoordinatorTools, MAX_ACTIVE_CHILD_THREADS } from '@/core/session/coordinator-tools.js';
+import { primaryStreamMembership, threadStreamMembership } from '@/api/routes/stream.js';
 import { primaryThreadIdForSession, type SessionThread } from '@/core/session/session-threads.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { Session, SessionEvent, SessionStatus } from '@/types/session.js';
@@ -72,6 +73,8 @@ interface TurnActions {
   parkCustom?: { tool: string };
   /** Hold the turn open until resolved — used to overlap two children. */
   hold?: { promise: Promise<void>; resolve: () => void };
+  /** Broadcast a transient (`seq: 0`) token preview on this turn's thread. */
+  preview?: { delta: string };
   /** The assistant text this turn ends on. */
   say?: string;
 }
@@ -194,6 +197,19 @@ class ScriptedExecutor implements SessionExecutor {
         threadId,
         content: [{ type: 'tool_result', tool_use_id: `toolu_${threadId}`, content: 'wrote' }],
       });
+    }
+
+    // A transient preview frame is produced without a thread id — the strategy
+    // does not know one — so the manager is what must stamp it.
+    if (actions.preview) {
+      options?.broadcast?.({
+        id: `stream_${threadId}`,
+        sessionId: session.id,
+        seq: 0,
+        type: 'agent.message_chunk',
+        createdAt: new Date(),
+        delta: actions.preview.delta,
+      } as SessionEvent);
     }
 
     // A parked call: the tool_use row lands on the turn's thread (the writer
@@ -332,6 +348,34 @@ describe('coordinator send_to_agent', () => {
 
     expect(executor.sendResults.at(-1)).toMatch(/no longer available/);
     expect(manager.getThreadStore().listBySession(session.id)).toHaveLength(1);
+  });
+
+  it('stamps a child transient preview with the child thread', async () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const previews: SessionEvent[] = [];
+    const unsubscribe = manager.subscribe(session.id, (event) => {
+      if (event.seq === 0) previews.push(event);
+    });
+    executor.script('coordinator', [{ sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'dispatched' }]);
+    executor.script('reviewer', [{ preview: { delta: 'hel' }, say: 'done' }]);
+    try {
+      await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+      await until(manager, session.id, (e) => e.some((x) => x.type === 'session.status_idle'));
+    } finally {
+      unsubscribe();
+    }
+
+    const child = manager.getThreadStore().listBySession(session.id)
+      .find((thread) => thread.parentThreadId !== null)!;
+    const preview = previews.find((event) => event.type === 'agent.message_chunk');
+    expect(preview?.threadId).toBe(child.id);
+
+    // The same preview belongs on the child's stream and not on the primary:
+    // the primary admits a `threadId === undefined` row as a pre-thread orphan,
+    // which is exactly the misrouting the stamp prevents.
+    const deps = { sessionManager: manager } as never;
+    expect(primaryStreamMembership(deps, session.id).includes(preview!)).toBe(false);
+    expect(threadStreamMembership(deps, session.id, child.id).includes(preview!)).toBe(true);
   });
 
   it('dispatches a child, runs it on its own chain, and returns the reply to the coordinator', async () => {
