@@ -332,9 +332,13 @@ function rosterResolver(deps: ServerDeps, self: { id: string; version: number })
       const row = activeAgentRow(deps, id);
       if (!row) return undefined;
       const definition = parseAgentDefinitionFromRow(row);
+      const versionRows = deps.db.prepare('SELECT version FROM agent_versions WHERE agent_id = ?')
+        .all(id) as Array<{ version: number }>;
+      const current = row.version ?? 1;
       return {
-        version: row.version ?? 1,
+        version: current,
         hasMultiagent: definition?.multiagent != null,
+        versions: [...new Set([current, ...versionRows.map((version) => version.version)])],
       };
     },
   };

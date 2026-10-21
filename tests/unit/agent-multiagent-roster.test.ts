@@ -18,11 +18,11 @@ import type { AgentDefinition } from '@/types/agent.js';
 
 const base = { name: 'Coordinator', model: 'gpt-4o', system: 'Orchestrate.' };
 
-/** A resolver where `agent_a` (v3) and `agent_b` (v1) exist and are clean. */
+/** A resolver where `agent_a` (v3) and `agent_b` (v1, with v7 retained) exist. */
 function resolver(overrides: Record<string, RosterMemberRow | undefined> = {}): RosterResolverContext {
   const table: Record<string, RosterMemberRow | undefined> = {
-    agent_a: { version: 3, hasMultiagent: false },
-    agent_b: { version: 1, hasMultiagent: false },
+    agent_a: { version: 3, hasMultiagent: false, versions: [3] },
+    agent_b: { version: 1, hasMultiagent: false, versions: [1, 7] },
     ...overrides,
   };
   return {
@@ -42,9 +42,19 @@ describe('multiagent roster — §4.8', () => {
       type: 'coordinator',
       agents: [
         { type: 'agent', id: 'agent_a', version: 3 },   // pinned to current version
-        { type: 'agent', id: 'agent_b', version: 7 },   // explicit pin kept
+        { type: 'agent', id: 'agent_b', version: 7 },   // pin to a retained version kept
       ],
     });
+  });
+
+  it('refuses a version pin the store cannot resolve', () => {
+    const result = validateAgentDefinition(
+      { ...base, multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: 'agent_b', version: 9 }] } },
+      resolver(),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.[0].path).toBe('multiagent.agents[0]');
+    expect(result.errors?.[0].message).toMatch(/has no version 9/);
   });
 
   it('resolves a `self` member to the coordinator id at the write version', () => {
@@ -79,7 +89,7 @@ describe('multiagent roster — §4.8', () => {
   it('refuses a member that declares its own roster — delegation is one level', () => {
     const result = validateAgentDefinition(
       { ...base, multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: 'agent_a' }] } },
-      resolver({ agent_a: { version: 3, hasMultiagent: true } }),
+      resolver({ agent_a: { version: 3, hasMultiagent: true, versions: [3] } }),
     );
     expect(result.valid).toBe(false);
     expect(result.errors?.[0].message).toMatch(/one level|its own multiagent/i);
@@ -193,7 +203,7 @@ describe('roster helpers', () => {
     const resolved = resolveRoster(
       { type: 'coordinator', agents: [{ type: 'agent', id: 'agent_a' }, { type: 'self' }] },
       { id: 'agent_me', version: 2 },
-      (id) => (id === 'agent_a' ? { version: 4, hasMultiagent: false } : undefined),
+      (id) => (id === 'agent_a' ? { version: 4, hasMultiagent: false, versions: [4] } : undefined),
     );
     expect(resolved.ok).toBe(true);
     if (resolved.ok) {

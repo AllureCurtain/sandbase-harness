@@ -4,7 +4,8 @@
  * Both agent write paths accept a roster and store its resolved form: `self`
  * and unversioned members are pinned to concrete `{type:'agent', id, version}`
  * references, an `advisor` member is refused with the `advisor_unsupported`
- * code, a member that declares its own roster or does not exist is refused,
+ * code, a member that declares its own roster, does not exist, or names a
+ * version the store cannot resolve is refused,
  * `multiagent` combined with the local delegation extension is refused (D10),
  * and `multiagent: null` clears the roster. The session object surfaces the
  * resolved roster on `agent.multiagent` where it was always present but `null`.
@@ -120,6 +121,24 @@ describe('canonical multiagent roster', () => {
 
     const got = await request(ctx.app, 'GET', `/v1/agents/${agent.id}`);
     expect(got.body.multiagent).toEqual(updated.body.multiagent);
+  });
+
+  it('refuses a version pin the store cannot resolve', async () => {
+    const ctx = context();
+    const worker = await seed(ctx, member);
+
+    const attempt = await request(ctx.app, 'POST', '/v1/agents', {
+      ...coordinator,
+      multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: worker.id, version: 99 }] },
+    });
+    expect(attempt.res.status).toBe(400);
+    expect(attempt.body.error.type).toBe('invalid_request_error');
+    expect(attempt.body.error.details).toContainEqual(
+      expect.objectContaining({
+        path: 'multiagent.agents[0]',
+        message: expect.stringMatching(/has no version 99/),
+      }),
+    );
   });
 
   it('refuses an advisor member with the advisor_unsupported code', async () => {

@@ -312,6 +312,28 @@ describe('coordinator send_to_agent', () => {
     expect(parsed.threads).toEqual([]);
   });
 
+  it('refuses a dispatch whose pinned version no longer resolves', async () => {
+    // A row written before the pin was validated (or by a build that did not
+    // validate it) can still carry a version the store cannot resolve. The
+    // dispatch must refuse rather than fall back to the coordinator's own
+    // definition, which would run the wrong agent and re-expose the roster.
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?').run(
+      JSON.stringify({
+        ...COORDINATOR,
+        multiagent: { type: 'coordinator', agents: [{ type: 'agent', id: 'agent_worker', version: 99 }] },
+      }),
+      'agent_coordinator',
+    );
+    const session = manager.create({ agent: 'agent_coordinator' });
+    executor.script('coordinator', [{ sendToAgent: { agent: 'reviewer', message: 'review this' }, say: 'failed' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (e) => e.some((x) => x.type === 'session.status_idle'));
+
+    expect(executor.sendResults.at(-1)).toMatch(/no longer available/);
+    expect(manager.getThreadStore().listBySession(session.id)).toHaveLength(1);
+  });
+
   it('dispatches a child, runs it on its own chain, and returns the reply to the coordinator', async () => {
     const session = manager.create({ agent: 'agent_coordinator' });
     const primaryId = primaryThreadIdForSession(session.id);

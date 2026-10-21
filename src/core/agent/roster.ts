@@ -123,6 +123,15 @@ export interface RosterMemberRow {
   version: number;
   /** Whether the member's own definition carries `multiagent` (depth limit). */
   hasMultiagent: boolean;
+  /**
+   * Every version this member still resolves to — the current one plus the
+   * archived versions the store retains.
+   *
+   * A roster pin is a promise that the thread will run that exact definition.
+   * A version the store cannot resolve would fall back to something else at
+   * dispatch, so the pin is accepted only when it is in this set.
+   */
+  versions: readonly number[];
 }
 
 export type RosterResolveResult =
@@ -201,8 +210,16 @@ export function resolveRoster(
       });
       return;
     }
+    const pinned = member.version ?? row.version;
+    if (!row.versions.includes(pinned)) {
+      errors.push({
+        path,
+        message: `Roster member "${id}" has no version ${pinned}; a roster pin must name a version the store can resolve`,
+      });
+      return;
+    }
     seen.add(id);
-    resolved.push({ type: 'agent', id, version: member.version ?? row.version });
+    resolved.push({ type: 'agent', id, version: pinned });
   });
 
   if (errors.length > 0) return { ok: false, errors };
