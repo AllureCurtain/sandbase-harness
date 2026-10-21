@@ -75,6 +75,8 @@ interface TurnActions {
   hold?: { promise: Promise<void>; resolve: () => void };
   /** Broadcast a transient (`seq: 0`) token preview on this turn's thread. */
   preview?: { delta: string };
+  /** Fail this turn with an error the manager treats as non-resumable. */
+  throwError?: Error;
   /** The assistant text this turn ends on. */
   say?: string;
 }
@@ -93,6 +95,8 @@ class ScriptedExecutor implements SessionExecutor {
   readonly invocations: Array<{ threadId: string; agentName: string; eventType: string }> = [];
   /** The raw string each send_to_agent returned, for tool-error assertions. */
   readonly sendResults: string[] = [];
+  /** Session ids whose shared sandbox the manager asked to release. */
+  readonly cleanupCalls: string[] = [];
   /** Resolves each time a thread's turn starts running. */
   readonly turnStarted = new Map<string, Array<() => void>>();
   /** Mints distinct parked tool_use block ids across turns. */
@@ -107,6 +111,10 @@ class ScriptedExecutor implements SessionExecutor {
     private readonly eventLogger: ReturnType<SessionManager['getEventLogger']>,
     private readonly contextEvents: (sessionId: string, threadId: string) => SessionEvent[],
   ) {}
+
+  async cleanupSession(sessionId: string): Promise<void> {
+    this.cleanupCalls.push(sessionId);
+  }
 
   /** Queue the actions an agent's next turns take, in order, keyed by agent name. */
   script(agentName: string, actions: TurnActions[]): void {
@@ -159,6 +167,9 @@ class ScriptedExecutor implements SessionExecutor {
 
     if (actions.hold) {
       await actions.hold.promise;
+    }
+    if (actions.throwError) {
+      throw actions.throwError;
     }
 
     // Mount the same tools the real executor mounts for a rostered thread.
@@ -411,6 +422,31 @@ describe('coordinator send_to_agent', () => {
         .map((block) => (block as { tool_use_id: string }).tool_use_id));
     expect(resolved).not.toContain(blockId.id);
     expect(manager.getThreadStore().get(child.id)?.status).toBe('requires_action');
+  });
+
+  it('a child failure does not release the session sandbox', async () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    executor.script('coordinator', [{ sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'dispatched' }]);
+    executor.script('reviewer', [{ throwError: new Error('child exploded') }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await untilThreads(manager, session.id, (threads) =>
+      threads.some((thread) => thread.agentName === 'reviewer' && thread.status === 'failed'));
+    // Give the turn's tail (which would release on the old code) a beat to run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(executor.cleanupCalls).toEqual([]);
+  });
+
+  it('a primary failure still releases the session sandbox', async () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    executor.script('coordinator', [{ throwError: new Error('primary exploded') }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await untilThreads(manager, session.id, (threads) => threads.some((thread) => thread.status === 'failed'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(executor.cleanupCalls).toEqual([session.id]);
   });
 
   it('dispatches a child, runs it on its own chain, and returns the reply to the coordinator', async () => {

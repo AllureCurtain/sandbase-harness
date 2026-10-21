@@ -40,6 +40,11 @@
   budget pause could inject a placeholder into a sibling's in-flight call. The
   crash-recovery pass still reconciles every thread, because no turn is running
   when it executes.
+- A child thread's fatal error no longer destroys the session's shared sandbox.
+  Threads share one sandbox keyed by the session, so the old unconditional
+  teardown could pull it out from under a running primary or sibling. The
+  primary thread's own failure still releases it; a child's failure settles
+  only that thread, and the sandbox is released when the session does.
 
 ### Added
 
