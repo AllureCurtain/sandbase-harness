@@ -1501,6 +1501,25 @@ FROM sessions;
 UPDATE events SET thread_id = 'sth_' || substr(session_id, 6) WHERE thread_id IS NULL;
 `;
 
+/**
+ * Scope a compaction boundary to the thread it compacted.
+ *
+ * A boundary records that its summary covers every event up to
+ * `event_seq_before`. Session ids and event `seq` are session-wide, so a
+ * child's boundary would otherwise truncate the primary and sibling contexts
+ * and inject the child's summary into them. The back-fill assigns every
+ * pre-thread boundary to its session's primary thread — the only stream that
+ * could have produced one before threads existed.
+ */
+const M063_THREAD_COMPACTION = `
+ALTER TABLE compaction_boundaries ADD COLUMN thread_id TEXT;
+UPDATE compaction_boundaries
+SET thread_id = 'sth_' || substr(session_id, 6)
+WHERE thread_id IS NULL;
+CREATE INDEX idx_compaction_boundaries_thread
+  ON compaction_boundaries(session_id, thread_id, created_at DESC);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1564,4 +1583,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 60, name: '060_dreams', sql: M060_DREAMS },
   { version: 61, name: '061_work_api_surface', sql: M061_WORK_API_SURFACE },
   { version: 62, name: '062_session_threads', sql: M062_SESSION_THREADS },
+  { version: 63, name: '063_thread_compaction', sql: M063_THREAD_COMPACTION },
 ];
