@@ -60,6 +60,11 @@
   `thread_id`, `latest` reads the requesting thread's own boundary, and the
   projection and the auxiliary writes stay on that thread. Pre-thread rows are
   back-filled to their session's primary thread.
+- Crash recovery now settles every thread a crash left `running` or
+  `retrying`, not only the primary. With a child still marked running, the
+  aggregate recomputed straight back to `running` after the primary was set
+  idle, leaving a session that no turn would ever finish. Recovery pauses each
+  active thread and recomputes the aggregate once.
 
 ### Added
 

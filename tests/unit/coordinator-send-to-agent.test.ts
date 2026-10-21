@@ -686,6 +686,27 @@ describe('coordinator send_to_agent', () => {
    * bypasses the transition guard; the transition under test goes through
    * `updateThreadStatus`, the path that emits the event and recomputes.
    */
+  it('crash recovery settles every running thread, not only the primary', () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    const child = manager.getThreadStore().insertThread({
+      sessionId: session.id,
+      parentThreadId: primaryId,
+      agentName: 'reviewer',
+      agentDefinition: WORKER,
+      agentId: 'agent_worker',
+      agentVersion: 1,
+      status: 'running',
+    });
+    manager.getThreadStore().updateStatus(primaryId, 'running');
+    db.prepare("UPDATE sessions SET status = 'running' WHERE id = ?").run(session.id);
+
+    expect(manager.reconcileOrphans()).toBe(1);
+    expect(manager.getThreadStore().get(primaryId)?.status).toBe('paused');
+    expect(manager.getThreadStore().get(child.id)?.status).toBe('paused');
+    expect(manager.get(session.id)?.status).toBe('paused');
+  });
+
   describe('session-status aggregation (§4.3)', () => {
     const setThread = (sessionId: string, threadId: string, status: SessionStatus) =>
       (manager as any).updateThreadStatus(sessionId, threadId, status);
