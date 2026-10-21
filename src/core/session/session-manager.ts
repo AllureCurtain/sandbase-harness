@@ -2574,7 +2574,14 @@ export class SessionManager {
           else if (RESUMABLE_MODEL_FAILURE_CODES.has(errorCode ?? '')) this.updateThreadStatus(sessionId, resolvedThreadId, 'paused');
           else this.updateThreadStatus(sessionId, resolvedThreadId, 'failed');
         }
-        if (errorCode !== PI_CLEANUP_PENDING_CODE) await this.releaseSandbox(sessionId);
+        // The sandbox is bound to the session, not the thread. A child's
+        // failure must not tear it down under a primary or sibling turn that is
+        // still running; the primary's own failure keeps the original
+        // teardown, and a later terminal transition releases it as before.
+        if (errorCode !== PI_CLEANUP_PENDING_CODE
+          && resolvedThreadId === this.threadStore.primaryThreadId(sessionId)) {
+          await this.releaseSandbox(sessionId);
+        }
       }
     } finally {
       this.abortControllers.delete(resolvedThreadId);
