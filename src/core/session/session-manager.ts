@@ -2392,6 +2392,20 @@ export class SessionManager {
   }
 
   /**
+   * Give a transient preview frame the thread that produced it.
+   *
+   * `seq === 0` frames are built by the strategy, which knows only the
+   * session; the persisted writer stamps its own thread. Without this stamp a
+   * child's token previews carry no `threadId`, so the primary stream's
+   * "pre-thread orphan" admission claims them and the child's own stream
+   * filters them out — the opposite of the contract's per-thread scope.
+   * Persisted events are untouched: their writer already stamped them.
+   */
+  private withTransientThread(event: SessionEvent, threadId: string): SessionEvent {
+    return event.seq === 0 && event.threadId === undefined ? { ...event, threadId } : event;
+  }
+
+  /**
    * Run a single turn on one thread. Serialized via that thread's
    * executionChains entry so its turns never overlap, while a sibling thread's
    * chain runs concurrently.
@@ -2459,7 +2473,7 @@ export class SessionManager {
       const threadSession = this.sessionForThread(running, thread);
       for await (const evt of this.executor.execute(threadSession, event, {
         abortSignal: abortController.signal,
-        broadcast: (e) => this.broadcast(sessionId, e),
+        broadcast: (e) => this.broadcast(sessionId, this.withTransientThread(e, resolvedThreadId)),
         budgetExhausted: () => this.isBudgetExhausted(sessionId),
         retryObserver: this.retryObserverFor(sessionId, turnState),
         thread,
@@ -2471,7 +2485,7 @@ export class SessionManager {
           turnState.requiresAction = true;
         },
       })) {
-        this.broadcast(sessionId, evt);
+        this.broadcast(sessionId, this.withTransientThread(evt, resolvedThreadId));
       }
 
       // A declared outcome is driven once the turn it instructed has finished.

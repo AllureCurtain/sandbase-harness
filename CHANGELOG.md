@@ -28,6 +28,12 @@
   invalid_request_error` naming the member and version, and a dispatch whose
   row predates the check refuses the follow-up rather than substituting a
   different definition.
+- Child-thread streaming previews are now attributed to the child. The
+  transient `seq: 0` frames a strategy broadcasts carry no thread id, and the
+  primary stream admitted an undefined `threadId` as a pre-thread orphan, so a
+  child's `event_deltas[]` chunks surfaced on the coordinator's stream and
+  disappeared from the child's own. The turn writer now stamps the running
+  thread id on every transient frame it broadcasts or yields.
 
 ### Added
 
