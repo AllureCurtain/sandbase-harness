@@ -1885,8 +1885,17 @@ export class SessionManager {
       // Inject placeholder results for orphaned tool_use calls
       this.resolveOrphanedToolUses(sessionId);
 
-      // Reset to idle so the session can continue on the next user event
+      // Settle the primary (creating its row when an older workspace lacks
+      // one), then every child the crash left active. Settling only the
+      // primary leaves a child `running` in its row, and the aggregate
+      // recomputes right back to `running` with no turn left to end it.
       this.updateStatus(sessionId, 'paused');
+      for (const thread of this.threadStore.listBySession(sessionId)) {
+        if (thread.status === 'running' || thread.status === 'retrying') {
+          this.updateThreadStatus(sessionId, thread.id, 'paused');
+        }
+      }
+      this.recomputeSessionStatus(sessionId);
     }
 
     return running.length;
