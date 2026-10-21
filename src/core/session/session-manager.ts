@@ -1207,7 +1207,7 @@ export class SessionManager {
     // (mirrors reconcileOrphans). Legit user.tool_confirmation events are
     // exempt — the executor pairs their referenced call itself.
     if (event.type === 'user.message') {
-      this.resolveOrphanedToolUses(sessionId);
+      this.resolveOrphanedToolUses(sessionId, this.threadStore.primaryThreadId(sessionId));
     }
 
     // The thread an answer belongs to is the thread that parked the call it
@@ -2514,7 +2514,7 @@ export class SessionManager {
         if (turnState.requiresAction) {
           this.updateThreadStatus(sessionId, resolvedThreadId, 'requires_action');
         } else if (this.isBudgetExhausted(sessionId)) {
-          this.resolveOrphanedToolUses(sessionId);
+          this.resolveOrphanedToolUses(sessionId, resolvedThreadId);
           this.updateThreadStatus(sessionId, resolvedThreadId, 'paused', 'budget_reached');
           // A budget-parked child does not report back: its turn is suspended,
           // not finished, so there is no reply for the parent to fold in. When
@@ -2854,10 +2854,12 @@ export class SessionManager {
   }
 
   /**
-   * Append a placeholder tool_result for every tool_use in the session log
-   * that has no paired result. Called on crash recovery and on a fresh user
-   * message so the next eventsToMessages projection yields a valid, paired
-   * message sequence instead of an unpaired tool-call the model rejects.
+   * Append a placeholder tool_result for every orphaned tool_use on one
+   * thread — or across the session when no thread is named. Called on crash
+   * recovery (all threads) and on a fresh user message or budget pause (the
+   * thread the action belongs to) so the next `eventsToMessages` projection
+   * yields a valid, paired message sequence instead of an unpaired tool-call
+   * the model rejects.
    *
    * The message is fixed rather than a parameter: both callers describe the same
    * epistemic situation — a call was dispatched and its result was never recorded —
@@ -2866,8 +2868,15 @@ export class SessionManager {
    * would let the two paths drift apart again, and the drift is what produced the
    * misleading sentence in the first place.
    */
-  private resolveOrphanedToolUses(sessionId: string): void {
-    const events = this.eventLogger.getEvents(sessionId);
+  private resolveOrphanedToolUses(sessionId: string, threadId?: string): void {
+    // A turn may only settle its own thread's calls. The unscoped form is the
+    // crash-recovery pass, which runs before any thread is executing and must
+    // pair every stream; a live user message or a budget pause is scoped to the
+    // thread it belongs to, so it cannot answer a sibling's parked call or
+    // inject a placeholder into a sibling's in-flight turn.
+    const events = threadId !== undefined
+      ? this.eventLogger.getThreadEvents(sessionId, threadId)
+      : this.eventLogger.getEvents(sessionId);
     for (const toolUse of findOrphanedToolUses(events)) {
       this.eventLogger.append(sessionId, {
         type: toolUse.resultType,
@@ -2875,7 +2884,7 @@ export class SessionManager {
         // so that thread's projection pairs it — a child's crash must not leave
         // an unpaired call on its own stream while the placeholder sits on the
         // primary's.
-        threadId: toolUse.threadId,
+        threadId: toolUse.threadId ?? threadId,
         content: [{
           type: 'tool_result',
           tool_use_id: toolUse.id,

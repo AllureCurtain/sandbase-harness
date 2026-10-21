@@ -34,6 +34,12 @@
   child's `event_deltas[]` chunks surfaced on the coordinator's stream and
   disappeared from the child's own. The turn writer now stamps the running
   thread id on every transient frame it broadcasts or yields.
+- Orphaned-call reconciliation is now scoped to the thread the action belongs
+  to. A `user.message` to the primary used to scan the whole session log and
+  could close a child's parked approval with an "interrupted" result; a
+  budget pause could inject a placeholder into a sibling's in-flight call. The
+  crash-recovery pass still reconciles every thread, because no turn is running
+  when it executes.
 
 ### Added
 
