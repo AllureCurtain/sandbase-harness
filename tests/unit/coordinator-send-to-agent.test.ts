@@ -77,6 +77,8 @@ interface TurnActions {
   preview?: { delta: string };
   /** Fail this turn with an error the manager treats as non-resumable. */
   throwError?: Error;
+  /** Drive the turn's retry observer, as a provider retry would. */
+  retry?: { schedule?: boolean; recover?: boolean };
   /** The assistant text this turn ends on. */
   say?: string;
 }
@@ -170,6 +172,18 @@ class ScriptedExecutor implements SessionExecutor {
     }
     if (actions.throwError) {
       throw actions.throwError;
+    }
+
+    if (actions.retry) {
+      if (actions.retry.schedule) {
+        options?.retryObserver?.onRetryScheduled({
+          attempt: 1,
+          delayMs: 10,
+          type: 'overloaded',
+          error: new Error('transient'),
+        });
+      }
+      if (actions.retry.recover) options?.retryObserver?.onRetryRecovered();
     }
 
     // Mount the same tools the real executor mounts for a rostered thread.
@@ -447,6 +461,29 @@ describe('coordinator send_to_agent', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(executor.cleanupCalls).toEqual([session.id]);
+  });
+
+  it('attributes a child retry to the child thread', async () => {
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    executor.script('coordinator', [{ sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'dispatched' }]);
+    executor.script('reviewer', [{ retry: { schedule: true, recover: true }, say: 'done' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'agent.thread_message_received' && event.threadId === primaryId));
+
+    const child = manager.getThreadStore().listBySession(session.id)
+      .find((thread) => thread.parentThreadId !== null)!;
+    const events = manager.getEventLogger().getEvents(session.id);
+    const rescheduled = events.filter((event) => event.type === 'session.thread_status_rescheduled');
+    expect(rescheduled.some((event) => event.threadId === child.id)).toBe(true);
+    expect(rescheduled.some((event) => event.threadId === primaryId)).toBe(false);
+
+    const retryError = events.find((event) =>
+      event.type === 'session.error'
+      && (event.metadata?.error as { retry_status?: { type?: string } } | undefined)?.retry_status?.type === 'retrying');
+    expect(retryError?.threadId).toBe(child.id);
   });
 
   it('dispatches a child, runs it on its own chain, and returns the reply to the coordinator', async () => {
