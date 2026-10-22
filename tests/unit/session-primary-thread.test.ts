@@ -18,6 +18,7 @@ import {
   SessionThreadStore,
 } from '@/core/session/session-threads.js';
 import { MIGRATIONS } from '@/core/db/migrations.js';
+import { toApiThread } from '@/api/standard.js';
 
 describe('session primary thread', () => {
   let db: Database;
@@ -104,6 +105,33 @@ describe('session primary thread', () => {
       expect(threads[0]!.id).toBe(`sth_${session.id.replace(/^sess_/, '')}`);
       expect(threads[0]!.parentThreadId).toBeNull();
       expect(threads[0]!.status).toBe('queued');
+      expect(threads[0]!.kind).toBe('primary');
+      expect(threads[0]!.workflowRunId).toBeNull();
+      expect(toApiThread(threads[0]!).workflow_run_id).toBeNull();
+    });
+
+    it('counts only subagent threads against the child cap', () => {
+      const session = manager.create({ agent: 'agent_test' });
+      const primaryId = primaryThreadIdForSession(session.id);
+      const store = manager.getThreadStore();
+      const definition = { name: 'reviewer', model: 'm', system: 'review' };
+      store.insertThread({
+        sessionId: session.id, parentThreadId: primaryId, agentName: 'reviewer',
+        agentDefinition: definition, agentId: 'agent_reviewer', agentVersion: 1,
+        kind: 'subagent',
+      });
+      store.insertThread({
+        sessionId: session.id, parentThreadId: primaryId, agentName: 'anthropic.advisor',
+        agentDefinition: definition, agentId: null, agentVersion: null,
+        kind: 'advisor',
+      });
+      store.insertThread({
+        sessionId: session.id, parentThreadId: primaryId, agentName: 'inline-runner',
+        agentDefinition: definition, agentId: null, agentVersion: null,
+        kind: 'workflow', workflowRunId: 'wrun_test',
+      });
+
+      expect(store.activeChildCount(session.id)).toBe(1);
     });
   });
 

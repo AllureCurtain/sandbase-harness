@@ -1520,6 +1520,25 @@ CREATE INDEX idx_compaction_boundaries_thread
   ON compaction_boundaries(session_id, thread_id, created_at DESC);
 `;
 
+/**
+ * Thread lifecycle metadata: the kind of work a thread represents, and the
+ * workflow run it belongs to.
+ *
+ * The 25-thread cap counts subagent threads only; advisor consultations and a
+ * workflow run's threads are exempt. The kind is stored rather than inferred
+ * from `parent_thread_id` because all three kinds share the primary thread as
+ * their parent. `workflow_run_id` is the official thread-object field: null for
+ * the primary, subagent, and advisor threads, non-null for a run's threads.
+ * Existing rows are classified as primary (no parent) or subagent.
+ */
+const M064_THREAD_LIFECYCLE = `
+ALTER TABLE session_threads ADD COLUMN thread_kind TEXT NOT NULL DEFAULT 'subagent';
+ALTER TABLE session_threads ADD COLUMN workflow_run_id TEXT;
+UPDATE session_threads SET thread_kind = 'primary' WHERE parent_thread_id IS NULL;
+CREATE INDEX idx_session_threads_run ON session_threads(workflow_run_id);
+CREATE INDEX idx_session_threads_session_kind ON session_threads(session_id, thread_kind);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1584,4 +1603,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 61, name: '061_work_api_surface', sql: M061_WORK_API_SURFACE },
   { version: 62, name: '062_session_threads', sql: M062_SESSION_THREADS },
   { version: 63, name: '063_thread_compaction', sql: M063_THREAD_COMPACTION },
+  { version: 64, name: '064_thread_lifecycle', sql: M064_THREAD_LIFECYCLE },
 ];

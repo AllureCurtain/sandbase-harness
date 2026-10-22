@@ -500,6 +500,47 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('adds thread lifecycle metadata (064)', () => {
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'session_threads')).toEqual(
+      expect.arrayContaining(['thread_kind', 'workflow_run_id']),
+    );
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 64').get()).toEqual({
+      name: '064_thread_lifecycle',
+    });
+    fresh.close();
+
+    // Existing rows: the primary has no parent, the child does. The upgrade
+    // classifies them and leaves every workflow_run_id null.
+    const upgradedPath = join(tmpDir, 'upgraded-thread-lifecycle.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 63));
+    expect(columnsOf(upgraded, 'session_threads')).not.toContain('thread_kind');
+    upgraded.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_l', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_l', 'l', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id)
+      VALUES ('sess_life', 'agent_l', 'l', 'env_l');
+      INSERT INTO session_threads
+        (id, session_id, parent_thread_id, agent_name, agent_definition, created_at, updated_at)
+      VALUES
+        ('sth_life', 'sess_life', NULL, 'l', '{}', datetime('now'), datetime('now')),
+        ('sth_child', 'sess_life', 'sth_life', 'reviewer', '{}', datetime('now'), datetime('now'))
+    `);
+
+    upgraded.runMigrations();
+    expect(
+      upgraded
+        .prepare('SELECT id, thread_kind, workflow_run_id FROM session_threads ORDER BY id')
+        .all(),
+    ).toEqual([
+      { id: 'sth_child', thread_kind: 'subagent', workflow_run_id: null },
+      { id: 'sth_life', thread_kind: 'primary', workflow_run_id: null },
+    ]);
+    upgraded.close();
+  });
+
   it('adds the usage cache-bucket columns to sessions and events (055)', () => {
     // Fresh: both tables carry the columns from the start.
     const fresh = new Database(dbPath);

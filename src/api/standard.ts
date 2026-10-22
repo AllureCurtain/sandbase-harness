@@ -885,6 +885,8 @@ export interface ApiSessionThread {
   type: 'session_thread';
   session_id: string;
   parent_thread_id: string | null;
+  /** Non-null only for a workflow run's threads; every other thread reports null. */
+  workflow_run_id: string | null;
   agent: ApiAgent | { type: 'advisor'; model: string };
   status: ApiSessionStatus;
   stats: {
@@ -942,6 +944,7 @@ export function toApiThread(
     type: 'session_thread',
     session_id: thread.sessionId,
     parent_thread_id: thread.parentThreadId,
+    workflow_run_id: thread.workflowRunId,
     agent: toApiAgent(thread.agentDefinition, {
       id: thread.agentId ?? undefined,
       version: thread.agentVersion ?? undefined,
