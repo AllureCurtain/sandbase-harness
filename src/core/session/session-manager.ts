@@ -2799,6 +2799,7 @@ export class SessionManager {
               session_thread_id: target.id,
               agent_name: target.agentName,
               parent_thread_id: parentThread.id,
+              workflow_run_id: target.workflowRunId,
             },
           });
           this.broadcast(sessionId, createdEvent);

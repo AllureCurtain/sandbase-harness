@@ -31,7 +31,10 @@ threads-and-coordinator: partial
   `anthropic.advisor`. Delegation is one level deep: a roster member may not
   declare a roster of its own.
 - At most **25 concurrent threads**. A coordinator may run several threads for
-  one roster agent. **Advisor consultations are exempt.**
+  one roster agent. **Advisor consultations and a workflow run's threads are
+  exempt.** The runtime counts only `thread_kind = 'subagent'` rows against the
+  cap; advisor and run threads share the primary thread as their parent but do
+  not consume a slot.
 - A thread's transitions are announced as `session.thread_created`,
   `session.thread_status_running`, `session.thread_status_idle` (with
   `stop_reason`), and `session.thread_status_terminated`. Every session emits
@@ -68,7 +71,8 @@ row in the same call as the session. The primary thread's id is derived —
 - `GET /v1/sessions/{id}/threads` lists every thread (primary first,
   archived included) with the same cursor envelope as `GET /:id/events`;
   `GET .../threads/{tid}` returns the thread object — `agent` is the resolved
-  snapshot the thread runs, `stats` and `usage` are `null` until the thread
+  snapshot the thread runs, `workflow_run_id` is non-null only for a workflow
+  run's threads, `stats` and `usage` are `null` until the thread
   has transitioned (`startup_seconds` is a fixed 0 — the runtime has no
   per-thread provisioning delay to report).
 - `GET .../threads/{tid}/events` and `GET .../threads/{tid}/stream` expose the
@@ -109,7 +113,9 @@ enforces the 25-child concurrency cap, inserts a `queued` child row with the
 member's pinned definition (a `self` replica gets the coordinator's effective
 configuration), writes `session.thread_created` on the parent plus the
 `agent.thread_message_sent` / `agent.thread_message_received` pair, and returns
-`{thread_id, status: 'sent'}` immediately. The child's first turn is enqueued
+`{thread_id, status: 'sent'}` immediately. `session.thread_created` carries the
+thread's `workflow_run_id`, which is null for every non-run thread. The child's
+first turn is enqueued
 on its own execution chain — every thread serializes only its own turns, so
 several children run concurrently.
 

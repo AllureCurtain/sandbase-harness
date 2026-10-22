@@ -68,6 +68,15 @@
 
 ### Added
 
+- Thread lifecycle metadata (migration `064_thread_lifecycle`). Every thread
+  row now carries a `thread_kind` (`primary | subagent | advisor | workflow`)
+  and a `workflow_run_id`, and the thread object exposes `workflow_run_id`
+  (null for the primary, subagent, and advisor threads; non-null for a run's
+  threads). The 25-thread cap counts `subagent` rows only, so advisor
+  consultations and a workflow run's threads do not consume a slot. Existing
+  rows are back-filled as `primary` (no parent) or `subagent`; existing
+  `session.thread_created` events report `workflow_run_id: null`.
+
 - Subagent dispatch now reads the current `multiagent_20261001` topology. When
   `subagents` is enabled, the primary thread and its self replicas mount the
   same `list_agents` / `send_to_agent` surface the legacy coordinator uses, with

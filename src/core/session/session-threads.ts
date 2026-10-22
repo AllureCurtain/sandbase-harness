@@ -29,6 +29,8 @@ import type { Session, SessionStatus } from '@/types/session.js';
 // Row shape and read model
 // ============================================================
 
+export type SessionThreadKind = 'primary' | 'subagent' | 'advisor' | 'workflow';
+
 export interface SessionThreadRow {
   id: string;
   session_id: string;
@@ -38,6 +40,8 @@ export interface SessionThreadRow {
   agent_id: string | null;
   agent_version: number | null;
   status: string;
+  thread_kind: SessionThreadKind;
+  workflow_run_id: string | null;
   usage_tokens_in: number;
   usage_tokens_out: number;
   usage_cache_read_tokens: number;
@@ -64,6 +68,10 @@ export interface SessionThread {
   agentId: string | null;
   agentVersion: number | null;
   status: SessionStatus;
+  /** What this thread represents; the 25-slot cap counts `subagent` only. */
+  kind: SessionThreadKind;
+  /** The workflow run this thread belongs to, or null for every other kind. */
+  workflowRunId: string | null;
   usage: {
     tokensIn: number;
     tokensOut: number;
@@ -85,6 +93,8 @@ export function rowToThread(row: SessionThreadRow): SessionThread {
     agentId: row.agent_id,
     agentVersion: row.agent_version,
     status: row.status as SessionStatus,
+    kind: row.thread_kind as SessionThreadKind,
+    workflowRunId: row.workflow_run_id,
     usage: {
       tokensIn: row.usage_tokens_in,
       tokensOut: row.usage_tokens_out,
@@ -151,10 +161,10 @@ export class SessionThreadStore {
     this.db.prepare(`
       INSERT INTO session_threads (
         id, session_id, parent_thread_id, agent_name, agent_definition,
-        agent_id, agent_version, status,
+        agent_id, agent_version, status, thread_kind, workflow_run_id,
         usage_tokens_in, usage_tokens_out, usage_cache_read_tokens, usage_cache_write_tokens,
         created_at, updated_at, archived_at
-      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?)
+      ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'primary', NULL, 0, 0, 0, 0, ?, ?, ?)
     `).run(
       id,
       session.id,
@@ -201,6 +211,7 @@ export class SessionThreadStore {
     const row = this.db.prepare(
       `SELECT COUNT(*) AS n FROM session_threads
        WHERE session_id = ? AND parent_thread_id IS NOT NULL AND archived_at IS NULL
+         AND thread_kind = 'subagent'
          AND status NOT IN ('completed', 'failed', 'cancelled', 'timed_out', 'cleanup_pending', 'archived')`,
     ).get(sessionId) as { n: number };
     return row.n;
@@ -221,16 +232,20 @@ export class SessionThreadStore {
     agentId: string | null;
     agentVersion: number | null;
     status?: SessionStatus;
+    /** Defaults to `subagent`; advisor and workflow rows name their kind. */
+    kind?: SessionThreadKind;
+    /** Required for `workflow` threads, null/omitted otherwise. */
+    workflowRunId?: string | null;
   }): SessionThread {
     const id = `sth_${nanoid(16)}`;
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT INTO session_threads (
         id, session_id, parent_thread_id, agent_name, agent_definition,
-        agent_id, agent_version, status,
+        agent_id, agent_version, status, thread_kind, workflow_run_id,
         usage_tokens_in, usage_tokens_out, usage_cache_read_tokens, usage_cache_write_tokens,
         created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, NULL)
     `).run(
       id,
       thread.sessionId,
@@ -240,6 +255,8 @@ export class SessionThreadStore {
       thread.agentId,
       thread.agentVersion,
       thread.status ?? 'queued',
+      thread.kind ?? 'subagent',
+      thread.workflowRunId ?? null,
       now,
       now,
     );
