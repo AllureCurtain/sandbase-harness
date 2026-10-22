@@ -18,12 +18,35 @@
  * several tasks at once" pattern the roster exists for cannot tolerate.
  */
 
-import type { AgentDefinition, MultiagentRoster } from '@/types/agent.js';
+import type { AgentDefinition } from '@/types/agent.js';
 import type { SessionThread } from './session-threads.js';
 import { toolError } from '@/core/tool-result-error.js';
 
 /** The concurrency cap a child thread consumes one slot of (§1.2). */
 export const MAX_ACTIVE_CHILD_THREADS = 25;
+
+/** A dispatchable subagent member: a concrete, version-pinned agent reference. */
+export type CoordinatorMember = { type: 'agent'; id: string; version: number };
+
+/**
+ * The subagents a thread with this definition may dispatch to.
+ *
+ * Both topologies expose the same dispatch surface: the legacy `coordinator`
+ * roster's agent entries, or the current topology's `subagents.predefined_agents`
+ * when that setting is enabled. Advisor entries are never dispatchable, and a
+ * disabled `subagents` setting yields none. Inline agents are a later slice.
+ */
+export function subagentMembers(agent: AgentDefinition): CoordinatorMember[] {
+  const multiagent = agent.multiagent;
+  if (!multiagent) return [];
+  if (multiagent.type === 'coordinator') {
+    return multiagent.agents.filter(
+      (member): member is CoordinatorMember => member.type === 'agent',
+    );
+  }
+  if (multiagent.subagents.type === 'disabled') return [];
+  return multiagent.subagents.predefined_agents;
+}
 
 /**
  * The slice of the session manager the coordinator tools need. Kept narrow and
@@ -52,7 +75,7 @@ export interface CoordinatorToolsHost {
    * plus whether a new thread row was created.
    */
   dispatchToAgent(input: {
-    member: MultiagentRoster['agents'][number];
+    member: CoordinatorMember;
     message: string;
     /** An existing thread to send a follow-up into; omitted spawns a new one. */
     threadId?: string;
@@ -72,36 +95,28 @@ export function buildCoordinatorTools(
   agent: AgentDefinition,
   host: CoordinatorToolsHost,
 ): Record<string, any> {
-  const roster = agent.multiagent;
-  if (!roster || roster.type !== 'coordinator' || roster.agents.length === 0) {
-    return {};
-  }
+  const members = subagentMembers(agent);
+  if (members.length === 0) return {};
   const coordinatorName = agent.name;
 
   return {
     list_agents: {
       description:
         'List the agents this coordinator may delegate to, and the threads already running in this session. ' +
-        'Each roster member is reported by `name` (the value `send_to_agent` takes) and description; each live ' +
+        'Each subagent is reported by `name` (the value `send_to_agent` takes) and description; each live ' +
         'thread is reported by `thread_id`, `agent_name`, and `status` so a follow-up can be addressed to it.',
       parameters: { type: 'object', properties: {}, required: [] },
       execute: async () => {
-        const agents = roster.agents.map((member) => {
-          if (member.type === 'agent') {
-            const isSelf = member.id === host.parentThread.agentId;
-            return {
-              name: isSelf ? coordinatorName : memberName(member, host),
-              description: isSelf
-                ? 'A copy of this coordinator running the same configuration'
-                : memberDescription(member, host),
-              agent_id: member.id,
-              version: member.version,
-            };
-          }
-          // The advisor shape is refused at write time, so a stored roster only
-          // ever carries `{type:'agent'}` members; the branch is unreachable in
-          // practice but keeps the union honest.
-          return { name: 'anthropic.advisor', description: 'Advisor (unavailable in this runtime)' };
+        const agents = members.map((member) => {
+          const isSelf = member.id === host.parentThread.agentId;
+          return {
+            name: isSelf ? coordinatorName : memberName(member, host),
+            description: isSelf
+              ? 'A copy of this coordinator running the same configuration'
+              : memberDescription(member, host),
+            agent_id: member.id,
+            version: member.version,
+          };
         });
         const threads = host.listThreads()
           .filter((thread) => thread.id !== host.parentThread.id && !thread.archivedAt)
@@ -116,14 +131,14 @@ export function buildCoordinatorTools(
 
     send_to_agent: {
       description:
-        'Send a task or a follow-up message to a roster agent. Without `thread_id` a new thread is spawned for ' +
+        'Send a task or a follow-up message to a subagent. Without `thread_id` a new thread is spawned for ' +
         'the agent; with `thread_id` the message is sent as a follow-up to that agent\'s existing thread, which ' +
         'keeps its full prior context. Returns immediately with the thread\'s id — the agent\'s reply arrives ' +
         'back as a message on this thread.',
       parameters: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'The roster member\'s name' },
+          agent: { type: 'string', description: 'The subagent\'s name' },
           message: { type: 'string', description: 'The task or follow-up message to send' },
           thread_id: {
             type: 'string',
@@ -133,9 +148,9 @@ export function buildCoordinatorTools(
         required: ['agent', 'message'],
       },
       execute: async (input: { agent?: string; message?: string; thread_id?: string }) => {
-        const member = resolveMemberByName(roster, input.agent, host, coordinatorName);
+        const member = resolveMemberByName(members, input.agent, host, coordinatorName);
         if (!member) {
-          return toolError(`No roster member named "${input.agent ?? ''}". Call list_agents for the members.`);
+          return toolError(`No subagent named "${input.agent ?? ''}". Call list_agents for the members.`);
         }
         if (typeof input.message !== 'string' || input.message.length === 0) {
           return toolError('send_to_agent requires a non-empty `message`.');
@@ -160,14 +175,13 @@ export function buildCoordinatorTools(
  * reports it, so the two tools agree on the same vocabulary.
  */
 function resolveMemberByName(
-  roster: MultiagentRoster,
+  members: readonly CoordinatorMember[],
   name: string | undefined,
   host: CoordinatorToolsHost,
   coordinatorName: string,
-): MultiagentRoster['agents'][number] | undefined {
+): CoordinatorMember | undefined {
   if (typeof name !== 'string' || name.length === 0) return undefined;
-  return roster.agents.find((member) => {
-    if (member.type !== 'agent') return false;
+  return members.find((member) => {
     const memberDisplayName = member.id === host.parentThread.agentId
       ? coordinatorName
       : memberName(member, host);
@@ -182,14 +196,14 @@ function resolveMemberByName(
  * the id to it, falling back to the id itself when the row is gone.
  */
 function memberName(
-  member: Extract<MultiagentRoster['agents'][number], { type: 'agent' }>,
+  member: CoordinatorMember,
   host: CoordinatorToolsHost,
 ): string {
   return host.agentNameFor(member.id) ?? member.id;
 }
 
 function memberDescription(
-  member: Extract<MultiagentRoster['agents'][number], { type: 'agent' }>,
+  member: CoordinatorMember,
   host: CoordinatorToolsHost,
 ): string {
   return host.agentDescriptionFor(member.id) ?? '';

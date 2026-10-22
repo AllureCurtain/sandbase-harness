@@ -51,6 +51,37 @@ const COORDINATOR2: AgentDefinition = {
   },
 };
 
+/** The current topology: a predefined reviewer plus a self replica. */
+const COORDINATOR_CURRENT: AgentDefinition = {
+  name: 'coordinator',
+  model: 'm',
+  system: 'coordinate',
+  multiagent: {
+    type: 'multiagent_20261001',
+    subagents: {
+      type: 'enabled',
+      inline_agents: { type: 'enabled' },
+      predefined_agents: [
+        { type: 'agent', id: 'agent_worker', version: 1 },
+        { type: 'agent', id: 'agent_coordinator', version: 1 },
+      ],
+    },
+    workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+    advisor: { type: 'disabled' },
+  },
+};
+
+/** The current topology with delegation turned off. */
+const COORDINATOR_CURRENT_DISABLED: AgentDefinition = {
+  ...COORDINATOR_CURRENT,
+  multiagent: {
+    type: 'multiagent_20261001',
+    subagents: { type: 'disabled' },
+    workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+    advisor: { type: 'disabled' },
+  },
+};
+
 /** What one turn does, in order. */
 interface TurnActions {
   /** Invoke `send_to_agent` with these args on this turn. */
@@ -351,6 +382,49 @@ describe('coordinator send_to_agent', () => {
     expect(parsed.agents.map((a) => a.name)).toEqual(['reviewer']);
     expect(parsed.agents[0]!.agent_id).toBe('agent_worker');
     expect(parsed.threads).toEqual([]);
+  });
+
+  it('dispatches from the current topology predefined subagents', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify(COORDINATOR_CURRENT), 'agent_coordinator');
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    let listed = '';
+    executor.script('coordinator', [
+      { listAgents: (out) => { listed = out; }, sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'dispatched' },
+      { say: 'final' },
+    ]);
+    executor.script('reviewer', [{ say: 'done' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'agent.thread_message_received' && event.threadId === primaryId));
+
+    const parsed = JSON.parse(listed) as { agents: Array<{ name: string; agent_id: string }>; threads: unknown[] };
+    expect(parsed.agents.map((agent) => agent.name)).toEqual(['reviewer', 'coordinator']);
+    expect(parsed.agents[0]!.agent_id).toBe('agent_worker');
+    expect(parsed.threads).toEqual([]);
+
+    const child = manager.getThreadStore().listBySession(session.id)
+      .find((thread) => thread.parentThreadId === primaryId)!;
+    expect(child.agentName).toBe('reviewer');
+    expect(child.agentId).toBe('agent_worker');
+  });
+
+  it('mounts no coordinator tools when the current topology disables subagents', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify(COORDINATOR_CURRENT_DISABLED), 'agent_coordinator');
+    const session = manager.create({ agent: 'agent_coordinator' });
+    let listed = false;
+    executor.script('coordinator', [
+      { listAgents: () => { listed = true; }, sendToAgent: { agent: 'reviewer', message: 'review' }, say: 'done' },
+    ]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) => event.type === 'session.status_idle'));
+
+    expect(listed).toBe(false);
+    expect(manager.getThreadStore().listBySession(session.id)).toHaveLength(1);
   });
 
   it('refuses a dispatch whose pinned version no longer resolves', async () => {

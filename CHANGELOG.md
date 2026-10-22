@@ -68,6 +68,14 @@
 
 ### Added
 
+- Subagent dispatch now reads the current `multiagent_20261001` topology. When
+  `subagents` is enabled, the primary thread and its self replicas mount the
+  same `list_agents` / `send_to_agent` surface the legacy coordinator uses, with
+  the predefined list pinned at write time, the 25-thread cap, persistent
+  follow-up threads, and the cross-posted sent/received event pair. A disabled
+  `subagents` setting mounts neither tool. Inline agents, workflows, and the
+  advisor runtime remain later slices.
+
 - The current `multiagent_20261001` topology on agent create and update. The
   block is accepted, validated, stored, and projected in its resolved form:
   `subagents` and `workflows` default to enabled with inline agents enabled and
@@ -78,8 +86,8 @@
   inline agents requires a non-empty list; and an enabled advisor requires a
   model. Same-type updates merge level by level, a different `type` replaces the
   block, and `multiagent: null` clears it. The legacy `coordinator` shape is
-  unchanged. The block is stored, not executed yet — the subagent, workflow, and
-  advisor runtimes land in the slices that follow.
+  unchanged. `subagents` dispatches through the existing thread engine;
+  workflows and the advisor runtime land in the slices that follow.
 
 - The canonical `multiagent` roster on agent create and update. A coordinator
   roster is now accepted, validated, and stored in its resolved form: `self`

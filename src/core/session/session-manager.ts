@@ -2743,10 +2743,6 @@ export class SessionManager {
       agentNameFor: (agentId) => this.resolveAgentSnapshot(agentId)?.name,
       agentDescriptionFor: (agentId) => this.resolveAgentSnapshot(agentId)?.definition.description,
       dispatchToAgent: ({ member, message, threadId }) => {
-        if (member.type !== 'agent') {
-          return { ok: false, reason: 'The advisor member is unavailable in this runtime.' };
-        }
-
         // Resolve the target thread: an existing one for a follow-up, or a new
         // child row for a first dispatch.
         let target: SessionThread | undefined;
