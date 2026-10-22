@@ -83,6 +83,7 @@ export const agents = {
       selfReplicaOn: "允许",
       exclusiveNotice: "名册会取代通用子 agent 开关——两种委派方式不能共存（API 会拒绝同时声明）。",
       subagentBlocked: "已设置多智能体名册时不可用——两种委派方式互斥。",
+      currentTopology: "该 agent 使用当前的 multiagent_20261001 配置（subagents / workflows / advisor）。此处会原样保留；目前请通过 API 编辑。",
     },
     tools: {
       title: "工具",

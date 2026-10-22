@@ -123,6 +123,96 @@ describe('canonical multiagent roster', () => {
     expect(got.body.multiagent).toEqual(updated.body.multiagent);
   });
 
+  it('accepts the current topology and reports its defaults and pinned refs', async () => {
+    const ctx = context();
+    const worker = await seed(ctx, member);
+    const advisorModel = await seed(ctx, { name: 'Advisor model', model: 'gpt-4o', system: 'Advise.' });
+
+    const created = await request(ctx.app, 'POST', '/v1/agents', {
+      ...coordinator,
+      multiagent: {
+        type: 'multiagent_20261001',
+        subagents: { type: 'enabled', predefined_agents: [worker.id, { type: 'self' }] },
+        workflows: { type: 'enabled', predefined_agents: [advisorModel.id] },
+        advisor: { type: 'enabled', model: 'gpt-4o' },
+      },
+    });
+    expect(created.res.status).toBe(201);
+    const expected = {
+      type: 'multiagent_20261001',
+      subagents: {
+        type: 'enabled',
+        inline_agents: { type: 'enabled' },
+        predefined_agents: [
+          { type: 'agent', id: worker.id, version: worker.version },
+          { type: 'agent', id: created.body.id, version: 1 },
+        ],
+      },
+      workflows: {
+        type: 'enabled',
+        inline_agents: { type: 'enabled' },
+        predefined_agents: [{ type: 'agent', id: advisorModel.id, version: advisorModel.version }],
+      },
+      advisor: { type: 'enabled', model: 'gpt-4o' },
+    };
+    expect(created.body.multiagent).toEqual(expected);
+    expect(storedMultiagent(ctx, created.body.id)).toEqual(expected);
+    expect((await request(ctx.app, 'GET', `/v1/agents/${created.body.id}`)).body.multiagent).toEqual(expected);
+  });
+
+  it('merges the current topology level by level and replaces it on a type change', async () => {
+    const ctx = context();
+    const worker = await seed(ctx, member);
+    const agent = await seed(ctx, coordinator);
+
+    const created = await request(ctx.app, 'POST', `/v1/agents/${agent.id}`, {
+      multiagent: {
+        type: 'multiagent_20261001',
+        subagents: { type: 'enabled', predefined_agents: [worker.id] },
+        advisor: { type: 'enabled', model: 'gpt-4o' },
+      },
+    });
+    expect(created.res.status).toBe(200);
+
+    // Omitted settings keep their stored values; only `subagents` changes.
+    const disabled = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      multiagent: { type: 'multiagent_20261001', subagents: { type: 'disabled' } },
+    });
+    expect(disabled.res.status).toBe(200);
+    expect(disabled.body.multiagent.subagents).toEqual({ type: 'disabled' });
+    expect(disabled.body.multiagent.workflows).toEqual({
+      type: 'enabled',
+      inline_agents: { type: 'enabled' },
+      predefined_agents: [],
+    });
+    expect(disabled.body.multiagent.advisor).toEqual({ type: 'enabled', model: 'gpt-4o' });
+
+    // An in-block null resets that setting to its default (enabled).
+    const reset = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      multiagent: { type: 'multiagent_20261001', subagents: null },
+    });
+    expect(reset.res.status).toBe(200);
+    expect(reset.body.multiagent.subagents).toEqual({
+      type: 'enabled',
+      inline_agents: { type: 'enabled' },
+      predefined_agents: [],
+    });
+
+    // A different type replaces the whole block.
+    const legacy = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, {
+      multiagent: { type: 'coordinator', agents: [worker.id] },
+    });
+    expect(legacy.res.status).toBe(200);
+    expect(legacy.body.multiagent).toEqual({
+      type: 'coordinator',
+      agents: [{ type: 'agent', id: worker.id, version: worker.version }],
+    });
+
+    const cleared = await request(ctx.app, 'PUT', `/v1/agents/${agent.id}`, { multiagent: null });
+    expect(cleared.res.status).toBe(200);
+    expect(cleared.body.multiagent).toBeNull();
+  });
+
   it('refuses a version pin the store cannot resolve', async () => {
     const ctx = context();
     const worker = await seed(ctx, member);

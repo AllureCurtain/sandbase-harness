@@ -51,10 +51,13 @@ export type AgentDraft = {
    * update; `undefined` leaves it alone. The API resolves each entry to
    * `{type:'agent', id, version}` at write time (D11).
    */
-  multiagent?: {
-    type: 'coordinator';
-    agents: Array<{ type: 'agent'; id: string; version?: number } | { type: 'self' }>;
-  } | null;
+  multiagent?:
+    | {
+        type: 'coordinator';
+        agents: Array<{ type: 'agent'; id: string; version?: number } | { type: 'self' }>;
+      }
+    | { type: 'multiagent_20261001'; [key: string]: unknown }
+    | null;
 };
 
 /**
@@ -69,7 +72,10 @@ type RosterDraft = { members: Array<{ id: string; version?: number }>; allowSelf
 function rosterDraftFromMultiagent(value: AgentDraft['multiagent'], selfId?: string): RosterDraft {
   const members: RosterDraft['members'] = [];
   let allowSelf = false;
-  for (const member of value?.agents ?? []) {
+  // The coordinator editor only owns the legacy topology. A current-topology
+  // block is preserved untouched by the modal and never parsed as a roster.
+  if (!value || value.type !== 'coordinator') return { members, allowSelf };
+  for (const member of value.agents ?? []) {
     if (member.type === 'self' || (selfId && 'id' in member && member.id === selfId)) {
       allowSelf = true;
     } else if ('id' in member) {
@@ -431,6 +437,12 @@ function AgentDefinitionForm({
 
       <SectionCard n={3} title={t('modal.multiagent.title')} hint={t('modal.multiagent.hint')}>
         {(() => {
+          // The current topology has three settings the legacy roster editor
+          // does not model. Preserve it verbatim; editing it here would silently
+          // replace subagents/workflows/advisor with a coordinator block.
+          if (draft.multiagent?.type === 'multiagent_20261001') {
+            return <p className="fieldHelper">{t('modal.multiagent.currentTopology')}</p>;
+          }
           // `null` = off (roster cleared/never set). On, the members the
           // coordinator may delegate to via `send_to_agent`.
           // `undefined` = section off and field untouched; `null` = off and

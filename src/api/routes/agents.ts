@@ -339,6 +339,7 @@ function rosterResolver(deps: ServerDeps, self: { id: string; version: number })
         version: current,
         hasMultiagent: definition?.multiagent != null,
         versions: [...new Set([current, ...versionRows.map((version) => version.version)])],
+        name: row.name,
       };
     },
   };

@@ -1,4 +1,4 @@
-import type { AgentDefinition, AgentToolset, McpServerConfig } from '@/types/agent.js';
+import type { AgentDefinition, AgentToolset, McpServerConfig, MultiagentConfig } from '@/types/agent.js';
 import type { OutcomeRubric } from '@/types/cma-protocol.js';
 import type { ApiSessionStatus, Session, SessionEvent, SessionLoopEngine, SessionStatus } from '@/types/session.js';
 import type { MonetaryAmount, SessionBudget, SessionStatusIdleEvent } from '@/types/cma-protocol.js';
@@ -214,12 +214,13 @@ export interface ApiAgent {
   status: 'active' | 'archived';
   version: number;
   /**
-   * Resolved multiagent roster. `null` when the agent is single-threaded; the
-   * resolved coordinator form when the definition declares one — `self` and
-   * unversioned members are already pinned to concrete `{type:'agent', id,
-   * version}` references at write time.
+   * Resolved multiagent configuration. `null` when the agent is
+   * single-threaded; the resolved `coordinator` or `multiagent_20261001` form
+   * when the definition declares one — `self` and unversioned members are
+   * already pinned to concrete `{type:'agent', id, version}` references at
+   * write time.
    */
-  multiagent: { type: 'coordinator'; agents: Array<{ type: 'agent'; id: string; version: number } | { type: 'advisor'; model: string }> } | null;
+  multiagent: MultiagentConfig | null;
   /**
    * Local extension: the server-side turn cap the definition carries. The
    * published contract has no `max_turns` on the agent object — the published

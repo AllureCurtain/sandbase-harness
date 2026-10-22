@@ -1,6 +1,6 @@
 import type { Database } from '@/core/db/database.js';
 import { MODEL_EFFORT_LEVELS } from './model-object.js';
-import { parseRosterParam, resolveRoster, type RosterMemberRow } from './roster.js';
+import { parseMultiagentParam, resolveMultiagentParam, type RosterMemberRow } from './roster.js';
 import { validateAgentDefinition } from './schema.js';
 import type { AgentDefinition, AgentLoadError } from '@/types/agent.js';
 
@@ -53,6 +53,7 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
           version: row.version ?? 1,
           hasMultiagent: definition?.multiagent != null,
           versions: loadAgentVersions(db, memberId, row.version ?? 1),
+          name: row.name,
         };
       }
       const seeded = batchIndex.get(memberId);
@@ -63,7 +64,16 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
       if (!member.valid || !member.data) return undefined;
       // A seed is written at version 1 and has no prior versions yet, so that
       // is the only pin its roster can resolve.
-      return { version: seeded.version, hasMultiagent: member.data.multiagent != null, versions: [seeded.version] };
+      const seededName = seeded.definition && typeof seeded.definition === 'object'
+        && 'name' in seeded.definition
+        ? String((seeded.definition as { name: unknown }).name)
+        : undefined;
+      return {
+        version: seeded.version,
+        hasMultiagent: member.data.multiagent != null,
+        versions: [seeded.version],
+        ...(seededName !== undefined ? { name: seededName } : {}),
+      };
     };
 
     const result = validateAgentDefinition(agent);
@@ -80,10 +90,10 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
     // carries the pinned form the wire reports. `null` is the documented clear.
     let definition = result.data;
     if (definition.multiagent != null) {
-      const parsedRoster = parseRosterParam(definition.multiagent);
-      const resolved = parsedRoster.ok
-        ? resolveRoster(parsedRoster.roster, { id, version: 1 }, lookup)
-        : parsedRoster;
+      const parsed = parseMultiagentParam(definition.multiagent);
+      const resolved = parsed.ok
+        ? resolveMultiagentParam(parsed.param, { id, version: 1 }, lookup)
+        : parsed;
       if (!resolved.ok) {
         errors.push({
           file: agent.name,
@@ -92,7 +102,7 @@ export function importAgentSeeds(db: Database, agents: AgentDefinition[]): Agent
         });
         continue;
       }
-      definition = { ...definition, multiagent: resolved.roster };
+      definition = { ...definition, multiagent: resolved.multiagent };
     }
 
     db.prepare('INSERT INTO agents (id, name, definition) VALUES (?, ?, ?)').run(

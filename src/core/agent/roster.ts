@@ -23,6 +23,13 @@
 
 import { z } from 'zod';
 import type { ValidationError } from './schema.js';
+import type {
+  Multiagent20261001,
+  MultiagentAgentReference,
+  MultiagentConfig,
+  ResolvedMultiagentAdvisor,
+  ResolvedMultiagentSetting,
+} from '@/types/agent.js';
 
 /** Stable refusal for a roster member that names the unsupported advisor. */
 export const ADVISOR_UNSUPPORTED_CODE = 'advisor_unsupported';
@@ -132,6 +139,13 @@ export interface RosterMemberRow {
    * dispatch, so the pin is accepted only when it is in this set.
    */
   versions: readonly number[];
+  /**
+   * The member's durable display name, when the lookup has it.
+   *
+   * Used by the `multiagent_20261001` reserved-name rule: an enabled advisor
+   * owns `anthropic.advisor`, so no predefined list may name an agent by it.
+   */
+  name?: string;
 }
 
 export type RosterResolveResult =
@@ -224,4 +238,303 @@ export function resolveRoster(
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, roster: { type: 'coordinator', agents: resolved } };
+}
+
+// ============================================================
+// multiagent_20261001 — subagents / workflows / advisor
+// ============================================================
+
+/** One inline-agent toggle. */
+export interface MultiagentInlineAgentsParam {
+  type: 'enabled' | 'disabled';
+}
+
+/** One predefined list entry in the current topology. */
+export type MultiagentPredefinedAgentParam =
+  | string
+  | { type: 'agent'; id: string; version?: number }
+  | { type: 'self' };
+
+/** One enabled/disabled `subagents` or `workflows` setting. */
+export type MultiagentSettingParam =
+  | { type: 'disabled' }
+  | {
+      type: 'enabled';
+      inline_agents?: MultiagentInlineAgentsParam | null;
+      predefined_agents?: MultiagentPredefinedAgentParam[] | null;
+    };
+
+/** The advisor setting: disabled, or the model consulted by the primary thread. */
+export type MultiagentAdvisorParam =
+  | { type: 'disabled' }
+  | { type: 'enabled'; model: string };
+
+/** The request form of the current canonical topology. */
+export interface Multiagent20261001Param {
+  type: 'multiagent_20261001';
+  subagents?: MultiagentSettingParam | null;
+  workflows?: MultiagentSettingParam | null;
+  advisor?: MultiagentAdvisorParam | null;
+}
+
+/** Both accepted topologies in their request form. */
+export type MultiagentParam = RosterParam | Multiagent20261001Param;
+
+const inlineAgentsParamSchema = z.object({
+  type: z.enum(['enabled', 'disabled']),
+});
+
+const predefinedAgentParamSchema = z.union([
+  z.string().min(1),
+  z.object({
+    type: z.literal('agent'),
+    id: z.string().min(1),
+    version: z.number().int().min(1).optional(),
+  }),
+  z.object({ type: z.literal('self') }),
+]);
+
+const multiagentSettingParamSchema = z.union([
+  z.object({ type: z.literal('disabled') }),
+  z.object({
+    type: z.literal('enabled'),
+    inline_agents: inlineAgentsParamSchema.nullish(),
+    predefined_agents: z.array(predefinedAgentParamSchema).max(20).nullish(),
+  }),
+]);
+
+const advisorParamSchema = z.union([
+  z.object({ type: z.literal('disabled') }),
+  z.object({ type: z.literal('enabled'), model: z.string().min(1) }),
+]);
+
+const multiagent20261001ParamSchema = z.object({
+  type: z.literal('multiagent_20261001'),
+  subagents: multiagentSettingParamSchema.nullish(),
+  workflows: multiagentSettingParamSchema.nullish(),
+  advisor: advisorParamSchema.nullish(),
+});
+
+/** The accepted `multiagent` request shapes: legacy coordinator or current. */
+export const multiagentParamSchema = z.union([rosterParamSchema, multiagent20261001ParamSchema]);
+
+export type MultiagentParseResult =
+  | { ok: true; param: MultiagentParam }
+  | { ok: false; errors: ValidationError[] };
+
+/**
+ * Parse either accepted `multiagent` topology.
+ *
+ * The current topology keeps the request's absent/null settings intact: the
+ * update path merges them level by level, and resolution supplies the defaults
+ * only after the merge. `null` (the documented clear) is handled by the caller.
+ */
+export function parseMultiagentParam(input: unknown): MultiagentParseResult {
+  const parsed = multiagentParamSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      errors: parsed.error.issues.map((issue) => ({
+        path: `multiagent.${issue.path.join('.')}`.replace(/\.$/, ''),
+        message: issue.message,
+      })),
+    };
+  }
+  return { ok: true, param: parsed.data as MultiagentParam };
+}
+
+export type MultiagentResolveResult =
+  | { ok: true; multiagent: MultiagentConfig }
+  | { ok: false; errors: ValidationError[] };
+
+/**
+ * Resolve either topology against the agent table.
+ *
+ * For `multiagent_20261001`, defaults are applied here: both settings are
+ * enabled with inline agents enabled, both predefined lists are empty, and the
+ * advisor is disabled. A disabled inline setting must leave at least one
+ * predefined agent, because the setting would otherwise grant no way to
+ * delegate at all.
+ */
+export function resolveMultiagentParam(
+  param: MultiagentParam,
+  self: { id: string; version: number },
+  lookup: (id: string) => RosterMemberRow | undefined,
+): MultiagentResolveResult {
+  if (param.type === 'coordinator') {
+    const resolved = resolveRoster(param, self, lookup);
+    return resolved.ok
+      ? { ok: true, multiagent: resolved.roster }
+      : { ok: false, errors: resolved.errors };
+  }
+
+  const subagents = resolveMultiagentSetting(param.subagents, 'subagents', self, lookup);
+  const workflows = resolveMultiagentSetting(param.workflows, 'workflows', self, lookup);
+  const advisor = resolveMultiagentAdvisor(param.advisor);
+  const errors = [...subagents.errors, ...workflows.errors, ...advisor.errors];
+  if (errors.length > 0) return { ok: false, errors };
+
+  const multiagent: Multiagent20261001 = {
+    type: 'multiagent_20261001',
+    subagents: subagents.setting!,
+    workflows: workflows.setting!,
+    advisor: advisor.advisor!,
+  };
+  return { ok: true, multiagent };
+}
+
+function resolveMultiagentSetting(
+  param: MultiagentSettingParam | null | undefined,
+  field: 'subagents' | 'workflows',
+  self: { id: string; version: number },
+  lookup: (id: string) => RosterMemberRow | undefined,
+): { setting?: ResolvedMultiagentSetting; errors: ValidationError[] } {
+  const path = `multiagent.${field}`;
+  if (param === null || param === undefined) {
+    return {
+      setting: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+      errors: [],
+    };
+  }
+  if (param.type === 'disabled') return { setting: { type: 'disabled' }, errors: [] };
+
+  const inline = param.inline_agents?.type ?? 'enabled';
+  const refs = resolvePredefinedAgents(param.predefined_agents ?? [], path, self, lookup);
+  const errors = [...refs.errors];
+  if (inline === 'disabled' && refs.agents.length === 0) {
+    errors.push({
+      path: `${path}.inline_agents`,
+      message: 'Disabling inline agents requires at least one entry in `predefined_agents`',
+    });
+  }
+  if (errors.length > 0) return { errors };
+  return {
+    setting: {
+      type: 'enabled',
+      inline_agents: { type: inline },
+      predefined_agents: refs.agents,
+    },
+    errors: [],
+  };
+}
+
+function resolvePredefinedAgents(
+  list: readonly MultiagentPredefinedAgentParam[],
+  path: string,
+  self: { id: string; version: number },
+  lookup: (id: string) => RosterMemberRow | undefined,
+): { agents: MultiagentAgentReference[]; errors: ValidationError[] } {
+  const agents: MultiagentAgentReference[] = [];
+  const errors: ValidationError[] = [];
+  const seen = new Set<string>();
+
+  list.forEach((member, index) => {
+    const memberPath = `${path}.predefined_agents[${index}]`;
+    if (typeof member === 'object' && member.type === 'self') {
+      if (seen.has(self.id)) {
+        errors.push({ path: memberPath, message: `Roster member "${self.id}" is already listed` });
+        return;
+      }
+      seen.add(self.id);
+      agents.push({ type: 'agent', id: self.id, version: self.version });
+      return;
+    }
+
+    const id = typeof member === 'string' ? member : member.id;
+    const requestedVersion = typeof member === 'string' ? undefined : member.version;
+    if (seen.has(id)) {
+      errors.push({ path: memberPath, message: `Roster member "${id}" is already listed` });
+      return;
+    }
+    const row = lookup(id);
+    if (!row) {
+      errors.push({ path: memberPath, message: `Roster member "${id}" does not exist or is archived` });
+      return;
+    }
+    if (row.hasMultiagent) {
+      errors.push({
+        path: memberPath,
+        message: `Roster member "${id}" declares its own multiagent roster; delegation is limited to one level`,
+      });
+      return;
+    }
+    if (row.name === 'anthropic.advisor') {
+      errors.push({
+        path: memberPath,
+        message: 'The name "anthropic.advisor" is reserved for an enabled advisor and cannot be listed',
+      });
+      return;
+    }
+    const pinned = requestedVersion ?? row.version;
+    if (!row.versions.includes(pinned)) {
+      errors.push({
+        path: memberPath,
+        message: `Roster member "${id}" has no version ${pinned}; a roster pin must name a version the store can resolve`,
+      });
+      return;
+    }
+    seen.add(id);
+    agents.push({ type: 'agent', id, version: pinned });
+  });
+
+  return { agents, errors };
+}
+
+function resolveMultiagentAdvisor(
+  param: MultiagentAdvisorParam | null | undefined,
+): { advisor?: ResolvedMultiagentAdvisor; errors: ValidationError[] } {
+  if (param === null || param === undefined) {
+    return { advisor: { type: 'disabled' }, errors: [] };
+  }
+  if (param.type === 'disabled') return { advisor: { type: 'disabled' }, errors: [] };
+  if (param.model.length === 0) {
+    return {
+      errors: [{ path: 'multiagent.advisor.model', message: 'An enabled advisor requires a model' }],
+    };
+  }
+  return { advisor: { type: 'enabled', model: param.model }, errors: [] };
+}
+
+/**
+ * Merge an update's `multiagent` into the stored resolved block.
+ *
+ * The current topology merges level by level: an omitted setting keeps its
+ * stored value, a `null` setting resets to its default, and a sent
+ * `predefined_agents` list replaces the stored list. Any other type replaces
+ * the whole block. The result is still a request-form value, so the caller
+ * revalidates and re-resolves it against the store.
+ */
+export function mergeMultiagentUpdate(
+  current: MultiagentConfig,
+  incoming: MultiagentParam,
+): MultiagentParam {
+  if (current.type !== incoming.type) return incoming;
+  if (incoming.type === 'coordinator') return incoming;
+
+  const stored = current as Multiagent20261001;
+  return {
+    type: 'multiagent_20261001',
+    subagents: mergeMultiagentSetting(stored.subagents, incoming.subagents),
+    workflows: mergeMultiagentSetting(stored.workflows, incoming.workflows),
+    advisor: incoming.advisor === undefined ? stored.advisor : incoming.advisor,
+  };
+}
+
+function mergeMultiagentSetting(
+  current: ResolvedMultiagentSetting,
+  incoming: MultiagentSettingParam | null | undefined,
+): MultiagentSettingParam | null | undefined {
+  if (incoming === undefined) return current;
+  if (incoming === null) return null;
+  if (incoming.type === 'disabled') return incoming;
+  const base = current.type === 'enabled' ? current : undefined;
+  return {
+    type: 'enabled',
+    inline_agents: incoming.inline_agents === undefined
+      ? base?.inline_agents
+      : incoming.inline_agents,
+    predefined_agents: incoming.predefined_agents === undefined
+      ? base?.predefined_agents
+      : incoming.predefined_agents,
+  };
 }

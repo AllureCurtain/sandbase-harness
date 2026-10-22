@@ -68,6 +68,19 @@
 
 ### Added
 
+- The current `multiagent_20261001` topology on agent create and update. The
+  block is accepted, validated, stored, and projected in its resolved form:
+  `subagents` and `workflows` default to enabled with inline agents enabled and
+  an empty predefined list, `advisor` defaults to disabled, and every list entry
+  is pinned to a concrete `{type:'agent', id, version}` reference. `self`
+  resolves to the coordinator at the write version; a missing, archived,
+  nested-roster, duplicate, or unknown-version member is refused; disabling
+  inline agents requires a non-empty list; and an enabled advisor requires a
+  model. Same-type updates merge level by level, a different `type` replaces the
+  block, and `multiagent: null` clears it. The legacy `coordinator` shape is
+  unchanged. The block is stored, not executed yet — the subagent, workflow, and
+  advisor runtimes land in the slices that follow.
+
 - The canonical `multiagent` roster on agent create and update. A coordinator
   roster is now accepted, validated, and stored in its resolved form: `self`
   and unversioned members are pinned to concrete `{type:'agent', id, version}`

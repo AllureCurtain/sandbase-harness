@@ -12,7 +12,7 @@ import {
   validateWebToolConfigs,
   webToolPolicyFieldsSchema,
 } from '@/core/agent/web-tool-policy.js';
-import { parseRosterParam, resolveRoster } from '@/core/agent/roster.js';
+import { multiagentParamSchema, parseMultiagentParam, resolveMultiagentParam, type RosterMemberRow } from '@/core/agent/roster.js';
 import type { AgentDefinition, AgentModelConfig, AgentModelSpeed, AgentToolset } from '@/types/agent.js';
 
 // ============================================================
@@ -200,24 +200,13 @@ export const agentDefinitionSchema = z.object({
   delegations: z.array(z.string()).optional(),
   enable_general_subagent: z.boolean().optional(),
   /**
-   * The canonical coordinator roster. Accepted in the *param* form the SDK
-   * sends — `string | {type:'agent'} | {type:'self'} | {type:'advisor'}` — and
-   * in the *resolved* form a stored row carries back through revalidation.
-   * Cardinality, advisor, depth, and reference checks run after parse inside
-   * `validateAgentDefinition`; a `null` clears the roster (update path).
+   * The canonical multiagent configuration. Both accepted topologies are read
+   * in the *param* form the SDK sends, and a stored row's resolved form passes
+   * back through revalidation. Cardinality, default, depth, and reference
+   * checks run after parse inside `validateAgentDefinition`; a `null` clears
+   * the block (update path).
    */
-  multiagent: z.union([
-    z.object({
-      type: z.literal('coordinator'),
-      agents: z.array(z.union([
-        z.string().min(1),
-        z.object({ type: z.literal('agent'), id: z.string().min(1), version: z.number().int().min(1).optional() }),
-        z.object({ type: z.literal('self') }),
-        z.object({ type: z.literal('advisor'), model: z.string().min(1) }),
-      ])).min(1).max(20),
-    }),
-    z.null(),
-  ]).optional(),
+  multiagent: z.union([multiagentParamSchema, z.null()]).optional(),
   strategy: z.string().optional(),
   environment: z.string().optional(),
 });
@@ -256,8 +245,8 @@ export interface ValidationResult {
 export interface RosterResolverContext {
   /** The coordinator's own id and the version this write produces (for `self`). */
   self: { id: string; version: number };
-  /** Resolve a member id to `{version, hasMultiagent, versions}`, or `undefined` when missing/archived. */
-  lookup: (id: string) => { version: number; hasMultiagent: boolean; versions: readonly number[] } | undefined;
+  /** Resolve a member id to its current row, or `undefined` when missing/archived. */
+  lookup: (id: string) => RosterMemberRow | undefined;
 }
 
 /**
@@ -358,16 +347,16 @@ export function validateAgentDefinition(input: unknown, roster?: RosterResolverC
         }],
       };
     }
-    const parsedRoster = parseRosterParam(multiagentInput);
-    if (!parsedRoster.ok) {
-      return { valid: false, errors: parsedRoster.errors };
+    const parsed = parseMultiagentParam(multiagentInput);
+    if (!parsed.ok) {
+      return { valid: false, errors: parsed.errors };
     }
     if (roster) {
-      const resolved = resolveRoster(parsedRoster.roster, roster.self, roster.lookup);
+      const resolved = resolveMultiagentParam(parsed.param, roster.self, roster.lookup);
       if (!resolved.ok) {
         return { valid: false, errors: resolved.errors };
       }
-      result.data.multiagent = resolved.roster;
+      result.data.multiagent = resolved.multiagent;
     }
   }
 

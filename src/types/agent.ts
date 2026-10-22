@@ -50,13 +50,14 @@ export interface AgentDefinition {
   /** Enable CMA general_subagent tool for ad-hoc sub-task delegation */
   enable_general_subagent?: boolean;
   /**
-   * The resolved canonical multiagent roster, when this agent coordinates a
-   * session's threads. Stored and projected in the resolved form — `self` and
-   * unversioned members are pinned to concrete `{type:'agent', id, version}`
-   * references at write time, so a read never re-resolves. Absent means the
-   * agent is single-threaded; `null` on input clears it.
+   * The resolved canonical `multiagent` configuration. `coordinator` is the
+   * legacy topology; `multiagent_20261001` is the current one (subagents,
+   * workflows, advisor). Stored and projected in the resolved form — `self`
+   * and unversioned members are pinned to concrete `{type:'agent', id,
+   * version}` references at write time, so a read never re-resolves. Absent
+   * means the agent is single-threaded; `null` on input clears it.
    */
-  multiagent?: MultiagentRoster | null;
+  multiagent?: MultiagentConfig | null;
   /** Strategy name (default: 'default') */
   strategy?: string;
   /** Environment name (default: 'local') */
@@ -75,14 +76,54 @@ export type MultiagentRosterEntry =
   | { type: 'advisor'; model: string };
 
 /**
- * The resolved `multiagent` value. The coordinator topology is the only one
- * the contract defines; every member is pinned to a concrete agent version at
- * write time, so this is the same shape the SDK decodes on read.
+ * The resolved `multiagent` value. `coordinator` is the legacy topology; every
+ * member is pinned to a concrete agent version at write time, so this is the
+ * same shape the SDK decodes on read.
  */
 export interface MultiagentRoster {
   type: 'coordinator';
   agents: MultiagentRosterEntry[];
 }
+
+/** One pinned member of a `multiagent_20261001` predefined list. */
+export interface MultiagentAgentReference {
+  type: 'agent';
+  id: string;
+  version: number;
+}
+
+/**
+ * One enabled/disabled setting of the current topology. A disabled setting has
+ * no nested fields; an enabled one always reports the resolved inline-agent
+ * policy and its pinned predefined list.
+ */
+export type ResolvedMultiagentSetting =
+  | { type: 'disabled' }
+  | {
+      type: 'enabled';
+      inline_agents: { type: 'enabled' | 'disabled' };
+      predefined_agents: MultiagentAgentReference[];
+    };
+
+/** Resolved advisor setting: disabled, or the model consulted mid-turn. */
+export type ResolvedMultiagentAdvisor =
+  | { type: 'disabled' }
+  | { type: 'enabled'; model: string };
+
+/**
+ * The current canonical multiagent configuration. All three settings are
+ * always present in the resolved form: `subagents` and `workflows` default to
+ * enabled with inline agents enabled, and `advisor` defaults to disabled.
+ */
+export interface Multiagent20261001 {
+  type: 'multiagent_20261001';
+  subagents: ResolvedMultiagentSetting;
+  workflows: ResolvedMultiagentSetting;
+  advisor: ResolvedMultiagentAdvisor;
+}
+
+/** Every stored/projected `multiagent` shape. */
+export type MultiagentConfig = MultiagentRoster | Multiagent20261001;
 
 export interface AgentModelConfig {
   id: string;
