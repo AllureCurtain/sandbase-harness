@@ -83,6 +83,7 @@ export const agents = {
       selfReplicaOn: "Allowed",
       exclusiveNotice: "A roster replaces the general sub-agent switch — the two delegation styles cannot be combined (the API rejects both together).",
       subagentBlocked: "Disabled while a multi-agent roster is set — the two delegation styles are mutually exclusive.",
+      currentTopology: "This agent uses the current multiagent_20261001 configuration (subagents, workflows, advisor). It is preserved unchanged here; edit it through the API for now.",
     },
     tools: {
       title: "Tools",

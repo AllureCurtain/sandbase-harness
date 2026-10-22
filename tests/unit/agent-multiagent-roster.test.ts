@@ -63,7 +63,7 @@ describe('multiagent roster — §4.8', () => {
       resolver(),
     );
     expect(result.valid).toBe(true);
-    expect(result.data?.multiagent?.agents).toEqual([{ type: 'agent', id: 'agent_self', version: 5 }]);
+    expect((result.data?.multiagent as { agents: unknown[] }).agents).toEqual([{ type: 'agent', id: 'agent_self', version: 5 }]);
   });
 
   it('resolves the bare-string member shorthand to a versioned agent reference', () => {
@@ -72,7 +72,7 @@ describe('multiagent roster — §4.8', () => {
       resolver(),
     );
     expect(result.valid).toBe(true);
-    expect(result.data?.multiagent?.agents).toEqual([{ type: 'agent', id: 'agent_a', version: 3 }]);
+    expect((result.data?.multiagent as { agents: unknown[] }).agents).toEqual([{ type: 'agent', id: 'agent_a', version: 3 }]);
   });
 
   it('refuses an `advisor` member with advisor_unsupported, hoisted to a code', () => {
@@ -172,6 +172,183 @@ describe('multiagent roster — §4.8', () => {
     // Without a resolver the advisor refusal is deferred to resolution — but
     // the structural parse still has to accept the shape for resolution later.
     expect(advisor.valid).toBe(true);
+  });
+});
+
+describe('multiagent_20261001 — current topology', () => {
+  it('fills the documented defaults when only the type is sent', () => {
+    const result = validateAgentDefinition(
+      { ...base, multiagent: { type: 'multiagent_20261001' } },
+      resolver(),
+    );
+    expect(result.valid).toBe(true);
+    expect(result.data?.multiagent).toEqual({
+      type: 'multiagent_20261001',
+      subagents: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+      workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+      advisor: { type: 'disabled' },
+    });
+  });
+
+  it('pins both predefined lists and resolves self to the write version', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: ['agent_a', { type: 'self' }] },
+          workflows: { type: 'enabled', predefined_agents: [{ type: 'agent', id: 'agent_b', version: 7 }] },
+          advisor: { type: 'enabled', model: 'advisor-model' },
+        },
+      },
+      resolver(),
+    );
+    expect(result.valid).toBe(true);
+    expect(result.data?.multiagent).toEqual({
+      type: 'multiagent_20261001',
+      subagents: {
+        type: 'enabled',
+        inline_agents: { type: 'enabled' },
+        predefined_agents: [
+          { type: 'agent', id: 'agent_a', version: 3 },
+          { type: 'agent', id: 'agent_self', version: 5 },
+        ],
+      },
+      workflows: {
+        type: 'enabled',
+        inline_agents: { type: 'enabled' },
+        predefined_agents: [{ type: 'agent', id: 'agent_b', version: 7 }],
+      },
+      advisor: { type: 'enabled', model: 'advisor-model' },
+    });
+  });
+
+  it('refuses disabling inline agents with an empty predefined list', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', inline_agents: { type: 'disabled' } },
+        },
+      },
+      resolver(),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.[0].path).toBe('multiagent.subagents.inline_agents');
+    expect(result.errors?.[0].message).toMatch(/requires at least one/i);
+  });
+
+  it('accepts disabling inline agents when a predefined agent is listed', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: {
+            type: 'enabled',
+            inline_agents: { type: 'disabled' },
+            predefined_agents: ['agent_a'],
+          },
+        },
+      },
+      resolver(),
+    );
+    expect(result.valid).toBe(true);
+    expect((result.data?.multiagent as { subagents: { inline_agents: { type: string } } })
+      .subagents.inline_agents.type).toBe('disabled');
+  });
+
+  it('does not treat the bare string "self" as the self directive', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: ['self'] },
+        },
+      },
+      resolver(),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.[0].message).toMatch(/does not exist/i);
+  });
+
+  it('refuses a duplicate that resolves to the same agent through self and id', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: [{ type: 'self' }, 'agent_self'] },
+        },
+      },
+      resolver({ agent_self: { version: 5, hasMultiagent: false, versions: [5] } }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.some((error) => /already listed/i.test(error.message))).toBe(true);
+  });
+
+  it('refuses a missing, nested, or unknown-version member in either list', () => {
+    const missing = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          workflows: { type: 'enabled', predefined_agents: ['agent_ghost'] },
+        },
+      },
+      resolver(),
+    );
+    expect(missing.valid).toBe(false);
+
+    const nested = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: ['agent_a'] },
+        },
+      },
+      resolver({ agent_a: { version: 3, hasMultiagent: true, versions: [3] } }),
+    );
+    expect(nested.valid).toBe(false);
+
+    const badVersion = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: [{ type: 'agent', id: 'agent_a', version: 9 }] },
+        },
+      },
+      resolver(),
+    );
+    expect(badVersion.valid).toBe(false);
+  });
+
+  it('refuses the reserved advisor name in a predefined list', () => {
+    const result = validateAgentDefinition(
+      {
+        ...base,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', predefined_agents: ['agent_a'] },
+        },
+      },
+      resolver({ agent_a: { version: 3, hasMultiagent: false, versions: [3], name: 'anthropic.advisor' } }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.[0].message).toMatch(/reserved/i);
+  });
+
+  it('requires a model when the advisor is enabled', () => {
+    const result = validateAgentDefinition(
+      { ...base, multiagent: { type: 'multiagent_20261001', advisor: { type: 'enabled', model: '' } } },
+      resolver(),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors?.[0].path).toMatch(/advisor/);
   });
 });
 

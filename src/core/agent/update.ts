@@ -27,8 +27,8 @@ import {
   skillRefSchema,
   type ValidationError,
 } from './schema.js';
-import { rosterMemberParamSchema } from './roster.js';
-import type { AgentDefinition } from '@/types/agent.js';
+import { mergeMultiagentUpdate, multiagentParamSchema, type MultiagentParam } from './roster.js';
+import type { AgentDefinition, MultiagentConfig } from '@/types/agent.js';
 
 /**
  * Field names an update body may carry, besides the concurrency precondition.
@@ -53,16 +53,11 @@ const UPDATE_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   // local extension and is not the canonical `multiagent` roster — declaring
   // both on one agent is refused at definition validation (D10).
   enable_general_subagent: z.union([z.boolean(), z.null()]),
-  // The canonical roster in the param form the SDK sends; `null` clears it.
-  // Cardinality, advisor, depth, and reference checks run against the merged
-  // definition in `validateAgentDefinition`, same as every other coupled rule.
-  multiagent: z.union([
-    z.object({
-      type: z.literal('coordinator'),
-      agents: z.array(rosterMemberParamSchema).min(1).max(20),
-    }),
-    z.null(),
-  ]),
+  // Both accepted topologies in the param form the SDK sends; `null` clears
+  // the block. Same-type updates merge level by level in
+  // `applyAgentUpdatePatch`; cross-field checks run against the merged
+  // definition in `validateAgentDefinition`.
+  multiagent: z.union([multiagentParamSchema, z.null()]),
   strategy: z.union([z.string(), z.null()]),
   environment: z.union([z.string(), z.null()]),
 };
@@ -243,6 +238,17 @@ export function applyAgentUpdatePatch(
         else merged[metaKey] = metaValue;
       }
       next.metadata = merged;
+      continue;
+    }
+
+    if (key === 'multiagent' && value !== null && next.multiagent) {
+      // The current topology merges level by level. A cross-type update
+      // replaces the block, which `mergeMultiagentUpdate` expresses by
+      // returning the incoming value unchanged.
+      next.multiagent = mergeMultiagentUpdate(
+        next.multiagent as MultiagentConfig,
+        value as MultiagentParam,
+      );
       continue;
     }
 
