@@ -1539,6 +1539,16 @@ CREATE INDEX idx_session_threads_run ON session_threads(workflow_run_id);
 CREATE INDEX idx_session_threads_session_kind ON session_threads(session_id, thread_kind);
 `;
 
+/**
+ * The agent shape a thread runs: `agent` for a saved, versioned definition and
+ * `inline` for a definition supplied at spawn time. An inline thread has no
+ * `agent_id`/`agent_version`; the resolved definition is still snapshotted in
+ * `agent_definition`, and the API projects the inline shape from it.
+ */
+const M065_THREAD_AGENT_KIND = `
+ALTER TABLE session_threads ADD COLUMN agent_kind TEXT NOT NULL DEFAULT 'agent';
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: '001_initial', sql: M001_INITIAL },
   { version: 2, name: '002_memory', sql: M002_MEMORY },
@@ -1604,4 +1614,5 @@ export const MIGRATIONS: Migration[] = [
   { version: 62, name: '062_session_threads', sql: M062_SESSION_THREADS },
   { version: 63, name: '063_thread_compaction', sql: M063_THREAD_COMPACTION },
   { version: 64, name: '064_thread_lifecycle', sql: M064_THREAD_LIFECYCLE },
+  { version: 65, name: '065_thread_agent_kind', sql: M065_THREAD_AGENT_KIND },
 ];

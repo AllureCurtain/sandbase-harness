@@ -2809,35 +2809,92 @@ export class SessionManager {
         // stream (cross-posted so the primary sees the dispatch), and
         // `agent.thread_message_received` on the child's, which is the input
         // its turn reads.
-        const sentEvent = this.eventLogger.append(sessionId, {
-          type: 'agent.thread_message_sent',
-          threadId: parentThread.id,
-          crossPosted: true,
-          content: [{ type: 'text', text: message }],
-          metadata: {
-            to_session_thread_id: target.id,
-            to_agent_name: target.agentName,
-          },
-        });
-        this.broadcast(sessionId, sentEvent);
-
-        const receivedEvent = this.eventLogger.append(sessionId, {
-          type: 'agent.thread_message_received',
-          threadId: target.id,
-          content: [{ type: 'text', text: message }],
-          metadata: {
-            from_session_thread_id: parentThread.id,
-            from_agent_name: parentThread.agentName,
-          },
-        });
-        this.broadcast(sessionId, receivedEvent);
-
-        // Queue the child's turn on its own chain — independent of the
-        // parent's, so the dispatch returns while the child is already running.
-        this.enqueueThreadTurn(sessionId, target.id, { type: 'internal.thread_message', threadId: target.id });
+        this.dispatchChildMessage(sessionId, parentThread, target, message);
         return { ok: true, thread: target, created };
       },
+      dispatchInlineAgent: ({ definition, message }) => {
+        if (this.threadStore.activeChildCount(sessionId) >= MAX_ACTIVE_CHILD_THREADS) {
+          return {
+            ok: false,
+            reason: `Concurrency limit reached: ${MAX_ACTIVE_CHILD_THREADS} active child threads. Archive a finished thread before dispatching another.`,
+          };
+        }
+        const parentDefinition = parentThread.agentDefinition;
+        // Inline agents inherit the coordinator's model, tools, MCP servers,
+        // and skills; they may override only the thread-scoped identity and
+        // prompt. Clearing `multiagent` and the local delegation extension is
+        // what keeps an inline child at one level.
+        const inlineDefinition: AgentDefinition = {
+          ...parentDefinition,
+          name: definition.name,
+          description: definition.description ?? '',
+          ...(definition.system !== undefined ? { system: definition.system } : {}),
+          multiagent: null,
+        };
+        delete inlineDefinition.delegations;
+        delete inlineDefinition.enable_general_subagent;
+
+        const target = this.threadStore.insertThread({
+          sessionId,
+          parentThreadId: parentThread.id,
+          agentName: definition.name,
+          agentDefinition: inlineDefinition,
+          agentId: null,
+          agentVersion: null,
+          status: 'queued',
+          agentKind: 'inline',
+        });
+        const createdEvent = this.eventLogger.append(sessionId, {
+          type: 'session.thread_created',
+          threadId: parentThread.id,
+          crossPosted: true,
+          metadata: {
+            session_thread_id: target.id,
+            agent_name: target.agentName,
+            parent_thread_id: parentThread.id,
+            workflow_run_id: target.workflowRunId,
+          },
+        });
+        this.broadcast(sessionId, createdEvent);
+        this.dispatchChildMessage(sessionId, parentThread, target, message);
+        return { ok: true, thread: target, created: true };
+      },
     };
+  }
+
+  /** Record a dispatch on both streams and enqueue the child's turn. */
+  private dispatchChildMessage(
+    sessionId: string,
+    parentThread: SessionThread,
+    target: SessionThread,
+    message: string,
+  ): void {
+    const sentEvent = this.eventLogger.append(sessionId, {
+      type: 'agent.thread_message_sent',
+      threadId: parentThread.id,
+      crossPosted: true,
+      content: [{ type: 'text', text: message }],
+      metadata: {
+        to_session_thread_id: target.id,
+        to_agent_name: target.agentName,
+      },
+    });
+    this.broadcast(sessionId, sentEvent);
+
+    const receivedEvent = this.eventLogger.append(sessionId, {
+      type: 'agent.thread_message_received',
+      threadId: target.id,
+      content: [{ type: 'text', text: message }],
+      metadata: {
+        from_session_thread_id: parentThread.id,
+        from_agent_name: parentThread.agentName,
+      },
+    });
+    this.broadcast(sessionId, receivedEvent);
+
+    // Queue the child's turn on its own chain — independent of the parent's,
+    // so the dispatch returns while the child is already running.
+    this.enqueueThreadTurn(sessionId, target.id, { type: 'internal.thread_message', threadId: target.id });
   }
 
   /** The display name a roster member carries on the wire (its agent's `name`). */

@@ -578,6 +578,40 @@ export function toApiAgent(
   };
 }
 
+/** Project a thread-scoped inline agent; it has no id or version. */
+export function toApiInlineAgent(thread: SessionThread): ApiInlineAgent {
+  const definition = thread.agentDefinition;
+  const config = definition.model_config;
+  const effort = config?.effort ?? (definition as { effort?: string }).effort;
+  return {
+    type: 'inline',
+    name: thread.agentName,
+    description: definition.description ?? null,
+    system: definition.system ?? null,
+    model: {
+      id: config?.id ?? definition.model,
+      ...(config?.speed && config.speed !== 'extended' ? { speed: config.speed } : {}),
+      ...(effort ? { effort } : {}),
+    },
+    tools: toApiToolsets(definition.tools ?? []),
+    mcp_servers: toApiMcpServers(definition.mcp_servers ?? []),
+    skills: definition.skills ?? [],
+    execution_identity: { type: 'service_account' },
+  };
+}
+
+export interface ApiInlineAgent {
+  type: 'inline';
+  name: string;
+  description: string | null;
+  system: string | null;
+  model: { id: string; speed?: 'standard' | 'fast'; effort?: string };
+  tools: AgentToolset[];
+  mcp_servers: ApiMcpServer[];
+  skills: ApiAgent['skills'];
+  execution_identity: { type: 'service_account' };
+}
+
 export function toApiSession(
   session: Session,
   agent?: AgentDefinition,
@@ -887,7 +921,7 @@ export interface ApiSessionThread {
   parent_thread_id: string | null;
   /** Non-null only for a workflow run's threads; every other thread reports null. */
   workflow_run_id: string | null;
-  agent: ApiAgent | { type: 'advisor'; model: string };
+  agent: ApiAgent | ApiInlineAgent | { type: 'advisor'; model: string };
   status: ApiSessionStatus;
   stats: {
     active_seconds?: number;
@@ -945,10 +979,12 @@ export function toApiThread(
     session_id: thread.sessionId,
     parent_thread_id: thread.parentThreadId,
     workflow_run_id: thread.workflowRunId,
-    agent: toApiAgent(thread.agentDefinition, {
-      id: thread.agentId ?? undefined,
-      version: thread.agentVersion ?? undefined,
-    }),
+    agent: thread.agentKind === 'inline'
+      ? toApiInlineAgent(thread)
+      : toApiAgent(thread.agentDefinition, {
+          id: thread.agentId ?? undefined,
+          version: thread.agentVersion ?? undefined,
+        }),
     status: toApiSessionStatus(thread.status),
     stats: started
       ? { active_seconds: active, duration_seconds: durationSeconds, startup_seconds: 0 }

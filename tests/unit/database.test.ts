@@ -541,6 +541,38 @@ describe('Database migrations', () => {
     upgraded.close();
   });
 
+  it('adds the thread agent kind (065)', () => {
+    const fresh = new Database(dbPath);
+    fresh.runMigrations();
+    expect(columnsOf(fresh, 'session_threads')).toContain('agent_kind');
+    expect(fresh.prepare('SELECT name FROM _migrations WHERE version = 65').get()).toEqual({
+      name: '065_thread_agent_kind',
+    });
+    fresh.close();
+
+    // Existing threads ran saved agents, so the upgrade defaults them to
+    // `agent` rather than requiring a back-fill pass.
+    const upgradedPath = join(tmpDir, 'upgraded-thread-agent-kind.db');
+    const upgraded = new Database(upgradedPath);
+    upgraded.runMigrations(MIGRATIONS.filter((migration) => migration.version <= 64));
+    expect(columnsOf(upgraded, 'session_threads')).not.toContain('agent_kind');
+    upgraded.exec(`
+      INSERT INTO environments (id, name, config) VALUES ('env_k', 'local', '{}');
+      INSERT INTO agents (id, name, definition) VALUES ('agent_k', 'k', '{}');
+      INSERT INTO sessions (id, agent_id, agent_name, environment_id)
+      VALUES ('sess_kind', 'agent_k', 'k', 'env_k');
+      INSERT INTO session_threads
+        (id, session_id, parent_thread_id, agent_name, agent_definition, created_at, updated_at)
+      VALUES ('sth_kind', 'sess_kind', NULL, 'k', '{}', datetime('now'), datetime('now'))
+    `);
+
+    upgraded.runMigrations();
+    expect(
+      upgraded.prepare('SELECT agent_kind FROM session_threads WHERE id = ?').get('sth_kind'),
+    ).toEqual({ agent_kind: 'agent' });
+    upgraded.close();
+  });
+
   it('adds the usage cache-bucket columns to sessions and events (055)', () => {
     // Fresh: both tables carry the columns from the start.
     const fresh = new Database(dbPath);

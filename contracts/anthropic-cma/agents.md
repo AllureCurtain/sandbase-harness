@@ -106,8 +106,10 @@ the model profile is `src/core/agent/model-object.ts`, and the routes are
   `subagents` setting is executed: an enabled list mounts `list_agents` and
   `send_to_agent` on the primary thread and its self replicas, with the same
   asynchronous dispatch, follow-up, concurrency cap, and event pair as the
-  legacy coordinator. A disabled setting mounts neither tool. The workflow and
-  advisor settings are still stored only, so the capability remains `partial`.
+  legacy coordinator; when `inline_agents` is enabled the same tool can spawn a
+  thread-scoped agent that inherits the coordinator's model, tools, MCP servers,
+  and skills. A disabled setting mounts neither tool. The workflow and advisor
+  settings are still stored only, so the capability remains `partial`.
 - Local delegation is a separate extension, not the roster: `delegations` is a
   list of agent names, and the boolean `enable_general_subagent` exposes one
   extra tool that runs a temporary copy of the agent for a single level. Both
@@ -128,7 +130,7 @@ field the runtime cannot honour instead of dropping it.
 | `model.effort` | Parsed, validated, stored in the model profile, and returned by every read projection (agent, version, and session snapshot). On the Anthropic provider the level reaches the request as `output_config.effort` — capability-gated per level, because the published lists are not uniform (Opus 4.6 and Sonnet 4.6 take `max` but not `xhigh`; Opus 4.5 tops out at `high`; Haiku 4.5 takes no effort). A listed model refused its level fails create/update with `unsupported_model_effort` naming the allowed set; a level outside the published vocabulary is `invalid_model_effort`. Models outside the table, and every non-Anthropic provider, accept the field and send nothing. A deployment may also set `reasoning_effort` in its own model settings — operator-level, applying to the model rather than to an agent. |
 | `model.inference_geo` | Refused by name with `unsupported_model_field` when a well-formed pin is sent: this runtime has no inference-geography control, so accepting it would promise a pin it cannot hold. An unknown value is `invalid_inference_geo` first. |
 | `multiagent` roster | Accepted and validated on create and update: members resolve to pinned `{type:'agent', id, version}` references, `self` resolves to the coordinator, an `advisor` member is refused with `advisor_unsupported` (no server-side advisor exists locally), a missing/archived/nested-roster member is refused, an explicit version pin must name a version the store still resolves (a pin the runtime cannot honour is refused at write time rather than substituted at dispatch), and `multiagent` combined with the local `delegations`/`enable_general_subagent` extension is refused (D10). The coordinator role executes on session threads; the advisor role is not implemented. See [`threads.md`](./threads.md). |
-| `multiagent_20261001` | Accepted, validated, stored, and projected with the published defaults: `subagents` and `workflows` enabled, inline agents enabled, both predefined lists empty, advisor disabled. Each enabled list is pinned to concrete agent versions and checked against the same existence/archive/depth/version rules; a disabled inline setting requires a non-empty list. Same-type updates merge level by level; a different type replaces the block and `multiagent: null` clears it. `subagents` executes with the legacy dispatch tools and cap; a disabled setting mounts none. `workflows` and `advisor` are stored only, so the capability stays `partial`. |
+| `multiagent_20261001` | Accepted, validated, stored, and projected with the published defaults: `subagents` and `workflows` enabled, inline agents enabled, both predefined lists empty, advisor disabled. Each enabled list is pinned to concrete agent versions and checked against the same existence/archive/depth/version rules; a disabled inline setting requires a non-empty list. Same-type updates merge level by level; a different type replaces the block and `multiagent: null` clears it. `subagents` executes with the legacy dispatch tools and cap, including thread-scoped inline agents when enabled; a disabled setting mounts none. `workflows` and `advisor` are stored only, so the capability stays `partial`. |
 | `max_turns` | Local extension, not a published field: the published model counts turns client-side, so no server cap exists there. Here it is a positive-integer server-side turn limit validated on create and update, stored on the definition, executed by the builtin strategy (agent value, else the workspace `default_max_steps`), and echoed on every agent projection. It is absent — never `null` — on definitions that do not set it. |
 | Local delegation extension | `delegations` plus `enable_general_subagent` is a local one-level parent/child mechanism with its own tool names (`delegate_to_<name>`, `general_subagent`). The published contract defines neither field, and this is not presented as the canonical roster. |
 | Version retention | SandBase keeps prior agent versions readable in its own archive table. The published contract states versioning but not the retention mechanism. |
@@ -212,8 +214,9 @@ field the runtime cannot honour instead of dropping it.
   defaults, inline-agent rule, reserved advisor name, and both predefined
   lists.
 - `tests/unit/coordinator-send-to-agent.test.ts` — dispatch from the current
-  topology's predefined list, the disabled setting mounting no tools, and the
-  legacy coordinator behaviour unchanged.
+  topology's predefined list, inline-agent spawn (including an inline-only
+  configuration and the disabled-setting refusal), and the legacy coordinator
+  behaviour unchanged.
 - `tests/unit/web-tool-policy.test.ts` — per-tool web configuration validation.
 
 ## 7. Status
@@ -227,8 +230,9 @@ configuration: both the legacy `coordinator` roster and the current
 `multiagent_20261001` block are validated, stored, and projected in their
 resolved forms. The legacy coordinator role executes on session threads
 (`threads.md`); the current block's `subagents` setting executes with the same
-dispatch tools and cap, while its `workflows` and `advisor` settings are
-stored only, so the capability stays `partial`. An `advisor` member on the
+dispatch tools and cap — predefined agents and, when enabled, thread-scoped
+inline agents — while its `workflows` and `advisor` settings are stored only,
+so the capability stays `partial`. An `advisor` member on the
 legacy roster is still refused with `advisor_unsupported`. The local
 delegation extension is `supported` and is recorded as an extension, never as
 the roster.
