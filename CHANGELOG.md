@@ -68,6 +68,18 @@
 
 ### Added
 
+- Advisor consultations on the current `multiagent_20261001` topology. When
+  `advisor` is enabled, the coordinator thread mounts `consult_advisor`
+  (`{message}`). The first call creates one platform advisor thread
+  (`thread_kind = 'advisor'`, agent name `anthropic.advisor`, the configured
+  advisor model, no tools); later calls reuse it. The question and advice use
+  the same sent/received event pair as subagent dispatch, so the advice returns
+  to the coordinator as a message and re-enters its next turn. The advisor
+  thread projects `agent` as `{type:'advisor', model}` and does not consume the
+  25-subagent cap. This slice does not yet auto-terminate the advisor thread or
+  apply a separate advisor-model compatibility/budget policy, so the advisor
+  capability remains `partial`.
+
 - Inline subagents on the current `multiagent_20261001` topology (migration
   `065_thread_agent_kind`). When `subagents.inline_agents` is enabled,
   `send_to_agent` accepts `inline_agent: {name, description?, system?}` and

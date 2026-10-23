@@ -133,6 +133,19 @@ supported for a saved agent's thread in this slice, not for an inline thread.
 A disabled `inline_agents` setting refuses the call and mounts no inline
 capability.
 
+**Advisor.** When `multiagent_20261001.advisor` is enabled, the coordinator
+thread mounts `consult_advisor` (`{message}`). The first consultation creates
+one platform thread with `thread_kind = 'advisor'`, agent name
+`anthropic.advisor`, the configured advisor model, an advisor system prompt, and
+no tools; later consultations re-enter the same thread. Its agent projection is
+`{type:'advisor', model}`. The question is an `agent.thread_message_sent` on the
+coordinator plus `agent.thread_message_received` on the advisor, and the advice
+returns as `agent.thread_message_sent` on the advisor plus
+`agent.thread_message_received` on the coordinator, which re-enters its next
+turn. Advisor threads do not consume the 25-subagent cap. This slice does not
+yet auto-terminate the advisor thread or enforce a separate advisor-model
+compatibility/budget policy, so the advisor capability is `partial`.
+
 **Each thread runs the same engine loop against its own slice of the log.** A
 `ThreadEventLogWriter` facade wraps the session's `EventLogger` and stamps the
 running thread's `thread_id` on every event and usage record, so a child's

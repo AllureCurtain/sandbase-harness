@@ -979,12 +979,14 @@ export function toApiThread(
     session_id: thread.sessionId,
     parent_thread_id: thread.parentThreadId,
     workflow_run_id: thread.workflowRunId,
-    agent: thread.agentKind === 'inline'
-      ? toApiInlineAgent(thread)
-      : toApiAgent(thread.agentDefinition, {
-          id: thread.agentId ?? undefined,
-          version: thread.agentVersion ?? undefined,
-        }),
+    agent: thread.kind === 'advisor'
+      ? { type: 'advisor', model: thread.agentDefinition.model }
+      : thread.agentKind === 'inline'
+        ? toApiInlineAgent(thread)
+        : toApiAgent(thread.agentDefinition, {
+            id: thread.agentId ?? undefined,
+            version: thread.agentVersion ?? undefined,
+          }),
     status: toApiSessionStatus(thread.status),
     stats: started
       ? { active_seconds: active, duration_seconds: durationSeconds, startup_seconds: 0 }

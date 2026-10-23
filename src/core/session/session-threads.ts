@@ -30,7 +30,7 @@ import type { Session, SessionStatus } from '@/types/session.js';
 // ============================================================
 
 export type SessionThreadKind = 'primary' | 'subagent' | 'advisor' | 'workflow';
-export type SessionThreadAgentKind = 'agent' | 'inline';
+export type SessionThreadAgentKind = 'agent' | 'inline' | 'advisor';
 
 export interface SessionThreadRow {
   id: string;

@@ -72,6 +72,17 @@ const COORDINATOR_CURRENT: AgentDefinition = {
   },
 };
 
+/** The current topology with delegation turned off but the advisor enabled. */
+const COORDINATOR_ADVISOR: AgentDefinition = {
+  ...COORDINATOR_CURRENT,
+  multiagent: {
+    type: 'multiagent_20261001',
+    subagents: { type: 'disabled' },
+    workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+    advisor: { type: 'enabled', model: 'advisor-m' },
+  },
+};
+
 /** The current topology with delegation turned off. */
 const COORDINATOR_CURRENT_DISABLED: AgentDefinition = {
   ...COORDINATOR_CURRENT,
@@ -90,6 +101,8 @@ interface TurnActions {
   /** Spawn an inline agent in this turn; `inlineMessage` is its task. */
   inlineAgent?: { name: string; description?: string; system?: string };
   inlineMessage?: string;
+  /** Ask the advisor this question in this turn. */
+  consultAdvisor?: string;
   /** Invoke `send_to_agent` several times in this one turn (fan-out dispatch). */
   sendToAgents?: Array<{ agent: string; message: string; thread_id?: string }>;
   /** Invoke `list_agents` and record its raw JSON output here. */
@@ -248,6 +261,10 @@ class ScriptedExecutor implements SessionExecutor {
           inline_agent: actions.inlineAgent,
           message: actions.inlineMessage ?? 'inline task',
         });
+        this.sendResults.push(typeof out === 'string' ? out : JSON.stringify(out));
+      }
+      if (actions.consultAdvisor && tools.consult_advisor) {
+        const out = await tools.consult_advisor.execute({ message: actions.consultAdvisor });
         this.sendResults.push(typeof out === 'string' ? out : JSON.stringify(out));
       }
     }
@@ -513,6 +530,52 @@ describe('coordinator send_to_agent', () => {
 
     expect(executor.sendResults.at(-1)).toContain('does not allow inline subagents');
     expect(manager.getThreadStore().listBySession(session.id)).toHaveLength(1);
+  });
+
+  it('consults the enabled advisor on its own thread and returns the advice', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify(COORDINATOR_ADVISOR), 'agent_coordinator');
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    executor.script('coordinator', [
+      { consultAdvisor: 'Should we ship?', say: 'asked' },
+      { consultAdvisor: 'And the rollback?', say: 'asked again' },
+      { say: 'final' },
+    ]);
+    executor.script('anthropic.advisor', [{ say: 'Ship with a canary.' }, { say: 'Keep the previous image.' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.filter((event) =>
+      event.type === 'agent.thread_message_received' && event.threadId === primaryId
+      && event.metadata?.from_agent_name === 'anthropic.advisor').length >= 2);
+
+    const advisorThreads = manager.getThreadStore().listBySession(session.id)
+      .filter((thread) => thread.kind === 'advisor');
+    expect(advisorThreads).toHaveLength(1);
+    const advisor = advisorThreads[0]!;
+    expect(advisor.agentName).toBe('anthropic.advisor');
+    expect(advisor.agentKind).toBe('advisor');
+    expect(advisor.agentDefinition.model).toBe('advisor-m');
+    expect(toApiThread(advisor).agent).toEqual({ type: 'advisor', model: 'advisor-m' });
+    expect(manager.getThreadStore().activeChildCount(session.id)).toBe(0);
+
+    const advisorEvents = manager.getEventLogger().getThreadEvents(session.id, advisor.id);
+    expect(advisorEvents.some((event) => event.type === 'agent.tool_use')).toBe(false);
+    expect(advisorEvents.some((event) => event.type === 'agent.thread_message_received')).toBe(true);
+  });
+
+  it('does not mount consult_advisor when the advisor is disabled', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify(COORDINATOR_CURRENT), 'agent_coordinator');
+    const session = manager.create({ agent: 'agent_coordinator' });
+    executor.script('coordinator', [{ consultAdvisor: 'Should we ship?', say: 'answered myself' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) => event.type === 'session.status_idle'));
+
+    expect(manager.getThreadStore().listBySession(session.id)
+      .some((thread) => thread.kind === 'advisor')).toBe(false);
+    expect(executor.sendResults).toHaveLength(0);
   });
 
   it('mounts no coordinator tools when the current topology disables subagents', async () => {

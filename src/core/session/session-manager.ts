@@ -2859,6 +2859,57 @@ export class SessionManager {
         this.dispatchChildMessage(sessionId, parentThread, target, message);
         return { ok: true, thread: target, created: true };
       },
+      consultAdvisor: ({ message }) => {
+        const multiagent = parentThread.agentDefinition.multiagent;
+        if (multiagent?.type !== 'multiagent_20261001' || multiagent.advisor.type !== 'enabled') {
+          return { ok: false, reason: 'This session has no enabled advisor.' };
+        }
+        // One platform advisor thread per session; a new consultation re-enters
+        // the same thread so its prior advice is part of the context.
+        let target = this.threadStore.listBySession(sessionId)
+          .find((thread) => thread.kind === 'advisor' && !thread.archivedAt);
+        let created = false;
+        if (!target) {
+          const advisorDefinition: AgentDefinition = {
+            name: 'anthropic.advisor',
+            description: 'Session advisor',
+            model: multiagent.advisor.model,
+            system:
+              'You are the session advisor. Give focused, concrete advice in response to the question. ' +
+              'You have no tools and do not perform work yourself; the coordinator applies your advice.',
+            tools: [],
+            mcp_servers: [],
+            skills: [],
+            multiagent: null,
+          };
+          target = this.threadStore.insertThread({
+            sessionId,
+            parentThreadId: parentThread.id,
+            agentName: 'anthropic.advisor',
+            agentDefinition: advisorDefinition,
+            agentId: null,
+            agentVersion: null,
+            status: 'queued',
+            kind: 'advisor',
+            agentKind: 'advisor',
+          });
+          created = true;
+          const createdEvent = this.eventLogger.append(sessionId, {
+            type: 'session.thread_created',
+            threadId: parentThread.id,
+            crossPosted: true,
+            metadata: {
+              session_thread_id: target.id,
+              agent_name: target.agentName,
+              parent_thread_id: parentThread.id,
+              workflow_run_id: target.workflowRunId,
+            },
+          });
+          this.broadcast(sessionId, createdEvent);
+        }
+        this.dispatchChildMessage(sessionId, parentThread, target, message);
+        return { ok: true, thread: target, created };
+      },
     };
   }
 

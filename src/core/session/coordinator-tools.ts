@@ -47,6 +47,12 @@ export function inlineSubagentsEnabled(agent: AgentDefinition): boolean {
     && multiagent.subagents.inline_agents.type === 'enabled';
 }
 
+/** Whether the current topology declares an enabled advisor. */
+export function advisorEnabled(agent: AgentDefinition): boolean {
+  return agent.multiagent?.type === 'multiagent_20261001'
+    && agent.multiagent.advisor.type === 'enabled';
+}
+
 /**
  * The subagents a thread with this definition may dispatch to.
  *
@@ -112,6 +118,13 @@ export interface CoordinatorToolsHost {
   }):
     | { ok: true; thread: SessionThread; created: boolean }
     | { ok: false; reason: string };
+  /**
+   * Ask the platform advisor. The advisor thread is created once and reused;
+   * the advice arrives back on the parent as an `agent.thread_message_received`.
+   */
+  consultAdvisor(input: { message: string }):
+    | { ok: true; thread: SessionThread; created: boolean }
+    | { ok: false; reason: string };
 }
 
 /**
@@ -127,7 +140,8 @@ export function buildCoordinatorTools(
 ): Record<string, any> {
   const members = subagentMembers(agent);
   const inlineEnabled = inlineSubagentsEnabled(agent);
-  if (members.length === 0 && !inlineEnabled) return {};
+  const advisorOn = advisorEnabled(agent);
+  if (members.length === 0 && !inlineEnabled && !advisorOn) return {};
   const coordinatorName = agent.name;
 
   return {
@@ -240,6 +254,30 @@ export function buildCoordinatorTools(
         return JSON.stringify({ thread_id: outcome.thread.id, status: 'sent' });
       },
     },
+
+    ...(advisorOn ? {
+      consult_advisor: {
+        description:
+          'Ask the session advisor for a second opinion. The advisor runs on its own model and thread with no tools; ' +
+          'its advice arrives back on this thread as a message. Use it for a focused review or a decision you are ' +
+          'unsure about, not for routine work.',
+        parameters: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', description: 'The question or context to put to the advisor' },
+          },
+          required: ['message'],
+        },
+        execute: async (input: { message?: string }) => {
+          if (typeof input.message !== 'string' || input.message.length === 0) {
+            return toolError('consult_advisor requires a non-empty `message`.');
+          }
+          const outcome = host.consultAdvisor({ message: input.message });
+          if (!outcome.ok) return toolError(outcome.reason);
+          return JSON.stringify({ thread_id: outcome.thread.id, status: 'sent' });
+        },
+      },
+    } : {}),
   };
 }
 
