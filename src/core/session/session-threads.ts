@@ -30,6 +30,7 @@ import type { Session, SessionStatus } from '@/types/session.js';
 // ============================================================
 
 export type SessionThreadKind = 'primary' | 'subagent' | 'advisor' | 'workflow';
+export type SessionThreadAgentKind = 'agent' | 'inline';
 
 export interface SessionThreadRow {
   id: string;
@@ -42,6 +43,7 @@ export interface SessionThreadRow {
   status: string;
   thread_kind: SessionThreadKind;
   workflow_run_id: string | null;
+  agent_kind: SessionThreadAgentKind;
   usage_tokens_in: number;
   usage_tokens_out: number;
   usage_cache_read_tokens: number;
@@ -72,6 +74,8 @@ export interface SessionThread {
   kind: SessionThreadKind;
   /** The workflow run this thread belongs to, or null for every other kind. */
   workflowRunId: string | null;
+  /** `agent` for a saved definition, `inline` for one supplied at spawn time. */
+  agentKind: SessionThreadAgentKind;
   usage: {
     tokensIn: number;
     tokensOut: number;
@@ -95,6 +99,7 @@ export function rowToThread(row: SessionThreadRow): SessionThread {
     status: row.status as SessionStatus,
     kind: row.thread_kind as SessionThreadKind,
     workflowRunId: row.workflow_run_id,
+    agentKind: row.agent_kind as SessionThreadAgentKind,
     usage: {
       tokensIn: row.usage_tokens_in,
       tokensOut: row.usage_tokens_out,
@@ -236,16 +241,18 @@ export class SessionThreadStore {
     kind?: SessionThreadKind;
     /** Required for `workflow` threads, null/omitted otherwise. */
     workflowRunId?: string | null;
+    /** Defaults to `agent`; an inline spawn names `inline`. */
+    agentKind?: SessionThreadAgentKind;
   }): SessionThread {
     const id = `sth_${nanoid(16)}`;
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT INTO session_threads (
         id, session_id, parent_thread_id, agent_name, agent_definition,
-        agent_id, agent_version, status, thread_kind, workflow_run_id,
+        agent_id, agent_version, status, thread_kind, workflow_run_id, agent_kind,
         usage_tokens_in, usage_tokens_out, usage_cache_read_tokens, usage_cache_write_tokens,
         created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, NULL)
     `).run(
       id,
       thread.sessionId,
@@ -257,6 +264,7 @@ export class SessionThreadStore {
       thread.status ?? 'queued',
       thread.kind ?? 'subagent',
       thread.workflowRunId ?? null,
+      thread.agentKind ?? 'agent',
       now,
       now,
     );

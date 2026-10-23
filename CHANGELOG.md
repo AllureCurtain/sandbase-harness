@@ -68,6 +68,18 @@
 
 ### Added
 
+- Inline subagents on the current `multiagent_20261001` topology (migration
+  `065_thread_agent_kind`). When `subagents.inline_agents` is enabled,
+  `send_to_agent` accepts `inline_agent: {name, description?, system?}` and
+  spawns a thread-scoped agent that inherits the coordinator's model, model
+  profile, tools, MCP servers, and skills; its definition clears `multiagent`
+  and the local delegation fields, so it cannot delegate further. The child row
+  records `agent_kind = 'inline'` with no `agent_id`/`agent_version`, and the
+  thread object projects `agent` as `{type:'inline', name, description, system,
+  model, tools, mcp_servers, skills, execution_identity}`. An inline spawn
+  always starts a new thread; a disabled `inline_agents` setting refuses the
+  call. Follow-ups by `thread_id` remain limited to saved-agent threads.
+
 - Thread lifecycle metadata (migration `064_thread_lifecycle`). Every thread
   row now carries a `thread_kind` (`primary | subagent | advisor | workflow`)
   and a `workflow_run_id`, and the thread object exposes `workflow_run_id`

@@ -119,6 +119,20 @@ first turn is enqueued
 on its own execution chain — every thread serializes only its own turns, so
 several children run concurrently.
 
+**Inline subagents.** When the current topology enables `subagents.inline_agents`,
+`send_to_agent` also accepts `inline_agent` (`{name, description?, system?}`)
+instead of a predefined `agent` name. The child inherits the coordinator's
+model, model profile, tools, MCP servers, and skills; it may override only its
+name, description, and system prompt. Its stored definition clears `multiagent`
+and the local delegation fields, so an inline child cannot delegate further. The
+thread row records `agent_kind = 'inline'` with no `agent_id`/`agent_version`,
+and the thread object projects `agent` as `{type:'inline', name, description,
+system, model, tools, mcp_servers, skills, execution_identity}`. An
+`inline_agent` spawn always starts a new thread; follow-up by `thread_id` is
+supported for a saved agent's thread in this slice, not for an inline thread.
+A disabled `inline_agents` setting refuses the call and mounts no inline
+capability.
+
 **Each thread runs the same engine loop against its own slice of the log.** A
 `ThreadEventLogWriter` facade wraps the session's `EventLogger` and stamps the
 running thread's `thread_id` on every event and usage record, so a child's

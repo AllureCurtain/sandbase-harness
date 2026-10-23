@@ -20,6 +20,7 @@ import { SessionManager, type ExecuteOptions, type SessionExecutor } from '@/cor
 import { buildCoordinatorTools, MAX_ACTIVE_CHILD_THREADS } from '@/core/session/coordinator-tools.js';
 import { primaryStreamMembership, threadStreamMembership } from '@/api/routes/stream.js';
 import { primaryThreadIdForSession, type SessionThread } from '@/core/session/session-threads.js';
+import { toApiThread } from '@/api/standard.js';
 import type { AgentDefinition } from '@/types/agent.js';
 import type { Session, SessionEvent, SessionStatus } from '@/types/session.js';
 
@@ -86,6 +87,9 @@ const COORDINATOR_CURRENT_DISABLED: AgentDefinition = {
 interface TurnActions {
   /** Invoke `send_to_agent` with these args on this turn. */
   sendToAgent?: { agent: string; message: string; thread_id?: string };
+  /** Spawn an inline agent in this turn; `inlineMessage` is its task. */
+  inlineAgent?: { name: string; description?: string; system?: string };
+  inlineMessage?: string;
   /** Invoke `send_to_agent` several times in this one turn (fan-out dispatch). */
   sendToAgents?: Array<{ agent: string; message: string; thread_id?: string }>;
   /** Invoke `list_agents` and record its raw JSON output here. */
@@ -236,6 +240,13 @@ class ScriptedExecutor implements SessionExecutor {
           agent: send.agent,
           message: send.message,
           ...(threadId !== undefined ? { thread_id: threadId } : {}),
+        });
+        this.sendResults.push(typeof out === 'string' ? out : JSON.stringify(out));
+      }
+      if (actions.inlineAgent && tools.send_to_agent) {
+        const out = await tools.send_to_agent.execute({
+          inline_agent: actions.inlineAgent,
+          message: actions.inlineMessage ?? 'inline task',
         });
         this.sendResults.push(typeof out === 'string' ? out : JSON.stringify(out));
       }
@@ -409,6 +420,99 @@ describe('coordinator send_to_agent', () => {
       .find((thread) => thread.parentThreadId === primaryId)!;
     expect(child.agentName).toBe('reviewer');
     expect(child.agentId).toBe('agent_worker');
+  });
+
+  it('spawns an inline agent that inherits the coordinator and projects inline', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?')
+      .run(JSON.stringify(COORDINATOR_CURRENT), 'agent_coordinator');
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    executor.script('coordinator', [
+      {
+        inlineAgent: { name: 'inline-reviewer', description: 'Reviews one diff.', system: 'Be terse.' },
+        inlineMessage: 'review this',
+        say: 'dispatched',
+      },
+      { say: 'final' },
+    ]);
+    executor.script('inline-reviewer', [{ say: 'inline done' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'agent.thread_message_received' && event.threadId === primaryId));
+
+    const child = manager.getThreadStore().listBySession(session.id)
+      .find((thread) => thread.parentThreadId === primaryId)!;
+    expect(child.agentName).toBe('inline-reviewer');
+    expect(child.agentKind).toBe('inline');
+    expect(child.agentId).toBeNull();
+    expect(child.agentDefinition.model).toBe('m');
+    expect(child.agentDefinition.system).toBe('Be terse.');
+    expect(child.agentDefinition.multiagent).toBeNull();
+
+    const projected = toApiThread(child).agent as unknown as Record<string, unknown>;
+    expect(projected.type).toBe('inline');
+    expect(projected.name).toBe('inline-reviewer');
+    expect(projected.description).toBe('Reviews one diff.');
+    expect(projected.system).toBe('Be terse.');
+    expect(projected.execution_identity).toEqual({ type: 'service_account' });
+  });
+
+  it('mounts the tools for inline agents even with no predefined list', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?').run(
+      JSON.stringify({
+        ...COORDINATOR_CURRENT,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+          workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+          advisor: { type: 'disabled' },
+        },
+      }),
+      'agent_coordinator',
+    );
+    const session = manager.create({ agent: 'agent_coordinator' });
+    const primaryId = primaryThreadIdForSession(session.id);
+    executor.script('coordinator', [
+      { inlineAgent: { name: 'solo-inline' }, inlineMessage: 'work', say: 'done' },
+    ]);
+    executor.script('solo-inline', [{ say: 'worked' }]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) =>
+      event.type === 'agent.thread_message_received' && event.threadId === primaryId));
+
+    expect(manager.getThreadStore().listBySession(session.id)
+      .some((thread) => thread.agentName === 'solo-inline' && thread.agentKind === 'inline')).toBe(true);
+  });
+
+  it('refuses an inline spawn when the current topology disables inline agents', async () => {
+    db.prepare('UPDATE agents SET definition = ? WHERE id = ?').run(
+      JSON.stringify({
+        ...COORDINATOR_CURRENT,
+        multiagent: {
+          type: 'multiagent_20261001',
+          subagents: {
+            type: 'enabled',
+            inline_agents: { type: 'disabled' },
+            predefined_agents: [{ type: 'agent', id: 'agent_worker', version: 1 }],
+          },
+          workflows: { type: 'enabled', inline_agents: { type: 'enabled' }, predefined_agents: [] },
+          advisor: { type: 'disabled' },
+        },
+      }),
+      'agent_coordinator',
+    );
+    const session = manager.create({ agent: 'agent_coordinator' });
+    executor.script('coordinator', [
+      { inlineAgent: { name: 'inline-reviewer' }, inlineMessage: 'review', say: 'done' },
+    ]);
+
+    await manager.sendEvent(session.id, { type: 'user.message', content: [{ type: 'text', text: 'start' }] });
+    await until(manager, session.id, (events) => events.some((event) => event.type === 'session.status_idle'));
+
+    expect(executor.sendResults.at(-1)).toContain('does not allow inline subagents');
+    expect(manager.getThreadStore().listBySession(session.id)).toHaveLength(1);
   });
 
   it('mounts no coordinator tools when the current topology disables subagents', async () => {

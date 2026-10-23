@@ -28,6 +28,25 @@ export const MAX_ACTIVE_CHILD_THREADS = 25;
 /** A dispatchable subagent member: a concrete, version-pinned agent reference. */
 export type CoordinatorMember = { type: 'agent'; id: string; version: number };
 
+/** The caller-supplied shape of a thread-scoped inline agent. */
+export interface InlineSubagentDefinition {
+  name: string;
+  description?: string;
+  system?: string;
+}
+
+/**
+ * Whether the current topology permits inline subagents. Inline dispatch is
+ * unavailable on the legacy `coordinator` shape and when `subagents` or its
+ * `inline_agents` setting is disabled.
+ */
+export function inlineSubagentsEnabled(agent: AgentDefinition): boolean {
+  const multiagent = agent.multiagent;
+  return multiagent?.type === 'multiagent_20261001'
+    && multiagent.subagents.type === 'enabled'
+    && multiagent.subagents.inline_agents.type === 'enabled';
+}
+
 /**
  * The subagents a thread with this definition may dispatch to.
  *
@@ -82,6 +101,17 @@ export interface CoordinatorToolsHost {
   }):
     | { ok: true; thread: SessionThread; created: boolean }
     | { ok: false; reason: string };
+  /**
+   * Spawn a thread with an inline agent definition, inheriting the coordinator's
+   * model, tools, MCP servers, and skills. Records the same created/sent/received
+   * sequence as a predefined dispatch.
+   */
+  dispatchInlineAgent(input: {
+    definition: InlineSubagentDefinition;
+    message: string;
+  }):
+    | { ok: true; thread: SessionThread; created: boolean }
+    | { ok: false; reason: string };
 }
 
 /**
@@ -96,7 +126,8 @@ export function buildCoordinatorTools(
   host: CoordinatorToolsHost,
 ): Record<string, any> {
   const members = subagentMembers(agent);
-  if (members.length === 0) return {};
+  const inlineEnabled = inlineSubagentsEnabled(agent);
+  if (members.length === 0 && !inlineEnabled) return {};
   const coordinatorName = agent.name;
 
   return {
@@ -131,29 +162,72 @@ export function buildCoordinatorTools(
 
     send_to_agent: {
       description:
-        'Send a task or a follow-up message to a subagent. Without `thread_id` a new thread is spawned for ' +
-        'the agent; with `thread_id` the message is sent as a follow-up to that agent\'s existing thread, which ' +
-        'keeps its full prior context. Returns immediately with the thread\'s id — the agent\'s reply arrives ' +
-        'back as a message on this thread.',
+        'Send a task or a follow-up message to a subagent. Pass `agent` to address a predefined subagent, or ' +
+        '`inline_agent` to spawn one from the coordinator\'s own model, tools, MCP servers, and skills with a ' +
+        'thread-specific name, description, and system prompt. Without `thread_id` a new thread is spawned; ' +
+        'with `thread_id` the message is a follow-up to that agent\'s existing thread, which keeps its full ' +
+        'prior context. Returns immediately with the thread\'s id — the reply arrives back as a message here.',
       parameters: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'The subagent\'s name' },
+          agent: { type: 'string', description: 'A predefined subagent\'s name' },
+          inline_agent: {
+            type: 'object',
+            description: 'A thread-scoped agent definition; inherits the coordinator\'s model, tools, MCP servers, and skills',
+            properties: {
+              name: { type: 'string', description: 'The name this inline agent is known by' },
+              description: { type: 'string', description: 'An optional description for list_agents and the thread' },
+              system: { type: 'string', description: 'An optional system prompt override' },
+            },
+            required: ['name'],
+          },
           message: { type: 'string', description: 'The task or follow-up message to send' },
           thread_id: {
             type: 'string',
             description: 'An existing thread to send a follow-up into; omit to spawn a new thread',
           },
         },
-        required: ['agent', 'message'],
+        required: ['message'],
       },
-      execute: async (input: { agent?: string; message?: string; thread_id?: string }) => {
+      execute: async (input: {
+        agent?: string;
+        inline_agent?: InlineSubagentDefinition;
+        message?: string;
+        thread_id?: string;
+      }) => {
+        if (typeof input.message !== 'string' || input.message.length === 0) {
+          return toolError('send_to_agent requires a non-empty `message`.');
+        }
+        if (input.inline_agent !== undefined) {
+          if (input.agent !== undefined) {
+            return toolError('Pass either `agent` or `inline_agent`, not both.');
+          }
+          if (input.thread_id !== undefined) {
+            return toolError('An inline agent starts a new thread; omit `thread_id`.');
+          }
+          if (!inlineEnabled) {
+            return toolError('This coordinator does not allow inline subagents.');
+          }
+          const name = typeof input.inline_agent.name === 'string' ? input.inline_agent.name.trim() : '';
+          if (name.length === 0 || name.length > 128) {
+            return toolError('`inline_agent.name` must be between 1 and 128 characters.');
+          }
+          const outcome = host.dispatchInlineAgent({
+            definition: {
+              name,
+              ...(typeof input.inline_agent.description === 'string'
+                ? { description: input.inline_agent.description } : {}),
+              ...(typeof input.inline_agent.system === 'string'
+                ? { system: input.inline_agent.system } : {}),
+            },
+            message: input.message,
+          });
+          if (!outcome.ok) return toolError(outcome.reason);
+          return JSON.stringify({ thread_id: outcome.thread.id, status: 'sent' });
+        }
         const member = resolveMemberByName(members, input.agent, host, coordinatorName);
         if (!member) {
           return toolError(`No subagent named "${input.agent ?? ''}". Call list_agents for the members.`);
-        }
-        if (typeof input.message !== 'string' || input.message.length === 0) {
-          return toolError('send_to_agent requires a non-empty `message`.');
         }
         const outcome = host.dispatchToAgent({
           member,
